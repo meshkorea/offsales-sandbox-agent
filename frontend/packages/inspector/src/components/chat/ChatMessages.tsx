@@ -77,7 +77,7 @@ const ToolItem = ({
               className="tool-item-link"
               onClick={(e) => {
                 e.stopPropagation();
-                onEventClick(entry.eventId!);
+                onEventClick?.(entry.eventId!);
               }}
               title="View in Events"
             >
