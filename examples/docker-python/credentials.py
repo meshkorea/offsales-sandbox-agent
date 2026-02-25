@@ -8,16 +8,13 @@ def detect_agent() -> str:
     """Pick an agent based on env vars. Exits if no credentials are found."""
     if os.environ.get("SANDBOX_AGENT"):
         return os.environ["SANDBOX_AGENT"]
-    has_claude = bool(
+    has_anthropic = bool(
         os.environ.get("ANTHROPIC_API_KEY")
         or os.environ.get("CLAUDE_API_KEY")
-        or os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
     )
-    has_codex = (os.environ.get("OPENAI_API_KEY") or "").startswith("sk-")
-    if has_codex:
-        return "codex"
-    if has_claude:
-        return "claude"
+    has_openai = bool(os.environ.get("OPENAI_API_KEY"))
+    if has_anthropic or has_openai:
+        return "opencode"
     print("No API keys found. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.")
     sys.exit(1)
 
