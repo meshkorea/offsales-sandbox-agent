@@ -7,7 +7,7 @@ Capabilities are subject to change as the agents are updated. See [Agent Session
 
 
 <Info>
-    _Last updated: March 3rd, 2026. See [Generating a live report](#generating-a-live-report) for up-to-date reference._
+    _Last updated: March 5th, 2026. See [Generating a live report](#generating-a-live-report) for up-to-date reference._
 </Info>
 
 ## Claude
@@ -17,6 +17,37 @@ Capabilities are subject to change as the agents are updated. See [Agent Session
 | **Models** | `default`, `sonnet`, `opus`, `haiku` |
 | **Modes** | `default`, `acceptEdits`, `plan`, `dontAsk`, `bypassPermissions` |
 | **Thought levels** | Unsupported |
+
+### Configuring Effort Level For Claude
+
+Claude does not natively support changing effort level after a session starts, so configure it in the filesystem before creating the session.
+
+```ts
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { SandboxAgent } from "sandbox-agent";
+
+const cwd = "/path/to/workspace";
+await mkdir(path.join(cwd, ".claude"), { recursive: true });
+await writeFile(
+  path.join(cwd, ".claude", "settings.json"),
+  JSON.stringify({ effortLevel: "high" }, null, 2),
+);
+
+const sdk = await SandboxAgent.connect({ baseUrl: "http://127.0.0.1:2468" });
+await sdk.createSession({
+  agent: "claude",
+  sessionInit: { cwd, mcpServers: [] },
+});
+```
+
+<Accordion title="Supported file locations (highest precedence last)">
+
+1. `~/.claude/settings.json`
+2. `<session cwd>/.claude/settings.json`
+3. `<session cwd>/.claude/settings.local.json`
+
+</Accordion>
 
 ## Codex
 
@@ -92,5 +123,5 @@ sandbox-agent api agents report
 ```
 
 <Note>
-    The live report reflects what the agent's ACP adapter returns for the current credentials. Some models may be gated by subscription (e.g. Claude's `opus` requires a paid plan) and will not appear in the report if the credentials don't have access.
+    The live report reflects what the agent adapter returns for the current credentials. Some models may be gated by subscription (e.g. Claude's `opus` requires a paid plan) and will not appear in the report if the credentials don't have access.
 </Note>
