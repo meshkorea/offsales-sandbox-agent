@@ -737,23 +737,14 @@ export class SandboxAgent {
     const existing = await this.persist.getSession(request.id);
     if (existing) {
       let session = await this.resumeSession(existing.id);
-      try {
-        if (request.mode) {
-          session = (await this.setSessionMode(session.id, request.mode)).session;
-        }
-        if (request.model) {
-          session = (await this.setSessionModel(session.id, request.model)).session;
-        }
-        if (request.thoughtLevel) {
-          session = (await this.setSessionThoughtLevel(session.id, request.thoughtLevel)).session;
-        }
-      } catch (err) {
-        try {
-          await this.destroySession(session.id);
-        } catch {
-          // Best-effort cleanup
-        }
-        throw err;
+      if (request.mode) {
+        session = (await this.setSessionMode(session.id, request.mode)).session;
+      }
+      if (request.model) {
+        session = (await this.setSessionModel(session.id, request.model)).session;
+      }
+      if (request.thoughtLevel) {
+        session = (await this.setSessionThoughtLevel(session.id, request.thoughtLevel)).session;
       }
       return session;
     }
@@ -959,7 +950,7 @@ export class SandboxAgent {
     }
 
     const response = await live.sendSessionMethod(record.id, method, params, options);
-    await this.persistSessionStateFromMethod(record, method, params, response);
+    await this.persistSessionStateFromMethod(record.id, method, params, response);
     const refreshed = await this.requireSessionRecord(record.id);
     return {
       session: this.upsertSessionHandle(refreshed),
@@ -968,33 +959,51 @@ export class SandboxAgent {
   }
 
   private async persistSessionStateFromMethod(
-    record: SessionRecord,
+    sessionId: string,
     method: string,
     params: Record<string, unknown>,
     response: unknown,
   ): Promise<void> {
+    // Re-read the record from persistence so we merge against the latest
+    // state, not a stale snapshot captured before the RPC await.
+    const record = await this.persist.getSession(sessionId);
+    if (!record) {
+      return;
+    }
+
     if (method === "session/set_config_option") {
-      const configOptions = extractConfigOptionsFromSetResponse(response);
-      if (configOptions) {
-        await this.persist.updateSession({
-          ...record,
-          configOptions: cloneConfigOptions(configOptions),
-        });
-      } else if (record.configOptions) {
+      const configId = typeof params.configId === "string" ? params.configId : null;
+      const value = typeof params.value === "string" ? params.value : null;
+      const updates: Partial<SessionRecord> = {};
+
+      const serverConfigOptions = extractConfigOptionsFromSetResponse(response);
+      if (serverConfigOptions) {
+        updates.configOptions = cloneConfigOptions(serverConfigOptions);
+      } else if (record.configOptions && configId && value) {
         // Server didn't return configOptions — optimistically update the
         // cached currentValue so subsequent getConfigOptions() reflects the
         // change without a round-trip.
-        const configId = typeof params.configId === "string" ? params.configId : null;
-        const value = typeof params.value === "string" ? params.value : null;
-        if (configId && value) {
-          const updated = applyConfigOptionValue(record.configOptions, configId, value);
-          if (updated) {
-            await this.persist.updateSession({
-              ...record,
-              configOptions: updated,
-            });
+        const updated = applyConfigOptionValue(record.configOptions, configId, value);
+        if (updated) {
+          updates.configOptions = updated;
+        }
+      }
+
+      // When a mode-category config option is set via set_config_option
+      // (fallback path from setSessionMode), keep modes.currentModeId in sync.
+      if (configId && value) {
+        const source = updates.configOptions ?? record.configOptions;
+        const option = source ? findConfigOptionById(source, configId) : null;
+        if (option?.category === "mode") {
+          const nextModes = applyCurrentMode(record.modes, value);
+          if (nextModes) {
+            updates.modes = nextModes;
           }
         }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await this.persist.updateSession({ ...record, ...updates });
       }
       return;
     }
