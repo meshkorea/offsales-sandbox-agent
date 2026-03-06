@@ -1,7 +1,30 @@
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-export function prepareMockAgentDataHome(dataHome: string): void {
+function candidateInstallDirs(dataHome: string): string[] {
+  const dirs = [join(dataHome, "sandbox-agent", "bin")];
+  if (process.platform === "darwin") {
+    dirs.push(join(dataHome, "Library", "Application Support", "sandbox-agent", "bin"));
+  } else if (process.platform === "win32") {
+    dirs.push(join(dataHome, "AppData", "Roaming", "sandbox-agent", "bin"));
+  }
+  return dirs;
+}
+
+export function prepareMockAgentDataHome(dataHome: string): Record<string, string> {
+  const runtimeEnv: Record<string, string> = {};
+  if (process.platform === "darwin") {
+    runtimeEnv.HOME = dataHome;
+    runtimeEnv.XDG_DATA_HOME = join(dataHome, ".local", "share");
+  } else if (process.platform === "win32") {
+    runtimeEnv.USERPROFILE = dataHome;
+    runtimeEnv.APPDATA = join(dataHome, "AppData", "Roaming");
+    runtimeEnv.LOCALAPPDATA = join(dataHome, "AppData", "Local");
+  } else {
+    runtimeEnv.HOME = dataHome;
+    runtimeEnv.XDG_DATA_HOME = dataHome;
+  }
+
   const nodeScript = String.raw`#!/usr/bin/env node
 const { createInterface } = require("node:readline");
 
@@ -115,7 +138,7 @@ rl.on("line", (line) => {
 });
 `;
 
-  for (const installDir of installDirsForDataHome(dataHome)) {
+  for (const installDir of candidateInstallDirs(dataHome)) {
     const processDir = join(installDir, "agent_processes");
     mkdirSync(processDir, { recursive: true });
 
@@ -138,20 +161,6 @@ rl.on("line", (line) => {
       chmodSync(runner, 0o755);
     }
   }
-}
 
-function installDirsForDataHome(dataHome: string): string[] {
-  const candidates = new Set<string>([
-    join(dataHome, "sandbox-agent", "bin"),
-  ]);
-
-  if (process.platform === "darwin") {
-    candidates.add(join(dataHome, "Library", "Application Support", "sandbox-agent", "bin"));
-  }
-
-  if (process.platform === "win32") {
-    candidates.add(join(dataHome, "AppData", "Roaming", "sandbox-agent", "bin"));
-  }
-
-  return [...candidates];
+  return runtimeEnv;
 }
