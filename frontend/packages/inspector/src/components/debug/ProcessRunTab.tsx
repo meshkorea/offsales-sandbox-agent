@@ -60,7 +60,7 @@ const ProcessRunTab = ({
                 setCommand(event.target.value);
                 setError(null);
               }}
-              placeholder="bash"
+              placeholder="ls"
             />
           </div>
           <div className="process-run-field process-run-field-grow">
