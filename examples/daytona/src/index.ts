@@ -17,7 +17,7 @@ const sandbox = await daytona.create({ envVars, autoStopInterval: 0 });
 // Install sandbox-agent and start server
 console.log("Installing sandbox-agent...");
 await sandbox.process.executeCommand(
-	"curl -fsSL https://releases.rivet.dev/sandbox-agent/0.2.x/install.sh | sh",
+	"curl -fsSL https://releases.rivet.dev/sandbox-agent/0.3.x/install.sh | sh",
 );
 
 console.log("Installing agents...");
