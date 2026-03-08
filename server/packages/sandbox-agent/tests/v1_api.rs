@@ -59,8 +59,8 @@ exit 0
 }
 
 fn serve_registry_once(document: Value) -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind registry server");
-    let address = listener.local_addr().expect("registry address");
+    let listener = TcpListener::bind("0.0.0.0:0").expect("bind registry server");
+    let port = listener.local_addr().expect("registry address").port();
     let body = document.to_string();
 
     std::thread::spawn(move || loop {
@@ -70,7 +70,7 @@ fn serve_registry_once(document: Value) -> String {
         }
     });
 
-    format!("http://{address}/registry.json")
+    format!("http://127.0.0.1:{port}/registry.json")
 }
 
 fn respond_json(stream: &mut TcpStream, body: &str) {
