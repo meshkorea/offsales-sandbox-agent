@@ -50,6 +50,15 @@ struct EnvVarGuard {
     previous: Option<std::ffi::OsString>,
 }
 
+struct FakeDesktopEnv {
+    _temp: TempDir,
+    _path: EnvVarGuard,
+    _xdg_state_home: EnvVarGuard,
+    _assume_linux: EnvVarGuard,
+    _display_num: EnvVarGuard,
+    _fake_state_dir: EnvVarGuard,
+}
+
 struct LiveServer {
     address: SocketAddr,
     shutdown_tx: Option<oneshot::Sender<()>>,
@@ -165,6 +174,153 @@ done
 exit 0
 "#,
     );
+}
+
+fn setup_fake_desktop_env() -> FakeDesktopEnv {
+    let temp = tempfile::tempdir().expect("create fake desktop tempdir");
+    let bin_dir = temp.path().join("bin");
+    let xdg_state_home = temp.path().join("state");
+    let fake_state_dir = temp.path().join("desktop-state");
+    fs::create_dir_all(&bin_dir).expect("create fake desktop bin dir");
+    fs::create_dir_all(&xdg_state_home).expect("create xdg state home");
+    fs::create_dir_all(&fake_state_dir).expect("create fake state dir");
+
+    write_executable(
+        &bin_dir.join("Xvfb"),
+        r#"#!/usr/bin/env sh
+set -eu
+display="${1:-:99}"
+number="${display#:}"
+socket="/tmp/.X11-unix/X${number}"
+mkdir -p /tmp/.X11-unix
+touch "$socket"
+cleanup() {
+  rm -f "$socket"
+  exit 0
+}
+trap cleanup INT TERM EXIT
+while :; do
+  sleep 1
+done
+"#,
+    );
+
+    write_executable(
+        &bin_dir.join("openbox"),
+        r#"#!/usr/bin/env sh
+set -eu
+trap 'exit 0' INT TERM
+while :; do
+  sleep 1
+done
+"#,
+    );
+
+    write_executable(
+        &bin_dir.join("dbus-launch"),
+        r#"#!/usr/bin/env sh
+set -eu
+echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/sandbox-agent-test-bus"
+echo "DBUS_SESSION_BUS_PID=$$"
+"#,
+    );
+
+    write_executable(
+        &bin_dir.join("xrandr"),
+        r#"#!/usr/bin/env sh
+set -eu
+cat <<'EOF'
+Screen 0: minimum 1 x 1, current 1440 x 900, maximum 32767 x 32767
+EOF
+"#,
+    );
+
+    write_executable(
+        &bin_dir.join("import"),
+        r#"#!/usr/bin/env sh
+set -eu
+printf '\211PNG\r\n\032\n\000\000\000\rIHDR\000\000\000\001\000\000\000\001\010\006\000\000\000\037\025\304\211\000\000\000\013IDATx\234c\000\001\000\000\005\000\001\r\n-\264\000\000\000\000IEND\256B`\202'
+"#,
+    );
+
+    write_executable(
+        &bin_dir.join("xdotool"),
+        r#"#!/usr/bin/env sh
+set -eu
+state_dir="${SANDBOX_AGENT_DESKTOP_FAKE_STATE_DIR:?missing fake state dir}"
+state_file="${state_dir}/mouse"
+mkdir -p "$state_dir"
+if [ ! -f "$state_file" ]; then
+  printf '0 0\n' > "$state_file"
+fi
+
+read_state() {
+  read -r x y < "$state_file"
+}
+
+write_state() {
+  printf '%s %s\n' "$1" "$2" > "$state_file"
+}
+
+command="${1:-}"
+case "$command" in
+  getmouselocation)
+    read_state
+    printf 'X=%s\nY=%s\nSCREEN=0\nWINDOW=0\n' "$x" "$y"
+    ;;
+  mousemove)
+    shift
+    x="${1:-0}"
+    y="${2:-0}"
+    shift 2 || true
+    while [ "$#" -gt 0 ]; do
+      token="$1"
+      shift
+      case "$token" in
+        mousemove)
+          x="${1:-0}"
+          y="${2:-0}"
+          shift 2 || true
+          ;;
+        mousedown|mouseup)
+          shift 1 || true
+          ;;
+        click)
+          if [ "${1:-}" = "--repeat" ]; then
+            shift 2 || true
+          fi
+          shift 1 || true
+          ;;
+      esac
+    done
+    write_state "$x" "$y"
+    ;;
+  type|key)
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+"#,
+    );
+
+    let original_path = std::env::var_os("PATH").unwrap_or_default();
+    let mut paths = vec![bin_dir];
+    paths.extend(std::env::split_paths(&original_path));
+    let merged_path = std::env::join_paths(paths).expect("join PATH");
+
+    FakeDesktopEnv {
+        _temp: temp,
+        _path: EnvVarGuard::set_os("PATH", merged_path.as_os_str()),
+        _xdg_state_home: EnvVarGuard::set_os("XDG_STATE_HOME", xdg_state_home.as_os_str()),
+        _assume_linux: EnvVarGuard::set("SANDBOX_AGENT_DESKTOP_TEST_ASSUME_LINUX", "1"),
+        _display_num: EnvVarGuard::set("SANDBOX_AGENT_DESKTOP_DISPLAY_NUM", "190"),
+        _fake_state_dir: EnvVarGuard::set_os(
+            "SANDBOX_AGENT_DESKTOP_FAKE_STATE_DIR",
+            fake_state_dir.as_os_str(),
+        ),
+    }
 }
 
 fn serve_registry_once(document: Value) -> String {
@@ -375,5 +531,7 @@ mod acp_transport;
 mod config_endpoints;
 #[path = "v1_api/control_plane.rs"]
 mod control_plane;
+#[path = "v1_api/desktop.rs"]
+mod desktop;
 #[path = "v1_api/processes.rs"]
 mod processes;
