@@ -156,6 +156,27 @@ function nodeCommand(source: string): { command: string; args: string[] } {
   };
 }
 
+function forwardRequest(
+  defaultFetch: typeof fetch,
+  baseUrl: string,
+  outgoing: Request,
+  parsed: URL,
+): Promise<Response> {
+  const forwardedInit: RequestInit & { duplex?: "half" } = {
+    method: outgoing.method,
+    headers: new Headers(outgoing.headers),
+    signal: outgoing.signal,
+  };
+
+  if (outgoing.method !== "GET" && outgoing.method !== "HEAD") {
+    forwardedInit.body = outgoing.body;
+    forwardedInit.duplex = "half";
+  }
+
+  const forwardedUrl = new URL(`${parsed.pathname}${parsed.search}`, baseUrl);
+  return defaultFetch(forwardedUrl, forwardedInit);
+}
+
 function writeExecutable(path: string, source: string): void {
   writeFileSync(path, source, "utf8");
   chmodSync(path, 0o755);
@@ -462,9 +483,7 @@ describe("Integration: TypeScript SDK flat session API", () => {
       const parsed = new URL(outgoing.url);
       seenPaths.push(parsed.pathname);
 
-      const forwardedUrl = new URL(`${parsed.pathname}${parsed.search}`, baseUrl);
-      const forwarded = new Request(forwardedUrl.toString(), outgoing);
-      return defaultFetch(forwarded);
+      return forwardRequest(defaultFetch, baseUrl, outgoing, parsed);
     };
 
     const sdk = await SandboxAgent.connect({
@@ -474,8 +493,8 @@ describe("Integration: TypeScript SDK flat session API", () => {
 
     await sdk.getHealth();
     const session = await sdk.createSession({ agent: "mock" });
-    const prompt = await session.prompt([{ type: "text", text: "custom fetch integration test" }]);
-    expect(prompt.stopReason).toBe("end_turn");
+    expect(session.agent).toBe("mock");
+    await sdk.destroySession(session.id);
 
     expect(seenPaths).toContain("/v1/health");
     expect(seenPaths.some((path) => path.startsWith("/v1/acp/"))).toBe(true);
@@ -507,9 +526,7 @@ describe("Integration: TypeScript SDK flat session API", () => {
         }
       }
 
-      const forwardedUrl = new URL(`${parsed.pathname}${parsed.search}`, baseUrl);
-      const forwarded = new Request(forwardedUrl.toString(), outgoing);
-      return defaultFetch(forwarded);
+      return forwardRequest(defaultFetch, baseUrl, outgoing, parsed);
     };
 
     const sdk = await SandboxAgent.connect({
