@@ -2,149 +2,149 @@
 
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SandboxAgent } from "sandbox-agent";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { SandboxAgent } from "sandbox-agent";
+import {
+  createDockerTestLayout,
+  disposeDockerTestLayout,
+  startDockerSandboxAgent,
+  type DockerSandboxAgentHandle,
+} from "../../../../../../sdks/typescript/tests/helpers/docker.ts";
 import DesktopTab from "./DesktopTab";
 
-type MockDesktopClient = Pick<
-  SandboxAgent,
-  "getDesktopStatus" | "startDesktop" | "stopDesktop" | "takeDesktopScreenshot"
->;
+type DockerTestLayout = ReturnType<typeof createDockerTestLayout>;
 
-describe("DesktopTab", () => {
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitFor<T>(
+  fn: () => T | undefined | null,
+  timeoutMs = 20_000,
+  stepMs = 50,
+): Promise<T> {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const value = fn();
+    if (value !== undefined && value !== null) {
+      return value;
+    }
+    await sleep(stepMs);
+  }
+  throw new Error("timed out waiting for condition");
+}
+
+function findButton(container: HTMLElement, label: string): HTMLButtonElement | undefined {
+  return Array.from(container.querySelectorAll("button")).find((button) =>
+    button.textContent?.includes(label),
+  ) as HTMLButtonElement | undefined;
+}
+
+describe.sequential("DesktopTab", () => {
   let container: HTMLDivElement;
   let root: Root;
-  let createObjectUrl: ReturnType<typeof vi.fn>;
-  let revokeObjectUrl: ReturnType<typeof vi.fn>;
+  let layout: DockerTestLayout | undefined;
+  let handle: DockerSandboxAgentHandle | undefined;
+  let client: SandboxAgent | undefined;
 
   beforeEach(() => {
-    vi.useFakeTimers();
-    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
-    createObjectUrl = vi.fn(() => "blob:test-screenshot");
-    revokeObjectUrl = vi.fn();
-    vi.stubGlobal(
-      "URL",
-      Object.assign(URL, {
-        createObjectURL: createObjectUrl,
-        revokeObjectURL: revokeObjectUrl,
-      }),
-    );
   });
 
   afterEach(async () => {
     await act(async () => {
       root.unmount();
     });
+    if (client) {
+      await client.stopDesktop().catch(() => {});
+      await client.dispose().catch(() => {});
+    }
+    if (handle) {
+      await handle.dispose();
+    }
+    if (layout) {
+      disposeDockerTestLayout(layout);
+    }
     container.remove();
-    vi.runOnlyPendingTimers();
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
+    delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT;
+    client = undefined;
+    handle = undefined;
+    layout = undefined;
   });
 
+  async function connectDesktopClient(options?: { pathMode?: "merge" | "replace" }): Promise<SandboxAgent> {
+    layout = createDockerTestLayout();
+    handle = await startDockerSandboxAgent(layout, {
+      timeoutMs: 30_000,
+      pathMode: options?.pathMode,
+      env: options?.pathMode === "replace"
+        ? { PATH: layout.rootDir }
+        : undefined,
+    });
+    client = await SandboxAgent.connect({
+      baseUrl: handle.baseUrl,
+      token: handle.token,
+    });
+    return client;
+  }
+
   it("renders install remediation when desktop deps are missing", async () => {
-    const client = {
-      getDesktopStatus: vi.fn().mockResolvedValue({
-        state: "install_required",
-        display: null,
-        resolution: null,
-        startedAt: null,
-        lastError: {
-          code: "desktop_dependencies_missing",
-          message: "Desktop dependencies are not installed",
-        },
-        missingDependencies: ["Xvfb", "openbox"],
-        installCommand: "sandbox-agent install desktop --yes",
-        processes: [],
-        runtimeLogPath: "/tmp/runtime.log",
-      }),
-      startDesktop: vi.fn(),
-      stopDesktop: vi.fn(),
-      takeDesktopScreenshot: vi.fn(),
-    } as unknown as MockDesktopClient;
+    const connectedClient = await connectDesktopClient({ pathMode: "replace" });
 
     await act(async () => {
-      root.render(<DesktopTab getClient={() => client as unknown as SandboxAgent} />);
+      root.render(<DesktopTab getClient={() => connectedClient} />);
+    });
+
+    await waitFor(() => {
+      const text = container.textContent ?? "";
+      return text.includes("install_required") ? text : undefined;
     });
 
     expect(container.textContent).toContain("install_required");
     expect(container.textContent).toContain("sandbox-agent install desktop --yes");
     expect(container.textContent).toContain("Xvfb");
-    expect(client.getDesktopStatus).toHaveBeenCalledTimes(1);
   });
 
   it("starts desktop, refreshes screenshot, and stops desktop", async () => {
-    const client = {
-      getDesktopStatus: vi.fn().mockResolvedValue({
-        state: "inactive",
-        display: null,
-        resolution: null,
-        startedAt: null,
-        lastError: null,
-        missingDependencies: [],
-        installCommand: null,
-        processes: [],
-        runtimeLogPath: null,
-      }),
-      startDesktop: vi.fn().mockResolvedValue({
-        state: "active",
-        display: ":99",
-        resolution: { width: 1440, height: 900, dpi: 96 },
-        startedAt: "2026-03-07T00:00:00Z",
-        lastError: null,
-        missingDependencies: [],
-        installCommand: null,
-        processes: [],
-        runtimeLogPath: "/tmp/runtime.log",
-      }),
-      stopDesktop: vi.fn().mockResolvedValue({
-        state: "inactive",
-        display: null,
-        resolution: null,
-        startedAt: null,
-        lastError: null,
-        missingDependencies: [],
-        installCommand: null,
-        processes: [],
-        runtimeLogPath: "/tmp/runtime.log",
-      }),
-      takeDesktopScreenshot: vi.fn().mockResolvedValue(
-        new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
-      ),
-    } as unknown as MockDesktopClient;
+    const connectedClient = await connectDesktopClient();
 
     await act(async () => {
-      root.render(<DesktopTab getClient={() => client as unknown as SandboxAgent} />);
+      root.render(<DesktopTab getClient={() => connectedClient} />);
     });
 
-    const startButton = Array.from(container.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("Start Desktop"),
-    );
-    expect(startButton).toBeTruthy();
+    await waitFor(() => {
+      const text = container.textContent ?? "";
+      return text.includes("inactive") ? true : undefined;
+    });
 
+    const startButton = await waitFor(() => findButton(container, "Start Desktop"));
     await act(async () => {
-      startButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await vi.runAllTimersAsync();
+      startButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(client.startDesktop).toHaveBeenCalledTimes(1);
-    expect(client.takeDesktopScreenshot).toHaveBeenCalled();
+    await waitFor(() => {
+      const screenshot = container.querySelector("img[alt='Desktop screenshot']") as HTMLImageElement | null;
+      return screenshot?.src ? screenshot : undefined;
+    });
+
     const screenshot = container.querySelector("img[alt='Desktop screenshot']") as HTMLImageElement | null;
-    expect(screenshot?.src).toContain("blob:test-screenshot");
+    expect(screenshot).toBeTruthy();
+    expect(screenshot?.src.startsWith("blob:") || screenshot?.src.startsWith("data:image/png")).toBe(true);
+    expect(container.textContent).toContain("active");
 
-    const stopButton = Array.from(container.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("Stop Desktop"),
-    );
-    expect(stopButton).toBeTruthy();
-
+    const stopButton = await waitFor(() => findButton(container, "Stop Desktop"));
     await act(async () => {
-      stopButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await vi.runAllTimersAsync();
+      stopButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(client.stopDesktop).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      const text = container.textContent ?? "";
+      return text.includes("inactive") ? true : undefined;
+    });
+
     expect(container.textContent).toContain("inactive");
   });
 });

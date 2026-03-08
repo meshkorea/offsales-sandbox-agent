@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -51,6 +51,15 @@ async function waitForAsync<T>(
     await sleep(stepMs);
   }
   throw new Error("timed out waiting for condition");
+}
+
+async function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs = 15_000): Promise<T> {
+  return await Promise.race([
+    promise,
+    sleep(timeoutMs).then(() => {
+      throw new Error(`${label} timed out after ${timeoutMs}ms`);
+    }),
+  ]);
 }
 
 function buildTarArchive(entries: Array<{ name: string; content: string }>): Uint8Array {
@@ -143,146 +152,37 @@ function forwardRequest(
   return defaultFetch(forwardedUrl, forwardedInit);
 }
 
-function writeExecutable(path: string, source: string): void {
-  writeFileSync(path, source, "utf8");
-  chmodSync(path, 0o755);
-}
+async function launchDesktopFocusWindow(sdk: SandboxAgent, display: string): Promise<string> {
+  const windowProcess = await sdk.createProcess({
+    command: "xterm",
+    args: [
+      "-geometry",
+      "80x24+40+40",
+      "-title",
+      "Sandbox Desktop Test",
+      "-e",
+      "sh",
+      "-lc",
+      "sleep 60",
+    ],
+    env: { DISPLAY: display },
+  });
 
-function prepareFakeDesktopEnv(root: string): Record<string, string> {
-  const binDir = join(root, "bin");
-  const xdgStateHome = join(root, "xdg-state");
-  const fakeStateDir = join(root, "fake-state");
-  mkdirSync(binDir, { recursive: true });
-  mkdirSync(xdgStateHome, { recursive: true });
-  mkdirSync(fakeStateDir, { recursive: true });
+  await waitForAsync(async () => {
+    const result = await sdk.runProcess({
+      command: "sh",
+      args: [
+        "-lc",
+        "wid=\"$(xdotool search --onlyvisible --name 'Sandbox Desktop Test' 2>/dev/null | head -n 1 || true)\"; if [ -z \"$wid\" ]; then exit 3; fi; xdotool windowactivate \"$wid\"",
+      ],
+      env: { DISPLAY: display },
+      timeoutMs: 5_000,
+    });
 
-  writeExecutable(
-    join(binDir, "Xvfb"),
-    `#!/usr/bin/env sh
-set -eu
-display="\${1:-:191}"
-number="\${display#:}"
-socket="/tmp/.X11-unix/X\${number}"
-mkdir -p /tmp/.X11-unix
-touch "$socket"
-cleanup() {
-  rm -f "$socket"
-  exit 0
-}
-trap cleanup INT TERM EXIT
-while :; do
-  sleep 1
-done
-`,
-  );
+    return result.exitCode === 0 ? true : undefined;
+  }, 10_000, 200);
 
-  writeExecutable(
-    join(binDir, "openbox"),
-    `#!/usr/bin/env sh
-set -eu
-trap 'exit 0' INT TERM
-while :; do
-  sleep 1
-done
-`,
-  );
-
-  writeExecutable(
-    join(binDir, "dbus-launch"),
-    `#!/usr/bin/env sh
-set -eu
-echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/sandbox-agent-test-bus"
-echo "DBUS_SESSION_BUS_PID=$$"
-`,
-  );
-
-  writeExecutable(
-    join(binDir, "xrandr"),
-    `#!/usr/bin/env sh
-set -eu
-cat <<'EOF'
-Screen 0: minimum 1 x 1, current 1440 x 900, maximum 32767 x 32767
-EOF
-`,
-  );
-
-  writeExecutable(
-    join(binDir, "import"),
-    `#!/usr/bin/env sh
-set -eu
-printf '\\211PNG\\r\\n\\032\\n\\000\\000\\000\\rIHDR\\000\\000\\000\\001\\000\\000\\000\\001\\010\\006\\000\\000\\000\\037\\025\\304\\211\\000\\000\\000\\013IDATx\\234c\\000\\001\\000\\000\\005\\000\\001\\r\\n-\\264\\000\\000\\000\\000IEND\\256B\`\\202'
-`,
-  );
-
-  writeExecutable(
-    join(binDir, "xdotool"),
-    `#!/usr/bin/env sh
-set -eu
-state_dir="\${SANDBOX_AGENT_DESKTOP_FAKE_STATE_DIR:?missing fake state dir}"
-state_file="\${state_dir}/mouse"
-mkdir -p "$state_dir"
-if [ ! -f "$state_file" ]; then
-  printf '0 0\\n' > "$state_file"
-fi
-
-read_state() {
-  read -r x y < "$state_file"
-}
-
-write_state() {
-  printf '%s %s\\n' "$1" "$2" > "$state_file"
-}
-
-command="\${1:-}"
-case "$command" in
-  getmouselocation)
-    read_state
-    printf 'X=%s\\nY=%s\\nSCREEN=0\\nWINDOW=0\\n' "$x" "$y"
-    ;;
-  mousemove)
-    shift
-    x="\${1:-0}"
-    y="\${2:-0}"
-    shift 2 || true
-    while [ "$#" -gt 0 ]; do
-      token="$1"
-      shift
-      case "$token" in
-        mousemove)
-          x="\${1:-0}"
-          y="\${2:-0}"
-          shift 2 || true
-          ;;
-        mousedown|mouseup)
-          shift 1 || true
-          ;;
-        click)
-          if [ "\${1:-}" = "--repeat" ]; then
-            shift 2 || true
-          fi
-          shift 1 || true
-          ;;
-      esac
-    done
-    write_state "$x" "$y"
-    ;;
-  type|key)
-    exit 0
-    ;;
-  *)
-    exit 0
-    ;;
-esac
-`,
-  );
-
-  return {
-    SANDBOX_AGENT_DESKTOP_TEST_ASSUME_LINUX: "1",
-    SANDBOX_AGENT_DESKTOP_DISPLAY_NUM: "191",
-    SANDBOX_AGENT_DESKTOP_FAKE_STATE_DIR: fakeStateDir,
-    XDG_STATE_HOME: xdgStateHome,
-    PATH: `${binDir}:${process.env.PATH ?? ""}`,
-  };
+  return windowProcess.id;
 }
 
 describe("Integration: TypeScript SDK flat session API", () => {
@@ -294,11 +194,9 @@ describe("Integration: TypeScript SDK flat session API", () => {
   beforeEach(async () => {
     layout = createDockerTestLayout();
     prepareMockAgentDataHome(layout.xdgDataHome);
-    const desktopEnv = prepareFakeDesktopEnv(layout.rootDir);
 
     handle = await startDockerSandboxAgent(layout, {
       timeoutMs: 30000,
-      env: desktopEnv,
     });
     baseUrl = handle.baseUrl;
     token = handle.token;
@@ -438,16 +336,26 @@ describe("Integration: TypeScript SDK flat session API", () => {
       token,
       fetch: customFetch,
     });
+    let sessionId: string | undefined;
 
-    await sdk.getHealth();
-    const session = await sdk.createSession({ agent: "mock" });
-    expect(session.agent).toBe("mock");
-    await sdk.destroySession(session.id);
+    try {
+      await withTimeout(sdk.getHealth(), "custom fetch getHealth");
+      const session = await withTimeout(
+        sdk.createSession({ agent: "mock" }),
+        "custom fetch createSession",
+      );
+      sessionId = session.id;
+      expect(session.agent).toBe("mock");
+      await withTimeout(sdk.destroySession(session.id), "custom fetch destroySession");
 
-    expect(seenPaths).toContain("/v1/health");
-    expect(seenPaths.some((path) => path.startsWith("/v1/acp/"))).toBe(true);
-
-    await sdk.dispose();
+      expect(seenPaths).toContain("/v1/health");
+      expect(seenPaths.some((path) => path.startsWith("/v1/acp/"))).toBe(true);
+    } finally {
+      if (sessionId) {
+        await sdk.destroySession(sessionId).catch(() => {});
+      }
+      await withTimeout(sdk.dispose(), "custom fetch dispose");
+    }
   }, 60_000);
 
   it("requires baseUrl when fetch is not provided", async () => {
@@ -1023,6 +931,7 @@ describe("Integration: TypeScript SDK flat session API", () => {
       baseUrl,
       token,
     });
+    let focusWindowProcessId: string | undefined;
 
     try {
       const initialStatus = await sdk.getDesktopStatus();
@@ -1088,6 +997,8 @@ describe("Integration: TypeScript SDK flat session API", () => {
       expect(position.x).toBe(80);
       expect(position.y).toBe(90);
 
+      focusWindowProcessId = await launchDesktopFocusWindow(sdk, started.display!);
+
       const typed = await sdk.typeDesktopText({
         text: "hello desktop",
         delayMs: 5,
@@ -1100,6 +1011,10 @@ describe("Integration: TypeScript SDK flat session API", () => {
       const stopped = await sdk.stopDesktop();
       expect(stopped.state).toBe("inactive");
     } finally {
+      if (focusWindowProcessId) {
+        await sdk.killProcess(focusWindowProcessId, { waitMs: 5_000 }).catch(() => {});
+        await sdk.deleteProcess(focusWindowProcessId).catch(() => {});
+      }
       await sdk.stopDesktop().catch(() => {});
       await sdk.dispose();
     }

@@ -53,12 +53,25 @@ pub struct TestApp {
     container_id: String,
 }
 
+#[derive(Default)]
+pub struct TestAppOptions {
+    pub env: BTreeMap<String, String>,
+    pub replace_path: bool,
+}
+
 impl TestApp {
     pub fn new(auth: AuthConfig) -> Self {
         Self::with_setup(auth, |_| {})
     }
 
     pub fn with_setup<F>(auth: AuthConfig, setup: F) -> Self
+    where
+        F: FnOnce(&Path),
+    {
+        Self::with_options(auth, TestAppOptions::default(), setup)
+    }
+
+    pub fn with_options<F>(auth: AuthConfig, options: TestAppOptions, setup: F) -> Self
     where
         F: FnOnce(&Path),
     {
@@ -69,7 +82,7 @@ impl TestApp {
 
         let container_id = unique_container_id();
         let image = ensure_test_image();
-        let env = build_env(&layout, &auth);
+        let env = build_env(&layout, &auth, &options);
         let mounts = build_mounts(root.path(), &env);
         let base_url = run_container(&container_id, &image, &mounts, &env, &auth);
 
@@ -191,7 +204,11 @@ fn ensure_test_image() -> String {
         .clone()
 }
 
-fn build_env(layout: &TestLayout, auth: &AuthConfig) -> BTreeMap<String, String> {
+fn build_env(
+    layout: &TestLayout,
+    auth: &AuthConfig,
+    options: &TestAppOptions,
+) -> BTreeMap<String, String> {
     let mut env = BTreeMap::new();
     env.insert(
         "HOME".to_string(),
@@ -240,20 +257,35 @@ fn build_env(layout: &TestLayout, auth: &AuthConfig) -> BTreeMap<String, String>
         env.insert("SANDBOX_AGENT_TEST_AUTH_TOKEN".to_string(), token.clone());
     }
 
-    let mut custom_path_entries = custom_path_entries(layout.install_dir.parent().expect("install base"));
-    custom_path_entries.extend(explicit_path_entries());
-    custom_path_entries.sort();
-    custom_path_entries.dedup();
-
-    if custom_path_entries.is_empty() {
-        env.insert("PATH".to_string(), DEFAULT_PATH.to_string());
+    if options.replace_path {
+        env.insert(
+            "PATH".to_string(),
+            options.env.get("PATH").cloned().unwrap_or_default(),
+        );
     } else {
-        let joined = custom_path_entries
-            .iter()
-            .map(|path| path.to_string_lossy().to_string())
-            .collect::<Vec<_>>()
-            .join(":");
-        env.insert("PATH".to_string(), format!("{joined}:{DEFAULT_PATH}"));
+        let mut custom_path_entries =
+            custom_path_entries(layout.install_dir.parent().expect("install base"));
+        custom_path_entries.extend(explicit_path_entries());
+        custom_path_entries.sort();
+        custom_path_entries.dedup();
+
+        if custom_path_entries.is_empty() {
+            env.insert("PATH".to_string(), DEFAULT_PATH.to_string());
+        } else {
+            let joined = custom_path_entries
+                .iter()
+                .map(|path| path.to_string_lossy().to_string())
+                .collect::<Vec<_>>()
+                .join(":");
+            env.insert("PATH".to_string(), format!("{joined}:{DEFAULT_PATH}"));
+        }
+    }
+
+    for (key, value) in &options.env {
+        if key == "PATH" {
+            continue;
+        }
+        env.insert(key.clone(), value.clone());
     }
 
     env
