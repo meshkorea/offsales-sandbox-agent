@@ -28,6 +28,7 @@ export type DockerSandboxAgentHandle = {
 
 export type DockerSandboxAgentOptions = {
   env?: Record<string, string>;
+  pathMode?: "merge" | "replace";
   timeoutMs?: number;
 };
 
@@ -107,7 +108,7 @@ export async function startDockerSandboxAgent(
 ): Promise<DockerSandboxAgentHandle> {
   const image = ensureImage();
   const containerId = uniqueContainerId();
-  const env = buildEnv(layout, options.env ?? {});
+  const env = buildEnv(layout, options.env ?? {}, options.pathMode ?? "merge");
   const mounts = buildMounts(layout.rootDir, env);
 
   const args = [
@@ -190,7 +191,11 @@ function ensureImage(): string {
   return cachedImage;
 }
 
-function buildEnv(layout: TestLayout, extraEnv: Record<string, string>): Record<string, string> {
+function buildEnv(
+  layout: TestLayout,
+  extraEnv: Record<string, string>,
+  pathMode: "merge" | "replace",
+): Record<string, string> {
   const env: Record<string, string> = {
     HOME: layout.homeDir,
     USERPROFILE: layout.homeDir,
@@ -208,7 +213,9 @@ function buildEnv(layout: TestLayout, extraEnv: Record<string, string>): Record<
       customPathEntries.add(entry);
     }
   }
-  if (customPathEntries.size > 0) {
+  if (pathMode === "replace") {
+    env.PATH = extraEnv.PATH ?? "";
+  } else if (customPathEntries.size > 0) {
     env.PATH = `${Array.from(customPathEntries).join(":")}:${DEFAULT_PATH}`;
   }
 

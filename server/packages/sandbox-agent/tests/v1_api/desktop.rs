@@ -1,14 +1,25 @@
 use super::*;
 use serial_test::serial;
+use std::collections::BTreeMap;
 
 #[tokio::test]
 #[serial]
 async fn v1_desktop_status_reports_install_required_when_dependencies_are_missing() {
     let temp = tempfile::tempdir().expect("create empty path tempdir");
-    let _path = EnvVarGuard::set_os("PATH", temp.path().as_os_str());
-    let _assume_linux = EnvVarGuard::set("SANDBOX_AGENT_DESKTOP_TEST_ASSUME_LINUX", "1");
+    let mut env = BTreeMap::new();
+    env.insert(
+        "PATH".to_string(),
+        temp.path().to_string_lossy().to_string(),
+    );
 
-    let test_app = TestApp::new(AuthConfig::disabled());
+    let test_app = TestApp::with_options(
+        AuthConfig::disabled(),
+        docker_support::TestAppOptions {
+            env,
+            replace_path: true,
+        },
+        |_| {},
+    );
 
     let (status, _, body) =
         send_request(&test_app.app, Method::GET, "/v1/desktop/status", None, &[]).await;
@@ -29,8 +40,7 @@ async fn v1_desktop_status_reports_install_required_when_dependencies_are_missin
 
 #[tokio::test]
 #[serial]
-async fn v1_desktop_lifecycle_and_actions_work_with_fake_runtime() {
-    let _fake = setup_fake_desktop_env();
+async fn v1_desktop_lifecycle_and_actions_work_with_real_runtime() {
     let test_app = TestApp::new(AuthConfig::disabled());
 
     let (status, _, body) = send_request(
@@ -183,6 +193,8 @@ async fn v1_desktop_lifecycle_and_actions_work_with_fake_runtime() {
     let position = parse_json(&body);
     assert_eq!(position["x"], 220);
     assert_eq!(position["y"], 230);
+
+    launch_desktop_focus_window(&test_app.app, &display).await;
 
     let (status, _, body) = send_request(
         &test_app.app,

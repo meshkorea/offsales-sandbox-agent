@@ -22,6 +22,29 @@ const formatStartedAt = (value: string | null | undefined): string => {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 };
 
+const createScreenshotUrl = async (bytes: Uint8Array): Promise<string> => {
+  const payload = new Uint8Array(bytes.byteLength);
+  payload.set(bytes);
+  const blob = new Blob([payload.buffer], { type: "image/png" });
+
+  if (typeof URL.createObjectURL === "function") {
+    return URL.createObjectURL(blob);
+  }
+
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error("Unable to read screenshot blob."));
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+      } else {
+        reject(new Error("Unable to read screenshot blob."));
+      }
+    };
+    reader.readAsDataURL(blob);
+  });
+};
+
 const DesktopTab = ({
   getClient,
 }: {
@@ -43,7 +66,7 @@ const DesktopTab = ({
 
   const revokeScreenshotUrl = useCallback(() => {
     setScreenshotUrl((current) => {
-      if (current) {
+      if (current?.startsWith("blob:") && typeof URL.revokeObjectURL === "function") {
         URL.revokeObjectURL(current);
       }
       return null;
@@ -76,10 +99,7 @@ const DesktopTab = ({
     try {
       const bytes = await getClient().takeDesktopScreenshot();
       revokeScreenshotUrl();
-      const payload = new Uint8Array(bytes.byteLength);
-      payload.set(bytes);
-      const blob = new Blob([payload.buffer], { type: "image/png" });
-      setScreenshotUrl(URL.createObjectURL(blob));
+      setScreenshotUrl(await createScreenshotUrl(bytes));
     } catch (captureError) {
       revokeScreenshotUrl();
       setScreenshotError(extractErrorMessage(captureError, "Unable to capture desktop screenshot."));
