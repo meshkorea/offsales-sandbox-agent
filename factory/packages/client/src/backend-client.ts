@@ -26,7 +26,7 @@ import type {
   RepoStackActionResult,
   RepoRecord,
   SwitchResult
-} from "@openhandoff/shared";
+} from "@sandbox-agent/factory-shared";
 import { sandboxInstanceKey, workspaceKey } from "./keys.js";
 
 export type HandoffAction = "push" | "sync" | "merge" | "archive" | "kill";

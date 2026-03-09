@@ -11,8 +11,8 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkBackendHealth } from "@openhandoff/client";
-import type { AppConfig } from "@openhandoff/shared";
+import { checkBackendHealth } from "@sandbox-agent/factory-client";
+import type { AppConfig } from "@sandbox-agent/factory-shared";
 import { CLI_BUILD_ID } from "../build-id.js";
 
 const HEALTH_TIMEOUT_MS = 1_500;
@@ -39,10 +39,10 @@ function backendStateDir(): string {
 
   const xdgDataHome = process.env.XDG_DATA_HOME?.trim();
   if (xdgDataHome) {
-    return join(xdgDataHome, "openhandoff", "backend");
+    return join(xdgDataHome, "sandbox-agent-factory", "backend");
   }
 
-  return join(homedir(), ".local", "share", "openhandoff", "backend");
+  return join(homedir(), ".local", "share", "sandbox-agent-factory", "backend");
 }
 
 function backendPidPath(host: string, port: number): string {
@@ -214,7 +214,7 @@ function resolveLaunchSpec(host: string, port: number): LaunchSpec {
     command: "pnpm",
     args: [
       "--filter",
-      "@openhandoff/backend",
+      "@sandbox-agent/factory-backend",
       "exec",
       "bun",
       "src/index.ts",

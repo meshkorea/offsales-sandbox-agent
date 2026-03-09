@@ -27,7 +27,7 @@ describe("validateRemote", () => {
     mkdirSync(brokenRepoDir, { recursive: true });
     writeFileSync(resolve(brokenRepoDir, ".git"), "gitdir: /definitely/missing/worktree\n", "utf8");
     await execFileAsync("git", ["init", remoteRepoDir]);
-    await execFileAsync("git", ["-C", remoteRepoDir, "config", "user.name", "OpenHandoff Test"]);
+    await execFileAsync("git", ["-C", remoteRepoDir, "config", "user.name", "Factory Test"]);
     await execFileAsync("git", ["-C", remoteRepoDir, "config", "user.email", "test@example.com"]);
     writeFileSync(resolve(remoteRepoDir, "README.md"), "# test\n", "utf8");
     await execFileAsync("git", ["-C", remoteRepoDir, "add", "README.md"]);

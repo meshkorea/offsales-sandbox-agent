@@ -1,4 +1,4 @@
-import type { HandoffStatus, ProviderId } from "@openhandoff/shared";
+import type { HandoffStatus, ProviderId } from "@sandbox-agent/factory-shared";
 
 export interface HandoffCreatedEvent {
   workspaceId: string;

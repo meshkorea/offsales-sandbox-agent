@@ -27,7 +27,7 @@ import type {
   RepoRecord,
   SwitchResult,
   WorkspaceUseInput
-} from "@openhandoff/shared";
+} from "@sandbox-agent/factory-shared";
 import { getActorRuntimeContext } from "../context.js";
 import { getHandoff, getOrCreateHistory, getOrCreateProject, selfWorkspace } from "../handles.js";
 import { logActorWarning, resolveErrorMessage } from "../logging.js";

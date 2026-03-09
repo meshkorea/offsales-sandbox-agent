@@ -1,17 +1,17 @@
-name: openhandoff
+name: sandbox-agent-factory
 
 services:
   backend:
     build:
       context: ..
       dockerfile: factory/docker/backend.dev.Dockerfile
-    image: openhandoff-backend-dev
+    image: sandbox-agent-factory-backend-dev
     working_dir: /app
     environment:
       HF_BACKEND_HOST: "0.0.0.0"
       HF_BACKEND_PORT: "7741"
       HF_RIVET_MANAGER_PORT: "8750"
-      RIVETKIT_STORAGE_PATH: "/root/.local/share/openhandoff/rivetkit"
+      RIVETKIT_STORAGE_PATH: "/root/.local/share/sandbox-agent-factory/rivetkit"
       # Pass through credentials needed for agent execution + PR creation in dev/e2e.
       # Do not hardcode secrets; set these in your environment when starting compose.
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
@@ -32,21 +32,21 @@ services:
       - "8750:8750"
     volumes:
       - "..:/app"
-      # The linked RivetKit checkout resolves from factory packages to /handoff/rivet-checkout in-container.
-      - "../../../handoff/rivet-checkout:/handoff/rivet-checkout:ro"
+      # Override HF_RIVET_CHECKOUT_PATH when the linked Rivet workspace lives outside the default sibling checkout.
+      - "${HF_RIVET_CHECKOUT_PATH:-../../../handoff/rivet-checkout}:/handoff/rivet-checkout:ro"
       # Reuse the host Codex auth profile for local sandbox-agent Codex sessions in dev.
       - "${HOME}/.codex:/root/.codex"
       # Keep backend dependency installs Linux-native instead of using host node_modules.
-      - "openhandoff_backend_root_node_modules:/app/node_modules"
-      - "openhandoff_backend_backend_node_modules:/app/factory/packages/backend/node_modules"
-      - "openhandoff_backend_shared_node_modules:/app/factory/packages/shared/node_modules"
-      - "openhandoff_backend_persist_rivet_node_modules:/app/sdks/persist-rivet/node_modules"
-      - "openhandoff_backend_typescript_node_modules:/app/sdks/typescript/node_modules"
-      - "openhandoff_backend_pnpm_store:/root/.local/share/pnpm/store"
+      - "sandbox-agent-factory_backend_root_node_modules:/app/node_modules"
+      - "sandbox-agent-factory_backend_backend_node_modules:/app/factory/packages/backend/node_modules"
+      - "sandbox-agent-factory_backend_shared_node_modules:/app/factory/packages/shared/node_modules"
+      - "sandbox-agent-factory_backend_persist_rivet_node_modules:/app/sdks/persist-rivet/node_modules"
+      - "sandbox-agent-factory_backend_typescript_node_modules:/app/sdks/typescript/node_modules"
+      - "sandbox-agent-factory_backend_pnpm_store:/root/.local/share/pnpm/store"
       # Persist backend-managed local git clones across container restarts.
-      - "openhandoff_git_repos:/root/.local/share/openhandoff/repos"
+      - "sandbox-agent-factory_git_repos:/root/.local/share/sandbox-agent-factory/repos"
       # Persist RivetKit local storage across container restarts.
-      - "openhandoff_rivetkit_storage:/root/.local/share/openhandoff/rivetkit"
+      - "sandbox-agent-factory_rivetkit_storage:/root/.local/share/sandbox-agent-factory/rivetkit"
 
   frontend:
     build:
@@ -62,29 +62,29 @@ services:
       - "4173:4173"
     volumes:
       - "..:/app"
-      # Ensure logs in .openhandoff/ persist on the host even if we change source mounts later.
-      - "./.openhandoff:/app/factory/.openhandoff"
-      - "../../../handoff/rivet-checkout:/handoff/rivet-checkout:ro"
+      # Ensure logs in .sandbox-agent-factory/ persist on the host even if we change source mounts later.
+      - "./.sandbox-agent-factory:/app/factory/.sandbox-agent-factory"
+      - "${HF_RIVET_CHECKOUT_PATH:-../../../handoff/rivet-checkout}:/handoff/rivet-checkout:ro"
       # Use Linux-native workspace dependencies inside the container instead of host node_modules.
-      - "openhandoff_node_modules:/app/node_modules"
-      - "openhandoff_client_node_modules:/app/factory/packages/client/node_modules"
-      - "openhandoff_frontend_errors_node_modules:/app/factory/packages/frontend-errors/node_modules"
-      - "openhandoff_frontend_node_modules:/app/factory/packages/frontend/node_modules"
-      - "openhandoff_shared_node_modules:/app/factory/packages/shared/node_modules"
-      - "openhandoff_pnpm_store:/tmp/.local/share/pnpm/store"
+      - "sandbox-agent-factory_node_modules:/app/node_modules"
+      - "sandbox-agent-factory_client_node_modules:/app/factory/packages/client/node_modules"
+      - "sandbox-agent-factory_frontend_errors_node_modules:/app/factory/packages/frontend-errors/node_modules"
+      - "sandbox-agent-factory_frontend_node_modules:/app/factory/packages/frontend/node_modules"
+      - "sandbox-agent-factory_shared_node_modules:/app/factory/packages/shared/node_modules"
+      - "sandbox-agent-factory_pnpm_store:/tmp/.local/share/pnpm/store"
 
 volumes:
-  openhandoff_backend_root_node_modules: {}
-  openhandoff_backend_backend_node_modules: {}
-  openhandoff_backend_shared_node_modules: {}
-  openhandoff_backend_persist_rivet_node_modules: {}
-  openhandoff_backend_typescript_node_modules: {}
-  openhandoff_backend_pnpm_store: {}
-  openhandoff_git_repos: {}
-  openhandoff_rivetkit_storage: {}
-  openhandoff_node_modules: {}
-  openhandoff_client_node_modules: {}
-  openhandoff_frontend_errors_node_modules: {}
-  openhandoff_frontend_node_modules: {}
-  openhandoff_shared_node_modules: {}
-  openhandoff_pnpm_store: {}
+  sandbox-agent-factory_backend_root_node_modules: {}
+  sandbox-agent-factory_backend_backend_node_modules: {}
+  sandbox-agent-factory_backend_shared_node_modules: {}
+  sandbox-agent-factory_backend_persist_rivet_node_modules: {}
+  sandbox-agent-factory_backend_typescript_node_modules: {}
+  sandbox-agent-factory_backend_pnpm_store: {}
+  sandbox-agent-factory_git_repos: {}
+  sandbox-agent-factory_rivetkit_storage: {}
+  sandbox-agent-factory_node_modules: {}
+  sandbox-agent-factory_client_node_modules: {}
+  sandbox-agent-factory_frontend_errors_node_modules: {}
+  sandbox-agent-factory_frontend_node_modules: {}
+  sandbox-agent-factory_shared_node_modules: {}
+  sandbox-agent-factory_pnpm_store: {}

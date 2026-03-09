@@ -12,9 +12,9 @@ import type {
   HandoffWorkbenchSnapshot,
   HandoffWorkbenchTabInput,
   HandoffWorkbenchUpdateDraftInput,
-} from "@openhandoff/shared";
+} from "@sandbox-agent/factory-shared";
 import type { BackendClient } from "./backend-client.js";
-import { getSharedMockWorkbenchClient } from "./mock/workbench-client.js";
+import { getMockWorkbenchClient } from "./mock/workbench-client.js";
 import { createRemoteWorkbenchClient } from "./remote/workbench-client.js";
 
 export type HandoffWorkbenchClientMode = "mock" | "remote";
@@ -34,6 +34,7 @@ export interface HandoffWorkbenchClient {
   renameBranch(input: HandoffWorkbenchRenameInput): Promise<void>;
   archiveHandoff(input: HandoffWorkbenchSelectInput): Promise<void>;
   publishPr(input: HandoffWorkbenchSelectInput): Promise<void>;
+  pushHandoff(input: HandoffWorkbenchSelectInput): Promise<void>;
   revertFile(input: HandoffWorkbenchDiffInput): Promise<void>;
   updateDraft(input: HandoffWorkbenchUpdateDraftInput): Promise<void>;
   sendMessage(input: HandoffWorkbenchSendMessageInput): Promise<void>;
@@ -49,7 +50,7 @@ export function createHandoffWorkbenchClient(
   options: CreateHandoffWorkbenchClientOptions,
 ): HandoffWorkbenchClient {
   if (options.mode === "mock") {
-    return getSharedMockWorkbenchClient();
+    return getMockWorkbenchClient(options.workspaceId);
   }
 
   if (!options.backend) {

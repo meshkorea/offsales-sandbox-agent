@@ -1,6 +1,6 @@
 import { actor, queue } from "rivetkit";
 import { workflow } from "rivetkit/workflow";
-import type { ProviderId } from "@openhandoff/shared";
+import type { ProviderId } from "@sandbox-agent/factory-shared";
 import { getHandoff, getSandboxInstance, selfHandoffStatusSync } from "../handles.js";
 import { logActorWarning, resolveErrorMessage, resolveErrorStack } from "../logging.js";
 import { type PollingControlState, runWorkflowPollingLoop } from "../polling.js";

@@ -2,14 +2,14 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { AgentTypeSchema, CreateHandoffInputSchema, type HandoffRecord } from "@openhandoff/shared";
+import { AgentTypeSchema, CreateHandoffInputSchema, type HandoffRecord } from "@sandbox-agent/factory-shared";
 import {
   readBackendMetadata,
   createBackendClientFromConfig,
   formatRelativeAge,
   groupHandoffStatus,
   summarizeHandoffs
-} from "@openhandoff/client";
+} from "@sandbox-agent/factory-client";
 import {
   ensureBackendRunning,
   getBackendStatus,

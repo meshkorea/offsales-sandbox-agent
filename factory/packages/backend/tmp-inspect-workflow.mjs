@@ -3,7 +3,7 @@ import { TO_CLIENT_VERSIONED, decodeWorkflowHistoryTransport } from "rivetkit/in
 import util from "node:util";
 
 const actorId = "2e443238457137bf";
-const db = new Database(`/root/.local/share/openhandoff/rivetkit/databases/${actorId}.db`, { readonly: true });
+const db = new Database(`/root/.local/share/sandbox-agent-factory/rivetkit/databases/${actorId}.db`, { readonly: true });
 const row = db.query("SELECT value FROM kv WHERE hex(key) = ?").get("03");
 const token = new TextDecoder().decode(row.value);
 

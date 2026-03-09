@@ -14,6 +14,8 @@ import {
 } from "./ui";
 
 export const Sidebar = memo(function Sidebar({
+  workspaceId,
+  repoCount,
   projects,
   activeId,
   onSelect,
@@ -22,6 +24,8 @@ export const Sidebar = memo(function Sidebar({
   onRenameHandoff,
   onRenameBranch,
 }: {
+  workspaceId: string;
+  repoCount: number;
   projects: ProjectSection[];
   activeId: string;
   onSelect: (id: string) => void;
@@ -37,11 +41,17 @@ export const Sidebar = memo(function Sidebar({
   return (
     <SPanel>
       <PanelHeaderBar>
-        <LabelSmall color={theme.colors.contentPrimary} $style={{ fontWeight: 600, flex: 1, fontSize: "13px" }}>
-          Handoffs
-        </LabelSmall>
+        <div className={css({ flex: 1, minWidth: 0 })}>
+          <LabelSmall color={theme.colors.contentPrimary} $style={{ fontWeight: 600, fontSize: "13px" }}>
+            {workspaceId}
+          </LabelSmall>
+          <LabelXSmall color={theme.colors.contentTertiary}>
+            {repoCount} {repoCount === 1 ? "repo" : "repos"}
+          </LabelXSmall>
+        </div>
         <button
           onClick={onCreate}
+          aria-label="Create handoff"
           className={css({
             all: "unset",
             width: "24px",
@@ -92,9 +102,21 @@ export const Sidebar = memo(function Sidebar({
                     {project.label}
                   </LabelSmall>
                   <LabelXSmall color={theme.colors.contentTertiary}>
-                    {formatRelativeAge(project.updatedAtMs)}
+                    {project.updatedAtMs > 0 ? formatRelativeAge(project.updatedAtMs) : "No handoffs"}
                   </LabelXSmall>
                 </div>
+
+                {project.handoffs.length === 0 ? (
+                  <div
+                    className={css({
+                      padding: "0 12px 10px 34px",
+                      color: theme.colors.contentTertiary,
+                      fontSize: "12px",
+                    })}
+                  >
+                    No handoffs yet
+                  </div>
+                ) : null}
 
                 {project.handoffs.slice(0, visibleCount).map((handoff) => {
             const isActive = handoff.id === activeId;

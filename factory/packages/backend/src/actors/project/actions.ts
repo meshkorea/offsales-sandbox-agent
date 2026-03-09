@@ -10,7 +10,7 @@ import type {
   RepoOverview,
   RepoStackAction,
   RepoStackActionResult
-} from "@openhandoff/shared";
+} from "@sandbox-agent/factory-shared";
 import { getActorRuntimeContext } from "../context.js";
 import {
   getHandoff,
@@ -21,7 +21,7 @@ import {
   selfProject
 } from "../handles.js";
 import { isActorNotFoundError, logActorWarning, resolveErrorMessage } from "../logging.js";
-import { openhandoffRepoClonePath } from "../../services/openhandoff-paths.js";
+import { factoryRepoClonePath } from "../../services/factory-paths.js";
 import { expectQueueResponse } from "../../services/queue.js";
 import { withRepoGitLock } from "../../services/repo-git-lock.js";
 import { branches, handoffIndex, prCache, repoMeta } from "./db/schema.js";
@@ -125,7 +125,7 @@ export function projectWorkflowQueueName(name: ProjectQueueName): ProjectQueueNa
 
 async function ensureLocalClone(c: any, remoteUrl: string): Promise<string> {
   const { config, driver } = getActorRuntimeContext();
-  const localPath = openhandoffRepoClonePath(config, c.state.workspaceId, c.state.repoId);
+  const localPath = factoryRepoClonePath(config, c.state.workspaceId, c.state.repoId);
   await driver.git.ensureCloned(remoteUrl, localPath);
   c.state.localPath = localPath;
   return localPath;

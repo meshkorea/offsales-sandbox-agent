@@ -140,7 +140,7 @@ Captured the guidance here so future actor work doesn’t mix the two models arb
 
 ### What I Was Working On
 
-Standardizing SQLite + Drizzle setup for RivetKit actors (migration-per-actor) to match the `rivet/examples/sandbox` pattern while keeping the OpenHandoff repo TypeScript-only.
+Standardizing SQLite + Drizzle setup for RivetKit actors (migration-per-actor) to match the `rivet/examples/sandbox` pattern while keeping the Sandbox Agent Factory repo TypeScript-only.
 
 ### Friction / Issue
 
@@ -174,7 +174,7 @@ Adopt these concrete repo conventions:
 
 - Per-actor migration tracking tables:
 - Even if all actors share one SQLite file, each actor must use its own migration table, e.g.
-  - `__openhandoff_migrations_<migrationNamespace>`
+  - `__factory_migrations_<migrationNamespace>`
   - `migrationNamespace` should be stable and sanitized to `[a-z0-9_]`.
 
 - Provider wiring pattern inside an actor:
@@ -195,7 +195,7 @@ Captured the exact folder layout + script workflow so future actor DB work can f
 
 ### What I Was Working On
 
-Diagnosing `StepExhaustedError` surfacing as `unknown error` during step replay (affecting OpenHandoff Daytona `hf create`).
+Diagnosing `StepExhaustedError` surfacing as `unknown error` during step replay (affecting Sandbox Agent Factory Daytona `hf create`).
 
 ### Friction / Issue
 
@@ -203,7 +203,7 @@ The workflow engine treated “step completed” as `stepData.output !== undefin
 
 ### Attempted Fix / Workaround
 
-- None in OpenHandoff; this is a workflow-engine correctness bug.
+- None in Sandbox Agent Factory; this is a workflow-engine correctness bug.
 
 ### Outcome
 

@@ -1,4 +1,4 @@
-import type { AppConfig } from "@openhandoff/shared";
+import type { AppConfig } from "@sandbox-agent/factory-shared";
 import type { BackendDriver } from "../driver.js";
 import type { NotificationService } from "../notifications/index.js";
 import type { ProviderRegistry } from "../providers/index.js";

@@ -15,6 +15,49 @@ import {
 import { type ContextMenuItem, ContextMenuOverlay, PanelHeaderBar, SPanel, ScrollBody, useContextMenu } from "./ui";
 import { type FileTreeNode, type Handoff, diffTabId } from "./view-model";
 
+const StatusCard = memo(function StatusCard({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  const [css, theme] = useStyletron();
+
+  return (
+    <div
+      className={css({
+        padding: "10px 12px",
+        borderRadius: "8px",
+        backgroundColor: theme.colors.backgroundSecondary,
+        border: `1px solid ${theme.colors.borderOpaque}`,
+        display: "flex",
+        flexDirection: "column",
+        gap: "4px",
+      })}
+    >
+      <LabelSmall color={theme.colors.contentTertiary} $style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+        {label}
+      </LabelSmall>
+      <div
+        className={css({
+          color: theme.colors.contentPrimary,
+          fontSize: "12px",
+          fontWeight: 600,
+          fontFamily: mono ? '"IBM Plex Mono", monospace' : undefined,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        })}
+      >
+        {value}
+      </div>
+    </div>
+  );
+});
+
 const FileTree = memo(function FileTree({
   nodes,
   depth,
@@ -106,6 +149,7 @@ export const RightSidebar = memo(function RightSidebar({
   activeTabId,
   onOpenDiff,
   onArchive,
+  onPush,
   onRevertFile,
   onPublishPr,
 }: {
@@ -113,6 +157,7 @@ export const RightSidebar = memo(function RightSidebar({
   activeTabId: string | null;
   onOpenDiff: (path: string) => void;
   onArchive: () => void;
+  onPush: () => void;
   onRevertFile: (path: string) => void;
   onPublishPr: () => void;
 }) {
@@ -121,7 +166,12 @@ export const RightSidebar = memo(function RightSidebar({
   const contextMenu = useContextMenu();
   const changedPaths = useMemo(() => new Set(handoff.fileChanges.map((file) => file.path)), [handoff.fileChanges]);
   const isTerminal = handoff.status === "archived";
+  const canPush = !isTerminal && Boolean(handoff.branch);
   const pullRequestUrl = handoff.pullRequest != null ? `https://github.com/${handoff.repoName}/pull/${handoff.pullRequest.number}` : null;
+  const pullRequestStatus =
+    handoff.pullRequest == null
+      ? "Not published"
+      : `#${handoff.pullRequest.number} ${handoff.pullRequest.status === "draft" ? "Draft" : "Ready"}`;
 
   const copyFilePath = useCallback(async (path: string) => {
     try {
@@ -183,6 +233,7 @@ export const RightSidebar = memo(function RightSidebar({
               {pullRequestUrl ? "Open PR" : "Publish PR"}
             </button>
             <button
+              onClick={canPush ? onPush : undefined}
               className={css({
                 all: "unset",
                 display: "flex",
@@ -192,8 +243,9 @@ export const RightSidebar = memo(function RightSidebar({
                 borderRadius: "8px",
                 fontSize: "12px",
                 fontWeight: 500,
-                color: "#e4e4e7",
-                cursor: "pointer",
+                color: canPush ? "#e4e4e7" : theme.colors.contentTertiary,
+                cursor: canPush ? "pointer" : "not-allowed",
+                opacity: canPush ? 1 : 0.5,
                 transition: "all 200ms ease",
                 ":hover": { backgroundColor: "rgba(255, 255, 255, 0.06)", color: "#ffffff" },
               })}
@@ -303,6 +355,10 @@ export const RightSidebar = memo(function RightSidebar({
       </div>
 
       <ScrollBody>
+        <div className={css({ padding: "12px 14px 0", display: "grid", gap: "8px" })}>
+          <StatusCard label="Branch" value={handoff.branch ?? "Not created"} mono />
+          <StatusCard label="Pull Request" value={pullRequestStatus} />
+        </div>
         {rightTab === "changes" ? (
           <div className={css({ padding: "10px 14px", display: "flex", flexDirection: "column", gap: "2px" })}>
             {handoff.fileChanges.length === 0 ? (

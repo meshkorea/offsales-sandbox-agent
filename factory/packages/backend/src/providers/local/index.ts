@@ -77,7 +77,7 @@ export class LocalProvider implements SandboxProvider {
 
   private rootDir(): string {
     return expandHome(
-      this.config.rootDir?.trim() || "~/.local/share/openhandoff/local-sandboxes",
+      this.config.rootDir?.trim() || "~/.local/share/sandbox-agent-factory/local-sandboxes",
     );
   }
 

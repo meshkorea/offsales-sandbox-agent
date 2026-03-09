@@ -26,7 +26,7 @@ import type {
   WorkbenchAgentTab as AgentTab,
   WorkbenchHandoff as Handoff,
   WorkbenchTranscriptEvent as TranscriptEvent,
-} from "@openhandoff/shared";
+} from "@sandbox-agent/factory-shared";
 import type { HandoffWorkbenchClient } from "../workbench-client.js";
 
 function buildTranscriptEvent(params: {
@@ -48,9 +48,13 @@ function buildTranscriptEvent(params: {
 }
 
 class MockWorkbenchStore implements HandoffWorkbenchClient {
-  private snapshot = buildInitialMockLayoutViewModel();
+  private snapshot: HandoffWorkbenchSnapshot;
   private listeners = new Set<() => void>();
   private pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  constructor(workspaceId: string) {
+    this.snapshot = buildInitialMockLayoutViewModel(workspaceId);
+  }
 
   getSnapshot(): HandoffWorkbenchSnapshot {
     return this.snapshot;
@@ -103,6 +107,17 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
       ...current,
       handoffs: [nextHandoff, ...current.handoffs],
     }));
+
+    const task = input.task.trim();
+    if (task) {
+      await this.sendMessage({
+        handoffId: id,
+        tabId,
+        text: task,
+        attachments: [],
+      });
+    }
+
     return { handoffId: id, tabId };
   }
 
@@ -146,6 +161,13 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
       ...handoff,
       updatedAtMs: nowMs(),
       pullRequest: { number: nextPrNumber, status: "ready" },
+    }));
+  }
+
+  async pushHandoff(input: HandoffWorkbenchSelectInput): Promise<void> {
+    this.updateHandoff(input.handoffId, (handoff) => ({
+      ...handoff,
+      updatedAtMs: nowMs(),
     }));
   }
 
@@ -195,8 +217,11 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
 
     this.updateHandoff(input.handoffId, (currentHandoff) => {
       const isFirstOnHandoff = currentHandoff.status === "new";
-      const newTitle = isFirstOnHandoff ? (text.length > 50 ? `${text.slice(0, 47)}...` : text) : currentHandoff.title;
-      const newBranch = isFirstOnHandoff ? `feat/${slugify(newTitle)}` : currentHandoff.branch;
+      const synthesizedTitle = text.length > 50 ? `${text.slice(0, 47)}...` : text;
+      const newTitle =
+        isFirstOnHandoff && currentHandoff.title === "New Handoff" ? synthesizedTitle : currentHandoff.title;
+      const newBranch =
+        isFirstOnHandoff && !currentHandoff.branch ? `feat/${slugify(synthesizedTitle)}` : currentHandoff.branch;
       const userMessageLines = [text, ...input.attachments.map((attachment) => `@ ${attachment.filePath}:${attachment.lineNumber}`)];
       const userEvent = buildTranscriptEvent({
         sessionId: input.tabId,
@@ -435,11 +460,13 @@ function candidateEventIndex(handoff: Handoff, tabId: string): number {
   return (tab?.transcript.length ?? 0) + 1;
 }
 
-let sharedMockWorkbenchClient: HandoffWorkbenchClient | null = null;
+const mockWorkbenchClients = new Map<string, HandoffWorkbenchClient>();
 
-export function getSharedMockWorkbenchClient(): HandoffWorkbenchClient {
-  if (!sharedMockWorkbenchClient) {
-    sharedMockWorkbenchClient = new MockWorkbenchStore();
+export function getMockWorkbenchClient(workspaceId = "default"): HandoffWorkbenchClient {
+  let client = mockWorkbenchClients.get(workspaceId);
+  if (!client) {
+    client = new MockWorkbenchStore(workspaceId);
+    mockWorkbenchClients.set(workspaceId, client);
   }
-  return sharedMockWorkbenchClient;
+  return client;
 }

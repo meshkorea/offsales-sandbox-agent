@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { AgentType, HandoffRecord, HandoffSummary, RepoBranchRecord, RepoOverview, RepoStackAction } from "@openhandoff/shared";
-import { groupHandoffStatus, type SandboxSessionEventRecord } from "@openhandoff/client";
+import type { AgentType, HandoffRecord, HandoffSummary, RepoBranchRecord, RepoOverview, RepoStackAction } from "@sandbox-agent/factory-shared";
+import type { SandboxSessionEventRecord } from "@sandbox-agent/factory-client";
+import { groupHandoffStatus } from "@sandbox-agent/factory-client/view-model";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Button } from "baseui/button";

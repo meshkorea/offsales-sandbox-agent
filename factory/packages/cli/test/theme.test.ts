@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { ConfigSchema, type AppConfig } from "@openhandoff/shared";
+import { ConfigSchema, type AppConfig } from "@sandbox-agent/factory-shared";
 import { resolveTuiTheme } from "../src/theme.js";
 
 function withEnv(key: string, value: string | undefined): void {
@@ -25,7 +25,7 @@ describe("resolveTuiTheme", () => {
     backend: {
       host: "127.0.0.1",
       port: 7741,
-      dbPath: "~/.local/share/openhandoff/handoff.db",
+      dbPath: "~/.local/share/sandbox-agent-factory/handoff.db",
       opencode_poll_interval: 2,
       github_poll_interval: 30,
       backup_interval_secs: 3600,
@@ -98,7 +98,7 @@ describe("resolveTuiTheme", () => {
     expect(resolution.theme.background).toBe("#0a0a0a");
   });
 
-  it("prefers explicit openhandoff theme override from config", () => {
+  it("prefers explicit factory theme override from config", () => {
     tempDir = mkdtempSync(join(tmpdir(), "hf-theme-test-"));
     withEnv("XDG_STATE_HOME", join(tempDir, "state"));
     withEnv("XDG_CONFIG_HOME", join(tempDir, "config"));
@@ -107,6 +107,6 @@ describe("resolveTuiTheme", () => {
     const resolution = resolveTuiTheme(config, tempDir);
 
     expect(resolution.name).toBe("opencode-default");
-    expect(resolution.source).toBe("openhandoff config");
+    expect(resolution.source).toBe("factory config");
   });
 });

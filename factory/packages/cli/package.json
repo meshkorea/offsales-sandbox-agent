@@ -1,5 +1,5 @@
 {
-  "name": "@openhandoff/cli",
+  "name": "@sandbox-agent/factory-cli",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -16,8 +16,8 @@
   "dependencies": {
     "@iarna/toml": "^2.2.5",
     "@opentui/core": "^0.1.77",
-    "@openhandoff/client": "workspace:*",
-    "@openhandoff/shared": "workspace:*",
+    "@sandbox-agent/factory-client": "workspace:*",
+    "@sandbox-agent/factory-shared": "workspace:*",
     "zod": "^4.1.5"
   },
   "devDependencies": {

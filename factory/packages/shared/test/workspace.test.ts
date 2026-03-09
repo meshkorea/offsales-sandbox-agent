@@ -8,7 +8,7 @@ const cfg: AppConfig = ConfigSchema.parse({
   backend: {
     host: "127.0.0.1",
     port: 7741,
-    dbPath: "~/.local/share/openhandoff/handoff.db",
+    dbPath: "~/.local/share/sandbox-agent-factory/handoff.db",
     opencode_poll_interval: 2,
     github_poll_interval: 30,
     backup_interval_secs: 3600,

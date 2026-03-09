@@ -20,7 +20,7 @@ function locationToNames(entry, names) {
 }
 
 for (const t of targets) {
-  const db = new Database(`/root/.local/share/openhandoff/rivetkit/databases/${t.actorId}.db`, { readonly: true });
+  const db = new Database(`/root/.local/share/sandbox-agent-factory/rivetkit/databases/${t.actorId}.db`, { readonly: true });
   const token = new TextDecoder().decode(db.query("SELECT value FROM kv WHERE hex(key)=?").get("03").value);
 
   await new Promise((resolve, reject) => {

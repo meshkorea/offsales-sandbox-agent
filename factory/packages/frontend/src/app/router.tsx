@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { setFrontendErrorContext } from "@openhandoff/frontend-errors/client";
+import { useEffect, useSyncExternalStore } from "react";
+import { setFrontendErrorContext } from "@sandbox-agent/factory-frontend-errors/client";
 import {
   Navigate,
   Outlet,
@@ -10,7 +10,7 @@ import {
 } from "@tanstack/react-router";
 import { MockLayout } from "../components/mock-layout";
 import { defaultWorkspaceId } from "../lib/env";
-import { handoffWorkbenchClient } from "../lib/workbench";
+import { getHandoffWorkbenchClient, resolveRepoRouteHandoffId } from "../lib/workbench";
 
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -74,18 +74,27 @@ function WorkspaceLayoutRoute() {
 
 function WorkspaceRoute() {
   const { workspaceId } = workspaceRoute.useParams();
+  const client = getHandoffWorkbenchClient(workspaceId);
   useEffect(() => {
     setFrontendErrorContext({
       workspaceId,
       handoffId: undefined,
     });
   }, [workspaceId]);
-  return <MockLayout workspaceId={workspaceId} selectedHandoffId={null} selectedSessionId={null} />;
+  return (
+    <MockLayout
+      client={client}
+      workspaceId={workspaceId}
+      selectedHandoffId={null}
+      selectedSessionId={null}
+    />
+  );
 }
 
 function HandoffRoute() {
   const { workspaceId, handoffId } = handoffRoute.useParams();
   const { sessionId } = handoffRoute.useSearch();
+  const client = getHandoffWorkbenchClient(workspaceId);
   useEffect(() => {
     setFrontendErrorContext({
       workspaceId,
@@ -93,11 +102,24 @@ function HandoffRoute() {
       repoId: undefined,
     });
   }, [handoffId, workspaceId]);
-  return <MockLayout workspaceId={workspaceId} selectedHandoffId={handoffId} selectedSessionId={sessionId ?? null} />;
+  return (
+    <MockLayout
+      client={client}
+      workspaceId={workspaceId}
+      selectedHandoffId={handoffId}
+      selectedSessionId={sessionId ?? null}
+    />
+  );
 }
 
 function RepoRoute() {
   const { workspaceId, repoId } = repoRoute.useParams();
+  const client = getHandoffWorkbenchClient(workspaceId);
+  const snapshot = useSyncExternalStore(
+    client.subscribe.bind(client),
+    client.getSnapshot.bind(client),
+    client.getSnapshot.bind(client),
+  );
   useEffect(() => {
     setFrontendErrorContext({
       workspaceId,
@@ -105,9 +127,7 @@ function RepoRoute() {
       repoId,
     });
   }, [repoId, workspaceId]);
-  const activeHandoffId = handoffWorkbenchClient.getSnapshot().handoffs.find(
-    (handoff) => handoff.repoId === repoId,
-  )?.id;
+  const activeHandoffId = resolveRepoRouteHandoffId(snapshot, repoId);
   if (!activeHandoffId) {
     return (
       <Navigate

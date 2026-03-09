@@ -12,7 +12,7 @@ import type {
   WorkbenchParsedDiffLine as ParsedDiffLine,
   WorkbenchProjectSection as ProjectSection,
   WorkbenchTranscriptEvent as TranscriptEvent,
-} from "@openhandoff/shared";
+} from "@sandbox-agent/factory-shared";
 import { extractEventText } from "../../features/sessions/model";
 
 export type { ProjectSection };

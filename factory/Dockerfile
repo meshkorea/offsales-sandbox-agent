@@ -22,15 +22,15 @@ COPY packages/rivetkit-vendor/sqlite-vfs-win32-x64/package.json packages/rivetki
 COPY packages/rivetkit-vendor/runner/package.json packages/rivetkit-vendor/runner/package.json
 COPY packages/rivetkit-vendor/runner-protocol/package.json packages/rivetkit-vendor/runner-protocol/package.json
 COPY packages/rivetkit-vendor/virtual-websocket/package.json packages/rivetkit-vendor/virtual-websocket/package.json
-RUN pnpm fetch --frozen-lockfile --filter @openhandoff/backend...
+RUN pnpm fetch --frozen-lockfile --filter @sandbox-agent/factory-backend...
 
 FROM base AS build
 COPY --from=deps /pnpm/store /pnpm/store
 COPY . .
-RUN pnpm install --frozen-lockfile --prefer-offline --filter @openhandoff/backend...
-RUN pnpm --filter @openhandoff/shared build
-RUN pnpm --filter @openhandoff/backend build
-RUN pnpm --filter @openhandoff/backend deploy --prod --legacy /out
+RUN pnpm install --frozen-lockfile --prefer-offline --filter @sandbox-agent/factory-backend...
+RUN pnpm --filter @sandbox-agent/factory-shared build
+RUN pnpm --filter @sandbox-agent/factory-backend build
+RUN pnpm --filter @sandbox-agent/factory-backend deploy --prod --legacy /out
 
 FROM oven/bun:1.2 AS runtime
 ENV NODE_ENV=production

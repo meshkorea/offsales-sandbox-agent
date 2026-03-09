@@ -1,4 +1,4 @@
-import type { AppConfig } from "@openhandoff/shared";
+import type { AppConfig } from "@sandbox-agent/factory-shared";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -9,17 +9,17 @@ function expandPath(input: string): string {
   return input;
 }
 
-export function openhandoffDataDir(config: AppConfig): string {
+export function factoryDataDir(config: AppConfig): string {
   // Keep data collocated with the backend DB by default.
   const dbPath = expandPath(config.backend.dbPath);
   return resolve(dirname(dbPath));
 }
 
-export function openhandoffRepoClonePath(
+export function factoryRepoClonePath(
   config: AppConfig,
   workspaceId: string,
   repoId: string
 ): string {
-  return resolve(join(openhandoffDataDir(config), "repos", workspaceId, repoId));
+  return resolve(join(factoryDataDir(config), "repos", workspaceId, repoId));
 }
 

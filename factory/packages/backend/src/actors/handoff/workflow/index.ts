@@ -46,6 +46,8 @@ import {
 
 export { HANDOFF_QUEUE_NAMES, handoffWorkflowQueueName } from "./queue.js";
 
+const INIT_ENSURE_NAME_TIMEOUT_MS = 5 * 60_000;
+
 type HandoffQueueName = (typeof HANDOFF_QUEUE_NAMES)[number];
 
 type WorkflowHandler = (loopCtx: any, msg: { name: HandoffQueueName; body: any; complete: (response: unknown) => Promise<void> }) => Promise<void>;
@@ -75,7 +77,11 @@ const commandHandlers: Record<HandoffQueueName, WorkflowHandler> = {
     const body = msg.body;
     await loopCtx.removed("init-failed", "step");
     try {
-      await loopCtx.step("init-ensure-name", async () => initEnsureNameActivity(loopCtx));
+      await loopCtx.step({
+        name: "init-ensure-name",
+        timeout: INIT_ENSURE_NAME_TIMEOUT_MS,
+        run: async () => initEnsureNameActivity(loopCtx),
+      });
       await loopCtx.step("init-assert-name", async () => initAssertNameActivity(loopCtx));
 
       const sandbox = await loopCtx.step({

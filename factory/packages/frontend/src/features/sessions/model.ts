@@ -1,5 +1,5 @@
-import type { SandboxSessionEventRecord } from "@openhandoff/client";
-import type { SandboxSessionRecord } from "@openhandoff/client";
+import type { SandboxSessionEventRecord } from "@sandbox-agent/factory-client";
+import type { SandboxSessionRecord } from "@sandbox-agent/factory-client";
 
 function fromPromptArray(value: unknown): string | null {
   if (!Array.isArray(value)) {

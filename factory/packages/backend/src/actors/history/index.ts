@@ -2,7 +2,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { actor, queue } from "rivetkit";
 import { Loop, workflow } from "rivetkit/workflow";
-import type { HistoryEvent } from "@openhandoff/shared";
+import type { HistoryEvent } from "@sandbox-agent/factory-shared";
 import { selfHistory } from "../handles.js";
 import { historyDb } from "./db/db.js";
 import { events } from "./db/schema.js";

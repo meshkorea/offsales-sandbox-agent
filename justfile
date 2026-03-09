@@ -126,28 +126,28 @@ factory-check:
 [group('factory')]
 factory-dev:
 	pnpm install
-	mkdir -p factory/.openhandoff/logs
+	mkdir -p factory/.sandbox-agent-factory/logs
 	HF_DOCKER_UID="$(id -u)" HF_DOCKER_GID="$(id -g)" docker compose -f factory/compose.dev.yaml up --build --force-recreate -d
 
 [group('factory')]
 factory-preview:
 	pnpm install
-	mkdir -p factory/.openhandoff/logs
+	mkdir -p factory/.sandbox-agent-factory/logs
 	HF_DOCKER_UID="$(id -u)" HF_DOCKER_GID="$(id -g)" docker compose -f factory/compose.preview.yaml up --build --force-recreate -d
 
 [group('factory')]
 factory-frontend-dev host='127.0.0.1' port='4173' backend='http://127.0.0.1:7741/api/rivet':
 	pnpm install
-	VITE_HF_BACKEND_ENDPOINT="{{backend}}" pnpm --filter @openhandoff/frontend dev -- --host {{host}} --port {{port}}
+	VITE_HF_BACKEND_ENDPOINT="{{backend}}" pnpm --filter @sandbox-agent/factory-frontend dev -- --host {{host}} --port {{port}}
 
 [group('factory')]
 factory-dev-mock host='127.0.0.1' port='4173':
 	pnpm install
-	OPENHANDOFF_FRONTEND_CLIENT_MODE=mock pnpm --filter @openhandoff/frontend dev -- --host {{host}} --port {{port}}
+	FACTORY_FRONTEND_CLIENT_MODE=mock pnpm --filter @sandbox-agent/factory-frontend dev -- --host {{host}} --port {{port}}
 
 [group('factory')]
 factory-dev-turbo:
-	pnpm exec turbo run dev --parallel --filter=@openhandoff/*
+	pnpm exec turbo run dev --parallel --filter=@sandbox-agent/factory-*
 
 [group('factory')]
 factory-dev-down:
@@ -172,8 +172,8 @@ factory-format:
 [group('factory')]
 factory-backend-start host='127.0.0.1' port='7741':
 	pnpm install
-	pnpm --filter @openhandoff/backend build
-	pnpm --filter @openhandoff/backend start -- --host {{host}} --port {{port}}
+	pnpm --filter @sandbox-agent/factory-backend build
+	pnpm --filter @sandbox-agent/factory-backend start -- --host {{host}} --port {{port}}
 
 [group('factory')]
 factory-hf *ARGS:
@@ -181,7 +181,7 @@ factory-hf *ARGS:
 	@exit 1
 
 [group('factory')]
-factory-docker-build tag='openhandoff:local':
+factory-docker-build tag='sandbox-agent-factory:local':
 	docker build -f factory/Dockerfile -t {{tag}} .
 
 [group('factory')]

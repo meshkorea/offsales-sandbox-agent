@@ -12,7 +12,7 @@ import type {
   HandoffWorkbenchSnapshot,
   HandoffWorkbenchTabInput,
   HandoffWorkbenchUpdateDraftInput,
-} from "@openhandoff/shared";
+} from "@sandbox-agent/factory-shared";
 import type { BackendClient } from "../backend-client.js";
 import { groupWorkbenchProjects } from "../workbench-model.js";
 import type { HandoffWorkbenchClient } from "../workbench-client.js";
@@ -90,6 +90,11 @@ class RemoteWorkbenchStore implements HandoffWorkbenchClient {
 
   async publishPr(input: HandoffWorkbenchSelectInput): Promise<void> {
     await this.backend.publishWorkbenchPr(this.workspaceId, input);
+    await this.refresh();
+  }
+
+  async pushHandoff(input: HandoffWorkbenchSelectInput): Promise<void> {
+    await this.backend.runAction(this.workspaceId, input.handoffId, "push");
     await this.refresh();
   }
 

@@ -20,7 +20,7 @@ vi.mock("node:child_process", async () => {
 });
 
 import { ensureBackendRunning, parseBackendPort } from "../src/backend/manager.js";
-import { ConfigSchema, type AppConfig } from "@openhandoff/shared";
+import { ConfigSchema, type AppConfig } from "@sandbox-agent/factory-shared";
 
 function backendStateFile(baseDir: string, host: string, port: number, suffix: string): string {
   const sanitized = host
@@ -62,7 +62,7 @@ describe("backend manager", () => {
     backend: {
       host: "127.0.0.1",
       port: 7741,
-      dbPath: "~/.local/share/openhandoff/handoff.db",
+      dbPath: "~/.local/share/sandbox-agent-factory/handoff.db",
       opencode_poll_interval: 2,
       github_poll_interval: 30,
       backup_interval_secs: 3600,

@@ -1,11 +1,11 @@
-import type { AppConfig, HandoffRecord } from "@openhandoff/shared";
+import type { AppConfig, HandoffRecord } from "@sandbox-agent/factory-shared";
 import { spawnSync } from "node:child_process";
 import {
   createBackendClientFromConfig,
   filterHandoffs,
   formatRelativeAge,
   groupHandoffStatus
-} from "@openhandoff/client";
+} from "@sandbox-agent/factory-client";
 import { CLI_BUILD_ID } from "./build-id.js";
 import { resolveTuiTheme, type TuiTheme } from "./theme.js";
 
@@ -338,7 +338,7 @@ export async function runTui(config: AppConfig, workspaceId: string): Promise<vo
   const client = createBackendClientFromConfig(config);
   const renderer = await createCliRenderer({ exitOnCtrlC: false });
   const text = new TextRenderable(renderer, {
-    id: "openhandoff-switch",
+    id: "factory-switch",
     content: "Loading..."
   });
   text.fg = themeResolution.theme.text;

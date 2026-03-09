@@ -1,4 +1,4 @@
-import type { ProviderId } from "@openhandoff/shared";
+import type { ProviderId } from "@sandbox-agent/factory-shared";
 
 export interface ProviderCapabilities {
   remote: boolean;

@@ -17,7 +17,7 @@ function createRepo(): { repoPath: string } {
   const repoPath = mkdtempSync(join(tmpdir(), "hf-isolation-repo-"));
   execFileSync("git", ["init"], { cwd: repoPath });
   execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: repoPath });
-  execFileSync("git", ["config", "user.name", "OpenHandoff Test"], { cwd: repoPath });
+  execFileSync("git", ["config", "user.name", "Factory Test"], { cwd: repoPath });
   writeFileSync(join(repoPath, "README.md"), "hello\n", "utf8");
   execFileSync("git", ["add", "README.md"], { cwd: repoPath });
   execFileSync("git", ["commit", "-m", "init"], { cwd: repoPath });

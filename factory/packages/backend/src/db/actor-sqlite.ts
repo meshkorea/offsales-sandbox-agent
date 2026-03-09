@@ -29,7 +29,7 @@ export interface ActorSqliteDbOptions<TSchema extends Record<string, unknown>> {
   /**
    * Override base directory for per-actor SQLite files.
    *
-   * Default: `<cwd>/.openhandoff/backend/sqlite`
+   * Default: `<cwd>/.sandbox-agent-factory/backend/sqlite`
    */
   baseDir?: string;
 }
@@ -53,7 +53,7 @@ export function actorSqliteDb<TSchema extends Record<string, unknown>>(
     }) as unknown as DatabaseProvider<any & RawAccess>;
   }
 
-  const baseDir = options.baseDir ?? join(process.cwd(), ".openhandoff", "backend", "sqlite");
+  const baseDir = options.baseDir ?? join(process.cwd(), ".sandbox-agent-factory", "backend", "sqlite");
   const migrationsFolder = fileURLToPath(options.migrationsFolderUrl);
 
   return {

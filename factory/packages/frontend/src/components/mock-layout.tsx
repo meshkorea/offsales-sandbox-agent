@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { HandoffWorkbenchClient } from "@sandbox-agent/factory-client";
 import { useNavigate } from "@tanstack/react-router";
 
 import { DiffContent } from "./mock-layout/diff-content";
@@ -22,7 +23,6 @@ import {
   type Message,
   type ModelId,
 } from "./mock-layout/view-model";
-import { handoffWorkbenchClient } from "../lib/workbench";
 
 function firstAgentTabId(handoff: Handoff): string | null {
   return handoff.tabs[0]?.id ?? null;
@@ -63,6 +63,7 @@ function sanitizeActiveTabId(
 }
 
 const TranscriptPanel = memo(function TranscriptPanel({
+  client,
   handoff,
   activeTabId,
   lastAgentTabId,
@@ -72,6 +73,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
   onSetLastAgentTabId,
   onSetOpenDiffs,
 }: {
+  client: HandoffWorkbenchClient;
   handoff: Handoff;
   activeTabId: string | null;
   lastAgentTabId: string | null;
@@ -172,12 +174,12 @@ const TranscriptPanel = memo(function TranscriptPanel({
       return;
     }
 
-    void handoffWorkbenchClient.setSessionUnread({
+    void client.setSessionUnread({
       handoffId: handoff.id,
       tabId: activeAgentTab.id,
       unread: false,
     });
-  }, [activeAgentTab?.id, activeAgentTab?.unread, handoff.id]);
+  }, [activeAgentTab?.id, activeAgentTab?.unread, client, handoff.id]);
 
   const startEditingField = useCallback((field: "title" | "branch", value: string) => {
     setEditingField(field);
@@ -197,13 +199,13 @@ const TranscriptPanel = memo(function TranscriptPanel({
       }
 
       if (field === "title") {
-        void handoffWorkbenchClient.renameHandoff({ handoffId: handoff.id, value });
+        void client.renameHandoff({ handoffId: handoff.id, value });
       } else {
-        void handoffWorkbenchClient.renameBranch({ handoffId: handoff.id, value });
+        void client.renameBranch({ handoffId: handoff.id, value });
       }
       setEditingField(null);
     },
-    [editValue, handoff.id],
+    [client, editValue, handoff.id],
   );
 
   const updateDraft = useCallback(
@@ -212,14 +214,14 @@ const TranscriptPanel = memo(function TranscriptPanel({
         return;
       }
 
-      void handoffWorkbenchClient.updateDraft({
+      void client.updateDraft({
         handoffId: handoff.id,
         tabId: promptTab.id,
         text: nextText,
         attachments: nextAttachments,
       });
     },
-    [handoff.id, promptTab],
+    [client, handoff.id, promptTab],
   );
 
   const sendMessage = useCallback(() => {
@@ -230,24 +232,24 @@ const TranscriptPanel = memo(function TranscriptPanel({
 
     onSetActiveTabId(promptTab.id);
     onSetLastAgentTabId(promptTab.id);
-    void handoffWorkbenchClient.sendMessage({
+    void client.sendMessage({
       handoffId: handoff.id,
       tabId: promptTab.id,
       text,
       attachments,
     });
-  }, [attachments, draft, handoff.id, onSetActiveTabId, onSetLastAgentTabId, promptTab]);
+  }, [attachments, client, draft, handoff.id, onSetActiveTabId, onSetLastAgentTabId, promptTab]);
 
   const stopAgent = useCallback(() => {
     if (!promptTab) {
       return;
     }
 
-    void handoffWorkbenchClient.stopAgent({
+    void client.stopAgent({
       handoffId: handoff.id,
       tabId: promptTab.id,
     });
-  }, [handoff.id, promptTab]);
+  }, [client, handoff.id, promptTab]);
 
   const switchTab = useCallback(
     (tabId: string) => {
@@ -257,7 +259,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
         onSetLastAgentTabId(tabId);
         const tab = handoff.tabs.find((candidate) => candidate.id === tabId);
         if (tab?.unread) {
-          void handoffWorkbenchClient.setSessionUnread({
+          void client.setSessionUnread({
             handoffId: handoff.id,
             tabId,
             unread: false,
@@ -266,14 +268,14 @@ const TranscriptPanel = memo(function TranscriptPanel({
         onSyncRouteSession(handoff.id, tabId);
       }
     },
-    [handoff.id, handoff.tabs, onSetActiveTabId, onSetLastAgentTabId, onSyncRouteSession],
+    [client, handoff.id, handoff.tabs, onSetActiveTabId, onSetLastAgentTabId, onSyncRouteSession],
   );
 
   const setTabUnread = useCallback(
     (tabId: string, unread: boolean) => {
-      void handoffWorkbenchClient.setSessionUnread({ handoffId: handoff.id, tabId, unread });
+      void client.setSessionUnread({ handoffId: handoff.id, tabId, unread });
     },
-    [handoff.id],
+    [client, handoff.id],
   );
 
   const startRenamingTab = useCallback(
@@ -305,13 +307,13 @@ const TranscriptPanel = memo(function TranscriptPanel({
       return;
     }
 
-    void handoffWorkbenchClient.renameSession({
+    void client.renameSession({
       handoffId: handoff.id,
       tabId: editingSessionTabId,
       title: trimmedName,
     });
     cancelTabRename();
-  }, [cancelTabRename, editingSessionName, editingSessionTabId, handoff.id]);
+  }, [cancelTabRename, client, editingSessionName, editingSessionTabId, handoff.id]);
 
   const closeTab = useCallback(
     (tabId: string) => {
@@ -326,9 +328,9 @@ const TranscriptPanel = memo(function TranscriptPanel({
       }
 
       onSyncRouteSession(handoff.id, nextTabId);
-      void handoffWorkbenchClient.closeTab({ handoffId: handoff.id, tabId });
+      void client.closeTab({ handoffId: handoff.id, tabId });
     },
-    [activeTabId, handoff.id, handoff.tabs, lastAgentTabId, onSetActiveTabId, onSetLastAgentTabId, onSyncRouteSession],
+    [activeTabId, client, handoff.id, handoff.tabs, lastAgentTabId, onSetActiveTabId, onSetLastAgentTabId, onSyncRouteSession],
   );
 
   const closeDiffTab = useCallback(
@@ -346,12 +348,12 @@ const TranscriptPanel = memo(function TranscriptPanel({
 
   const addTab = useCallback(() => {
     void (async () => {
-      const { tabId } = await handoffWorkbenchClient.addTab({ handoffId: handoff.id });
+      const { tabId } = await client.addTab({ handoffId: handoff.id });
       onSetLastAgentTabId(tabId);
       onSetActiveTabId(tabId);
       onSyncRouteSession(handoff.id, tabId);
     })();
-  }, [handoff.id, onSetActiveTabId, onSetLastAgentTabId, onSyncRouteSession]);
+  }, [client, handoff.id, onSetActiveTabId, onSetLastAgentTabId, onSyncRouteSession]);
 
   const changeModel = useCallback(
     (model: ModelId) => {
@@ -359,13 +361,13 @@ const TranscriptPanel = memo(function TranscriptPanel({
         throw new Error(`Unable to change model for handoff ${handoff.id} without an active prompt tab`);
       }
 
-      void handoffWorkbenchClient.changeModel({
+      void client.changeModel({
         handoffId: handoff.id,
         tabId: promptTab.id,
         model,
       });
     },
-    [handoff.id, promptTab],
+    [client, handoff.id, promptTab],
   );
 
   const addAttachment = useCallback(
@@ -551,17 +553,18 @@ const TranscriptPanel = memo(function TranscriptPanel({
 });
 
 interface MockLayoutProps {
+  client: HandoffWorkbenchClient;
   workspaceId: string;
   selectedHandoffId?: string | null;
   selectedSessionId?: string | null;
 }
 
-export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }: MockLayoutProps) {
+export function MockLayout({ client, workspaceId, selectedHandoffId, selectedSessionId }: MockLayoutProps) {
   const navigate = useNavigate();
   const viewModel = useSyncExternalStore(
-    handoffWorkbenchClient.subscribe.bind(handoffWorkbenchClient),
-    handoffWorkbenchClient.getSnapshot.bind(handoffWorkbenchClient),
-    handoffWorkbenchClient.getSnapshot.bind(handoffWorkbenchClient),
+    client.subscribe.bind(client),
+    client.getSnapshot.bind(client),
+    client.getSnapshot.bind(client),
   );
   const handoffs = viewModel.handoffs ?? [];
   const projects = viewModel.projects ?? [];
@@ -668,7 +671,7 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
 
       const title = window.prompt("Optional handoff title", "")?.trim() || undefined;
       const branch = window.prompt("Optional branch name", "")?.trim() || undefined;
-      const { handoffId, tabId } = await handoffWorkbenchClient.createHandoff({
+      const { handoffId, tabId } = await client.createHandoff({
         repoId,
         task,
         model: "gpt-4o",
@@ -684,7 +687,7 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
         search: { sessionId: tabId ?? undefined },
       });
     })();
-  }, [activeHandoff?.repoId, navigate, viewModel.repos, workspaceId]);
+  }, [activeHandoff?.repoId, client, navigate, viewModel.repos, workspaceId]);
 
   const openDiffTab = useCallback(
     (path: string) => {
@@ -726,8 +729,8 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
   );
 
   const markHandoffUnread = useCallback((id: string) => {
-    void handoffWorkbenchClient.markHandoffUnread({ handoffId: id });
-  }, []);
+    void client.markHandoffUnread({ handoffId: id });
+  }, [client]);
 
   const renameHandoff = useCallback(
     (id: string) => {
@@ -746,9 +749,9 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
         return;
       }
 
-      void handoffWorkbenchClient.renameHandoff({ handoffId: id, value: trimmedTitle });
+      void client.renameHandoff({ handoffId: id, value: trimmedTitle });
     },
-    [handoffs],
+    [client, handoffs],
   );
 
   const renameBranch = useCallback(
@@ -768,24 +771,31 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
         return;
       }
 
-      void handoffWorkbenchClient.renameBranch({ handoffId: id, value: trimmedBranch });
+      void client.renameBranch({ handoffId: id, value: trimmedBranch });
     },
-    [handoffs],
+    [client, handoffs],
   );
 
   const archiveHandoff = useCallback(() => {
     if (!activeHandoff) {
       throw new Error("Cannot archive without an active handoff");
     }
-    void handoffWorkbenchClient.archiveHandoff({ handoffId: activeHandoff.id });
-  }, [activeHandoff]);
+    void client.archiveHandoff({ handoffId: activeHandoff.id });
+  }, [activeHandoff, client]);
 
   const publishPr = useCallback(() => {
     if (!activeHandoff) {
       throw new Error("Cannot publish PR without an active handoff");
     }
-    void handoffWorkbenchClient.publishPr({ handoffId: activeHandoff.id });
-  }, [activeHandoff]);
+    void client.publishPr({ handoffId: activeHandoff.id });
+  }, [activeHandoff, client]);
+
+  const pushHandoff = useCallback(() => {
+    if (!activeHandoff) {
+      throw new Error("Cannot push without an active handoff");
+    }
+    void client.pushHandoff({ handoffId: activeHandoff.id });
+  }, [activeHandoff, client]);
 
   const revertFile = useCallback(
     (path: string) => {
@@ -804,18 +814,20 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
             : current[activeHandoff.id] ?? null,
       }));
 
-      void handoffWorkbenchClient.revertFile({
+      void client.revertFile({
         handoffId: activeHandoff.id,
         path,
       });
     },
-    [activeHandoff, lastAgentTabIdByHandoff],
+    [activeHandoff, client, lastAgentTabIdByHandoff],
   );
 
   if (!activeHandoff) {
     return (
       <Shell>
         <Sidebar
+          workspaceId={workspaceId}
+          repoCount={viewModel.repos.length}
           projects={projects}
           activeId=""
           onSelect={selectHandoff}
@@ -879,6 +891,8 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
   return (
     <Shell>
       <Sidebar
+        workspaceId={workspaceId}
+        repoCount={viewModel.repos.length}
         projects={projects}
         activeId={activeHandoff.id}
         onSelect={selectHandoff}
@@ -888,6 +902,7 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
         onRenameBranch={renameBranch}
       />
       <TranscriptPanel
+        client={client}
         handoff={activeHandoff}
         activeTabId={activeTabId}
         lastAgentTabId={lastAgentTabId}
@@ -908,6 +923,7 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
         activeTabId={activeTabId}
         onOpenDiff={openDiffTab}
         onArchive={archiveHandoff}
+        onPush={pushHandoff}
         onRevertFile={revertFile}
         onPublishPr={publishPr}
       />

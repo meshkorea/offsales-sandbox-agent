@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ConfigSchema } from "@openhandoff/shared";
+import { ConfigSchema } from "@sandbox-agent/factory-shared";
 import { resolveWorkspace } from "../src/workspace/config.js";
 
 describe("cli workspace resolution", () => {
@@ -11,7 +11,7 @@ describe("cli workspace resolution", () => {
       backend: {
         host: "127.0.0.1",
         port: 7741,
-        dbPath: "~/.local/share/openhandoff/handoff.db",
+        dbPath: "~/.local/share/sandbox-agent-factory/handoff.db",
         opencode_poll_interval: 2,
         github_poll_interval: 30,
         backup_interval_secs: 3600,

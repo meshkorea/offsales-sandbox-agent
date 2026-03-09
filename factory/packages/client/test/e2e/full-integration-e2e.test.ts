@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import type { HistoryEvent, RepoOverview } from "@openhandoff/shared";
+import type { HistoryEvent, RepoOverview } from "@sandbox-agent/factory-shared";
 import { createBackendClient } from "../../src/backend-client.js";
 
 const RUN_FULL_E2E = process.env.HF_ENABLE_DAEMON_FULL_E2E === "1";

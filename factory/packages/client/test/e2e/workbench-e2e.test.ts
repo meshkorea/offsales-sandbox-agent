@@ -1,13 +1,15 @@
 import { execFile } from "node:child_process";
+import { mkdir, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import type {
+  HandoffRecord,
   HandoffWorkbenchSnapshot,
   WorkbenchAgentTab,
   WorkbenchHandoff,
   WorkbenchModelId,
   WorkbenchTranscriptEvent,
-} from "@openhandoff/shared";
+} from "@sandbox-agent/factory-shared";
 import { createBackendClient } from "../../src/backend-client.js";
 
 const RUN_WORKBENCH_E2E = process.env.HF_ENABLE_DAEMON_WORKBENCH_E2E === "1";
@@ -19,6 +21,10 @@ function requiredEnv(name: string): string {
     throw new Error(`Missing required env var: ${name}`);
   }
   return value;
+}
+
+function requiredRepoRemote(): string {
+  return process.env.HF_E2E_REPO_REMOTE?.trim() || requiredEnv("HF_E2E_GITHUB_REPO");
 }
 
 function workbenchModelEnv(name: string, fallback: WorkbenchModelId): WorkbenchModelId {
@@ -38,14 +44,66 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function seedSandboxFile(workspaceId: string, handoffId: string, filePath: string, content: string): Promise<void> {
-  const repoPath = `/root/.local/share/openhandoff/local-sandboxes/${workspaceId}/${handoffId}/repo`;
+function backendPortFromEndpoint(endpoint: string): string {
+  const url = new URL(endpoint);
+  if (url.port) {
+    return url.port;
+  }
+  return url.protocol === "https:" ? "443" : "80";
+}
+
+async function resolveBackendContainerName(endpoint: string): Promise<string | null> {
+  const explicit = process.env.HF_E2E_BACKEND_CONTAINER?.trim();
+  if (explicit) {
+    if (explicit.toLowerCase() === "host") {
+      return null;
+    }
+    return explicit;
+  }
+
+  const { stdout } = await execFileAsync("docker", [
+    "ps",
+    "--filter",
+    `publish=${backendPortFromEndpoint(endpoint)}`,
+    "--format",
+    "{{.Names}}",
+  ]);
+  const containerName = stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .find(Boolean);
+
+  return containerName ?? null;
+}
+
+function sandboxRepoPath(record: HandoffRecord): string {
+  const activeSandbox =
+    record.sandboxes.find((sandbox) => sandbox.sandboxId === record.activeSandboxId) ??
+    record.sandboxes.find((sandbox) => typeof sandbox.cwd === "string" && sandbox.cwd.length > 0);
+  const cwd = activeSandbox?.cwd?.trim();
+  if (!cwd) {
+    throw new Error(`No sandbox cwd is available for handoff ${record.handoffId}`);
+  }
+  return cwd;
+}
+
+async function seedSandboxFile(endpoint: string, record: HandoffRecord, filePath: string, content: string): Promise<void> {
+  const repoPath = sandboxRepoPath(record);
+  const containerName = await resolveBackendContainerName(endpoint);
+  if (!containerName) {
+    const directory =
+      filePath.includes("/") ? `${repoPath}/${filePath.slice(0, filePath.lastIndexOf("/"))}` : repoPath;
+    await mkdir(directory, { recursive: true });
+    await writeFile(`${repoPath}/${filePath}`, `${content}\n`, "utf8");
+    return;
+  }
+
   const script = [
     `cd ${JSON.stringify(repoPath)}`,
     `mkdir -p ${JSON.stringify(filePath.includes("/") ? filePath.slice(0, filePath.lastIndexOf("/")) : ".")}`,
     `printf '%s\\n' ${JSON.stringify(content)} > ${JSON.stringify(filePath)}`,
   ].join(" && ");
-  await execFileAsync("docker", ["exec", "openhandoff-backend-1", "bash", "-lc", script]);
+  await execFileAsync("docker", ["exec", containerName, "bash", "-lc", script]);
 }
 
 async function poll<T>(
@@ -166,7 +224,7 @@ describe("e2e(client): workbench flows", () => {
       const endpoint =
         process.env.HF_E2E_BACKEND_ENDPOINT?.trim() || "http://127.0.0.1:7741/api/rivet";
       const workspaceId = process.env.HF_E2E_WORKSPACE?.trim() || "default";
-      const repoRemote = requiredEnv("HF_E2E_GITHUB_REPO");
+      const repoRemote = requiredRepoRemote();
       const model = workbenchModelEnv("HF_E2E_MODEL", "gpt-4o");
       const runId = `wb-${Date.now().toString(36)}`;
       const expectedFile = `${runId}.txt`;
@@ -215,7 +273,8 @@ describe("e2e(client): workbench flows", () => {
       expect(findTab(initialCompleted, primaryTab.id).sessionId).toBeTruthy();
       expect(transcriptIncludesAgentText(findTab(initialCompleted, primaryTab.id).transcript, expectedInitialReply)).toBe(true);
 
-      await seedSandboxFile(workspaceId, created.handoffId, expectedFile, runId);
+      const detail = await client.getHandoff(workspaceId, created.handoffId);
+      await seedSandboxFile(endpoint, detail, expectedFile, runId);
 
       const fileSeeded = await poll(
         "seeded sandbox file reflected in workbench",

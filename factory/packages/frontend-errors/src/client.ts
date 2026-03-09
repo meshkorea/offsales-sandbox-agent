@@ -6,8 +6,8 @@ interface FrontendErrorCollectorGlobal {
 
 declare global {
   interface Window {
-    __OPENHANDOFF_FRONTEND_ERROR_COLLECTOR__?: FrontendErrorCollectorGlobal;
-    __OPENHANDOFF_FRONTEND_ERROR_CONTEXT__?: FrontendErrorContext;
+    __FACTORY_FRONTEND_ERROR_COLLECTOR__?: FrontendErrorCollectorGlobal;
+    __FACTORY_FRONTEND_ERROR_CONTEXT__?: FrontendErrorContext;
   }
 }
 
@@ -17,11 +17,11 @@ export function setFrontendErrorContext(context: FrontendErrorContext): void {
   }
 
   const nextContext = sanitizeContext(context);
-  window.__OPENHANDOFF_FRONTEND_ERROR_CONTEXT__ = {
-    ...(window.__OPENHANDOFF_FRONTEND_ERROR_CONTEXT__ ?? {}),
+  window.__FACTORY_FRONTEND_ERROR_CONTEXT__ = {
+    ...(window.__FACTORY_FRONTEND_ERROR_CONTEXT__ ?? {}),
     ...nextContext,
   };
-  window.__OPENHANDOFF_FRONTEND_ERROR_COLLECTOR__?.setContext(nextContext);
+  window.__FACTORY_FRONTEND_ERROR_COLLECTOR__?.setContext(nextContext);
 }
 
 function sanitizeContext(input: FrontendErrorContext): FrontendErrorContext {

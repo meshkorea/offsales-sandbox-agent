@@ -28,7 +28,7 @@ function ensureAskpassScript(): string {
     return cachedAskpassPath;
   }
 
-  const dir = mkdtempSync(resolve(tmpdir(), "openhandoff-git-askpass-"));
+  const dir = mkdtempSync(resolve(tmpdir(), "factory-git-askpass-"));
   const path = resolve(dir, "askpass.sh");
 
   // Git invokes $GIT_ASKPASS with the prompt string as argv[1]. Provide both username and password.

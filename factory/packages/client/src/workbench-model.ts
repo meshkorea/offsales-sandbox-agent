@@ -12,7 +12,7 @@ import type {
   WorkbenchProjectSection,
   WorkbenchRepo,
   WorkbenchTranscriptEvent as TranscriptEvent,
-} from "@openhandoff/shared";
+} from "@sandbox-agent/factory-shared";
 
 export const MODEL_GROUPS: ModelGroup[] = [
   {
@@ -913,7 +913,7 @@ export function buildInitialHandoffs(): Handoff[] {
   ];
 }
 
-export function buildInitialMockLayoutViewModel(): HandoffWorkbenchSnapshot {
+export function buildInitialMockLayoutViewModel(workspaceId = "default"): HandoffWorkbenchSnapshot {
   const repos: WorkbenchRepo[] = [
     { id: "acme-backend", label: "acme/backend" },
     { id: "acme-frontend", label: "acme/frontend" },
@@ -921,7 +921,7 @@ export function buildInitialMockLayoutViewModel(): HandoffWorkbenchSnapshot {
   ];
   const handoffs = buildInitialHandoffs();
   return {
-    workspaceId: "default",
+    workspaceId,
     repos,
     projects: groupWorkbenchProjects(repos, handoffs),
     handoffs,
@@ -960,6 +960,5 @@ export function groupWorkbenchProjects(repos: WorkbenchRepo[], handoffs: Handoff
       updatedAtMs:
         project.handoffs.length > 0 ? Math.max(...project.handoffs.map((handoff) => handoff.updatedAtMs)) : project.updatedAtMs,
     }))
-    .filter((project) => project.handoffs.length > 0)
     .sort((a, b) => b.updatedAtMs - a.updatedAtMs);
 }

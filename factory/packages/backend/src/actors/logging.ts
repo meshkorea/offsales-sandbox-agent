@@ -27,5 +27,5 @@ export function logActorWarning(
     ...(context ?? {})
   };
   // eslint-disable-next-line no-console
-  console.warn("[openhandoff][actor:warn]", payload);
+  console.warn("[factory][actor:warn]", payload);
 }

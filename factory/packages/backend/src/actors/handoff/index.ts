@@ -10,7 +10,7 @@ import type {
   HandoffWorkbenchSendMessageInput,
   HandoffWorkbenchUpdateDraftInput,
   ProviderId
-} from "@openhandoff/shared";
+} from "@sandbox-agent/factory-shared";
 import { expectQueueResponse } from "../../services/queue.js";
 import { selfHandoff } from "../handles.js";
 import { handoffDb } from "./db/db.js";

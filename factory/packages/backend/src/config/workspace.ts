@@ -1,4 +1,4 @@
-import type { AppConfig } from "@openhandoff/shared";
+import type { AppConfig } from "@sandbox-agent/factory-shared";
 
 export function defaultWorkspace(config: AppConfig): string {
   const ws = config.workspace.default.trim();

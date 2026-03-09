@@ -1,5 +1,5 @@
 {
-  "name": "@openhandoff/frontend",
+  "name": "@sandbox-agent/factory-frontend",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,9 +10,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@openhandoff/client": "workspace:*",
-    "@openhandoff/frontend-errors": "workspace:*",
-    "@openhandoff/shared": "workspace:*",
+    "@sandbox-agent/factory-client": "workspace:*",
+    "@sandbox-agent/factory-frontend-errors": "workspace:*",
+    "@sandbox-agent/factory-shared": "workspace:*",
     "@tanstack/react-query": "^5.85.5",
     "@tanstack/react-router": "^1.132.23",
     "baseui": "^16.1.1",

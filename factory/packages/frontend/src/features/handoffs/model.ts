@@ -1,4 +1,4 @@
-import type { HandoffRecord } from "@openhandoff/shared";
+import type { HandoffRecord } from "@sandbox-agent/factory-shared";
 
 export interface RepoGroup {
   repoId: string;

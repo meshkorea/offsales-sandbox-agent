@@ -14,7 +14,7 @@ function decodeAscii(u8) {
 }
 
 for (const actorId of actorIds) {
-  const dbPath = `/root/.local/share/openhandoff/rivetkit/databases/${actorId}.db`;
+  const dbPath = `/root/.local/share/sandbox-agent-factory/rivetkit/databases/${actorId}.db`;
   const db = new Database(dbPath, { readonly: true });
 
   const wfStateRow = db.query("SELECT value FROM kv WHERE hex(key)=?").get("0715041501");

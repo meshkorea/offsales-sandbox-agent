@@ -1,4 +1,4 @@
-import type { AgentType } from "@openhandoff/shared";
+import type { AgentType } from "@sandbox-agent/factory-shared";
 import type {
   ListEventsRequest,
   ListPage,
@@ -144,7 +144,7 @@ export class SandboxAgentClient {
     const modeId = modeIdForAgent(normalized.agent ?? this.agent);
 
     // Codex defaults to a restrictive "read-only" preset in some environments.
-    // For OpenHandoff automation we need to allow edits + command execution + network
+    // For Sandbox Agent Factory automation we need to allow edits + command execution + network
     // access (git push / PR creation). Use full-access where supported.
     //
     // If the agent doesn't support session modes, ignore.

@@ -1,4 +1,4 @@
-import { createBackendClient } from "@openhandoff/client";
+import { createBackendClient } from "@sandbox-agent/factory-client/backend";
 import { backendEndpoint, defaultWorkspaceId } from "./env";
 
 export const backendClient = createBackendClient({
