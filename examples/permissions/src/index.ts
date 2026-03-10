@@ -9,7 +9,6 @@ import {
 
 const options = parseOptions();
 const agent = options.agent.trim().toLowerCase();
-const permissionMode = options.permissionMode.trim();
 const autoReply = parsePermissionReply(options.reply);
 const promptText =
   options.prompt?.trim() ||
@@ -32,9 +31,14 @@ try {
     : [];
   const modeOption = configOptions.find((option) => option.category === "mode");
   const availableModes = extractOptionValues(modeOption);
+  const mode =
+    options.mode?.trim() ||
+    (typeof modeOption?.currentValue === "string" ? modeOption.currentValue : "") ||
+    availableModes[0] ||
+    "";
 
   console.log(`Agent: ${agent}`);
-  console.log(`Permission mode: ${permissionMode}`);
+  console.log(`Mode: ${mode || "(default)"}`);
   if (availableModes.length > 0) {
     console.log(`Available modes: ${availableModes.join(", ")}`);
   }
@@ -48,7 +52,7 @@ try {
 
   const session = await sdk.createSession({
     agent,
-    permissionMode,
+    ...(mode ? { mode } : {}),
     sessionInit: {
       cwd: process.cwd(),
       mcpServers: [],
@@ -76,7 +80,7 @@ try {
 
 async function handlePermissionRequest(
   session: {
-    replyPermission(permissionId: string, reply: PermissionReply): Promise<void>;
+    respondPermission(permissionId: string, reply: PermissionReply): Promise<void>;
   },
   request: SessionPermissionRequest,
   auto: PermissionReply | null,
@@ -84,7 +88,7 @@ async function handlePermissionRequest(
 ): Promise<void> {
   const reply = auto ?? (await promptForReply(request, rl));
   console.log(`Permission ${reply}: ${request.toolCall.title ?? request.toolCall.toolCallId}`);
-  await session.replyPermission(request.id, reply);
+  await session.respondPermission(request.id, reply);
 }
 
 async function promptForReply(
@@ -163,7 +167,7 @@ function parsePermissionReply(value: string | undefined): PermissionReply | null
 
 function parseOptions(): {
   agent: string;
-  permissionMode: string;
+  mode?: string;
   prompt?: string;
   reply?: string;
 } {
@@ -172,16 +176,16 @@ function parseOptions(): {
   const program = new Command();
   program
     .name("permissions")
-    .description("Run a permissions example against an ACP agent session.")
+    .description("Run a permissions example against an agent session.")
     .requiredOption("--agent <agent>", "Agent to run, for example 'claude' or 'codex'")
-    .requiredOption("--permission-mode <mode>", "Permission mode to configure for the session")
+    .option("--mode <mode>", "Mode to configure for the session (uses agent default if omitted)")
     .option("--prompt <text>", "Prompt to send after the session starts")
     .option("--reply <reply>", "Automatically answer permission prompts with once, always, or reject");
 
   program.parse(normalizedArgv, { from: "user" });
   return program.opts<{
     agent: string;
-    permissionMode: string;
+    mode?: string;
     prompt?: string;
     reply?: string;
   }>();

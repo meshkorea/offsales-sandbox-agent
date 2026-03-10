@@ -22,7 +22,7 @@
     "drizzle-orm": "^0.44.5",
     "hono": "^4.11.9",
     "pino": "^10.3.1",
-    "rivetkit": "link:../../../../../handoff/rivet-checkout/rivetkit-typescript/packages/rivetkit",
+    "rivetkit": "2.1.6",
     "sandbox-agent": "workspace:*",
     "uuid": "^13.0.0",
     "zod": "^4.1.5"

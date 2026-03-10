@@ -515,7 +515,7 @@ describe("Integration: TypeScript SDK flat session API", () => {
     await expect(session.send("session/cancel")).rejects.toThrow(
       "Use destroySession(sessionId) instead.",
     );
-    await expect(sdk.sendSessionMethod(session.id, "session/cancel", {})).rejects.toThrow(
+    await expect(sdk.rawSendSessionMethod(session.id, "session/cancel", {})).rejects.toThrow(
       "Use destroySession(sessionId) instead.",
     );
 
@@ -574,42 +574,6 @@ describe("Integration: TypeScript SDK flat session API", () => {
 
     const modes = await session.getModes();
     expect(modes?.currentModeId).toBe("plan");
-
-    await sdk.dispose();
-  });
-
-  it("supports permissionMode as a first-class session helper", async () => {
-    const sdk = await SandboxAgent.connect({
-      baseUrl,
-      token,
-    });
-
-    const session = await sdk.createSession({
-      agent: "mock",
-      permissionMode: "plan",
-    });
-
-    expect((await session.getModes())?.currentModeId).toBe("plan");
-
-    await session.setPermissionMode("normal");
-    expect((await session.getModes())?.currentModeId).toBe("normal");
-
-    await sdk.dispose();
-  });
-
-  it("rejects conflicting mode and permissionMode values", async () => {
-    const sdk = await SandboxAgent.connect({
-      baseUrl,
-      token,
-    });
-
-    await expect(
-      sdk.createSession({
-        agent: "mock",
-        mode: "normal",
-        permissionMode: "plan",
-      }),
-    ).rejects.toThrow("conflicting values");
 
     await sdk.dispose();
   });
@@ -674,7 +638,7 @@ describe("Integration: TypeScript SDK flat session API", () => {
     const offPermissions = session.onPermissionRequest((request) => {
       permissionIds.push(request.id);
       const reply = permissionIds.length === 1 ? "reject" : "always";
-      void session.replyPermission(request.id, reply);
+      void session.respondPermission(request.id, reply);
     });
 
     const offEvents = session.onEvent((event) => {

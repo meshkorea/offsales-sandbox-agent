@@ -57,6 +57,7 @@ const ChatPanel = ({
   isThinking,
   agentId,
   tokenUsage,
+  onPermissionReply,
 }: {
   sessionId: string;
   transcriptEntries: TimelineEntry[];
@@ -87,6 +88,7 @@ const ChatPanel = ({
   isThinking?: boolean;
   agentId?: string;
   tokenUsage?: { used: number; size: number; cost?: number } | null;
+  onPermissionReply?: (permissionId: string, reply: "once" | "always" | "reject") => void;
 }) => {
   const [showAgentMenu, setShowAgentMenu] = useState(false);
   const [copiedSessionId, setCopiedSessionId] = useState(false);
@@ -258,6 +260,7 @@ const ChatPanel = ({
             onEventClick={onEventClick}
             isThinking={isThinking}
             agentId={agentId}
+            onPermissionReply={onPermissionReply}
           />
         )}
       </div>

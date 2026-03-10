@@ -43,6 +43,12 @@
 - Canonical extension namespace/domain string is `sandboxagent.dev` (no hyphen).
 - Canonical custom ACP extension method prefix is `_sandboxagent/...` (no hyphen).
 
+## Docs Terminology
+
+- Never mention "ACP" in user-facing docs (`docs/**/*.mdx`) except in docs that are specifically about ACP itself (e.g. `docs/acp-http-client.mdx`).
+- Never expose underlying protocol method names (e.g. `session/request_permission`, `session/create`, `_sandboxagent/session/detach`) in non-ACP docs. Describe the behavior in user-facing terms instead.
+- Do not describe the underlying protocol implementation in docs. Only document the SDK surface (methods, types, options). ACP protocol details belong exclusively in ACP-specific pages.
+
 ## Architecture (Brief)
 
 - HTTP contract and problem/error mapping: `server/packages/sandbox-agent/src/router.rs`
@@ -56,9 +62,14 @@
   - `acp-http-client`: protocol-pure ACP-over-HTTP (`/v1/acp`) with no Sandbox-specific HTTP helpers.
   - `sandbox-agent`: `SandboxAgent` SDK wrapper that combines ACP session operations with Sandbox control-plane and filesystem helpers.
 - `SandboxAgent` entry points are `SandboxAgent.connect(...)` and `SandboxAgent.start(...)`.
-- Stable Sandbox session methods are `createSession`, `resumeSession`, `resumeOrCreateSession`, `destroySession`, `sendSessionMethod`, `onSessionEvent`, `setSessionMode`, `setSessionModel`, `setSessionThoughtLevel`, `setSessionConfigOption`, `getSessionConfigOptions`, and `getSessionModes`.
-- `Session` helpers are `prompt(...)`, `send(...)`, `onEvent(...)`, `setMode(...)`, `setModel(...)`, `setThoughtLevel(...)`, `setConfigOption(...)`, `getConfigOptions()`, and `getModes()`.
+- Stable Sandbox session methods are `createSession`, `resumeSession`, `resumeOrCreateSession`, `destroySession`, `rawSendSessionMethod`, `onSessionEvent`, `setSessionMode`, `setSessionModel`, `setSessionThoughtLevel`, `setSessionConfigOption`, `getSessionConfigOptions`, `getSessionModes`, `respondPermission`, `rawRespondPermission`, and `onPermissionRequest`.
+- `Session` helpers are `prompt(...)`, `rawSend(...)`, `onEvent(...)`, `setMode(...)`, `setModel(...)`, `setThoughtLevel(...)`, `setConfigOption(...)`, `getConfigOptions()`, `getModes()`, `respondPermission(...)`, `rawRespondPermission(...)`, and `onPermissionRequest(...)`.
 - Cleanup is `sdk.dispose()`.
+
+### TypeScript SDK Naming Conventions
+
+- Use `respond<Thing>(id, reply)` for SDK methods that reply to an agent-initiated request (e.g. `respondPermission`). This is the standard pattern for answering any inbound JSON-RPC request from the agent.
+- Prefix raw/low-level escape hatches with `raw` (e.g. `rawRespondPermission`, `rawSend`). These accept protocol-level types directly and bypass SDK abstractions.
 
 ### Docs Source Of Truth
 
@@ -72,8 +83,17 @@
   - `server/packages/sandbox-agent/src/cli.rs`
 - Keep docs aligned to implemented endpoints/commands only (for example ACP under `/v1/acp`, not legacy `/v1/sessions` APIs).
 
+## ACP Protocol Compliance
+
+- Before adding any new ACP method, property, or config option category to the SDK, verify it exists in the ACP spec at `https://agentclientprotocol.com/llms-full.txt`.
+- Valid `SessionConfigOptionCategory` values are: `mode`, `model`, `thought_level`, `other`, or custom categories prefixed with `_` (e.g. `_permission_mode`).
+- Do not invent ACP properties or categories (e.g. `permission_mode` is not a valid ACP category — use `_permission_mode` if it's a custom extension, or use existing ACP mechanisms like `session/set_mode`).
+- `NewSessionRequest` only has `_meta`, `cwd`, and `mcpServers`. Do not add non-ACP fields to it.
+- Sandbox Agent SDK abstractions (like `SessionCreateRequest`) may add convenience properties, but must clearly map to real ACP methods internally and not send fabricated fields over the wire.
+
 ## Source Documents
 
+- ACP protocol specification (full LLM-readable reference): `https://agentclientprotocol.com/llms-full.txt`
 - `~/misc/acp-docs/schema/schema.json`
 - `~/misc/acp-docs/schema/meta.json`
 - `research/acp/spec.md`

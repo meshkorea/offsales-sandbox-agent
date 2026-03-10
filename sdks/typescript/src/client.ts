@@ -129,7 +129,6 @@ export interface SessionCreateRequest {
   sessionInit?: Omit<NewSessionRequest, "_meta">;
   model?: string;
   mode?: string;
-  permissionMode?: string;
   thoughtLevel?: string;
 }
 
@@ -139,7 +138,6 @@ export interface SessionResumeOrCreateRequest {
   sessionInit?: Omit<NewSessionRequest, "_meta">;
   model?: string;
   mode?: string;
-  permissionMode?: string;
   thoughtLevel?: string;
 }
 
@@ -321,27 +319,19 @@ export class Session {
     return this;
   }
 
-  async send(method: string, params: Record<string, unknown> = {}, options: SessionSendOptions = {}): Promise<unknown> {
-    const updated = await this.sandbox.sendSessionMethod(this.id, method, params, options);
+  async rawSend(method: string, params: Record<string, unknown> = {}, options: SessionSendOptions = {}): Promise<unknown> {
+    const updated = await this.sandbox.rawSendSessionMethod(this.id, method, params, options);
     this.apply(updated.session.toRecord());
     return updated.response;
   }
 
   async prompt(prompt: PromptRequest["prompt"]): Promise<PromptResponse> {
-    const response = await this.send("session/prompt", { prompt });
+    const response = await this.rawSend("session/prompt", { prompt });
     return response as PromptResponse;
   }
 
   async setMode(modeId: string): Promise<SetSessionModeResponse | void> {
     const updated = await this.sandbox.setSessionMode(this.id, modeId);
-    this.apply(updated.session.toRecord());
-    return updated.response;
-  }
-
-  async setPermissionMode(
-    permissionMode: string,
-  ): Promise<SetSessionModeResponse | SetSessionConfigOptionResponse | void> {
-    const updated = await this.sandbox.setSessionPermissionMode(this.id, permissionMode);
     this.apply(updated.session.toRecord());
     return updated.response;
   }
@@ -380,12 +370,12 @@ export class Session {
     return this.sandbox.onPermissionRequest(this.id, listener);
   }
 
-  async replyPermission(permissionId: string, reply: PermissionReply): Promise<void> {
-    await this.sandbox.replyPermission(permissionId, reply);
+  async respondPermission(permissionId: string, reply: PermissionReply): Promise<void> {
+    await this.sandbox.respondPermission(permissionId, reply);
   }
 
-  async respondToPermission(permissionId: string, response: RequestPermissionResponse): Promise<void> {
-    await this.sandbox.respondToPermission(permissionId, response);
+  async rawRespondPermission(permissionId: string, response: RequestPermissionResponse): Promise<void> {
+    await this.sandbox.rawRespondPermission(permissionId, response);
   }
 
   toRecord(): SessionRecord {
@@ -1026,14 +1016,10 @@ export class SandboxAgent {
     this.nextSessionEventIndexBySession.set(record.id, 1);
     live.bindSession(record.id, record.agentSessionId);
     let session = this.upsertSessionHandle(record);
-    assertNoConflictingPermissionMode(request.mode, request.permissionMode);
 
     try {
       if (request.mode) {
         session = (await this.setSessionMode(session.id, request.mode)).session;
-      }
-      if (request.permissionMode) {
-        session = (await this.setSessionPermissionMode(session.id, request.permissionMode)).session;
       }
       if (request.model) {
         session = (await this.setSessionModel(session.id, request.model)).session;
@@ -1089,12 +1075,8 @@ export class SandboxAgent {
     const existing = await this.persist.getSession(request.id);
     if (existing) {
       let session = await this.resumeSession(existing.id);
-      assertNoConflictingPermissionMode(request.mode, request.permissionMode);
       if (request.mode) {
         session = (await this.setSessionMode(session.id, request.mode)).session;
-      }
-      if (request.permissionMode) {
-        session = (await this.setSessionPermissionMode(session.id, request.permissionMode)).session;
       }
       if (request.model) {
         session = (await this.setSessionModel(session.id, request.model)).session;
@@ -1211,24 +1193,6 @@ export class SandboxAgent {
     return this.setSessionCategoryValue(sessionId, "model", model);
   }
 
-  async setSessionPermissionMode(
-    sessionId: string,
-    permissionMode: string,
-  ): Promise<{ session: Session; response: SetSessionModeResponse | SetSessionConfigOptionResponse | void }> {
-    const resolvedValue = permissionMode.trim();
-    if (!resolvedValue) {
-      throw new Error("setSessionPermissionMode requires a non-empty permissionMode");
-    }
-
-    const options = await this.getSessionConfigOptions(sessionId);
-    const permissionOption = findConfigOptionByCategory(options, "permission_mode");
-    if (permissionOption) {
-      return this.setSessionConfigOption(sessionId, permissionOption.id, resolvedValue);
-    }
-
-    return this.setSessionMode(sessionId, resolvedValue);
-  }
-
   async setSessionThoughtLevel(
     sessionId: string,
     thoughtLevel: string,
@@ -1318,7 +1282,7 @@ export class SandboxAgent {
     return updated;
   }
 
-  async sendSessionMethod(
+  async rawSendSessionMethod(
     sessionId: string,
     method: string,
     params: Record<string, unknown>,
@@ -1470,7 +1434,7 @@ export class SandboxAgent {
     };
   }
 
-  async replyPermission(permissionId: string, reply: PermissionReply): Promise<void> {
+  async respondPermission(permissionId: string, reply: PermissionReply): Promise<void> {
     const pending = this.pendingPermissionRequests.get(permissionId);
     if (!pending) {
       throw new Error(`permission '${permissionId}' not found`);
@@ -1480,7 +1444,7 @@ export class SandboxAgent {
     this.resolvePendingPermission(permissionId, response);
   }
 
-  async respondToPermission(permissionId: string, response: RequestPermissionResponse): Promise<void> {
+  async rawRespondPermission(permissionId: string, response: RequestPermissionResponse): Promise<void> {
     if (!this.pendingPermissionRequests.has(permissionId)) {
       throw new Error(`permission '${permissionId}' not found`);
     }
@@ -2717,16 +2681,6 @@ function cloneModes(value: SessionModeState | null | undefined): SessionModeStat
     return null;
   }
   return JSON.parse(JSON.stringify(value)) as SessionModeState;
-}
-
-function assertNoConflictingPermissionMode(mode: string | undefined, permissionMode: string | undefined): void {
-  if (!mode || !permissionMode) {
-    return;
-  }
-  if (mode.trim() === permissionMode.trim()) {
-    return;
-  }
-  throw new Error("createSession/resumeOrCreate received conflicting values for mode and permissionMode");
 }
 
 function availablePermissionReplies(options: PermissionOption[]): PermissionReply[] {

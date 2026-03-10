@@ -6,6 +6,8 @@ import {
   type AgentInfo,
   type SessionEvent,
   type Session,
+  type SessionPermissionRequest,
+  type PermissionReply,
   InMemorySessionPersistDriver,
   type SessionPersistDriver,
 } from "sandbox-agent";
@@ -295,6 +297,11 @@ export default function App() {
   const clientRef = useRef<SandboxAgent | null>(null);
   const activeSessionRef = useRef<Session | null>(null);
   const eventUnsubRef = useRef<(() => void) | null>(null);
+  const permissionUnsubRef = useRef<(() => void) | null>(null);
+  const pendingPermissionsRef = useRef<Map<string, SessionPermissionRequest>>(new Map());
+  const permissionToolCallToIdRef = useRef<Map<string, string>>(new Map());
+  const [pendingPermissionIds, setPendingPermissionIds] = useState<Set<string>>(new Set());
+  const [resolvedPermissions, setResolvedPermissions] = useState<Map<string, string>>(new Map());
   const sessionEventsCacheRef = useRef<Map<string, SessionEvent[]>>(new Map());
   const selectedSessionIdRef = useRef(sessionId);
   const resumeInFlightSessionIdRef = useRef<string | null>(null);
@@ -538,7 +545,44 @@ export default function App() {
       });
     });
     eventUnsubRef.current = unsub;
+
+    // Subscribe to permission requests
+    if (permissionUnsubRef.current) {
+      permissionUnsubRef.current();
+      permissionUnsubRef.current = null;
+    }
+    const permUnsub = session.onPermissionRequest((request: SessionPermissionRequest) => {
+      if (!isCurrentSubscription()) return;
+      pendingPermissionsRef.current.set(request.id, request);
+      if (request.toolCall?.toolCallId) {
+        permissionToolCallToIdRef.current.set(request.toolCall.toolCallId, request.id);
+      }
+      setPendingPermissionIds((prev) => new Set([...prev, request.id]));
+    });
+    permissionUnsubRef.current = permUnsub;
   }, [getClient]);
+
+  const handlePermissionReply = useCallback(async (permissionId: string, reply: PermissionReply) => {
+    const session = activeSessionRef.current;
+    if (!session) return;
+    try {
+      await session.respondPermission(permissionId, reply);
+      const request = pendingPermissionsRef.current.get(permissionId);
+      const selectedOption = request?.options.find((o) =>
+        reply === "always" ? o.kind === "allow_always" :
+        reply === "once" ? o.kind === "allow_once" :
+        o.kind === "reject_once" || o.kind === "reject_always"
+      );
+      setResolvedPermissions((prev) => new Map([...prev, [permissionId, selectedOption?.optionId ?? reply]]));
+      setPendingPermissionIds((prev) => {
+        const next = new Set(prev);
+        next.delete(permissionId);
+        return next;
+      });
+    } catch (error) {
+      pushErrorToast(error, "Failed to respond to permission request");
+    }
+  }, [pushErrorToast]);
 
   const connectToDaemon = async (reportError: boolean, overrideEndpoint?: string) => {
     setConnecting(true);
@@ -550,6 +594,10 @@ export default function App() {
       if (eventUnsubRef.current) {
         eventUnsubRef.current();
         eventUnsubRef.current = null;
+      }
+      if (permissionUnsubRef.current) {
+        permissionUnsubRef.current();
+        permissionUnsubRef.current = null;
       }
       subscriptionGenerationRef.current += 1;
       activeSessionRef.current = null;
@@ -602,6 +650,10 @@ export default function App() {
     if (eventUnsubRef.current) {
       eventUnsubRef.current();
       eventUnsubRef.current = null;
+    }
+    if (permissionUnsubRef.current) {
+      permissionUnsubRef.current();
+      permissionUnsubRef.current = null;
     }
     subscriptionGenerationRef.current += 1;
     activeSessionRef.current = null;
@@ -879,6 +931,10 @@ export default function App() {
       if (eventUnsubRef.current) {
         eventUnsubRef.current();
         eventUnsubRef.current = null;
+      }
+      if (permissionUnsubRef.current) {
+        permissionUnsubRef.current();
+        permissionUnsubRef.current = null;
       }
       activeSessionRef.current = null;
       await fetchSessions();
@@ -1165,6 +1221,44 @@ export default function App() {
         continue;
       }
 
+      if (event.sender === "agent" && method === "session/request_permission") {
+        const params = payload.params as {
+          options?: Array<{ optionId: string; name: string; kind: string }>;
+          toolCall?: { title?: string; toolCallId?: string; description?: string };
+        } | undefined;
+        const toolCallId = params?.toolCall?.toolCallId;
+        const sdkPermissionId = toolCallId
+          ? permissionToolCallToIdRef.current.get(toolCallId)
+          : undefined;
+        const permissionId = sdkPermissionId
+          ?? (typeof payload.id === "number" || typeof payload.id === "string"
+            ? String(payload.id)
+            : event.id);
+        const options = (params?.options ?? []).map((o) => ({
+          optionId: o.optionId,
+          name: o.name,
+          kind: o.kind,
+        }));
+        const title = params?.toolCall?.title ?? params?.toolCall?.toolCallId ?? "Permission request";
+        const resolved = resolvedPermissions.get(permissionId);
+        const isPending = pendingPermissionIds.has(permissionId);
+        entries.push({
+          id: event.id,
+          eventId: event.id,
+          kind: "permission",
+          time,
+          permission: {
+            permissionId,
+            title,
+            description: params?.toolCall?.description,
+            options,
+            resolved: resolved != null || !isPending,
+            selectedOptionId: resolved,
+          },
+        });
+        continue;
+      }
+
       if (event.sender === "agent" && method === "_sandboxagent/agent/unparsed") {
         const params = payload.params as { error?: string; location?: string } | undefined;
         entries.push({
@@ -1194,13 +1288,17 @@ export default function App() {
     }
 
     return entries;
-  }, [events]);
+  }, [events, pendingPermissionIds, resolvedPermissions]);
 
   useEffect(() => {
     return () => {
       if (eventUnsubRef.current) {
         eventUnsubRef.current();
         eventUnsubRef.current = null;
+      }
+      if (permissionUnsubRef.current) {
+        permissionUnsubRef.current();
+        permissionUnsubRef.current = null;
       }
     };
   }, []);
@@ -1684,6 +1782,7 @@ export default function App() {
           isThinking={isThinking}
           agentId={agentId}
           tokenUsage={tokenUsage}
+          onPermissionReply={handlePermissionReply}
         />
 
         <DebugPanel
