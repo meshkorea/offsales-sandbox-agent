@@ -6,11 +6,12 @@ import {
   type SessionPermissionRequest,
 } from "sandbox-agent";
 
-const permissionMode = process.env.CLAUDE_PERMISSION_MODE?.trim() || "default";
-const autoReply = parsePermissionReply(process.env.CLAUDE_PERMISSION_REPLY);
+const agent = (process.env.PERMISSIONS_AGENT?.trim() || "claude").toLowerCase();
+const requestedPermissionMode = process.env.PERMISSION_MODE?.trim();
+const autoReply = parsePermissionReply(process.env.PERMISSION_REPLY);
 const promptText =
-  process.env.CLAUDE_PERMISSION_PROMPT?.trim() ||
-  "Create ./permission-example.txt with the text 'hello from Claude permissions example'.";
+  process.env.PERMISSION_PROMPT?.trim() ||
+  `Create ./permission-example.txt with the text 'hello from the ${agent} permissions example'.`;
 
 const sdk = await SandboxAgent.start({
   spawn: {
@@ -20,19 +21,21 @@ const sdk = await SandboxAgent.start({
 });
 
 try {
-  await sdk.installAgent("claude");
+  await sdk.installAgent(agent);
 
   const agents = await sdk.listAgents({ config: true });
-  const claude = agents.agents.find((agent) => agent.id === "claude");
-  const configOptions = Array.isArray(claude?.configOptions)
-    ? (claude.configOptions as Array<{ category?: string; options?: unknown[] }>)
+  const selectedAgent = agents.agents.find((entry) => entry.id === agent);
+  const configOptions = Array.isArray(selectedAgent?.configOptions)
+    ? (selectedAgent.configOptions as Array<{ category?: string; currentValue?: string; options?: unknown[] }>)
     : [];
   const modeOption = configOptions.find((option) => option.category === "mode");
   const availableModes = extractOptionValues(modeOption);
+  const permissionMode = requestedPermissionMode || modeOption?.currentValue || availableModes[0] || "default";
 
-  console.log(`Claude permission mode: ${permissionMode}`);
+  console.log(`Agent: ${agent}`);
+  console.log(`Permission mode: ${permissionMode}`);
   if (availableModes.length > 0) {
-    console.log(`Available Claude modes: ${availableModes.join(", ")}`);
+    console.log(`Available modes: ${availableModes.join(", ")}`);
   }
   console.log(`Working directory: ${process.cwd()}`);
   console.log(`Prompt: ${promptText}`);
@@ -43,7 +46,7 @@ try {
   }
 
   const session = await sdk.createSession({
-    agent: "claude",
+    agent,
     permissionMode,
     sessionInit: {
       cwd: process.cwd(),

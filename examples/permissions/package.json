@@ -1,5 +1,5 @@
 {
-  "name": "@sandbox-agent/example-claude-permissions",
+  "name": "@sandbox-agent/example-permissions",
   "private": true,
   "type": "module",
   "scripts": {
