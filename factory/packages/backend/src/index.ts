@@ -4,6 +4,7 @@ import { initActorRuntimeContext } from "./actors/context.js";
 import { registry, resolveManagerPort } from "./actors/index.js";
 import { workspaceKey } from "./actors/keys.js";
 import { loadConfig } from "./config/backend.js";
+import { applyDevelopmentEnvDefaults, loadDevelopmentEnvFiles } from "./config/env.js";
 import { createBackends, createNotificationService } from "./notifications/index.js";
 import { createDefaultDriver } from "./driver.js";
 import { createProviderRegistry } from "./providers/index.js";
@@ -17,6 +18,9 @@ export interface BackendStartOptions {
 }
 
 export async function startBackend(options: BackendStartOptions = {}): Promise<void> {
+  loadDevelopmentEnvFiles();
+  applyDevelopmentEnvDefaults();
+
   // sandbox-agent agent plugins vary on which env var they read for OpenAI/Codex auth.
   // Normalize to keep local dev + docker-compose simple.
   if (!process.env.CODEX_API_KEY && process.env.OPENAI_API_KEY) {

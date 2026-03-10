@@ -7,7 +7,6 @@ import {
   getOrCreateHistory,
   getOrCreateProject,
   getOrCreateSandboxInstance,
-  getSandboxInstance,
   selfHandoff
 } from "../../handles.js";
 import { logActorWarning, resolveErrorMessage } from "../../logging.js";
@@ -15,7 +14,6 @@ import { handoff as handoffTable, handoffRuntime, handoffSandboxes } from "../db
 import {
   HANDOFF_ROW_ID,
   appendHistory,
-  buildAgentPrompt,
   collectErrorMessages,
   resolveErrorDetail,
   setHandoffState
@@ -394,7 +392,7 @@ export async function initCreateSessionActivity(
   sandbox: any,
   sandboxInstanceReady: any
 ): Promise<any> {
-  await setHandoffState(loopCtx, "init_create_session", "creating agent session");
+  await setHandoffState(loopCtx, "init_create_session", "deferring agent session creation");
   if (!sandboxInstanceReady.ok) {
     return {
       id: null,
@@ -403,20 +401,11 @@ export async function initCreateSessionActivity(
     } as const;
   }
 
-  const { config } = getActorRuntimeContext();
-  const providerId = body?.providerId ?? loopCtx.state.providerId;
-  const sandboxInstance = getSandboxInstance(loopCtx, loopCtx.state.workspaceId, providerId, sandbox.sandboxId);
-
-  const cwd =
-    sandbox.metadata && typeof (sandbox.metadata as any).cwd === "string"
-      ? ((sandbox.metadata as any).cwd as string)
-      : undefined;
-
-  return await sandboxInstance.createSession({
-    prompt: buildAgentPrompt(loopCtx.state.task),
-    cwd,
-    agent: (loopCtx.state.agentType ?? config.default_agent) as any
-  });
+  return {
+    id: null,
+    status: "idle",
+    deferred: true,
+  } as const;
 }
 
 export async function initWriteDbActivity(
@@ -432,10 +421,13 @@ export async function initWriteDbActivity(
   const now = Date.now();
   const db = loopCtx.db;
   const sessionId = session?.id ?? null;
-  const sessionHealthy = Boolean(sessionId) && session?.status !== "error";
-  const activeSessionId = sessionHealthy ? sessionId : null;
+  const sessionDeferred = !sessionId;
+  const sessionHealthy = sessionDeferred || session?.status !== "error";
+  const activeSessionId = sessionDeferred ? null : sessionHealthy ? sessionId : null;
   const statusMessage =
-    sessionHealthy
+    sessionDeferred
+      ? "ready"
+      : sessionHealthy
       ? "session created"
       : session?.status === "error"
         ? (session.error ?? "session create failed")
@@ -454,7 +446,7 @@ export async function initWriteDbActivity(
     .update(handoffTable)
     .set({
       providerId,
-      status: sessionHealthy ? "running" : "error",
+      status: sessionHealthy ? "idle" : "error",
       agentType: loopCtx.state.agentType ?? config.default_agent,
       updatedAt: now
     })
@@ -549,7 +541,7 @@ export async function initStartStatusSyncActivity(
 export async function initCompleteActivity(loopCtx: any, body: any, sandbox: any, session: any): Promise<void> {
   const providerId = body?.providerId ?? loopCtx.state.providerId;
   const sessionId = session?.id ?? null;
-  const sessionHealthy = Boolean(sessionId) && session?.status !== "error";
+  const sessionHealthy = !sessionId || session?.status !== "error";
   if (sessionHealthy) {
     await setHandoffState(loopCtx, "init_complete", "handoff initialized");
 
@@ -558,7 +550,7 @@ export async function initCompleteActivity(loopCtx: any, body: any, sandbox: any
       kind: "handoff.initialized",
       handoffId: loopCtx.state.handoffId,
       branchName: loopCtx.state.branchName,
-      payload: { providerId, sandboxId: sandbox.sandboxId, sessionId }
+      payload: { providerId, sandboxId: sandbox.sandboxId, sessionId: sessionId ?? null }
     });
 
     loopCtx.state.initialized = true;

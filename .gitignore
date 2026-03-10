@@ -23,6 +23,7 @@ coverage/
 .env
 .env.local
 .env.*
+!.env.development.example
 
 # IDE
 .idea/

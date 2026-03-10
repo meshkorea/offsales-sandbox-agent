@@ -636,7 +636,12 @@ export function MockOrganizationSettingsPage({ organization }: { organization: F
     setDisplayName(organization.settings.displayName);
     setSlug(organization.settings.slug);
     setPrimaryDomain(organization.settings.primaryDomain);
-  }, [organization]);
+  }, [
+    organization.id,
+    organization.settings.displayName,
+    organization.settings.slug,
+    organization.settings.primaryDomain,
+  ]);
 
   return (
     <PageShell

@@ -1110,12 +1110,128 @@ fn write_mock_agent_process_launcher(path: &Path) -> Result<(), AgentError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let script = if cfg!(windows) {
-        "@echo off\r\necho mock agent process is in-process in sandbox-agent\r\nexit /b 1\r\n"
-    } else {
-        "#!/usr/bin/env sh\necho 'mock agent process is in-process in sandbox-agent'\nexit 1\n"
-    };
-    write_text_file(path, script)
+    let node_script = r#"#!/usr/bin/env node
+const { createInterface } = require("node:readline");
+
+let nextSession = 0;
+
+function emit(value) {
+  process.stdout.write(JSON.stringify(value) + "\n");
+}
+
+function firstText(prompt) {
+  if (!Array.isArray(prompt)) {
+    return "";
+  }
+
+  for (const block of prompt) {
+    if (block && block.type === "text" && typeof block.text === "string") {
+      return block.text;
+    }
+  }
+
+  return "";
+}
+
+const rl = createInterface({
+  input: process.stdin,
+  crlfDelay: Infinity,
+});
+
+rl.on("line", (line) => {
+  let msg;
+  try {
+    msg = JSON.parse(line);
+  } catch {
+    return;
+  }
+
+  const hasMethod = typeof msg?.method === "string";
+  const hasId = Object.prototype.hasOwnProperty.call(msg, "id");
+  const method = hasMethod ? msg.method : undefined;
+
+  if (method === "session/prompt") {
+    const sessionId = typeof msg?.params?.sessionId === "string" ? msg.params.sessionId : "";
+    const text = firstText(msg?.params?.prompt);
+    emit({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: {
+            type: "text",
+            text: "mock: " + text,
+          },
+        },
+      },
+    });
+  }
+
+  if (!hasMethod || !hasId) {
+    return;
+  }
+
+  if (method === "initialize") {
+    emit({
+      jsonrpc: "2.0",
+      id: msg.id,
+      result: {
+        protocolVersion: 1,
+        capabilities: {},
+        serverInfo: {
+          name: "mock-acp-agent",
+          version: "0.0.1",
+        },
+      },
+    });
+    return;
+  }
+
+  if (method === "session/new") {
+    nextSession += 1;
+    emit({
+      jsonrpc: "2.0",
+      id: msg.id,
+      result: {
+        sessionId: "mock-session-" + nextSession,
+      },
+    });
+    return;
+  }
+
+  if (method === "session/prompt") {
+    emit({
+      jsonrpc: "2.0",
+      id: msg.id,
+      result: {
+        stopReason: "end_turn",
+      },
+    });
+    return;
+  }
+
+  emit({
+    jsonrpc: "2.0",
+    id: msg.id,
+    result: {
+      ok: true,
+      echoedMethod: method,
+    },
+  });
+});
+"#;
+
+    if cfg!(windows) {
+        let script_path = path.with_extension("js");
+        write_text_file(&script_path, node_script)?;
+        let script = format!("@echo off\r\nnode \"{}\" %*\r\n", script_path.display());
+        write_text_file(path, &script)?;
+        return Ok(());
+    }
+
+    write_text_file(path, node_script)
 }
 
 fn write_launcher(

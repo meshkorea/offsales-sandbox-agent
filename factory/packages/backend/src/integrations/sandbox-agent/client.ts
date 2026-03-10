@@ -9,7 +9,7 @@ import type {
 } from "sandbox-agent";
 import { SandboxAgent } from "sandbox-agent";
 
-export type AgentId = AgentType | "opencode";
+export type AgentId = AgentType | "opencode" | "mock";
 
 export interface SandboxSession {
   id: string;
@@ -36,6 +36,24 @@ export interface SandboxAgentClientOptions {
 }
 
 const DEFAULT_AGENT: AgentId = "codex";
+
+function hasClaudeCredentials(): boolean {
+  return Boolean(process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY);
+}
+
+function hasCodexCredentials(): boolean {
+  return Boolean(process.env.CODEX_API_KEY || process.env.OPENAI_API_KEY);
+}
+
+function resolveAvailableAgent(requested: AgentId): AgentId {
+  if (requested === "claude") {
+    return hasClaudeCredentials() ? requested : "mock";
+  }
+  if (requested === "codex") {
+    return hasCodexCredentials() ? requested : "mock";
+  }
+  return requested;
+}
 
 function modeIdForAgent(agent: AgentId): string | null {
   switch (agent) {
@@ -130,18 +148,19 @@ export class SandboxAgentClient {
       typeof request === "string"
         ? { prompt: request }
         : request;
+    const resolvedAgent = resolveAvailableAgent(normalized.agent ?? this.agent);
     const sdk = await this.sdk();
     // Do not wrap createSession in a local Promise.race timeout. The underlying SDK
     // call is not abortable, so local timeout races create overlapping ACP requests and
     // can produce duplicate/orphaned sessions while the original request is still running.
     const session = await sdk.createSession({
-      agent: normalized.agent ?? this.agent,
+      agent: resolvedAgent,
       sessionInit: {
         cwd: normalized.cwd ?? "/",
         mcpServers: [],
       },
     });
-    const modeId = modeIdForAgent(normalized.agent ?? this.agent);
+    const modeId = modeIdForAgent(resolvedAgent);
 
     // Codex defaults to a restrictive "read-only" preset in some environments.
     // For Sandbox Agent Factory automation we need to allow edits + command execution + network
@@ -359,7 +378,7 @@ export class SandboxAgentClient {
 
     const sdk = await this.sdk();
     const session = await sdk.createSession({
-      agent: this.agent,
+      agent: resolveAvailableAgent(this.agent),
       sessionInit: {
         cwd: dir,
         mcpServers: [],

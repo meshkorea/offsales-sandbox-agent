@@ -173,7 +173,7 @@ factory-format:
 factory-backend-start host='127.0.0.1' port='7741':
 	pnpm install
 	pnpm --filter @sandbox-agent/factory-backend build
-	pnpm --filter @sandbox-agent/factory-backend start -- --host {{host}} --port {{port}}
+	NODE_ENV=development pnpm --filter @sandbox-agent/factory-backend start -- --host {{host}} --port {{port}}
 
 [group('factory')]
 factory-hf *ARGS:
