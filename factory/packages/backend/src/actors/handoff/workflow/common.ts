@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { eq } from "drizzle-orm";
-import type { HandoffRecord, HandoffStatus } from "@openhandoff/shared";
+import type { HandoffRecord, HandoffStatus } from "@sandbox-agent/factory-shared";
 import { getOrCreateWorkspace } from "../../handles.js";
 import { handoff as handoffTable, handoffRuntime, handoffSandboxes } from "../db/schema.js";
 import { historyKey } from "../../keys.js";

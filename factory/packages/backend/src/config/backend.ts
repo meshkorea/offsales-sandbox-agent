@@ -2,9 +2,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { homedir } from "node:os";
 import * as toml from "@iarna/toml";
-import { ConfigSchema, type AppConfig } from "@openhandoff/shared";
+import { ConfigSchema, type AppConfig } from "@sandbox-agent/factory-shared";
 
-export const CONFIG_PATH = `${homedir()}/.config/openhandoff/config.toml`;
+export const CONFIG_PATH = `${homedir()}/.config/sandbox-agent-factory/config.toml`;
 
 export function loadConfig(path = CONFIG_PATH): AppConfig {
   if (!existsSync(path)) {

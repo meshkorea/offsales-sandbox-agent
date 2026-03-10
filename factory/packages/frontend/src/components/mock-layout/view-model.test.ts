@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { WorkbenchAgentTab } from "@openhandoff/shared";
+import type { WorkbenchAgentTab } from "@sandbox-agent/factory-shared";
 import { buildDisplayMessages } from "./view-model";
 
 function makeTab(transcript: WorkbenchAgentTab["transcript"]): WorkbenchAgentTab {

@@ -205,11 +205,11 @@ export class DaytonaProvider implements SandboxProvider {
         image: this.buildSnapshotImage(),
         envVars: this.buildEnvVars(),
         labels: {
-          "openhandoff.workspace": req.workspaceId,
-          "openhandoff.handoff": req.handoffId,
-          "openhandoff.repo_id": req.repoId,
-          "openhandoff.repo_remote": req.repoRemote,
-          "openhandoff.branch": req.branchName,
+          "factory.workspace": req.workspaceId,
+          "factory.handoff": req.handoffId,
+          "factory.repo_id": req.repoId,
+          "factory.repo_remote": req.repoRemote,
+          "factory.branch": req.branchName,
         },
         autoStopInterval: this.config.autoStopInterval,
       })
@@ -220,7 +220,7 @@ export class DaytonaProvider implements SandboxProvider {
       state: sandbox.state ?? null
     });
 
-    const repoDir = `/home/daytona/openhandoff/${req.workspaceId}/${req.repoId}/${req.handoffId}/repo`;
+    const repoDir = `/home/daytona/sandbox-agent-factory/${req.workspaceId}/${req.repoId}/${req.handoffId}/repo`;
 
     // Prepare a working directory for the agent. This must succeed for the handoff to work.
     const installStartedAt = Date.now();
@@ -258,8 +258,8 @@ export class DaytonaProvider implements SandboxProvider {
             `git fetch origin --prune`,
             // The handoff branch may not exist remotely yet (agent push creates it). Base off current branch (default branch).
             `if git show-ref --verify --quiet "refs/remotes/origin/${req.branchName}"; then git checkout -B "${req.branchName}" "origin/${req.branchName}"; else git checkout -B "${req.branchName}" "$(git branch --show-current 2>/dev/null || echo main)"; fi`,
-            `git config user.email "openhandoff@local" >/dev/null 2>&1 || true`,
-            `git config user.name "OpenHandoff" >/dev/null 2>&1 || true`,
+            `git config user.email "factory@local" >/dev/null 2>&1 || true`,
+            `git config user.name "Sandbox Agent Factory" >/dev/null 2>&1 || true`,
           ].join("; ")
         )}`
       ].join(" "),
@@ -294,12 +294,12 @@ export class DaytonaProvider implements SandboxProvider {
       client.getSandbox(req.sandboxId)
     );
     const labels = info.labels ?? {};
-    const workspaceId = labels["openhandoff.workspace"] ?? req.workspaceId;
-    const repoId = labels["openhandoff.repo_id"] ?? "";
-    const handoffId = labels["openhandoff.handoff"] ?? "";
+    const workspaceId = labels["factory.workspace"] ?? req.workspaceId;
+    const repoId = labels["factory.repo_id"] ?? "";
+    const handoffId = labels["factory.handoff"] ?? "";
     const cwd =
       repoId && handoffId
-        ? `/home/daytona/openhandoff/${workspaceId}/${repoId}/${handoffId}/repo`
+        ? `/home/daytona/sandbox-agent-factory/${workspaceId}/${repoId}/${handoffId}/repo`
         : null;
 
     return {

@@ -8,7 +8,7 @@ import { project } from "./project/index.js";
 import { sandboxInstance } from "./sandbox-instance/index.js";
 import { workspace } from "./workspace/index.js";
 
-function resolveManagerPort(): number {
+export function resolveManagerPort(): number {
   const raw = process.env.HF_RIVET_MANAGER_PORT ?? process.env.RIVETKIT_MANAGER_PORT;
   if (!raw) {
     return 7750;
@@ -21,7 +21,7 @@ function resolveManagerPort(): number {
   return parsed;
 }
 
-function resolveManagerHost(): string {
+export function resolveManagerHost(): string {
   const raw = process.env.HF_RIVET_MANAGER_HOST ?? process.env.RIVETKIT_MANAGER_HOST;
   return raw && raw.trim().length > 0 ? raw.trim() : "0.0.0.0";
 }

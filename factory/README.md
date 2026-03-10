@@ -1,8 +1,6 @@
-# OpenHandoff
+# Sandbox Agent Factory
 
 TypeScript workspace handoff system powered by RivetKit actors, SQLite/Drizzle state, and OpenTUI.
-
-**Documentation**: [openhandoff.dev](https://openhandoff.dev)
 
 ## Quick Install
 

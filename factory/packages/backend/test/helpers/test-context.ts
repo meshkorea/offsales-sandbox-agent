@@ -1,6 +1,6 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ConfigSchema, type AppConfig } from "@openhandoff/shared";
+import { ConfigSchema, type AppConfig } from "@sandbox-agent/factory-shared";
 import type { BackendDriver } from "../../src/driver.js";
 import { initActorRuntimeContext } from "../../src/actors/context.js";
 import { createProviderRegistry } from "../../src/providers/index.js";

@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 
-const db = new Database("/root/.local/share/openhandoff/rivetkit/databases/2e443238457137bf.db", { readonly: true });
+const db = new Database("/root/.local/share/sandbox-agent-factory/rivetkit/databases/2e443238457137bf.db", { readonly: true });
 const rows = db.query("SELECT hex(key) as k, value as v FROM kv WHERE hex(key) LIKE ? ORDER BY key").all("07%");
 const out = rows.map((r) => {
   const bytes = new Uint8Array(r.v);

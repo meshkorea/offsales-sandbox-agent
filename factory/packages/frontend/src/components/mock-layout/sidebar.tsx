@@ -3,6 +3,7 @@ import { useStyletron } from "baseui";
 import { LabelSmall, LabelXSmall } from "baseui/typography";
 import { CloudUpload, GitPullRequestDraft, Plus } from "lucide-react";
 
+import { SidebarSkeleton } from "./skeleton";
 import { formatRelativeAge, type Handoff, type ProjectSection } from "./view-model";
 import {
   ContextMenuOverlay,
@@ -14,16 +15,29 @@ import {
 } from "./ui";
 
 export const Sidebar = memo(function Sidebar({
+  workspaceId,
+  repoCount,
   projects,
   activeId,
+  title,
+  subtitle,
+  actions,
   onSelect,
   onCreate,
   onMarkUnread,
   onRenameHandoff,
   onRenameBranch,
 }: {
+  workspaceId: string;
+  repoCount: number;
   projects: ProjectSection[];
   activeId: string;
+  title?: string;
+  subtitle?: string;
+  actions?: Array<{
+    label: string;
+    onClick: () => void;
+  }>;
   onSelect: (id: string) => void;
   onCreate: () => void;
   onMarkUnread: (id: string) => void;
@@ -37,11 +51,17 @@ export const Sidebar = memo(function Sidebar({
   return (
     <SPanel>
       <PanelHeaderBar>
-        <LabelSmall color={theme.colors.contentPrimary} $style={{ fontWeight: 600, flex: 1, fontSize: "13px" }}>
-          Handoffs
-        </LabelSmall>
+        <div className={css({ flex: 1, minWidth: 0 })}>
+          <LabelSmall color={theme.colors.contentPrimary} $style={{ fontWeight: 600, fontSize: "13px" }}>
+            {title ?? workspaceId}
+          </LabelSmall>
+          <LabelXSmall color={theme.colors.contentTertiary}>
+            {subtitle ?? `${repoCount} ${repoCount === 1 ? "repo" : "repos"}`}
+          </LabelXSmall>
+        </div>
         <button
           onClick={onCreate}
+          aria-label="Create handoff"
           className={css({
             all: "unset",
             width: "24px",
@@ -60,7 +80,44 @@ export const Sidebar = memo(function Sidebar({
           <Plus size={14} />
         </button>
       </PanelHeaderBar>
+      {actions && actions.length > 0 ? (
+        <div
+          className={css({
+            display: "flex",
+            gap: "8px",
+            flexWrap: "wrap",
+            padding: "10px 14px 0",
+            borderBottom: `1px solid ${theme.colors.borderOpaque}`,
+            backgroundColor: theme.colors.backgroundTertiary,
+          })}
+        >
+          {actions.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              onClick={action.onClick}
+              className={css({
+                border: `1px solid ${theme.colors.borderOpaque}`,
+                borderRadius: "999px",
+                backgroundColor: "rgba(255, 255, 255, 0.04)",
+                color: theme.colors.contentPrimary,
+                cursor: "pointer",
+                padding: "6px 10px",
+                fontSize: "12px",
+                fontWeight: 600,
+                marginBottom: "10px",
+                ":hover": { backgroundColor: "rgba(255, 255, 255, 0.08)" },
+              })}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <ScrollBody>
+        {projects.length === 0 ? (
+          <SidebarSkeleton />
+        ) : (
         <div className={css({ padding: "8px", display: "flex", flexDirection: "column", gap: "4px" })}>
           {projects.map((project) => {
             const visibleCount = expandedProjects[project.id] ? project.handoffs.length : Math.min(project.handoffs.length, 5);
@@ -92,9 +149,21 @@ export const Sidebar = memo(function Sidebar({
                     {project.label}
                   </LabelSmall>
                   <LabelXSmall color={theme.colors.contentTertiary}>
-                    {formatRelativeAge(project.updatedAtMs)}
+                    {project.updatedAtMs > 0 ? formatRelativeAge(project.updatedAtMs) : "No handoffs"}
                   </LabelXSmall>
                 </div>
+
+                {project.handoffs.length === 0 ? (
+                  <div
+                    className={css({
+                      padding: "0 12px 10px 34px",
+                      color: theme.colors.contentTertiary,
+                      fontSize: "12px",
+                    })}
+                  >
+                    No handoffs yet
+                  </div>
+                ) : null}
 
                 {project.handoffs.slice(0, visibleCount).map((handoff) => {
             const isActive = handoff.id === activeId;
@@ -218,6 +287,7 @@ export const Sidebar = memo(function Sidebar({
             );
           })}
         </div>
+        )}
       </ScrollBody>
       {contextMenu.menu ? <ContextMenuOverlay menu={contextMenu.menu} onClose={contextMenu.close} /> : null}
     </SPanel>

@@ -1,5 +1,5 @@
-import type { ProviderId } from "@openhandoff/shared";
-import type { AppConfig } from "@openhandoff/shared";
+import type { ProviderId } from "@sandbox-agent/factory-shared";
+import type { AppConfig } from "@sandbox-agent/factory-shared";
 import type { BackendDriver } from "../driver.js";
 import { DaytonaProvider } from "./daytona/index.js";
 import { LocalProvider } from "./local/index.js";

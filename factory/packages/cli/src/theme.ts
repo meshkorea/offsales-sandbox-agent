@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { cwd } from "node:process";
 import * as toml from "@iarna/toml";
-import type { AppConfig } from "@openhandoff/shared";
+import type { AppConfig } from "@sandbox-agent/factory-shared";
 import opencodeThemePackJson from "./themes/opencode-pack.json" with { type: "json" };
 
 export type ThemeMode = "dark" | "light";
@@ -101,7 +101,7 @@ export function resolveTuiTheme(config: AppConfig, baseDir = cwd()): TuiThemeRes
       return {
         theme: candidate.theme,
         name: candidate.name,
-        source: "openhandoff config",
+        source: "factory config",
         mode
       };
     }

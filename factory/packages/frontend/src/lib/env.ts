@@ -6,7 +6,7 @@ function resolveDefaultBackendEndpoint(): string {
 }
 
 type FrontendImportMetaEnv = ImportMetaEnv & {
-  OPENHANDOFF_FRONTEND_CLIENT_MODE?: string;
+  FACTORY_FRONTEND_CLIENT_MODE?: string;
 };
 
 const frontendEnv = import.meta.env as FrontendImportMetaEnv;
@@ -17,7 +17,7 @@ export const backendEndpoint =
 export const defaultWorkspaceId = import.meta.env.VITE_HF_WORKSPACE?.trim() || "default";
 
 function resolveFrontendClientMode(): "mock" | "remote" {
-  const raw = frontendEnv.OPENHANDOFF_FRONTEND_CLIENT_MODE?.trim().toLowerCase();
+  const raw = frontendEnv.FACTORY_FRONTEND_CLIENT_MODE?.trim().toLowerCase();
   if (raw === "mock") {
     return "mock";
   }
@@ -25,7 +25,7 @@ function resolveFrontendClientMode(): "mock" | "remote" {
     return "remote";
   }
   throw new Error(
-    `Unsupported OPENHANDOFF_FRONTEND_CLIENT_MODE value "${frontendEnv.OPENHANDOFF_FRONTEND_CLIENT_MODE}". Expected "mock" or "remote".`,
+    `Unsupported FACTORY_FRONTEND_CLIENT_MODE value "${frontendEnv.FACTORY_FRONTEND_CLIENT_MODE}". Expected "mock" or "remote".`,
   );
 }
 

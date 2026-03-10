@@ -1,7 +1,5 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-
 import { db as kvDrizzleDb } from "rivetkit/db/drizzle";
 
 // Keep this file decoupled from RivetKit's internal type export paths.
@@ -24,12 +22,21 @@ export type DatabaseProvider<DB> = {
 export interface ActorSqliteDbOptions<TSchema extends Record<string, unknown>> {
   actorName: string;
   schema?: TSchema;
-  migrations?: unknown;
+  migrations?: {
+    journal?: {
+      entries?: ReadonlyArray<{
+        idx: number;
+        when: number;
+        tag: string;
+      }>;
+    };
+    migrations?: Readonly<Record<string, string>>;
+  };
   migrationsFolderUrl: URL;
   /**
    * Override base directory for per-actor SQLite files.
    *
-   * Default: `<cwd>/.openhandoff/backend/sqlite`
+   * Default: `<cwd>/.sandbox-agent-factory/backend/sqlite`
    */
   baseDir?: string;
 }
@@ -53,9 +60,7 @@ export function actorSqliteDb<TSchema extends Record<string, unknown>>(
     }) as unknown as DatabaseProvider<any & RawAccess>;
   }
 
-  const baseDir = options.baseDir ?? join(process.cwd(), ".openhandoff", "backend", "sqlite");
-  const migrationsFolder = fileURLToPath(options.migrationsFolderUrl);
-
+  const baseDir = options.baseDir ?? join(process.cwd(), ".sandbox-agent-factory", "backend", "sqlite");
   return {
     createClient: async (ctx) => {
       // Keep Bun-only module out of Vitest/Vite's static import graph.
@@ -92,10 +97,41 @@ export function actorSqliteDb<TSchema extends Record<string, unknown>>(
     },
 
     onMigrate: async (client) => {
-      const { migrate } = await import("drizzle-orm/bun-sqlite/migrator");
-      await migrate(client, {
-        migrationsFolder,
-      });
+      await client.execute(
+        "CREATE TABLE IF NOT EXISTS __drizzle_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL)",
+      );
+
+      const appliedRows = await client.execute("SELECT hash FROM __drizzle_migrations");
+      const applied = new Set(
+        appliedRows
+          .map((row) => (row && typeof row === "object" && "hash" in row ? String((row as { hash: unknown }).hash) : null))
+          .filter((value): value is string => value !== null),
+      );
+
+      for (const entry of options.migrations?.journal?.entries ?? []) {
+        if (applied.has(entry.tag)) {
+          continue;
+        }
+
+        const sql = options.migrations?.migrations?.[`m${String(entry.idx).padStart(4, "0")}`];
+        if (!sql) {
+          continue;
+        }
+
+        const statements = sql
+          .split("--> statement-breakpoint")
+          .map((statement) => statement.trim())
+          .filter((statement) => statement.length > 0);
+
+        for (const statement of statements) {
+          await client.execute(statement);
+        }
+        await client.execute(
+          "INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)",
+          entry.tag,
+          entry.when ?? Date.now(),
+        );
+      }
     },
 
     onDestroy: async (client) => {

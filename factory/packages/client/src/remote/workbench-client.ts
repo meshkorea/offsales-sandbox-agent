@@ -12,7 +12,7 @@ import type {
   HandoffWorkbenchSnapshot,
   HandoffWorkbenchTabInput,
   HandoffWorkbenchUpdateDraftInput,
-} from "@openhandoff/shared";
+} from "@sandbox-agent/factory-shared";
 import type { BackendClient } from "../backend-client.js";
 import { groupWorkbenchProjects } from "../workbench-model.js";
 import type { HandoffWorkbenchClient } from "../workbench-client.js";
@@ -93,6 +93,11 @@ class RemoteWorkbenchStore implements HandoffWorkbenchClient {
     await this.refresh();
   }
 
+  async pushHandoff(input: HandoffWorkbenchSelectInput): Promise<void> {
+    await this.backend.runAction(this.workspaceId, input.handoffId, "push");
+    await this.refresh();
+  }
+
   async revertFile(input: HandoffWorkbenchDiffInput): Promise<void> {
     await this.backend.revertWorkbenchFile(this.workspaceId, input);
     await this.refresh();
@@ -104,6 +109,7 @@ class RemoteWorkbenchStore implements HandoffWorkbenchClient {
   }
 
   async sendMessage(input: HandoffWorkbenchSendMessageInput): Promise<void> {
+    await this.backend.recordAppSeatUsage(this.workspaceId);
     await this.backend.sendWorkbenchMessage(this.workspaceId, input);
     await this.refresh();
   }

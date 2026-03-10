@@ -27,7 +27,7 @@ Use `pnpm` workspaces and Turborepo.
 - `packages/cli` is fully disabled for active development.
 - Do not implement new behavior in `packages/cli` unless explicitly requested.
 - Frontend is the primary product surface; prioritize `packages/frontend` + supporting `packages/client`/`packages/backend`.
-- Workspace `build`, `typecheck`, and `test` intentionally exclude `@openhandoff/cli`.
+- Workspace `build`, `typecheck`, and `test` intentionally exclude `@sandbox-agent/factory-cli`.
 - `pnpm-workspace.yaml` excludes `packages/cli` from workspace package resolution.
 
 ## Common Commands
@@ -37,12 +37,22 @@ Use `pnpm` workspaces and Turborepo.
 - Start the full dev stack: `just factory-dev`
 - Start the local production-build preview stack: `just factory-preview`
 - Start only the backend locally: `just factory-backend-start`
-- Start only the frontend locally: `pnpm --filter @openhandoff/frontend dev`
-- Start the frontend against the mock workbench client: `OPENHANDOFF_FRONTEND_CLIENT_MODE=mock pnpm --filter @openhandoff/frontend dev`
+- Start only the frontend locally: `pnpm --filter @sandbox-agent/factory-frontend dev`
+- Start the frontend against the mock workbench client: `FACTORY_FRONTEND_CLIENT_MODE=mock pnpm --filter @sandbox-agent/factory-frontend dev`
 - Stop the compose dev stack: `just factory-dev-down`
 - Tail compose logs: `just factory-dev-logs`
 - Stop the preview stack: `just factory-preview-down`
 - Tail preview logs: `just factory-preview-logs`
+
+## Loading & Skeleton UI Policy
+
+- Never show a blank or hanging screen while data loads. Every view transition must render an immediate skeleton placeholder.
+- When the workspace loads for the first time (remote client starts with an empty snapshot), show a full-page skeleton: sidebar skeletons, transcript skeleton, and right sidebar skeleton.
+- When switching handoffs, show skeleton placeholders in the transcript and right sidebar while the new handoff data resolves.
+- When adding a new agent tab, show a skeleton message area immediately instead of an empty void.
+- Use the shared `SkeletonLine` / `SkeletonBlock` / `SkeletonCircle` primitives from `components/mock-layout/skeleton.tsx`.
+- Skeleton styles use CSS `@keyframes hf-shimmer` (a left-to-right gradient sweep) on a neutral background.
+- Do not use spinner-only loading indicators for layout transitions. Spinners are reserved for inline status (e.g. "agent is thinking").
 
 ## Frontend + Client Boundary
 
@@ -85,10 +95,12 @@ For all Rivet/RivetKit implementation:
 5. RivetKit is linked via pnpm `link:` protocol to `../rivet/rivetkit-typescript/packages/rivetkit`. Sub-packages (`@rivetkit/sqlite-vfs`, etc.) resolve transitively from the rivet workspace.
    - Dedicated local checkout for this workspace: `/Users/nathan/conductor/workspaces/handoff/rivet-checkout`
    - Dev worktree note: when working on RivetKit fixes for this repo, prefer the dedicated local checkout above and link to `../rivet-checkout/rivetkit-typescript/packages/rivetkit`.
-6. Before using, build RivetKit in the rivet repo:
+   - If Docker dev needs a different host path, export `HF_RIVET_CHECKOUT_PATH=/abs/path/to/rivet-checkout` before `docker compose -f factory/compose.dev.yaml up`.
+6. Before using a fresh Rivet checkout, generate RivetKit schemas and build RivetKit in the rivet repo:
    ```bash
    cd ../rivet-checkout/rivetkit-typescript
    pnpm install
+   pnpm --dir packages/rivetkit build:schema
    pnpm build -F rivetkit
    ```
 
@@ -132,7 +144,7 @@ For all Rivet/RivetKit implementation:
 - Workspace resolution order: `--workspace` flag -> config default -> `"default"`.
 - `ControlPlaneActor` is replaced by `WorkspaceActor` (workspace coordinator).
 - Every actor key must be prefixed with workspace namespace (`["ws", workspaceId, ...]`).
-- CLI/TUI/GUI must use `@openhandoff/client` (`packages/client`) for backend access; `rivetkit/client` imports are only allowed inside `packages/client`.
+- CLI/TUI/GUI must use `@sandbox-agent/factory-client` (`packages/client`) for backend access; `rivetkit/client` imports are only allowed inside `packages/client`.
 - Do not add custom backend REST endpoints (no `/v1/*` shim layer).
 - We own the sandbox-agent project; treat sandbox-agent defects as first-party bugs and fix them instead of working around them.
 - Keep strict single-writer ownership: each table/row has exactly one actor writer.
@@ -144,7 +156,7 @@ For all Rivet/RivetKit implementation:
 - Use create semantics only on explicit provisioning/create paths where creating a new actor instance is intended.
 - `getOrCreate` is a last resort for create paths when an explicit create API is unavailable; never use it in read/command paths.
 - For long-lived cross-actor links (for example sandbox/session runtime access), persist actor identity (`actorId`) and keep a fallback lookup path by actor id.
-- Docker dev: `compose.dev.yaml` mounts a named volume at `/root/.local/share/openhandoff/repos` to persist backend-managed git clones across restarts. Code must still work if this volume is not present (create directories as needed).
+- Docker dev: `compose.dev.yaml` mounts a named volume at `/root/.local/share/sandbox-agent-factory/repos` to persist backend-managed git clones across restarts. Code must still work if this volume is not present (create directories as needed).
 - RivetKit actor `c.state` is durable, but in Docker it is stored under `/root/.local/share/rivetkit`. If that path is not persisted, actor state-derived indexes (for example, in `project` actor state) can be lost after container recreation even when other data still exists.
 - Workflow history divergence policy:
 - Production: never auto-delete actor state to resolve `HistoryDivergedError`; ship explicit workflow migrations (`ctx.removed(...)`, step compatibility).
@@ -167,7 +179,7 @@ For all Rivet/RivetKit implementation:
 
 ## Config
 
-- Keep config path at `~/.config/openhandoff/config.toml`.
+- Keep config path at `~/.config/sandbox-agent-factory/config.toml`.
 - Evolve properties in place; do not move config location.
 
 ## Project Guidance

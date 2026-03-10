@@ -17,7 +17,7 @@ coverage/
 # Environment
 .env
 .env.*
-.openhandoff/
+.sandbox-agent-factory/
 
 # IDE
 .idea/

@@ -42,8 +42,8 @@ COPY quebec /workspace/quebec
 COPY rivet-checkout /workspace/rivet-checkout
 
 RUN pnpm install --frozen-lockfile
-RUN pnpm --filter @openhandoff/shared build
-RUN pnpm --filter @openhandoff/client build
-RUN pnpm --filter @openhandoff/backend build
+RUN pnpm --filter @sandbox-agent/factory-shared build
+RUN pnpm --filter @sandbox-agent/factory-client build
+RUN pnpm --filter @sandbox-agent/factory-backend build
 
 CMD ["bash", "-lc", "git config --global --add safe.directory /workspace/quebec >/dev/null 2>&1 || true; exec bun packages/backend/dist/index.js start --host 0.0.0.0 --port 7841"]

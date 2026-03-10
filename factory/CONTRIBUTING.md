@@ -5,8 +5,8 @@
 1. Clone:
 
 ```bash
-git clone https://github.com/rivet-dev/openhandoff.git
-cd openhandoff
+git clone https://github.com/rivet-dev/sandbox-agent-factory.git
+cd sandbox-agent-factory
 ```
 
 2. Install dependencies:
@@ -35,7 +35,7 @@ Build local RivetKit before backend changes that depend on Rivet internals:
 cd ../rivet
 pnpm build -F rivetkit
 
-cd /path/to/openhandoff
+cd /path/to/sandbox-agent-factory
 just sync-rivetkit
 ```
 

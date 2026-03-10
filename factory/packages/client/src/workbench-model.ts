@@ -12,7 +12,7 @@ import type {
   WorkbenchProjectSection,
   WorkbenchRepo,
   WorkbenchTranscriptEvent as TranscriptEvent,
-} from "@openhandoff/shared";
+} from "@sandbox-agent/factory-shared";
 
 export const MODEL_GROUPS: ModelGroup[] = [
   {
@@ -913,15 +913,221 @@ export function buildInitialHandoffs(): Handoff[] {
   ];
 }
 
-export function buildInitialMockLayoutViewModel(): HandoffWorkbenchSnapshot {
-  const repos: WorkbenchRepo[] = [
-    { id: "acme-backend", label: "acme/backend" },
-    { id: "acme-frontend", label: "acme/frontend" },
-    { id: "acme-infra", label: "acme/infra" },
+function buildPersonalHandoffs(ownerName: string, repoId: string, repoName: string): Handoff[] {
+  return [
+    {
+      id: "h-personal-1",
+      repoId,
+      title: "Polish onboarding copy",
+      status: "idle",
+      repoName,
+      updatedAtMs: minutesAgo(18),
+      branch: "feat/onboarding-copy",
+      pullRequest: null,
+      tabs: [
+        {
+          id: "personal-t1",
+          sessionId: "personal-t1",
+          sessionName: "Landing page copy",
+          agent: "Claude",
+          model: "claude-sonnet-4",
+          status: "idle",
+          thinkingSinceMs: null,
+          unread: false,
+          created: true,
+          draft: { text: "", attachments: [], updatedAtMs: null },
+          transcript: transcriptFromLegacyMessages("personal-t1", [
+            {
+              id: "pm1",
+              role: "user",
+              agent: null,
+              createdAtMs: minutesAgo(22),
+              lines: [`Tighten the hero copy and call-to-action for ${ownerName}'s landing page.`],
+            },
+            {
+              id: "pm2",
+              role: "agent",
+              agent: "claude",
+              createdAtMs: minutesAgo(20),
+              lines: [
+                "Updated the hero copy to focus on speed-to-handoff and clearer user outcomes.",
+                "",
+                "I also adjusted the primary CTA to feel more action-oriented.",
+              ],
+              durationMs: 11_000,
+            },
+          ]),
+        },
+      ],
+      fileChanges: [
+        { path: "src/content/home.ts", added: 12, removed: 6, type: "M" },
+        { path: "src/components/Hero.tsx", added: 8, removed: 3, type: "M" },
+      ],
+      diffs: {
+        "src/content/home.ts": [
+          "@@ -1,6 +1,9 @@",
+          "-export const heroHeadline = 'Build AI handoffs faster';",
+          "+export const heroHeadline = 'Ship clean handoffs without the chaos';",
+          " export const heroBody = [",
+          "-  'OpenHandoff keeps context, diffs, and follow-up work in one place.',",
+          "+  'Review work, keep context, and hand tasks across your team without losing the thread.',",
+          "+  'Everything stays attached to the repo, the branch, and the transcript.',",
+          " ];",
+        ].join("\n"),
+      },
+      fileTree: [
+        {
+          name: "src",
+          path: "src",
+          isDir: true,
+          children: [
+            {
+              name: "components",
+              path: "src/components",
+              isDir: true,
+              children: [{ name: "Hero.tsx", path: "src/components/Hero.tsx", isDir: false }],
+            },
+            {
+              name: "content",
+              path: "src/content",
+              isDir: true,
+              children: [{ name: "home.ts", path: "src/content/home.ts", isDir: false }],
+            },
+          ],
+        },
+      ],
+    },
   ];
-  const handoffs = buildInitialHandoffs();
+}
+
+function buildRivetHandoffs(): Handoff[] {
+  return [
+    {
+      id: "rivet-h1",
+      repoId: "rivet-dashboard",
+      title: "Add billing upgrade affordances",
+      status: "running",
+      repoName: "rivet/dashboard",
+      updatedAtMs: minutesAgo(6),
+      branch: "feat/billing-upgrade-affordances",
+      pullRequest: { number: 183, status: "draft" },
+      tabs: [
+        {
+          id: "rivet-t1",
+          sessionId: "rivet-t1",
+          sessionName: "Upgrade surface",
+          agent: "Codex",
+          model: "o3",
+          status: "running",
+          thinkingSinceMs: minutesAgo(1),
+          unread: false,
+          created: true,
+          draft: { text: "", attachments: [], updatedAtMs: null },
+          transcript: transcriptFromLegacyMessages("rivet-t1", [
+            {
+              id: "rm1",
+              role: "user",
+              agent: null,
+              createdAtMs: minutesAgo(8),
+              lines: ["Add an upgrade CTA on the usage banner and thread it into the hosted checkout flow."],
+            },
+            {
+              id: "rm2",
+              role: "agent",
+              agent: "codex",
+              createdAtMs: minutesAgo(7),
+              lines: ["I'm wiring the banner CTA to the checkout route and cleaning up the plan comparison copy."],
+              durationMs: 16_000,
+            },
+          ]),
+        },
+      ],
+      fileChanges: [
+        { path: "src/routes/settings/billing.tsx", added: 34, removed: 8, type: "M" },
+        { path: "src/components/usage-banner.tsx", added: 12, removed: 0, type: "A" },
+      ],
+      diffs: {
+        "src/routes/settings/billing.tsx": [
+          "@@ -14,7 +14,13 @@",
+          " export function BillingSettings() {",
+          "-  return <EmptyState />;",
+          "+  return (",
+          "+    <>",
+          "+      <UsageBanner ctaLabel=\"Upgrade with Stripe\" />",
+          "+      <PlanMatrix />",
+          "+    </>",
+          "+  );",
+          " }",
+        ].join("\n"),
+      },
+      fileTree: [
+        {
+          name: "src",
+          path: "src",
+          isDir: true,
+          children: [
+            {
+              name: "components",
+              path: "src/components",
+              isDir: true,
+              children: [{ name: "usage-banner.tsx", path: "src/components/usage-banner.tsx", isDir: false }],
+            },
+            {
+              name: "routes",
+              path: "src/routes",
+              isDir: true,
+              children: [
+                {
+                  name: "settings",
+                  path: "src/routes/settings",
+                  isDir: true,
+                  children: [{ name: "billing.tsx", path: "src/routes/settings/billing.tsx", isDir: false }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ];
+}
+
+export function buildInitialMockLayoutViewModel(workspaceId = "default"): HandoffWorkbenchSnapshot {
+  let repos: WorkbenchRepo[];
+  let handoffs: Handoff[];
+
+  switch (workspaceId) {
+    case "personal-nathan":
+      repos = [{ id: "nathan-personal-site", label: "nathan/personal-site" }];
+      handoffs = buildPersonalHandoffs("Nathan", "nathan-personal-site", "nathan/personal-site");
+      break;
+    case "personal-jamie":
+      repos = [{ id: "jamie-demo-app", label: "jamie/demo-app" }];
+      handoffs = buildPersonalHandoffs("Jamie", "jamie-demo-app", "jamie/demo-app");
+      break;
+    case "rivet":
+      repos = [
+        { id: "rivet-dashboard", label: "rivet/dashboard" },
+        { id: "rivet-agents", label: "rivet/agents" },
+        { id: "rivet-billing", label: "rivet/billing" },
+        { id: "rivet-infrastructure", label: "rivet/infrastructure" },
+      ];
+      handoffs = buildRivetHandoffs();
+      break;
+    case "acme":
+    case "default":
+    default:
+      repos = [
+        { id: "acme-backend", label: "acme/backend" },
+        { id: "acme-frontend", label: "acme/frontend" },
+        { id: "acme-infra", label: "acme/infra" },
+      ];
+      handoffs = buildInitialHandoffs();
+      break;
+  }
+
   return {
-    workspaceId: "default",
+    workspaceId,
     repos,
     projects: groupWorkbenchProjects(repos, handoffs),
     handoffs,
@@ -960,6 +1166,5 @@ export function groupWorkbenchProjects(repos: WorkbenchRepo[], handoffs: Handoff
       updatedAtMs:
         project.handoffs.length > 0 ? Math.max(...project.handoffs.map((handoff) => handoff.updatedAtMs)) : project.updatedAtMs,
     }))
-    .filter((project) => project.handoffs.length > 0)
     .sort((a, b) => b.updatedAtMs - a.updatedAtMs);
 }

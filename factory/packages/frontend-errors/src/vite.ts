@@ -4,7 +4,7 @@ import type { Plugin } from "vite";
 import { createFrontendErrorCollectorRouter, defaultFrontendErrorLogPath } from "./router.js";
 import { createFrontendErrorCollectorScript } from "./script.js";
 
-const DEFAULT_MOUNT_PATH = "/__openhandoff/frontend-errors";
+const DEFAULT_MOUNT_PATH = "/__factory/frontend-errors";
 const DEFAULT_EVENT_PATH = "/events";
 
 export interface FrontendErrorCollectorVitePluginOptions {
@@ -20,7 +20,7 @@ export function frontendErrorCollectorVitePlugin(
 ): Plugin {
   const mountPath = normalizePath(options.mountPath ?? DEFAULT_MOUNT_PATH);
   const logFilePath = options.logFilePath ?? defaultFrontendErrorLogPath(process.cwd());
-  const reporter = options.reporter ?? "openhandoff-vite";
+  const reporter = options.reporter ?? "factory-vite";
   const endpoint = `${mountPath}${DEFAULT_EVENT_PATH}`;
 
   const router = createFrontendErrorCollectorRouter({
@@ -31,7 +31,7 @@ export function frontendErrorCollectorVitePlugin(
   const listener = getRequestListener(mountApp.fetch);
 
   return {
-    name: "openhandoff:frontend-error-collector",
+    name: "factory:frontend-error-collector",
     apply: "serve",
     transformIndexHtml(html) {
       return {

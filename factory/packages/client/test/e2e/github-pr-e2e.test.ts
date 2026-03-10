@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { HandoffRecord, HistoryEvent } from "@openhandoff/shared";
+import type { HandoffRecord, HistoryEvent } from "@sandbox-agent/factory-shared";
 import { createBackendClient } from "../../src/backend-client.js";
 
 const RUN_E2E = process.env.HF_ENABLE_DAEMON_E2E === "1";

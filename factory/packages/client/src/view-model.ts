@@ -1,4 +1,4 @@
-import type { HandoffRecord, HandoffStatus } from "@openhandoff/shared";
+import type { HandoffRecord, HandoffStatus } from "@sandbox-agent/factory-shared";
 
 export const HANDOFF_STATUS_GROUPS = [
   "queued",

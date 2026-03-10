@@ -1,5 +1,5 @@
 {
-  "name": "@openhandoff/frontend-errors",
+  "name": "@sandbox-agent/factory-frontend-errors",
   "version": "0.1.0",
   "private": true,
   "type": "module",

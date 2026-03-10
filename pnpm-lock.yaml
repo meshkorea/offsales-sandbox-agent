@@ -439,7 +439,7 @@ importers:
       '@iarna/toml':
         specifier: ^2.2.5
         version: 2.2.5
-      '@openhandoff/shared':
+      '@sandbox-agent/factory-shared':
         specifier: workspace:*
         version: link:../shared
       '@sandbox-agent/persist-rivet':
@@ -479,7 +479,7 @@ importers:
 
   factory/packages/client:
     dependencies:
-      '@openhandoff/shared':
+      '@sandbox-agent/factory-shared':
         specifier: workspace:*
         version: link:../shared
       rivetkit:
@@ -492,13 +492,13 @@ importers:
 
   factory/packages/frontend:
     dependencies:
-      '@openhandoff/client':
+      '@sandbox-agent/factory-client':
         specifier: workspace:*
         version: link:../client
-      '@openhandoff/frontend-errors':
+      '@sandbox-agent/factory-frontend-errors':
         specifier: workspace:*
         version: link:../frontend-errors
-      '@openhandoff/shared':
+      '@sandbox-agent/factory-shared':
         specifier: workspace:*
         version: link:../shared
       '@tanstack/react-query':

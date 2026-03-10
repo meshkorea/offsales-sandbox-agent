@@ -3,6 +3,8 @@ import type {
   AgentType,
   AddRepoInput,
   AppConfig,
+  FactoryAppSnapshot,
+  FactoryBillingPlanId,
   CreateHandoffInput,
   HandoffRecord,
   HandoffSummary,
@@ -25,8 +27,9 @@ import type {
   RepoStackActionInput,
   RepoStackActionResult,
   RepoRecord,
+  UpdateFactoryOrganizationProfileInput,
   SwitchResult
-} from "@openhandoff/shared";
+} from "@sandbox-agent/factory-shared";
 import { sandboxInstanceKey, workspaceKey } from "./keys.js";
 
 export type HandoffAction = "push" | "sync" | "merge" | "archive" | "kill";
@@ -125,6 +128,17 @@ export interface BackendMetadata {
 }
 
 export interface BackendClient {
+  getAppSnapshot(): Promise<FactoryAppSnapshot>;
+  signInWithGithub(userId?: string): Promise<FactoryAppSnapshot>;
+  signOutApp(): Promise<FactoryAppSnapshot>;
+  selectAppOrganization(organizationId: string): Promise<FactoryAppSnapshot>;
+  updateAppOrganizationProfile(input: UpdateFactoryOrganizationProfileInput): Promise<FactoryAppSnapshot>;
+  triggerAppRepoImport(organizationId: string): Promise<FactoryAppSnapshot>;
+  reconnectAppGithub(organizationId: string): Promise<FactoryAppSnapshot>;
+  completeAppHostedCheckout(organizationId: string, planId: FactoryBillingPlanId): Promise<FactoryAppSnapshot>;
+  cancelAppScheduledRenewal(organizationId: string): Promise<FactoryAppSnapshot>;
+  resumeAppSubscription(organizationId: string): Promise<FactoryAppSnapshot>;
+  recordAppSeatUsage(workspaceId: string): Promise<FactoryAppSnapshot>;
   addRepo(workspaceId: string, remoteUrl: string): Promise<RepoRecord>;
   listRepos(workspaceId: string): Promise<RepoRecord[]>;
   createHandoff(input: CreateHandoffInput): Promise<HandoffRecord>;
@@ -347,13 +361,51 @@ async function probeMetadataEndpoint(
 
 export function createBackendClient(options: BackendClientOptions): BackendClient {
   let clientPromise: Promise<RivetClient> | null = null;
+  let appSessionId =
+    typeof window !== "undefined" ? window.localStorage.getItem("sandbox-agent-factory:remote-app-session") : null;
   const workbenchSubscriptions = new Map<
     string,
     {
       listeners: Set<() => void>;
       disposeConnPromise: Promise<(() => Promise<void>) | null> | null;
+      pollInterval: ReturnType<typeof setInterval> | null;
     }
   >();
+
+  const persistAppSessionId = (nextSessionId: string | null): void => {
+    appSessionId = nextSessionId;
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (nextSessionId) {
+      window.localStorage.setItem("sandbox-agent-factory:remote-app-session", nextSessionId);
+    } else {
+      window.localStorage.removeItem("sandbox-agent-factory:remote-app-session");
+    }
+  };
+
+  const appRequest = async <T>(path: string, init?: RequestInit): Promise<T> => {
+    const headers = new Headers(init?.headers);
+    if (appSessionId) {
+      headers.set("x-factory-session", appSessionId);
+    }
+    if (init?.body && !headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+
+    const res = await fetch(`${options.endpoint.replace(/\/$/, "")}${path}`, {
+      ...init,
+      headers,
+    });
+    const nextSessionId = res.headers.get("x-factory-session");
+    if (nextSessionId) {
+      persistAppSessionId(nextSessionId);
+    }
+    if (!res.ok) {
+      throw new Error(`app request failed: ${res.status} ${res.statusText}`);
+    }
+    return (await res.json()) as T;
+  };
 
   const getClient = async (): Promise<RivetClient> => {
     if (clientPromise) {
@@ -373,6 +425,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
         requestTimeoutMs: 8_000
       });
 
+      const isBrowserRuntime = typeof window !== "undefined";
       // Candidate endpoint: manager endpoint if provided, otherwise stick to the configured endpoint.
       const candidateEndpoint = metadata.clientEndpoint
         ? rewriteLoopbackClientEndpoint(metadata.clientEndpoint, configuredOrigin)
@@ -380,10 +433,14 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 
       // If the manager port isn't reachable from this client (common behind reverse proxies),
       // fall back to the configured serverless endpoint to avoid hanging requests.
-      const shouldUseCandidate = metadata.clientEndpoint
+      const shouldUseCandidate = metadata.clientEndpoint && !isBrowserRuntime
         ? await probeMetadataEndpoint(candidateEndpoint, metadata.clientNamespace, 1_500)
-        : true;
-      const resolvedEndpoint = shouldUseCandidate ? candidateEndpoint : options.endpoint;
+        : false;
+      const resolvedEndpoint = isBrowserRuntime
+        ? options.endpoint
+        : shouldUseCandidate
+          ? candidateEndpoint
+          : options.endpoint;
 
       return createClient({
         endpoint: resolvedEndpoint,
@@ -480,13 +537,27 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       entry = {
         listeners: new Set(),
         disposeConnPromise: null,
+        pollInterval: null,
       };
       workbenchSubscriptions.set(workspaceId, entry);
     }
 
     entry.listeners.add(listener);
 
-    if (!entry.disposeConnPromise) {
+    const isBrowserRuntime = typeof window !== "undefined";
+    if (isBrowserRuntime) {
+      if (!entry.pollInterval) {
+        entry.pollInterval = setInterval(() => {
+          const current = workbenchSubscriptions.get(workspaceId);
+          if (!current) {
+            return;
+          }
+          for (const currentListener of [...current.listeners]) {
+            currentListener();
+          }
+        }, 1_000);
+      }
+    } else if (!entry.disposeConnPromise) {
       entry.disposeConnPromise = (async () => {
         const handle = await workspace(workspaceId);
         const conn = (handle as any).connect();
@@ -519,6 +590,10 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       }
 
       workbenchSubscriptions.delete(workspaceId);
+      if (current.pollInterval) {
+        clearInterval(current.pollInterval);
+        current.pollInterval = null;
+      }
       void current.disposeConnPromise?.then(async (disposeConn) => {
         await disposeConn?.();
       });
@@ -526,6 +601,80 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
   };
 
   return {
+    async getAppSnapshot(): Promise<FactoryAppSnapshot> {
+      return await appRequest<FactoryAppSnapshot>("/app/snapshot");
+    },
+
+    async signInWithGithub(userId?: string): Promise<FactoryAppSnapshot> {
+      return await appRequest<FactoryAppSnapshot>("/app/sign-in", {
+        method: "POST",
+        body: JSON.stringify(userId ? { userId } : {}),
+      });
+    },
+
+    async signOutApp(): Promise<FactoryAppSnapshot> {
+      const snapshot = await appRequest<FactoryAppSnapshot>("/app/sign-out", { method: "POST" });
+      persistAppSessionId(appSessionId);
+      return snapshot;
+    },
+
+    async selectAppOrganization(organizationId: string): Promise<FactoryAppSnapshot> {
+      return await appRequest<FactoryAppSnapshot>(`/app/organizations/${organizationId}/select`, {
+        method: "POST",
+      });
+    },
+
+    async updateAppOrganizationProfile(input: UpdateFactoryOrganizationProfileInput): Promise<FactoryAppSnapshot> {
+      return await appRequest<FactoryAppSnapshot>(`/app/organizations/${input.organizationId}/profile`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          displayName: input.displayName,
+          slug: input.slug,
+          primaryDomain: input.primaryDomain,
+        }),
+      });
+    },
+
+    async triggerAppRepoImport(organizationId: string): Promise<FactoryAppSnapshot> {
+      return await appRequest<FactoryAppSnapshot>(`/app/organizations/${organizationId}/import`, {
+        method: "POST",
+      });
+    },
+
+    async reconnectAppGithub(organizationId: string): Promise<FactoryAppSnapshot> {
+      return await appRequest<FactoryAppSnapshot>(`/app/organizations/${organizationId}/reconnect`, {
+        method: "POST",
+      });
+    },
+
+    async completeAppHostedCheckout(
+      organizationId: string,
+      planId: FactoryBillingPlanId,
+    ): Promise<FactoryAppSnapshot> {
+      return await appRequest<FactoryAppSnapshot>(`/app/organizations/${organizationId}/billing/checkout`, {
+        method: "POST",
+        body: JSON.stringify({ planId }),
+      });
+    },
+
+    async cancelAppScheduledRenewal(organizationId: string): Promise<FactoryAppSnapshot> {
+      return await appRequest<FactoryAppSnapshot>(`/app/organizations/${organizationId}/billing/cancel`, {
+        method: "POST",
+      });
+    },
+
+    async resumeAppSubscription(organizationId: string): Promise<FactoryAppSnapshot> {
+      return await appRequest<FactoryAppSnapshot>(`/app/organizations/${organizationId}/billing/resume`, {
+        method: "POST",
+      });
+    },
+
+    async recordAppSeatUsage(workspaceId: string): Promise<FactoryAppSnapshot> {
+      return await appRequest<FactoryAppSnapshot>(`/app/workspaces/${workspaceId}/seat-usage`, {
+        method: "POST",
+      });
+    },
+
     async addRepo(workspaceId: string, remoteUrl: string): Promise<RepoRecord> {
       return (await workspace(workspaceId)).addRepo({ workspaceId, remoteUrl });
     },

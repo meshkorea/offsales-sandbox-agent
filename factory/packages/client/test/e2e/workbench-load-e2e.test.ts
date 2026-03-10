@@ -5,7 +5,7 @@ import type {
   WorkbenchHandoff,
   WorkbenchModelId,
   WorkbenchTranscriptEvent,
-} from "@openhandoff/shared";
+} from "@sandbox-agent/factory-shared";
 import { createBackendClient } from "../../src/backend-client.js";
 
 const RUN_WORKBENCH_LOAD_E2E = process.env.HF_ENABLE_DAEMON_WORKBENCH_LOAD_E2E === "1";
@@ -16,6 +16,10 @@ function requiredEnv(name: string): string {
     throw new Error(`Missing required env var: ${name}`);
   }
   return value;
+}
+
+function requiredRepoRemote(): string {
+  return process.env.HF_E2E_REPO_REMOTE?.trim() || requiredEnv("HF_E2E_GITHUB_REPO");
 }
 
 function workbenchModelEnv(name: string, fallback: WorkbenchModelId): WorkbenchModelId {
@@ -196,7 +200,7 @@ describe("e2e(client): workbench load", () => {
     async () => {
       const endpoint = process.env.HF_E2E_BACKEND_ENDPOINT?.trim() || "http://127.0.0.1:7741/api/rivet";
       const workspaceId = process.env.HF_E2E_WORKSPACE?.trim() || "default";
-      const repoRemote = requiredEnv("HF_E2E_GITHUB_REPO");
+      const repoRemote = requiredRepoRemote();
       const model = workbenchModelEnv("HF_E2E_MODEL", "gpt-4o");
       const handoffCount = intEnv("HF_LOAD_HANDOFF_COUNT", 3);
       const extraSessionCount = intEnv("HF_LOAD_EXTRA_SESSION_COUNT", 2);

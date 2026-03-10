@@ -10,10 +10,10 @@ COPY quebec /workspace/quebec
 COPY rivet-checkout /workspace/rivet-checkout
 
 RUN pnpm install --frozen-lockfile
-RUN pnpm --filter @openhandoff/shared build
-RUN pnpm --filter @openhandoff/client build
-RUN pnpm --filter @openhandoff/frontend-errors build
-RUN pnpm --filter @openhandoff/frontend build
+RUN pnpm --filter @sandbox-agent/factory-shared build
+RUN pnpm --filter @sandbox-agent/factory-client build
+RUN pnpm --filter @sandbox-agent/factory-frontend-errors build
+RUN pnpm --filter @sandbox-agent/factory-frontend build
 
 FROM nginx:1.27-alpine
 

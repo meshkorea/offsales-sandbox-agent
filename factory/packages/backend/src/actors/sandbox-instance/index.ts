@@ -2,7 +2,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { eq } from "drizzle-orm";
 import { actor, queue } from "rivetkit";
 import { Loop, workflow } from "rivetkit/workflow";
-import type { ProviderId } from "@openhandoff/shared";
+import type { ProviderId } from "@sandbox-agent/factory-shared";
 import type { SessionEvent, SessionRecord } from "sandbox-agent";
 import { sandboxInstanceDb } from "./db/db.js";
 import { sandboxInstance as sandboxInstanceTable } from "./db/schema.js";

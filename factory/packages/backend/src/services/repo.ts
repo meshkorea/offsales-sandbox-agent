@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { basename, sep } from "node:path";
 
 export function normalizeRemoteUrl(remoteUrl: string): string {
   let value = remoteUrl.trim();
@@ -47,4 +48,44 @@ export function normalizeRemoteUrl(remoteUrl: string): string {
 export function repoIdFromRemote(remoteUrl: string): string {
   const normalized = normalizeRemoteUrl(remoteUrl);
   return createHash("sha1").update(normalized).digest("hex").slice(0, 16);
+}
+
+export function repoLabelFromRemote(remoteUrl: string): string {
+  const trimmed = remoteUrl.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  try {
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) || trimmed.startsWith("file:")) {
+      const url = new URL(trimmed);
+      if (url.protocol === "mockgithub:") {
+        const repo = url.pathname.replace(/^\/+/, "").replace(/\.git$/i, "");
+        if (url.hostname && repo) {
+          return `${url.hostname}/${repo}`;
+        }
+      }
+
+      const parts = url.pathname.replace(/\/+$/, "").split("/").filter(Boolean);
+      if (parts.length >= 2) {
+        return `${parts[parts.length - 2]}/${(parts[parts.length - 1] ?? "").replace(/\.git$/i, "")}`;
+      }
+    } else {
+      const url = new URL(trimmed.startsWith("http") ? trimmed : `https://${trimmed}`);
+      const parts = url.pathname.replace(/\/+$/, "").split("/").filter(Boolean);
+      if (parts.length >= 2) {
+        return `${parts[0]}/${(parts[1] ?? "").replace(/\.git$/i, "")}`;
+      }
+    }
+  } catch {
+    // ignore and fall through to path-based parsing
+  }
+
+  const normalizedPath = trimmed.replace(/\\/g, sep);
+  const segments = normalizedPath.split(sep).filter(Boolean);
+  if (segments.length >= 2) {
+    return `${segments[segments.length - 2]}/${segments[segments.length - 1]!.replace(/\.git$/i, "")}`;
+  }
+
+  return basename(trimmed.replace(/\.git$/i, ""));
 }

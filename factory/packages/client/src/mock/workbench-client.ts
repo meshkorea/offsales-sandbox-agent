@@ -9,6 +9,8 @@ import {
   slugify,
   uid,
 } from "../workbench-model.js";
+import { getMockFactoryAppClient } from "../mock-app.js";
+import { injectMockLatency } from "./latency.js";
 import type {
   HandoffWorkbenchAddTabResponse,
   HandoffWorkbenchChangeModelInput,
@@ -26,7 +28,7 @@ import type {
   WorkbenchAgentTab as AgentTab,
   WorkbenchHandoff as Handoff,
   WorkbenchTranscriptEvent as TranscriptEvent,
-} from "@openhandoff/shared";
+} from "@sandbox-agent/factory-shared";
 import type { HandoffWorkbenchClient } from "../workbench-client.js";
 
 function buildTranscriptEvent(params: {
@@ -48,9 +50,13 @@ function buildTranscriptEvent(params: {
 }
 
 class MockWorkbenchStore implements HandoffWorkbenchClient {
-  private snapshot = buildInitialMockLayoutViewModel();
+  private snapshot: HandoffWorkbenchSnapshot;
   private listeners = new Set<() => void>();
   private pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  constructor(workspaceId: string) {
+    this.snapshot = buildInitialMockLayoutViewModel(workspaceId);
+  }
 
   getSnapshot(): HandoffWorkbenchSnapshot {
     return this.snapshot;
@@ -64,6 +70,7 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
   }
 
   async createHandoff(input: HandoffWorkbenchCreateHandoffInput): Promise<HandoffWorkbenchCreateHandoffResponse> {
+    await this.injectAsyncLatency();
     const id = uid();
     const tabId = `session-${id}`;
     const repo = this.snapshot.repos.find((candidate) => candidate.id === input.repoId);
@@ -103,10 +110,22 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
       ...current,
       handoffs: [nextHandoff, ...current.handoffs],
     }));
+
+    const task = input.task.trim();
+    if (task) {
+      await this.sendMessage({
+        handoffId: id,
+        tabId,
+        text: task,
+        attachments: [],
+      });
+    }
+
     return { handoffId: id, tabId };
   }
 
   async markHandoffUnread(input: HandoffWorkbenchSelectInput): Promise<void> {
+    await this.injectAsyncLatency();
     this.updateHandoff(input.handoffId, (handoff) => {
       const targetTab = handoff.tabs[handoff.tabs.length - 1] ?? null;
       if (!targetTab) {
@@ -121,6 +140,7 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
   }
 
   async renameHandoff(input: HandoffWorkbenchRenameInput): Promise<void> {
+    await this.injectAsyncLatency();
     const value = input.value.trim();
     if (!value) {
       throw new Error(`Cannot rename handoff ${input.handoffId} to an empty title`);
@@ -129,6 +149,7 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
   }
 
   async renameBranch(input: HandoffWorkbenchRenameInput): Promise<void> {
+    await this.injectAsyncLatency();
     const value = input.value.trim();
     if (!value) {
       throw new Error(`Cannot rename branch for handoff ${input.handoffId} to an empty value`);
@@ -137,10 +158,12 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
   }
 
   async archiveHandoff(input: HandoffWorkbenchSelectInput): Promise<void> {
+    await this.injectAsyncLatency();
     this.updateHandoff(input.handoffId, (handoff) => ({ ...handoff, status: "archived", updatedAtMs: nowMs() }));
   }
 
   async publishPr(input: HandoffWorkbenchSelectInput): Promise<void> {
+    await this.injectAsyncLatency();
     const nextPrNumber = Math.max(0, ...this.snapshot.handoffs.map((handoff) => handoff.pullRequest?.number ?? 0)) + 1;
     this.updateHandoff(input.handoffId, (handoff) => ({
       ...handoff,
@@ -149,7 +172,16 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
     }));
   }
 
+  async pushHandoff(input: HandoffWorkbenchSelectInput): Promise<void> {
+    await this.injectAsyncLatency();
+    this.updateHandoff(input.handoffId, (handoff) => ({
+      ...handoff,
+      updatedAtMs: nowMs(),
+    }));
+  }
+
   async revertFile(input: HandoffWorkbenchDiffInput): Promise<void> {
+    await this.injectAsyncLatency();
     this.updateHandoff(input.handoffId, (handoff) => {
       const file = handoff.fileChanges.find((entry) => entry.path === input.path);
       const nextDiffs = { ...handoff.diffs };
@@ -185,6 +217,7 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
   }
 
   async sendMessage(input: HandoffWorkbenchSendMessageInput): Promise<void> {
+    await this.injectAsyncLatency();
     const text = input.text.trim();
     if (!text) {
       throw new Error(`Cannot send an empty mock prompt for handoff ${input.handoffId}`);
@@ -192,11 +225,15 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
 
     this.assertTab(input.handoffId, input.tabId);
     const startedAtMs = nowMs();
+    getMockFactoryAppClient().recordSeatUsage(this.snapshot.workspaceId);
 
     this.updateHandoff(input.handoffId, (currentHandoff) => {
       const isFirstOnHandoff = currentHandoff.status === "new";
-      const newTitle = isFirstOnHandoff ? (text.length > 50 ? `${text.slice(0, 47)}...` : text) : currentHandoff.title;
-      const newBranch = isFirstOnHandoff ? `feat/${slugify(newTitle)}` : currentHandoff.branch;
+      const synthesizedTitle = text.length > 50 ? `${text.slice(0, 47)}...` : text;
+      const newTitle =
+        isFirstOnHandoff && currentHandoff.title === "New Handoff" ? synthesizedTitle : currentHandoff.title;
+      const newBranch =
+        isFirstOnHandoff && !currentHandoff.branch ? `feat/${slugify(synthesizedTitle)}` : currentHandoff.branch;
       const userMessageLines = [text, ...input.attachments.map((attachment) => `@ ${attachment.filePath}:${attachment.lineNumber}`)];
       const userEvent = buildTranscriptEvent({
         sessionId: input.tabId,
@@ -286,6 +323,7 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
   }
 
   async stopAgent(input: HandoffWorkbenchTabInput): Promise<void> {
+    await this.injectAsyncLatency();
     this.assertTab(input.handoffId, input.tabId);
     const existing = this.pendingTimers.get(input.tabId);
     if (existing) {
@@ -309,6 +347,7 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
   }
 
   async setSessionUnread(input: HandoffWorkbenchSetSessionUnreadInput): Promise<void> {
+    await this.injectAsyncLatency();
     this.updateHandoff(input.handoffId, (currentHandoff) => ({
       ...currentHandoff,
       tabs: currentHandoff.tabs.map((candidate) =>
@@ -318,6 +357,7 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
   }
 
   async renameSession(input: HandoffWorkbenchRenameSessionInput): Promise<void> {
+    await this.injectAsyncLatency();
     const title = input.title.trim();
     if (!title) {
       throw new Error(`Cannot rename session ${input.tabId} to an empty title`);
@@ -331,6 +371,7 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
   }
 
   async closeTab(input: HandoffWorkbenchTabInput): Promise<void> {
+    await this.injectAsyncLatency();
     this.updateHandoff(input.handoffId, (currentHandoff) => {
       if (currentHandoff.tabs.length <= 1) {
         return currentHandoff;
@@ -344,6 +385,7 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
   }
 
   async addTab(input: HandoffWorkbenchSelectInput): Promise<HandoffWorkbenchAddTabResponse> {
+    await this.injectAsyncLatency();
     this.assertHandoff(input.handoffId);
     const nextTab: AgentTab = {
       id: uid(),
@@ -368,6 +410,7 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
   }
 
   async changeModel(input: HandoffWorkbenchChangeModelInput): Promise<void> {
+    await this.injectAsyncLatency();
     const group = MODEL_GROUPS.find((candidate) => candidate.models.some((entry) => entry.id === input.model));
     if (!group) {
       throw new Error(`Unable to resolve model provider for ${input.model}`);
@@ -428,6 +471,10 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
     }
     return tab;
   }
+
+  private injectAsyncLatency(): Promise<void> {
+    return injectMockLatency();
+  }
 }
 
 function candidateEventIndex(handoff: Handoff, tabId: string): number {
@@ -435,11 +482,13 @@ function candidateEventIndex(handoff: Handoff, tabId: string): number {
   return (tab?.transcript.length ?? 0) + 1;
 }
 
-let sharedMockWorkbenchClient: HandoffWorkbenchClient | null = null;
+const mockWorkbenchClients = new Map<string, HandoffWorkbenchClient>();
 
-export function getSharedMockWorkbenchClient(): HandoffWorkbenchClient {
-  if (!sharedMockWorkbenchClient) {
-    sharedMockWorkbenchClient = new MockWorkbenchStore();
+export function getMockWorkbenchClient(workspaceId = "default"): HandoffWorkbenchClient {
+  let client = mockWorkbenchClients.get(workspaceId);
+  if (!client) {
+    client = new MockWorkbenchStore(workspaceId);
+    mockWorkbenchClients.set(workspaceId, client);
   }
-  return sharedMockWorkbenchClient;
+  return client;
 }

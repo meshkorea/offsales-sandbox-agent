@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { HandoffRecord } from "@openhandoff/shared";
+import type { HandoffRecord } from "@sandbox-agent/factory-shared";
 import { formatDiffStat, groupHandoffsByRepo } from "./model";
 
 const base: HandoffRecord = {

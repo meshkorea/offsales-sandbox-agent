@@ -1,7 +1,7 @@
 // @ts-nocheck
-import { basename } from "node:path";
 import { asc, eq } from "drizzle-orm";
 import { getActorRuntimeContext } from "../context.js";
+import { repoLabelFromRemote } from "../../services/repo.js";
 import {
   getOrCreateHandoffStatusSync,
   getOrCreateProject,
@@ -48,21 +48,6 @@ export function agentTypeForModel(model: string) {
     return "codex";
   }
   return "claude";
-}
-
-function repoLabelFromRemote(remoteUrl: string): string {
-  const trimmed = remoteUrl.trim();
-  try {
-    const url = new URL(trimmed.startsWith("http") ? trimmed : `https://${trimmed}`);
-    const parts = url.pathname.replace(/\/+$/, "").split("/").filter(Boolean);
-    if (parts.length >= 2) {
-      return `${parts[0]}/${(parts[1] ?? "").replace(/\.git$/, "")}`;
-    }
-  } catch {
-    // ignore
-  }
-
-  return basename(trimmed.replace(/\.git$/, ""));
 }
 
 function parseDraftAttachments(value: string | null | undefined): Array<any> {

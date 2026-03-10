@@ -101,7 +101,7 @@ Fixing Daytona `hf create` failures where `handoff.attach` would exhaust retries
 
 ### Friction / Issue
 
-OpenHandoff was using RivetKit's KV-backed durable SQLite VFS via `rivetkit/db/drizzle`, which opens the SQLite DB keyed by `ctx.actorId`. Since actor instances can be rescheduled (new `actorId`) between requests, DB writes from initialization were not visible to later actions (e.g. `attach`), causing “Handoff not found” and action timeouts.
+Sandbox Agent Factory was using RivetKit's KV-backed durable SQLite VFS via `rivetkit/db/drizzle`, which opens the SQLite DB keyed by `ctx.actorId`. Since actor instances can be rescheduled (new `actorId`) between requests, DB writes from initialization were not visible to later actions (e.g. `attach`), causing “Handoff not found” and action timeouts.
 
 Separately, importing `bun:sqlite` directly broke:
 
@@ -194,7 +194,7 @@ Backend integration tests depend on native `better-sqlite3` bindings, which were
 
 ### Attempted Fix / Workaround
 
-1. Attempted `pnpm --filter @openhandoff/backend rebuild better-sqlite3`.
+1. Attempted `pnpm --filter @sandbox-agent/factory-backend rebuild better-sqlite3`.
 2. Added runtime capability detection in DB-backed backend tests.
 3. Marked DB-backed tests with `it.skipIf(!hasBetterSqliteBinding)` so tests run when native bindings exist and skip cleanly otherwise.
 
@@ -280,7 +280,7 @@ Running backend tests with the integration flag enabled triggered unrelated acto
 
 ### Attempted Fix / Workaround
 
-1. Switched to package-targeted test runs for deterministic coverage (`@openhandoff/backend` + `@openhandoff/frontend`).
+1. Switched to package-targeted test runs for deterministic coverage (`@sandbox-agent/factory-backend` + `@sandbox-agent/factory-frontend`).
 2. Relied on required workspace validation (`pnpm -w typecheck`, `pnpm -w build`, `pnpm -w test`) plus targeted stack test files.
 3. Stopped the runaway integration run and recorded this friction for follow-up.
 

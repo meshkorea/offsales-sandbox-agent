@@ -8,7 +8,7 @@ import {
   sandboxInstanceKey,
   workspaceKey
 } from "./keys.js";
-import type { ProviderId } from "@openhandoff/shared";
+import type { ProviderId } from "@sandbox-agent/factory-shared";
 
 export function actorClient(c: any) {
   return c.client();

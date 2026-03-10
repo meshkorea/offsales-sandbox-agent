@@ -47,9 +47,9 @@ describe("frontend error collector router", () => {
 describe("frontend error collector script", () => {
   test("embeds configured endpoint", () => {
     const script = createFrontendErrorCollectorScript({
-      endpoint: "/__openhandoff/frontend-errors/events",
+      endpoint: "/__factory/frontend-errors/events",
     });
-    expect(script).toContain("/__openhandoff/frontend-errors/events");
+    expect(script).toContain("/__factory/frontend-errors/events");
     expect(script).toContain("window.addEventListener(\"error\"");
   });
 });

@@ -4,6 +4,7 @@ import { LabelSmall, LabelXSmall } from "baseui/typography";
 import { Copy } from "lucide-react";
 
 import { HistoryMinimap } from "./history-minimap";
+import { SkeletonBlock, SkeletonLine } from "./skeleton";
 import { SpinnerDot } from "./ui";
 import { buildDisplayMessages, formatMessageDuration, formatMessageTimestamp, type AgentTab, type HistoryEvent, type Message } from "./view-model";
 
@@ -45,21 +46,40 @@ export const MessageList = memo(function MessageList({
         })}
       >
         {tab && messages.length === 0 ? (
-          <div
-            className={css({
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              flex: 1,
-              minHeight: "200px",
-              gap: "8px",
-            })}
-          >
-            <LabelSmall color={theme.colors.contentTertiary}>
-              {!tab.created ? "Choose an agent and model, then send your first message" : "No messages yet in this session"}
-            </LabelSmall>
-          </div>
+          tab.created && tab.status === "running" ? (
+            /* New tab that's loading — show message skeleton */
+            <div
+              className={css({
+                display: "flex",
+                flexDirection: "column",
+                gap: "12px",
+                flex: 1,
+              })}
+            >
+              <div className={css({ display: "flex", justifyContent: "flex-end" })}>
+                <SkeletonBlock width={200} height={44} borderRadius={16} />
+              </div>
+              <div className={css({ display: "flex", justifyContent: "flex-start" })}>
+                <SkeletonBlock width={280} height={64} borderRadius={16} />
+              </div>
+            </div>
+          ) : (
+            <div
+              className={css({
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                flex: 1,
+                minHeight: "200px",
+                gap: "8px",
+              })}
+            >
+              <LabelSmall color={theme.colors.contentTertiary}>
+                {!tab.created ? "Choose an agent and model, then send your first message" : "No messages yet in this session"}
+              </LabelSmall>
+            </div>
+          )
         ) : null}
         {messages.map((message) => {
           const isUser = message.sender === "client";

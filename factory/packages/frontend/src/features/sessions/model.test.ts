@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SandboxSessionRecord } from "@openhandoff/client";
+import type { SandboxSessionRecord } from "@sandbox-agent/factory-client";
 import { buildTranscript, extractEventText, resolveSessionSelection } from "./model";
 
 describe("extractEventText", () => {

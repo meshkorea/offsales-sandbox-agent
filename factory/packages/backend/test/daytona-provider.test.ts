@@ -12,7 +12,7 @@ class RecordingDaytonaClient implements DaytonaClientLike {
     return {
       id: "sandbox-1",
       state: "started",
-      snapshot: "snapshot-openhandoff",
+      snapshot: "snapshot-factory",
       labels: {},
     };
   }
@@ -21,7 +21,7 @@ class RecordingDaytonaClient implements DaytonaClientLike {
     return {
       id: sandboxId,
       state: "started",
-      snapshot: "snapshot-openhandoff",
+      snapshot: "snapshot-factory",
       labels: {},
     };
   }
@@ -92,9 +92,9 @@ describe("daytona provider snapshot image behavior", () => {
     expect(commands).toContain("GIT_TERMINAL_PROMPT=0");
     expect(commands).toContain("GIT_ASKPASS=/bin/echo");
 
-    expect(handle.metadata.snapshot).toBe("snapshot-openhandoff");
+    expect(handle.metadata.snapshot).toBe("snapshot-factory");
     expect(handle.metadata.image).toBe("ubuntu:24.04");
-    expect(handle.metadata.cwd).toBe("/home/daytona/openhandoff/default/repo-1/handoff-1/repo");
+    expect(handle.metadata.cwd).toBe("/home/daytona/sandbox-agent-factory/default/repo-1/handoff-1/repo");
     expect(client.executedCommands.length).toBeGreaterThan(0);
   });
 

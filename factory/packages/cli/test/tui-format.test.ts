@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { HandoffRecord } from "@openhandoff/shared";
-import { filterHandoffs, fuzzyMatch } from "@openhandoff/client";
+import type { HandoffRecord } from "@sandbox-agent/factory-shared";
+import { filterHandoffs, fuzzyMatch } from "@sandbox-agent/factory-client";
 import { formatRows } from "../src/tui.js";
 
 const sample: HandoffRecord = {

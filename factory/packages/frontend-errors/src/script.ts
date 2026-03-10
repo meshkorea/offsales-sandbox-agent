@@ -1,6 +1,6 @@
 import type { FrontendErrorCollectorScriptOptions } from "./types.js";
 
-const DEFAULT_REPORTER = "openhandoff-frontend";
+const DEFAULT_REPORTER = "sandbox-agent-factory";
 
 export function createFrontendErrorCollectorScript(
   options: FrontendErrorCollectorScriptOptions
@@ -17,13 +17,13 @@ export function createFrontendErrorCollectorScript(
     return;
   }
 
-  if (window.__OPENHANDOFF_FRONTEND_ERROR_COLLECTOR__) {
+  if (window.__FACTORY_FRONTEND_ERROR_COLLECTOR__) {
     return;
   }
 
   var config = ${JSON.stringify(config)};
-  var sharedContext = window.__OPENHANDOFF_FRONTEND_ERROR_CONTEXT__ || {};
-  window.__OPENHANDOFF_FRONTEND_ERROR_CONTEXT__ = sharedContext;
+  var sharedContext = window.__FACTORY_FRONTEND_ERROR_CONTEXT__ || {};
+  window.__FACTORY_FRONTEND_ERROR_CONTEXT__ = sharedContext;
 
   function now() {
     return Date.now();
@@ -124,7 +124,7 @@ export function createFrontendErrorCollectorScript(
     });
   }
 
-  window.__OPENHANDOFF_FRONTEND_ERROR_COLLECTOR__ = {
+  window.__FACTORY_FRONTEND_ERROR_COLLECTOR__ = {
     setContext: function (nextContext) {
       if (!nextContext || typeof nextContext !== "object") {
         return;

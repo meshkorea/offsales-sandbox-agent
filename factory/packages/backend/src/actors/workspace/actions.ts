@@ -27,11 +27,11 @@ import type {
   RepoRecord,
   SwitchResult,
   WorkspaceUseInput
-} from "@openhandoff/shared";
+} from "@sandbox-agent/factory-shared";
 import { getActorRuntimeContext } from "../context.js";
 import { getHandoff, getOrCreateHistory, getOrCreateProject, selfWorkspace } from "../handles.js";
 import { logActorWarning, resolveErrorMessage } from "../logging.js";
-import { normalizeRemoteUrl, repoIdFromRemote } from "../../services/repo.js";
+import { normalizeRemoteUrl, repoIdFromRemote, repoLabelFromRemote } from "../../services/repo.js";
 import { handoffLookup, repos, providerProfiles } from "./db/schema.js";
 import { agentTypeForModel } from "../handoff/workbench.js";
 import { expectQueueResponse } from "../../services/queue.js";
@@ -130,20 +130,6 @@ async function collectAllHandoffSummaries(c: any): Promise<HandoffSummary[]> {
 
   all.sort((a, b) => b.updatedAt - a.updatedAt);
   return all;
-}
-
-function repoLabelFromRemote(remoteUrl: string): string {
-  try {
-    const url = new URL(remoteUrl.startsWith("http") ? remoteUrl : `https://${remoteUrl}`);
-    const parts = url.pathname.replace(/\/+$/, "").split("/").filter(Boolean);
-    if (parts.length >= 2) {
-      return `${parts[0]}/${(parts[1] ?? "").replace(/\.git$/, "")}`;
-    }
-  } catch {
-    // ignore
-  }
-
-  return remoteUrl;
 }
 
 async function buildWorkbenchSnapshot(c: any): Promise<HandoffWorkbenchSnapshot> {
