@@ -47,22 +47,6 @@ importers:
         specifier: latest
         version: 5.9.3
 
-  examples/claude-permissions:
-    dependencies:
-      sandbox-agent:
-        specifier: workspace:*
-        version: link:../../sdks/typescript
-    devDependencies:
-      '@types/node':
-        specifier: latest
-        version: 25.4.0
-      tsx:
-        specifier: latest
-        version: 4.21.0
-      typescript:
-        specifier: latest
-        version: 5.9.3
-
   examples/cloudflare:
     dependencies:
       '@cloudflare/sandbox':
@@ -283,6 +267,25 @@ importers:
       '@types/node':
         specifier: latest
         version: 25.3.5
+      typescript:
+        specifier: latest
+        version: 5.9.3
+
+  examples/permissions:
+    dependencies:
+      commander:
+        specifier: ^12.1.0
+        version: 12.1.0
+      sandbox-agent:
+        specifier: workspace:*
+        version: link:../../sdks/typescript
+    devDependencies:
+      '@types/node':
+        specifier: latest
+        version: 25.4.0
+      tsx:
+        specifier: latest
+        version: 4.21.0
       typescript:
         specifier: latest
         version: 5.9.3

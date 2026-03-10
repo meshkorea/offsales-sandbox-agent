@@ -1,16 +1,18 @@
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
+import { Command } from "commander";
 import {
   SandboxAgent,
   type PermissionReply,
   type SessionPermissionRequest,
 } from "sandbox-agent";
 
-const agent = (process.env.PERMISSIONS_AGENT?.trim() || "claude").toLowerCase();
-const requestedPermissionMode = process.env.PERMISSION_MODE?.trim();
-const autoReply = parsePermissionReply(process.env.PERMISSION_REPLY);
+const options = parseOptions();
+const agent = options.agent.trim().toLowerCase();
+const permissionMode = options.permissionMode.trim();
+const autoReply = parsePermissionReply(options.reply);
 const promptText =
-  process.env.PERMISSION_PROMPT?.trim() ||
+  options.prompt?.trim() ||
   `Create ./permission-example.txt with the text 'hello from the ${agent} permissions example'.`;
 
 const sdk = await SandboxAgent.start({
@@ -30,7 +32,6 @@ try {
     : [];
   const modeOption = configOptions.find((option) => option.category === "mode");
   const availableModes = extractOptionValues(modeOption);
-  const permissionMode = requestedPermissionMode || modeOption?.currentValue || availableModes[0] || "default";
 
   console.log(`Agent: ${agent}`);
   console.log(`Permission mode: ${permissionMode}`);
@@ -158,4 +159,30 @@ function parsePermissionReply(value: string | undefined): PermissionReply | null
     default:
       return null;
   }
+}
+
+function parseOptions(): {
+  agent: string;
+  permissionMode: string;
+  prompt?: string;
+  reply?: string;
+} {
+  const argv = process.argv.slice(2);
+  const normalizedArgv = argv[0] === "--" ? argv.slice(1) : argv;
+  const program = new Command();
+  program
+    .name("permissions")
+    .description("Run a permissions example against an ACP agent session.")
+    .requiredOption("--agent <agent>", "Agent to run, for example 'claude' or 'codex'")
+    .requiredOption("--permission-mode <mode>", "Permission mode to configure for the session")
+    .option("--prompt <text>", "Prompt to send after the session starts")
+    .option("--reply <reply>", "Automatically answer permission prompts with once, always, or reject");
+
+  program.parse(normalizedArgv, { from: "user" });
+  return program.opts<{
+    agent: string;
+    permissionMode: string;
+    prompt?: string;
+    reply?: string;
+  }>();
 }
