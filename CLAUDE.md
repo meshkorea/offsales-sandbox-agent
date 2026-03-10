@@ -27,6 +27,8 @@
 - ACP extensions may be used for gaps (for example `skills`, `models`, and related metadata), but the default is that agent-facing behavior is implemented by the agent through ACP.
 - Custom HTTP APIs are for non-agent/session platform services (for example filesystem, terminals, and other host/runtime capabilities).
 - Filesystem and terminal APIs remain Sandbox Agent-specific HTTP contracts and are not ACP.
+  - Do not make Sandbox Agent core flows depend on ACP client implementations of `fs/*` or `terminal/*`; in practice those client-side capabilities are often incomplete or inconsistent.
+  - ACP-native filesystem and terminal methods are also too limited for Sandbox Agent host/runtime needs, so prefer the native HTTP APIs for richer behavior.
 - Keep `GET /v1/fs/file`, `PUT /v1/fs/file`, and `POST /v1/fs/upload-batch` on HTTP:
   - These are Sandbox Agent host/runtime operations with cross-agent-consistent behavior.
   - They may involve very large binary transfers that ACP JSON-RPC envelopes are not suited to stream.
