@@ -1,13 +1,6 @@
 import type { HandoffRecord, HandoffStatus } from "@openhandoff/shared";
 
-export const HANDOFF_STATUS_GROUPS = [
-  "queued",
-  "running",
-  "idle",
-  "archived",
-  "killed",
-  "error"
-] as const;
+export const HANDOFF_STATUS_GROUPS = ["queued", "running", "idle", "archived", "killed", "error"] as const;
 
 export type HandoffStatusGroup = (typeof HANDOFF_STATUS_GROUPS)[number];
 
@@ -27,7 +20,7 @@ const QUEUED_STATUSES = new Set<HandoffStatus>([
   "archive_release_sandbox",
   "archive_finalize",
   "kill_destroy_sandbox",
-  "kill_finalize"
+  "kill_finalize",
 ]);
 
 export function groupHandoffStatus(status: HandoffStatus): HandoffStatusGroup {
@@ -47,7 +40,7 @@ function emptyStatusCounts(): Record<HandoffStatusGroup, number> {
     idle: 0,
     archived: 0,
     killed: 0,
-    error: 0
+    error: 0,
   };
 }
 
@@ -78,14 +71,7 @@ export function filterHandoffs(rows: HandoffRecord[], query: string): HandoffRec
   }
 
   return rows.filter((row) => {
-    const fields = [
-      row.branchName ?? "",
-      row.title ?? "",
-      row.handoffId,
-      row.task,
-      row.prAuthor ?? "",
-      row.reviewer ?? ""
-    ];
+    const fields = [row.branchName ?? "", row.title ?? "", row.handoffId, row.task, row.prAuthor ?? "", row.reviewer ?? ""];
     return fields.some((field) => fuzzyMatch(field, q));
   });
 }
@@ -113,6 +99,6 @@ export function summarizeHandoffs(rows: HandoffRecord[]): HandoffSummary {
   return {
     total: rows.length,
     byStatus,
-    byProvider
+    byProvider,
   };
 }

@@ -137,10 +137,7 @@ export const MessageList = memo(function MessageList({
                   })}
                 >
                   {displayFooter ? (
-                    <LabelXSmall
-                      color={theme.colors.contentTertiary}
-                      $style={{ fontFamily: '"IBM Plex Mono", monospace', letterSpacing: "0.01em" }}
-                    >
+                    <LabelXSmall color={theme.colors.contentTertiary} $style={{ fontFamily: '"IBM Plex Mono", monospace', letterSpacing: "0.01em" }}>
                       {displayFooter}
                     </LabelXSmall>
                   ) : null}

@@ -13,7 +13,7 @@ import type {
   SandboxHandle,
   SandboxHealth,
   SandboxHealthRequest,
-  SandboxProvider
+  SandboxProvider,
 } from "../provider-api/index.js";
 import type { DaytonaDriver } from "../../driver.js";
 import { Image } from "@daytonaio/sdk";
@@ -33,7 +33,7 @@ export interface DaytonaProviderConfig {
 export class DaytonaProvider implements SandboxProvider {
   constructor(
     private readonly config: DaytonaProviderConfig,
-    private readonly daytona?: DaytonaDriver
+    private readonly daytona?: DaytonaDriver,
   ) {}
 
   private static readonly SANDBOX_AGENT_PORT = 2468;
@@ -60,10 +60,7 @@ export class DaytonaProvider implements SandboxProvider {
   }
 
   private getAcpRequestTimeoutMs(): number {
-    const parsed = Number(
-      process.env.HF_SANDBOX_AGENT_ACP_REQUEST_TIMEOUT_MS
-        ?? DaytonaProvider.DEFAULT_ACP_REQUEST_TIMEOUT_MS.toString()
-    );
+    const parsed = Number(process.env.HF_SANDBOX_AGENT_ACP_REQUEST_TIMEOUT_MS ?? DaytonaProvider.DEFAULT_ACP_REQUEST_TIMEOUT_MS.toString());
     if (!Number.isFinite(parsed) || parsed <= 0) {
       return DaytonaProvider.DEFAULT_ACP_REQUEST_TIMEOUT_MS;
     }
@@ -117,7 +114,7 @@ export class DaytonaProvider implements SandboxProvider {
     throw new Error(
       "daytona provider is not configured: missing apiKey. " +
         "Set HF_DAYTONA_API_KEY (or DAYTONA_API_KEY). " +
-        "Optionally set HF_DAYTONA_ENDPOINT (or DAYTONA_ENDPOINT)."
+        "Optionally set HF_DAYTONA_ENDPOINT (or DAYTONA_ENDPOINT).",
     );
   }
 
@@ -154,20 +151,14 @@ export class DaytonaProvider implements SandboxProvider {
     return Image.base(this.config.image).runCommands(
       "apt-get update && apt-get install -y curl ca-certificates git openssh-client nodejs npm",
       `curl -fsSL https://releases.rivet.dev/sandbox-agent/${DaytonaProvider.SANDBOX_AGENT_VERSION}/install.sh | sh`,
-      `bash -lc 'export PATH="$HOME/.local/bin:$PATH"; sandbox-agent install-agent codex || true; sandbox-agent install-agent claude || true'`
+      `bash -lc 'export PATH="$HOME/.local/bin:$PATH"; sandbox-agent install-agent codex || true; sandbox-agent install-agent claude || true'`,
     );
   }
 
-  private async runCheckedCommand(
-    sandboxId: string,
-    command: string,
-    label: string
-  ): Promise<void> {
+  private async runCheckedCommand(sandboxId: string, command: string, label: string): Promise<void> {
     const client = this.requireClient();
 
-    const result = await this.withTimeout(`execute command (${label})`, () =>
-      client.executeCommand(sandboxId, command)
-    );
+    const result = await this.withTimeout(`execute command (${label})`, () => client.executeCommand(sandboxId, command));
     if (result.exitCode !== 0) {
       throw new Error(`daytona ${label} failed (${result.exitCode}): ${result.result}`);
     }
@@ -180,7 +171,7 @@ export class DaytonaProvider implements SandboxProvider {
   capabilities(): ProviderCapabilities {
     return {
       remote: true,
-      supportsSessionReuse: true
+      supportsSessionReuse: true,
     };
   }
 
@@ -196,7 +187,7 @@ export class DaytonaProvider implements SandboxProvider {
       workspaceId: req.workspaceId,
       repoId: req.repoId,
       handoffId: req.handoffId,
-      branchName: req.branchName
+      branchName: req.branchName,
     });
 
     const createStartedAt = Date.now();
@@ -212,12 +203,12 @@ export class DaytonaProvider implements SandboxProvider {
           "openhandoff.branch": req.branchName,
         },
         autoStopInterval: this.config.autoStopInterval,
-      })
+      }),
     );
     emitDebug("daytona.createSandbox.created", {
       sandboxId: sandbox.id,
       durationMs: Date.now() - createStartedAt,
-      state: sandbox.state ?? null
+      state: sandbox.state ?? null,
     });
 
     const repoDir = `/home/daytona/openhandoff/${req.workspaceId}/${req.repoId}/${req.handoffId}/repo`;
@@ -229,13 +220,13 @@ export class DaytonaProvider implements SandboxProvider {
       [
         "bash",
         "-lc",
-        `'set -euo pipefail; export DEBIAN_FRONTEND=noninteractive; if command -v git >/dev/null 2>&1 && command -v npx >/dev/null 2>&1; then exit 0; fi; apt-get update -y >/tmp/apt-update.log 2>&1; apt-get install -y git openssh-client ca-certificates nodejs npm >/tmp/apt-install.log 2>&1'`
+        `'set -euo pipefail; export DEBIAN_FRONTEND=noninteractive; if command -v git >/dev/null 2>&1 && command -v npx >/dev/null 2>&1; then exit 0; fi; apt-get update -y >/tmp/apt-update.log 2>&1; apt-get install -y git openssh-client ca-certificates nodejs npm >/tmp/apt-install.log 2>&1'`,
       ].join(" "),
-      "install git + node toolchain"
+      "install git + node toolchain",
     );
     emitDebug("daytona.createSandbox.install_toolchain.done", {
       sandboxId: sandbox.id,
-      durationMs: Date.now() - installStartedAt
+      durationMs: Date.now() - installStartedAt,
     });
 
     const cloneStartedAt = Date.now();
@@ -260,14 +251,14 @@ export class DaytonaProvider implements SandboxProvider {
             `if git show-ref --verify --quiet "refs/remotes/origin/${req.branchName}"; then git checkout -B "${req.branchName}" "origin/${req.branchName}"; else git checkout -B "${req.branchName}" "$(git branch --show-current 2>/dev/null || echo main)"; fi`,
             `git config user.email "openhandoff@local" >/dev/null 2>&1 || true`,
             `git config user.name "OpenHandoff" >/dev/null 2>&1 || true`,
-          ].join("; ")
-        )}`
+          ].join("; "),
+        )}`,
       ].join(" "),
-      "clone repo"
+      "clone repo",
     );
     emitDebug("daytona.createSandbox.clone_repo.done", {
       sandboxId: sandbox.id,
-      durationMs: Date.now() - cloneStartedAt
+      durationMs: Date.now() - cloneStartedAt,
     });
 
     return {
@@ -280,7 +271,7 @@ export class DaytonaProvider implements SandboxProvider {
         remote: true,
         state: sandbox.state ?? null,
         cwd: repoDir,
-      }
+      },
     };
   }
 
@@ -290,17 +281,12 @@ export class DaytonaProvider implements SandboxProvider {
     await this.ensureStarted(req.sandboxId);
 
     // Reconstruct cwd from sandbox labels written at create time.
-    const info = await this.withTimeout("resume get sandbox", () =>
-      client.getSandbox(req.sandboxId)
-    );
+    const info = await this.withTimeout("resume get sandbox", () => client.getSandbox(req.sandboxId));
     const labels = info.labels ?? {};
     const workspaceId = labels["openhandoff.workspace"] ?? req.workspaceId;
     const repoId = labels["openhandoff.repo_id"] ?? "";
     const handoffId = labels["openhandoff.handoff"] ?? "";
-    const cwd =
-      repoId && handoffId
-        ? `/home/daytona/openhandoff/${workspaceId}/${repoId}/${handoffId}/repo`
-        : null;
+    const cwd = repoId && handoffId ? `/home/daytona/openhandoff/${workspaceId}/${repoId}/${handoffId}/repo` : null;
 
     return {
       sandboxId: req.sandboxId,
@@ -309,7 +295,7 @@ export class DaytonaProvider implements SandboxProvider {
         resumed: true,
         endpoint: this.config.endpoint ?? null,
         ...(cwd ? { cwd } : {}),
-      }
+      },
     };
   }
 
@@ -359,9 +345,9 @@ export class DaytonaProvider implements SandboxProvider {
       [
         "bash",
         "-lc",
-        `'set -euo pipefail; if command -v curl >/dev/null 2>&1; then exit 0; fi; export DEBIAN_FRONTEND=noninteractive; apt-get update -y >/tmp/apt-update.log 2>&1; apt-get install -y curl ca-certificates >/tmp/apt-install.log 2>&1'`
+        `'set -euo pipefail; if command -v curl >/dev/null 2>&1; then exit 0; fi; export DEBIAN_FRONTEND=noninteractive; apt-get update -y >/tmp/apt-update.log 2>&1; apt-get install -y curl ca-certificates >/tmp/apt-install.log 2>&1'`,
       ].join(" "),
-      "install curl"
+      "install curl",
     );
 
     await this.runCheckedCommand(
@@ -369,9 +355,9 @@ export class DaytonaProvider implements SandboxProvider {
       [
         "bash",
         "-lc",
-        `'set -euo pipefail; if command -v npx >/dev/null 2>&1; then exit 0; fi; export DEBIAN_FRONTEND=noninteractive; apt-get update -y >/tmp/apt-update.log 2>&1; apt-get install -y nodejs npm >/tmp/apt-install.log 2>&1'`
+        `'set -euo pipefail; if command -v npx >/dev/null 2>&1; then exit 0; fi; export DEBIAN_FRONTEND=noninteractive; apt-get update -y >/tmp/apt-update.log 2>&1; apt-get install -y nodejs npm >/tmp/apt-install.log 2>&1'`,
       ].join(" "),
-      "install node toolchain"
+      "install node toolchain",
     );
 
     await this.runCheckedCommand(
@@ -379,9 +365,9 @@ export class DaytonaProvider implements SandboxProvider {
       [
         "bash",
         "-lc",
-        `'set -euo pipefail; export PATH="$HOME/.local/bin:$PATH"; if sandbox-agent --version 2>/dev/null | grep -q "${DaytonaProvider.SANDBOX_AGENT_VERSION}"; then exit 0; fi; curl -fsSL https://releases.rivet.dev/sandbox-agent/${DaytonaProvider.SANDBOX_AGENT_VERSION}/install.sh | sh'`
+        `'set -euo pipefail; export PATH="$HOME/.local/bin:$PATH"; if sandbox-agent --version 2>/dev/null | grep -q "${DaytonaProvider.SANDBOX_AGENT_VERSION}"; then exit 0; fi; curl -fsSL https://releases.rivet.dev/sandbox-agent/${DaytonaProvider.SANDBOX_AGENT_VERSION}/install.sh | sh'`,
       ].join(" "),
-      "install sandbox-agent"
+      "install sandbox-agent",
     );
 
     for (const agentId of DaytonaProvider.AGENT_IDS) {
@@ -389,7 +375,7 @@ export class DaytonaProvider implements SandboxProvider {
         await this.runCheckedCommand(
           req.sandboxId,
           ["bash", "-lc", `'export PATH="$HOME/.local/bin:$PATH"; sandbox-agent install-agent ${agentId}'`].join(" "),
-          `install agent ${agentId}`
+          `install agent ${agentId}`,
         );
       } catch {
         // Some sandbox-agent builds may not ship every agent plugin; treat this as best-effort.
@@ -401,9 +387,9 @@ export class DaytonaProvider implements SandboxProvider {
       [
         "bash",
         "-lc",
-        `'set -euo pipefail; export PATH="$HOME/.local/bin:$PATH"; command -v sandbox-agent >/dev/null 2>&1; if pgrep -x sandbox-agent >/dev/null; then exit 0; fi; nohup env SANDBOX_AGENT_ACP_REQUEST_TIMEOUT_MS=${acpRequestTimeoutMs} sandbox-agent server --no-token --host 0.0.0.0 --port ${DaytonaProvider.SANDBOX_AGENT_PORT} >/tmp/sandbox-agent.log 2>&1 &'`
+        `'set -euo pipefail; export PATH="$HOME/.local/bin:$PATH"; command -v sandbox-agent >/dev/null 2>&1; if pgrep -x sandbox-agent >/dev/null; then exit 0; fi; nohup env SANDBOX_AGENT_ACP_REQUEST_TIMEOUT_MS=${acpRequestTimeoutMs} sandbox-agent server --no-token --host 0.0.0.0 --port ${DaytonaProvider.SANDBOX_AGENT_PORT} >/tmp/sandbox-agent.log 2>&1 &'`,
       ].join(" "),
-      "start sandbox-agent"
+      "start sandbox-agent",
     );
 
     await this.runCheckedCommand(
@@ -411,18 +397,16 @@ export class DaytonaProvider implements SandboxProvider {
       [
         "bash",
         "-lc",
-        `'for i in $(seq 1 45); do curl -fsS "http://127.0.0.1:${DaytonaProvider.SANDBOX_AGENT_PORT}/v1/health" >/dev/null && exit 0; sleep 1; done; echo "sandbox-agent failed to become healthy" >&2; tail -n 80 /tmp/sandbox-agent.log >&2; exit 1'`
+        `'for i in $(seq 1 45); do curl -fsS "http://127.0.0.1:${DaytonaProvider.SANDBOX_AGENT_PORT}/v1/health" >/dev/null && exit 0; sleep 1; done; echo "sandbox-agent failed to become healthy" >&2; tail -n 80 /tmp/sandbox-agent.log >&2; exit 1'`,
       ].join(" "),
-      "wait for sandbox-agent health"
+      "wait for sandbox-agent health",
     );
 
-    const preview = await this.withTimeout("get preview endpoint", () =>
-      client.getPreviewEndpoint(req.sandboxId, DaytonaProvider.SANDBOX_AGENT_PORT)
-    );
+    const preview = await this.withTimeout("get preview endpoint", () => client.getPreviewEndpoint(req.sandboxId, DaytonaProvider.SANDBOX_AGENT_PORT));
 
     return {
       endpoint: preview.url,
-      token: preview.token
+      token: preview.token,
     };
   }
 
@@ -436,9 +420,7 @@ export class DaytonaProvider implements SandboxProvider {
     }
 
     try {
-      const sandbox = await this.withTimeout("health get sandbox", () =>
-        client.getSandbox(req.sandboxId)
-      );
+      const sandbox = await this.withTimeout("health get sandbox", () => client.getSandbox(req.sandboxId));
       const state = String(sandbox.state ?? "unknown");
       if (state.toLowerCase().includes("error")) {
         return {
@@ -461,15 +443,13 @@ export class DaytonaProvider implements SandboxProvider {
 
   async attachTarget(req: AttachTargetRequest): Promise<AttachTarget> {
     return {
-      target: `daytona://${req.sandboxId}`
+      target: `daytona://${req.sandboxId}`,
     };
   }
 
   async executeCommand(req: ExecuteSandboxCommandRequest): Promise<ExecuteSandboxCommandResult> {
     const client = this.requireClient();
     await this.ensureStarted(req.sandboxId);
-    return await this.withTimeout(`execute command (${req.label ?? "command"})`, () =>
-      client.executeCommand(req.sandboxId, req.command)
-    );
+    return await this.withTimeout(`execute command (${req.label ?? "command"})`, () => client.executeCommand(req.sandboxId, req.command));
   }
 }

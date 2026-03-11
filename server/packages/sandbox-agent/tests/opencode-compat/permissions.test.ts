@@ -53,11 +53,7 @@ describe("OpenCode-compatible Permission API", () => {
     throw new Error("Timed out waiting for permission request");
   }
 
-  async function waitForCondition(
-    check: () => boolean | Promise<boolean>,
-    timeoutMs = 10_000,
-    intervalMs = 100,
-  ) {
+  async function waitForCondition(check: () => boolean | Promise<boolean>, timeoutMs = 10_000, intervalMs = 100) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       if (await check()) {
@@ -68,11 +64,7 @@ describe("OpenCode-compatible Permission API", () => {
     throw new Error("Timed out waiting for condition");
   }
 
-  async function waitForValue<T>(
-    getValue: () => T | undefined | Promise<T | undefined>,
-    timeoutMs = 10_000,
-    intervalMs = 100,
-  ): Promise<T> {
+  async function waitForValue<T>(getValue: () => T | undefined | Promise<T | undefined>, timeoutMs = 10_000, intervalMs = 100): Promise<T> {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       const value = await getValue();
@@ -175,13 +167,7 @@ describe("OpenCode-compatible Permission API", () => {
       });
       expect(firstReply.error).toBeUndefined();
 
-      await waitForCondition(() =>
-        repliedEvents.some(
-          (event) =>
-            event?.properties?.requestID === firstRequestId &&
-            event?.properties?.reply === "always",
-        ),
-      );
+      await waitForCondition(() => repliedEvents.some((event) => event?.properties?.requestID === firstRequestId && event?.properties?.reply === "always"));
 
       await client.session.prompt({
         sessionID: sessionId,
@@ -190,11 +176,7 @@ describe("OpenCode-compatible Permission API", () => {
       });
 
       const autoReplyEvent = await waitForValue(() =>
-        repliedEvents.find(
-          (event) =>
-            event?.properties?.requestID !== firstRequestId &&
-            event?.properties?.reply === "always",
-        ),
+        repliedEvents.find((event) => event?.properties?.requestID !== firstRequestId && event?.properties?.reply === "always"),
       );
       const autoRequestId = autoReplyEvent?.properties?.requestID;
       expect(autoRequestId).toBeDefined();

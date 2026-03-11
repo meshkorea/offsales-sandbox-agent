@@ -41,15 +41,7 @@ export function buildInspectorUrl({
   return `${normalized}/ui/${sessionPath}${queryString ? `?${queryString}` : ""}`;
 }
 
-export function logInspectorUrl({
-  baseUrl,
-  token,
-  headers,
-}: {
-  baseUrl: string;
-  token?: string;
-  headers?: Record<string, string>;
-}): void {
+export function logInspectorUrl({ baseUrl, token, headers }: { baseUrl: string; token?: string; headers?: Record<string, string> }): void {
   console.log(`Inspector: ${buildInspectorUrl({ baseUrl, token, headers })}`);
 }
 
@@ -84,10 +76,7 @@ export function generateSessionId(): string {
 export function detectAgent(): string {
   if (process.env.SANDBOX_AGENT) return process.env.SANDBOX_AGENT;
   const hasClaude = Boolean(
-    process.env.ANTHROPIC_API_KEY ||
-    process.env.CLAUDE_API_KEY ||
-    process.env.CLAUDE_CODE_OAUTH_TOKEN ||
-    process.env.ANTHROPIC_AUTH_TOKEN,
+    process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || process.env.CLAUDE_CODE_OAUTH_TOKEN || process.env.ANTHROPIC_AUTH_TOKEN,
   );
   const openAiLikeKey = process.env.OPENAI_API_KEY || process.env.CODEX_API_KEY || "";
   const hasCodexApiKey = openAiLikeKey.startsWith("sk-");

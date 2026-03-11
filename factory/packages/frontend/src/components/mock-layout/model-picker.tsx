@@ -126,15 +126,7 @@ export const ModelPicker = memo(function ModelPicker({
           },
         },
       }}
-      content={({ close }) => (
-        <ModelPickerContent
-          value={value}
-          defaultModel={defaultModel}
-          onChange={onChange}
-          onSetDefault={onSetDefault}
-          close={close}
-        />
-      )}
+      content={({ close }) => <ModelPickerContent value={value} defaultModel={defaultModel} onChange={onChange} onSetDefault={onSetDefault} close={close} />}
     >
       <div className={css({ display: "inline-flex" })}>
         <button

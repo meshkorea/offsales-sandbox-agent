@@ -16,15 +16,11 @@ export function resolveErrorStack(error: unknown): string | undefined {
   return undefined;
 }
 
-export function logActorWarning(
-  scope: string,
-  message: string,
-  context?: Record<string, unknown>
-): void {
+export function logActorWarning(scope: string, message: string, context?: Record<string, unknown>): void {
   const payload = {
     scope,
     message,
-    ...(context ?? {})
+    ...(context ?? {}),
   };
   // eslint-disable-next-line no-console
   console.warn("[openhandoff][actor:warn]", payload);

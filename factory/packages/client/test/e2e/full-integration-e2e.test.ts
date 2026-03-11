@@ -33,13 +33,7 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function poll<T>(
-  label: string,
-  timeoutMs: number,
-  intervalMs: number,
-  fn: () => Promise<T>,
-  isDone: (value: T) => boolean
-): Promise<T> {
+async function poll<T>(label: string, timeoutMs: number, intervalMs: number, fn: () => Promise<T>, isDone: (value: T) => boolean): Promise<T> {
   const start = Date.now();
   let last: T;
   for (;;) {
@@ -75,11 +69,7 @@ async function githubApi(token: string, path: string, init?: RequestInit): Promi
   });
 }
 
-async function ensureRemoteBranchExists(
-  token: string,
-  fullName: string,
-  branchName: string
-): Promise<void> {
+async function ensureRemoteBranchExists(token: string, fullName: string, branchName: string): Promise<void> {
   const repoRes = await githubApi(token, `repos/${fullName}`, { method: "GET" });
   if (!repoRes.ok) {
     throw new Error(`GitHub repo lookup failed: ${repoRes.status} ${await repoRes.text()}`);
@@ -90,11 +80,7 @@ async function ensureRemoteBranchExists(
     throw new Error(`GitHub repo default branch is missing for ${fullName}`);
   }
 
-  const defaultRefRes = await githubApi(
-    token,
-    `repos/${fullName}/git/ref/heads/${encodeURIComponent(defaultBranch)}`,
-    { method: "GET" }
-  );
+  const defaultRefRes = await githubApi(token, `repos/${fullName}/git/ref/heads/${encodeURIComponent(defaultBranch)}`, { method: "GET" });
   if (!defaultRefRes.ok) {
     throw new Error(`GitHub default ref lookup failed: ${defaultRefRes.status} ${await defaultRefRes.text()}`);
   }
@@ -120,78 +106,69 @@ async function ensureRemoteBranchExists(
 }
 
 describe("e2e(client): full integration stack workflow", () => {
-  it.skipIf(!RUN_FULL_E2E)(
-    "adds repo, loads branch graph, and executes a stack restack action",
-    { timeout: 8 * 60_000 },
-    async () => {
-      const endpoint =
-        process.env.HF_E2E_BACKEND_ENDPOINT?.trim() || "http://127.0.0.1:7741/api/rivet";
-      const workspaceId = process.env.HF_E2E_WORKSPACE?.trim() || "default";
-      const repoRemote = requiredEnv("HF_E2E_GITHUB_REPO");
-      const githubToken = requiredEnv("GITHUB_TOKEN");
-      const { fullName } = parseGithubRepo(repoRemote);
-      const normalizedRepoRemote = `https://github.com/${fullName}.git`;
-      const seededBranch = `e2e/full-seed-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
+  it.skipIf(!RUN_FULL_E2E)("adds repo, loads branch graph, and executes a stack restack action", { timeout: 8 * 60_000 }, async () => {
+    const endpoint = process.env.HF_E2E_BACKEND_ENDPOINT?.trim() || "http://127.0.0.1:7741/api/rivet";
+    const workspaceId = process.env.HF_E2E_WORKSPACE?.trim() || "default";
+    const repoRemote = requiredEnv("HF_E2E_GITHUB_REPO");
+    const githubToken = requiredEnv("GITHUB_TOKEN");
+    const { fullName } = parseGithubRepo(repoRemote);
+    const normalizedRepoRemote = `https://github.com/${fullName}.git`;
+    const seededBranch = `e2e/full-seed-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
 
-      const client = createBackendClient({
-        endpoint,
-        defaultWorkspaceId: workspaceId,
-      });
+    const client = createBackendClient({
+      endpoint,
+      defaultWorkspaceId: workspaceId,
+    });
 
-      try {
-        await ensureRemoteBranchExists(githubToken, fullName, seededBranch);
+    try {
+      await ensureRemoteBranchExists(githubToken, fullName, seededBranch);
 
-        const repo = await client.addRepo(workspaceId, repoRemote);
-        expect(repo.remoteUrl).toBe(normalizedRepoRemote);
+      const repo = await client.addRepo(workspaceId, repoRemote);
+      expect(repo.remoteUrl).toBe(normalizedRepoRemote);
 
-        const overview = await poll<RepoOverview>(
-          "repo overview includes seeded branch",
-          90_000,
-          1_000,
-          async () => client.getRepoOverview(workspaceId, repo.repoId),
-          (value) => value.branches.some((row) => row.branchName === seededBranch)
+      const overview = await poll<RepoOverview>(
+        "repo overview includes seeded branch",
+        90_000,
+        1_000,
+        async () => client.getRepoOverview(workspaceId, repo.repoId),
+        (value) => value.branches.some((row) => row.branchName === seededBranch),
+      );
+
+      if (!overview.stackAvailable) {
+        throw new Error(
+          "git-spice is unavailable for this repo during full integration e2e; set HF_GIT_SPICE_BIN or install git-spice in the backend container",
         );
-
-        if (!overview.stackAvailable) {
-          throw new Error(
-            "git-spice is unavailable for this repo during full integration e2e; set HF_GIT_SPICE_BIN or install git-spice in the backend container"
-          );
-        }
-
-        const stackResult = await client.runRepoStackAction({
-          workspaceId,
-          repoId: repo.repoId,
-          action: "restack_repo",
-        });
-        expect(stackResult.executed).toBe(true);
-        expect(stackResult.action).toBe("restack_repo");
-
-        await poll<HistoryEvent[]>(
-          "repo stack action history event",
-          60_000,
-          1_000,
-          async () => client.listHistory({ workspaceId, limit: 200 }),
-          (events) =>
-            events.some((event) => {
-              if (event.kind !== "repo.stack_action") {
-                return false;
-              }
-              const payload = parseHistoryPayload(event);
-              return payload.action === "restack_repo";
-            })
-        );
-
-        const postActionOverview = await client.getRepoOverview(workspaceId, repo.repoId);
-        const seededRow = postActionOverview.branches.find((row) => row.branchName === seededBranch);
-        expect(Boolean(seededRow)).toBe(true);
-        expect(postActionOverview.fetchedAt).toBeGreaterThan(overview.fetchedAt);
-      } finally {
-        await githubApi(
-          githubToken,
-          `repos/${fullName}/git/refs/heads/${encodeURIComponent(seededBranch)}`,
-          { method: "DELETE" }
-        ).catch(() => {});
       }
+
+      const stackResult = await client.runRepoStackAction({
+        workspaceId,
+        repoId: repo.repoId,
+        action: "restack_repo",
+      });
+      expect(stackResult.executed).toBe(true);
+      expect(stackResult.action).toBe("restack_repo");
+
+      await poll<HistoryEvent[]>(
+        "repo stack action history event",
+        60_000,
+        1_000,
+        async () => client.listHistory({ workspaceId, limit: 200 }),
+        (events) =>
+          events.some((event) => {
+            if (event.kind !== "repo.stack_action") {
+              return false;
+            }
+            const payload = parseHistoryPayload(event);
+            return payload.action === "restack_repo";
+          }),
+      );
+
+      const postActionOverview = await client.getRepoOverview(workspaceId, repo.repoId);
+      const seededRow = postActionOverview.branches.find((row) => row.branchName === seededBranch);
+      expect(Boolean(seededRow)).toBe(true);
+      expect(postActionOverview.fetchedAt).toBeGreaterThan(overview.fetchedAt);
+    } finally {
+      await githubApi(githubToken, `repos/${fullName}/git/refs/heads/${encodeURIComponent(seededBranch)}`, { method: "DELETE" }).catch(() => {});
     }
-  );
+  });
 });

@@ -70,11 +70,7 @@ export const PromptComposer = memo(function PromptComposer({
               <span>
                 {fileName(attachment.filePath)}:{attachment.lineNumber}
               </span>
-              <X
-                size={10}
-                className={css({ cursor: "pointer", opacity: 0.6, ":hover": { opacity: 1 } })}
-                onClick={() => onRemoveAttachment(attachment.id)}
-              />
+              <X size={10} className={css({ cursor: "pointer", opacity: 0.6, ":hover": { opacity: 1 } })} onClick={() => onRemoveAttachment(attachment.id)} />
             </div>
           ))}
         </div>
@@ -170,12 +166,7 @@ export const PromptComposer = memo(function PromptComposer({
           </button>
         )}
       </div>
-      <ModelPicker
-        value={model}
-        defaultModel={defaultModel}
-        onChange={onChangeModel}
-        onSetDefault={onSetDefaultModel}
-      />
+      <ModelPicker value={model} defaultModel={defaultModel} onChange={onChangeModel} onSetDefault={onSetDefaultModel} />
     </div>
   );
 });

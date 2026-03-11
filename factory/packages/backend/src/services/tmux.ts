@@ -23,11 +23,10 @@ export function setWindowStatus(branchName: string, status: string): number {
 
   let stdout: string;
   try {
-    stdout = execFileSync(
-      "tmux",
-      ["list-windows", "-a", "-F", "#{session_name}:#{window_id}:#{window_name}"],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }
-    );
+    stdout = execFileSync("tmux", ["list-windows", "-a", "-F", "#{session_name}:#{window_id}:#{window_name}"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
   } catch {
     return 0;
   }
@@ -51,7 +50,7 @@ export function setWindowStatus(branchName: string, status: string): number {
 
     const newName = `${symbol} ${branchName}`;
     spawnSync("tmux", ["rename-window", "-t", `${sessionName}:${windowId}`, newName], {
-      stdio: "ignore"
+      stdio: "ignore",
     });
     count += 1;
   }

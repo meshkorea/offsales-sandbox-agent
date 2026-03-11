@@ -4,9 +4,7 @@ import { buildTranscript, extractEventText, resolveSessionSelection } from "./mo
 
 describe("extractEventText", () => {
   it("extracts prompt text arrays", () => {
-    expect(
-      extractEventText({ params: { prompt: [{ type: "text", text: "hello" }] } })
-    ).toBe("hello");
+    expect(extractEventText({ params: { prompt: [{ type: "text", text: "hello" }] } })).toBe("hello");
   });
 
   it("falls back to method name", () => {
@@ -17,9 +15,9 @@ describe("extractEventText", () => {
     expect(
       extractEventText({
         result: {
-          text: "agent output"
-        }
-      })
+          text: "agent output",
+        },
+      }),
     ).toBe("agent output");
   });
 
@@ -31,11 +29,11 @@ describe("extractEventText", () => {
             sessionUpdate: "agent_message_chunk",
             content: {
               type: "text",
-              text: "chunk"
-            }
-          }
-        }
-      })
+              text: "chunk",
+            },
+          },
+        },
+      }),
     ).toBe("chunk");
   });
 });
@@ -50,7 +48,7 @@ describe("buildTranscript", () => {
         createdAt: 1000,
         connectionId: "conn-1",
         sender: "client",
-        payload: { params: { prompt: [{ type: "text", text: "hello" }] } }
+        payload: { params: { prompt: [{ type: "text", text: "hello" }] } },
       },
       {
         id: "evt-2",
@@ -59,8 +57,8 @@ describe("buildTranscript", () => {
         createdAt: 2000,
         connectionId: "conn-1",
         sender: "agent",
-        payload: { params: { text: "world" } }
-      }
+        payload: { params: { text: "world" } },
+      },
     ]);
 
     expect(rows).toEqual([
@@ -68,37 +66,38 @@ describe("buildTranscript", () => {
         id: "evt-1",
         sender: "client",
         text: "hello",
-        createdAt: 1000
+        createdAt: 1000,
       },
       {
         id: "evt-2",
         sender: "agent",
         text: "world",
-        createdAt: 2000
-      }
+        createdAt: 2000,
+      },
     ]);
   });
 });
 
 describe("resolveSessionSelection", () => {
-  const session = (id: string, status: "running" | "idle" | "error" = "running"): SandboxSessionRecord => ({
-    id,
-    agentSessionId: `agent-${id}`,
-    lastConnectionId: `conn-${id}`,
-    createdAt: 1,
-    status
-  } as SandboxSessionRecord);
+  const session = (id: string, status: "running" | "idle" | "error" = "running"): SandboxSessionRecord =>
+    ({
+      id,
+      agentSessionId: `agent-${id}`,
+      lastConnectionId: `conn-${id}`,
+      createdAt: 1,
+      status,
+    }) as SandboxSessionRecord;
 
   it("prefers explicit selection when present in session list", () => {
     const resolved = resolveSessionSelection({
       explicitSessionId: "session-2",
       handoffSessionId: "session-1",
-      sessions: [session("session-1"), session("session-2")]
+      sessions: [session("session-1"), session("session-2")],
     });
 
     expect(resolved).toEqual({
       sessionId: "session-2",
-      staleSessionId: null
+      staleSessionId: null,
     });
   });
 
@@ -106,12 +105,12 @@ describe("resolveSessionSelection", () => {
     const resolved = resolveSessionSelection({
       explicitSessionId: null,
       handoffSessionId: "session-1",
-      sessions: [session("session-1")]
+      sessions: [session("session-1")],
     });
 
     expect(resolved).toEqual({
       sessionId: "session-1",
-      staleSessionId: null
+      staleSessionId: null,
     });
   });
 
@@ -119,12 +118,12 @@ describe("resolveSessionSelection", () => {
     const resolved = resolveSessionSelection({
       explicitSessionId: null,
       handoffSessionId: "session-stale",
-      sessions: [session("session-fresh")]
+      sessions: [session("session-fresh")],
     });
 
     expect(resolved).toEqual({
       sessionId: "session-fresh",
-      staleSessionId: null
+      staleSessionId: null,
     });
   });
 
@@ -132,12 +131,12 @@ describe("resolveSessionSelection", () => {
     const resolved = resolveSessionSelection({
       explicitSessionId: null,
       handoffSessionId: "session-stale",
-      sessions: []
+      sessions: [],
     });
 
     expect(resolved).toEqual({
       sessionId: null,
-      staleSessionId: "session-stale"
+      staleSessionId: "session-stale",
     });
   });
 });

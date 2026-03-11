@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  deriveFallbackTitle,
-  resolveCreateFlowDecision,
-  sanitizeBranchName
-} from "../src/services/create-flow.js";
+import { deriveFallbackTitle, resolveCreateFlowDecision, sanitizeBranchName } from "../src/services/create-flow.js";
 
 describe("create flow decision", () => {
   it("derives a conventional-style fallback title from task text", () => {
@@ -25,7 +21,7 @@ describe("create flow decision", () => {
     const resolved = resolveCreateFlowDecision({
       task: "Add auth",
       localBranches: ["feat-add-auth"],
-      handoffBranches: ["feat-add-auth-2"]
+      handoffBranches: ["feat-add-auth-2"],
     });
 
     expect(resolved.title).toBe("feat: Add auth");
@@ -38,8 +34,8 @@ describe("create flow decision", () => {
         task: "new task",
         explicitBranchName: "existing-branch",
         localBranches: ["existing-branch"],
-        handoffBranches: []
-      })
+        handoffBranches: [],
+      }),
     ).toThrow("already exists");
   });
 });

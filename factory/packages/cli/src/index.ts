@@ -3,19 +3,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { AgentTypeSchema, CreateHandoffInputSchema, type HandoffRecord } from "@openhandoff/shared";
-import {
-  readBackendMetadata,
-  createBackendClientFromConfig,
-  formatRelativeAge,
-  groupHandoffStatus,
-  summarizeHandoffs
-} from "@openhandoff/client";
-import {
-  ensureBackendRunning,
-  getBackendStatus,
-  parseBackendPort,
-  stopBackend
-} from "./backend/manager.js";
+import { readBackendMetadata, createBackendClientFromConfig, formatRelativeAge, groupHandoffStatus, summarizeHandoffs } from "@openhandoff/client";
+import { ensureBackendRunning, getBackendStatus, parseBackendPort, stopBackend } from "./backend/manager.js";
 import { openEditorForTask } from "./task-editor.js";
 import { spawnCreateTmuxWindow } from "./tmux.js";
 import { loadConfig, resolveWorkspace, saveConfig } from "./workspace/config.js";
@@ -26,11 +15,7 @@ async function ensureBunRuntime(): Promise<void> {
   }
 
   const preferred = process.env.HF_BUN?.trim();
-  const candidates = [
-    preferred,
-    `${homedir()}/.bun/bin/bun`,
-    "bun"
-  ].filter((item): item is string => Boolean(item && item.length > 0));
+  const candidates = [preferred, `${homedir()}/.bun/bin/bun`, "bun"].filter((item): item is string => Boolean(item && item.length > 0));
 
   for (const candidate of candidates) {
     const command = candidate;
@@ -41,7 +26,7 @@ async function ensureBunRuntime(): Promise<void> {
 
     const child = spawnSync(command, [process.argv[1] ?? "", ...process.argv.slice(2)], {
       stdio: "inherit",
-      env: process.env
+      env: process.env,
     });
 
     if (child.error) {
@@ -70,11 +55,7 @@ function hasFlag(args: string[], flag: string): boolean {
   return args.includes(flag);
 }
 
-function parseIntOption(
-  value: string | undefined,
-  fallback: number,
-  label: string
-): number {
+function parseIntOption(value: string | undefined, fallback: number, label: string): number {
   if (!value) {
     return fallback;
   }
@@ -204,8 +185,8 @@ async function handleBackend(args: string[]): Promise<void> {
     backend: {
       ...config.backend,
       host,
-      port
-    }
+      port,
+    },
   };
 
   if (sub === "start") {
@@ -229,9 +210,7 @@ async function handleBackend(args: string[]): Promise<void> {
     const pid = status.pid ?? "unknown";
     const version = status.version ?? "unknown";
     const stale = status.running && !status.versionCurrent ? " [outdated]" : "";
-    console.log(
-      `running=${status.running} pid=${pid} version=${version}${stale} host=${host} port=${port} log=${status.logPath}`
-    );
+    console.log(`running=${status.running} pid=${pid} version=${version}${stale} host=${host} port=${port} log=${status.logPath}`);
     return;
   }
 
@@ -239,7 +218,7 @@ async function handleBackend(args: string[]): Promise<void> {
     await ensureBackendRunning(backendConfig);
     const metadata = await readBackendMetadata({
       endpoint: `http://${host}:${port}/api/rivet`,
-      timeoutMs: 4_000
+      timeoutMs: 4_000,
     });
     const managerEndpoint = metadata.clientEndpoint ?? `http://${host}:${port}`;
     const inspectorUrl = `https://inspect.rivet.dev?u=${encodeURIComponent(managerEndpoint)}`;
@@ -424,7 +403,7 @@ async function waitForHandoffReady(
   client: ReturnType<typeof createBackendClientFromConfig>,
   workspaceId: string,
   handoffId: string,
-  timeoutMs: number
+  timeoutMs: number,
 ): Promise<HandoffRecord> {
   const start = Date.now();
   let delayMs = 250;
@@ -478,7 +457,7 @@ async function handleCreate(args: string[]): Promise<void> {
     explicitTitle: explicitTitle || undefined,
     explicitBranchName: explicitBranchName || undefined,
     agentType,
-    onBranch
+    onBranch,
   });
 
   const created = await client.createHandoff(payload);
@@ -496,7 +475,7 @@ async function handleCreate(args: string[]): Promise<void> {
   const tmuxResult = spawnCreateTmuxWindow({
     branchName: handoff.branchName ?? handoff.handoffId,
     targetPath: switched.switchTarget || attached.target,
-    sessionId: attached.sessionId
+    sessionId: attached.sessionId,
   });
 
   if (tmuxResult.created) {
@@ -507,7 +486,7 @@ async function handleCreate(args: string[]): Promise<void> {
   console.log("");
   console.log(`Run: hf switch ${handoff.handoffId}`);
   if ((switched.switchTarget || attached.target).startsWith("/")) {
-    console.log(`cd ${(switched.switchTarget || attached.target)}`);
+    console.log(`cd ${switched.switchTarget || attached.target}`);
   }
 }
 
@@ -539,23 +518,21 @@ async function handleStatus(args: string[]): Promise<void> {
           handoffs: {
             total: summary.total,
             byStatus: summary.byStatus,
-            byProvider: summary.byProvider
-          }
+            byProvider: summary.byProvider,
+          },
         },
         null,
-        2
-      )
+        2,
+      ),
     );
     return;
   }
 
   console.log(`workspace=${workspaceId}`);
-  console.log(
-    `backend running=${backendStatus.running} pid=${backendStatus.pid ?? "unknown"} version=${backendStatus.version ?? "unknown"}`
-  );
+  console.log(`backend running=${backendStatus.running} pid=${backendStatus.pid ?? "unknown"} version=${backendStatus.version ?? "unknown"}`);
   console.log(`handoffs total=${summary.total}`);
   console.log(
-    `status queued=${summary.byStatus.queued} running=${summary.byStatus.running} idle=${summary.byStatus.idle} archived=${summary.byStatus.archived} killed=${summary.byStatus.killed} error=${summary.byStatus.error}`
+    `status queued=${summary.byStatus.queued} running=${summary.byStatus.running} idle=${summary.byStatus.idle} archived=${summary.byStatus.archived} killed=${summary.byStatus.killed} error=${summary.byStatus.error}`,
   );
   const providerSummary = Object.entries(summary.byProvider)
     .map(([provider, count]) => `${provider}=${count}`)
@@ -579,7 +556,7 @@ async function handleHistory(args: string[]): Promise<void> {
     workspaceId,
     limit,
     branch: branch || undefined,
-    handoffId: handoffId || undefined
+    handoffId: handoffId || undefined,
   });
 
   if (hasFlag(args, "--json")) {
@@ -748,7 +725,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  const msg = err instanceof Error ? err.stack ?? err.message : String(err);
+  const msg = err instanceof Error ? (err.stack ?? err.message) : String(err);
   console.error(msg);
   process.exit(1);
 });

@@ -1,9 +1,6 @@
 import type { AppConfig } from "./config.js";
 
-export function resolveWorkspaceId(
-  flagWorkspace: string | undefined,
-  config: AppConfig
-): string {
+export function resolveWorkspaceId(flagWorkspace: string | undefined, config: AppConfig): string {
   if (flagWorkspace && flagWorkspace.trim().length > 0) {
     return flagWorkspace.trim();
   }

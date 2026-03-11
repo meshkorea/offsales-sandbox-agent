@@ -1,18 +1,12 @@
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { Command } from "commander";
-import {
-  SandboxAgent,
-  type PermissionReply,
-  type SessionPermissionRequest,
-} from "sandbox-agent";
+import { SandboxAgent, type PermissionReply, type SessionPermissionRequest } from "sandbox-agent";
 
 const options = parseOptions();
 const agent = options.agent.trim().toLowerCase();
 const autoReply = parsePermissionReply(options.reply);
-const promptText =
-  options.prompt?.trim() ||
-  `Create ./permission-example.txt with the text 'hello from the ${agent} permissions example'.`;
+const promptText = options.prompt?.trim() || `Create ./permission-example.txt with the text 'hello from the ${agent} permissions example'.`;
 
 const sdk = await SandboxAgent.start({
   spawn: {
@@ -31,11 +25,7 @@ try {
     : [];
   const modeOption = configOptions.find((option) => option.category === "mode");
   const availableModes = extractOptionValues(modeOption);
-  const mode =
-    options.mode?.trim() ||
-    (typeof modeOption?.currentValue === "string" ? modeOption.currentValue : "") ||
-    availableModes[0] ||
-    "";
+  const mode = options.mode?.trim() || (typeof modeOption?.currentValue === "string" ? modeOption.currentValue : "") || availableModes[0] || "";
 
   console.log(`Agent: ${agent}`);
   console.log(`Mode: ${mode || "(default)"}`);
@@ -91,10 +81,7 @@ async function handlePermissionRequest(
   await session.respondPermission(request.id, reply);
 }
 
-async function promptForReply(
-  request: SessionPermissionRequest,
-  rl: ReturnType<typeof createInterface> | null,
-): Promise<PermissionReply> {
+async function promptForReply(request: SessionPermissionRequest, rl: ReturnType<typeof createInterface> | null): Promise<PermissionReply> {
   if (!rl) {
     return "reject";
   }
@@ -136,8 +123,7 @@ function extractOptionValues(option: { options?: unknown[] } | undefined): strin
       if (!nested || typeof nested !== "object") {
         continue;
       }
-      const nestedValue =
-        "value" in nested && typeof nested.value === "string" ? nested.value : null;
+      const nestedValue = "value" in nested && typeof nested.value === "string" ? nested.value : null;
       if (nestedValue) {
         values.push(nestedValue);
       }

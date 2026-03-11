@@ -1,11 +1,6 @@
 import type { AppConfig, HandoffRecord } from "@openhandoff/shared";
 import { spawnSync } from "node:child_process";
-import {
-  createBackendClientFromConfig,
-  filterHandoffs,
-  formatRelativeAge,
-  groupHandoffStatus
-} from "@openhandoff/client";
+import { createBackendClientFromConfig, filterHandoffs, formatRelativeAge, groupHandoffStatus } from "@openhandoff/client";
 import { CLI_BUILD_ID } from "./build-id.js";
 import { resolveTuiTheme, type TuiTheme } from "./theme.js";
 
@@ -31,7 +26,7 @@ const HELP_LINES = [
   "Esc / Ctrl-C     cancel",
   "",
   "Legend",
-  "Agent: \u{1F916} running  \u{1F4AC} idle  \u25CC queued"
+  "Agent: \u{1F916} running  \u{1F4AC} idle  \u25CC queued",
 ];
 
 const COLUMN_WIDTHS = {
@@ -41,7 +36,7 @@ const COLUMN_WIDTHS = {
   author: 10,
   ci: 7,
   review: 8,
-  age: 5
+  age: 5,
 } as const;
 
 interface DisplayRow {
@@ -145,15 +140,17 @@ function agentSymbol(status: HandoffRecord["status"]): string {
 function toDisplayRow(row: HandoffRecord): DisplayRow {
   const conflictPrefix = row.conflictsWithMain === "true" ? "\u26A0 " : "";
 
-  const prLabel = row.prUrl
-    ? `#${row.prUrl.match(/\/pull\/(\d+)/)?.[1] ?? "?"}`
-    : row.prSubmitted ? "sub" : "-";
+  const prLabel = row.prUrl ? `#${row.prUrl.match(/\/pull\/(\d+)/)?.[1] ?? "?"}` : row.prSubmitted ? "sub" : "-";
 
   const ciLabel = row.ciStatus ?? "-";
   const reviewLabel = row.reviewStatus
-    ? row.reviewStatus === "approved" ? "ok"
-      : row.reviewStatus === "changes_requested" ? "chg"
-      : row.reviewStatus === "pending" ? "..." : row.reviewStatus
+    ? row.reviewStatus === "approved"
+      ? "ok"
+      : row.reviewStatus === "changes_requested"
+        ? "chg"
+        : row.reviewStatus === "pending"
+          ? "..."
+          : row.reviewStatus
     : "-";
 
   return {
@@ -164,7 +161,7 @@ function toDisplayRow(row: HandoffRecord): DisplayRow {
     author: row.prAuthor ?? "-",
     ci: ciLabel,
     review: reviewLabel,
-    age: formatRelativeAge(row.updatedAt)
+    age: formatRelativeAge(row.updatedAt),
   };
 }
 
@@ -189,18 +186,12 @@ export function formatRows(
   status: string,
   searchQuery = "",
   showHelp = false,
-  options: RenderOptions = {}
+  options: RenderOptions = {},
 ): string {
   const totalWidth = options.width ?? process.stdout.columns ?? 120;
   const totalHeight = Math.max(6, options.height ?? process.stdout.rows ?? 24);
   const fixedWidth =
-    COLUMN_WIDTHS.diff +
-    COLUMN_WIDTHS.agent +
-    COLUMN_WIDTHS.pr +
-    COLUMN_WIDTHS.author +
-    COLUMN_WIDTHS.ci +
-    COLUMN_WIDTHS.review +
-    COLUMN_WIDTHS.age;
+    COLUMN_WIDTHS.diff + COLUMN_WIDTHS.agent + COLUMN_WIDTHS.pr + COLUMN_WIDTHS.author + COLUMN_WIDTHS.ci + COLUMN_WIDTHS.review + COLUMN_WIDTHS.age;
   const separators = 7;
   const prefixWidth = 2;
   const branchWidth = Math.max(20, totalWidth - (fixedWidth + separators + prefixWidth));
@@ -208,7 +199,7 @@ export function formatRows(
   const branchHeader = searchQuery ? `Branch/PR: ${searchQuery}_` : "Branch/PR (type to filter)";
   const header = [
     `  ${pad(branchHeader, branchWidth)} ${pad("Diff", COLUMN_WIDTHS.diff)} ${pad("Agent", COLUMN_WIDTHS.agent)} ${pad("PR", COLUMN_WIDTHS.pr)} ${pad("Author", COLUMN_WIDTHS.author)} ${pad("CI", COLUMN_WIDTHS.ci)} ${pad("Review", COLUMN_WIDTHS.review)} ${pad("Age", COLUMN_WIDTHS.age)}`,
-    "-".repeat(Math.max(24, Math.min(totalWidth, 180)))
+    "-".repeat(Math.max(24, Math.min(totalWidth, 180))),
   ];
 
   const body =
@@ -220,14 +211,7 @@ export function formatRows(
           return `${marker}${pad(display.name, branchWidth)} ${pad(display.diff, COLUMN_WIDTHS.diff)} ${pad(display.agent, COLUMN_WIDTHS.agent)} ${pad(display.pr, COLUMN_WIDTHS.pr)} ${pad(display.author, COLUMN_WIDTHS.author)} ${pad(display.ci, COLUMN_WIDTHS.ci)} ${pad(display.review, COLUMN_WIDTHS.review)} ${pad(display.age, COLUMN_WIDTHS.age)}`;
         });
 
-  const footer = fitLine(
-    buildFooterLine(
-      totalWidth,
-      ["Ctrl-H:cheatsheet", `workspace:${workspaceId}`, status],
-      `v${CLI_BUILD_ID}`
-    ),
-    totalWidth,
-  );
+  const footer = fitLine(buildFooterLine(totalWidth, ["Ctrl-H:cheatsheet", `workspace:${workspaceId}`, status], `v${CLI_BUILD_ID}`), totalWidth);
 
   const contentHeight = totalHeight - 1;
   const lines = [...header, ...body].map((line) => fitLine(line, totalWidth));
@@ -256,7 +240,10 @@ export function formatRows(
 
 interface OpenTuiLike {
   createCliRenderer?: (options?: Record<string, unknown>) => Promise<any>;
-  TextRenderable?: new (ctx: any, options: { id: string; content: string }) => {
+  TextRenderable?: new (
+    ctx: any,
+    options: { id: string; content: string },
+  ) => {
     content: unknown;
     fg?: string;
     bg?: string;
@@ -325,10 +312,7 @@ export async function runTui(config: AppConfig, workspaceId: string): Promise<vo
   const core = (await import("@opentui/core")) as OpenTuiLike;
   const createCliRenderer = core.createCliRenderer;
   const TextRenderable = core.TextRenderable;
-  const styleApi =
-    core.fg && core.bg && core.StyledText
-      ? { fg: core.fg, bg: core.bg, StyledText: core.StyledText }
-      : null;
+  const styleApi = core.fg && core.bg && core.StyledText ? { fg: core.fg, bg: core.bg, StyledText: core.StyledText } : null;
 
   if (!createCliRenderer || !TextRenderable) {
     throw new Error("OpenTUI runtime missing createCliRenderer/TextRenderable exports");
@@ -339,7 +323,7 @@ export async function runTui(config: AppConfig, workspaceId: string): Promise<vo
   const renderer = await createCliRenderer({ exitOnCtrlC: false });
   const text = new TextRenderable(renderer, {
     id: "openhandoff-switch",
-    content: "Loading..."
+    content: "Loading...",
   });
   text.fg = themeResolution.theme.text;
   text.bg = themeResolution.theme.background;
@@ -376,11 +360,9 @@ export async function runTui(config: AppConfig, workspaceId: string): Promise<vo
     }
     const output = formatRows(filteredRows, selected, workspaceId, status, searchQuery, showHelp, {
       width: renderer.width ?? process.stdout.columns,
-      height: renderer.height ?? process.stdout.rows
+      height: renderer.height ?? process.stdout.rows,
     });
-    text.content = styleApi
-      ? buildStyledContent(output, themeResolution.theme, styleApi)
-      : output;
+    text.content = styleApi ? buildStyledContent(output, themeResolution.theme, styleApi) : output;
     renderer.requestRender();
   };
 
@@ -439,11 +421,7 @@ export async function runTui(config: AppConfig, workspaceId: string): Promise<vo
     close();
   };
 
-  const runActionWithRefresh = async (
-    label: string,
-    fn: () => Promise<void>,
-    success: string
-  ): Promise<void> => {
+  const runActionWithRefresh = async (label: string, fn: () => Promise<void>, success: string): Promise<void> => {
     if (busy) {
       return;
     }
@@ -469,9 +447,7 @@ export async function runTui(config: AppConfig, workspaceId: string): Promise<vo
   process.once("SIGINT", handleSignal);
   process.once("SIGTERM", handleSignal);
 
-  const keyInput = (renderer.keyInput ?? renderer.keyHandler) as
-    | { on: (name: string, cb: (event: KeyEventLike) => void) => void }
-    | undefined;
+  const keyInput = (renderer.keyInput ?? renderer.keyHandler) as { on: (name: string, cb: (event: KeyEventLike) => void) => void } | undefined;
 
   if (!keyInput) {
     clearInterval(timer);
@@ -577,11 +553,7 @@ export async function runTui(config: AppConfig, workspaceId: string): Promise<vo
       if (!row) {
         return;
       }
-      void runActionWithRefresh(
-        `archiving ${row.handoffId}`,
-        async () => client.runAction(workspaceId, row.handoffId, "archive"),
-        `archived ${row.handoffId}`
-      );
+      void runActionWithRefresh(`archiving ${row.handoffId}`, async () => client.runAction(workspaceId, row.handoffId, "archive"), `archived ${row.handoffId}`);
       return;
     }
 
@@ -590,11 +562,7 @@ export async function runTui(config: AppConfig, workspaceId: string): Promise<vo
       if (!row) {
         return;
       }
-      void runActionWithRefresh(
-        `syncing ${row.handoffId}`,
-        async () => client.runAction(workspaceId, row.handoffId, "sync"),
-        `synced ${row.handoffId}`
-      );
+      void runActionWithRefresh(`syncing ${row.handoffId}`, async () => client.runAction(workspaceId, row.handoffId, "sync"), `synced ${row.handoffId}`);
       return;
     }
 
@@ -609,7 +577,7 @@ export async function runTui(config: AppConfig, workspaceId: string): Promise<vo
           await client.runAction(workspaceId, row.handoffId, "merge");
           await client.runAction(workspaceId, row.handoffId, "archive");
         },
-        `merged+archived ${row.handoffId}`
+        `merged+archived ${row.handoffId}`,
       );
       return;
     }

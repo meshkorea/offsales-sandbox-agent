@@ -3,14 +3,14 @@
 // Do not hand-edit this file.
 
 const journal = {
-  "entries": [
+  entries: [
     {
-      "idx": 0,
-      "when": 1770924375133,
-      "tag": "0000_watery_bushwacker",
-      "breakpoints": true
-    }
-  ]
+      idx: 0,
+      when: 1770924375133,
+      tag: "0000_watery_bushwacker",
+      breakpoints: true,
+    },
+  ],
 } as const;
 
 export default {
@@ -25,5 +25,5 @@ export default {
 	\`created_at\` integer NOT NULL
 );
 `,
-  } as const
+  } as const,
 };

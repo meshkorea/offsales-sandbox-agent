@@ -23,9 +23,7 @@ const CREATE_SESSION_MAX_ATTEMPTS = 3;
 const CREATE_SESSION_RETRY_BASE_MS = 1_000;
 const CREATE_SESSION_STEP_TIMEOUT_MS = 10 * 60_000;
 
-function normalizeStatusFromEventPayload(
-  payload: unknown,
-): "running" | "idle" | "error" | null {
+function normalizeStatusFromEventPayload(payload: unknown): "running" | "idle" | "error" | null {
   if (payload && typeof payload === "object") {
     const envelope = payload as {
       error?: unknown;
@@ -49,11 +47,7 @@ function normalizeStatusFromEventPayload(
       if (lowered.includes("error") || lowered.includes("failed")) {
         return "error";
       }
-      if (
-        lowered.includes("ended") ||
-        lowered.includes("complete") ||
-        lowered.includes("stopped")
-      ) {
+      if (lowered.includes("ended") || lowered.includes("complete") || lowered.includes("stopped")) {
         return "idle";
       }
     }
@@ -183,12 +177,7 @@ async function derivePersistedSessionStatus(
 
 function isTransientSessionCreateError(detail: string): boolean {
   const lowered = detail.toLowerCase();
-  if (
-    lowered.includes("timed out") ||
-    lowered.includes("timeout") ||
-    lowered.includes("504") ||
-    lowered.includes("gateway timeout")
-  ) {
+  if (lowered.includes("timed out") || lowered.includes("timeout") || lowered.includes("504") || lowered.includes("gateway timeout")) {
     // ACP timeout errors are expensive and usually deterministic for the same
     // request; immediate retries spawn additional sessions/processes and make
     // recovery harder.
@@ -196,11 +185,7 @@ function isTransientSessionCreateError(detail: string): boolean {
   }
 
   return (
-    lowered.includes("502") ||
-    lowered.includes("503") ||
-    lowered.includes("bad gateway") ||
-    lowered.includes("econnreset") ||
-    lowered.includes("econnrefused")
+    lowered.includes("502") || lowered.includes("503") || lowered.includes("bad gateway") || lowered.includes("econnreset") || lowered.includes("econnrefused")
   );
 }
 
@@ -265,9 +250,7 @@ const SANDBOX_INSTANCE_QUEUE_NAMES = [
 
 type SandboxInstanceQueueName = (typeof SANDBOX_INSTANCE_QUEUE_NAMES)[number];
 
-function sandboxInstanceWorkflowQueueName(
-  name: SandboxInstanceQueueName,
-): SandboxInstanceQueueName {
+function sandboxInstanceWorkflowQueueName(name: SandboxInstanceQueueName): SandboxInstanceQueueName {
   return name;
 }
 
@@ -297,15 +280,15 @@ async function ensureSandboxMutation(c: any, command: EnsureSandboxCommand): Pro
       id: SANDBOX_ROW_ID,
       metadataJson,
       status: command.status,
-      updatedAt: now
+      updatedAt: now,
     })
     .onConflictDoUpdate({
       target: sandboxInstanceTable.id,
       set: {
         metadataJson,
         status: command.status,
-        updatedAt: now
-      }
+        updatedAt: now,
+      },
     })
     .run();
 }
@@ -315,17 +298,14 @@ async function updateHealthMutation(c: any, command: HealthSandboxCommand): Prom
     .update(sandboxInstanceTable)
     .set({
       status: `${command.status}:${command.message}`,
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
     })
     .where(eq(sandboxInstanceTable.id, SANDBOX_ROW_ID))
     .run();
 }
 
 async function destroySandboxMutation(c: any): Promise<void> {
-  await c.db
-    .delete(sandboxInstanceTable)
-    .where(eq(sandboxInstanceTable.id, SANDBOX_ROW_ID))
-    .run();
+  await c.db.delete(sandboxInstanceTable).where(eq(sandboxInstanceTable.id, SANDBOX_ROW_ID)).run();
 }
 
 async function createSessionMutation(c: any, command: CreateSessionCommand): Promise<CreateSessionResult> {
@@ -362,7 +342,7 @@ async function createSessionMutation(c: any, command: CreateSessionCommand): Pro
         attempt,
         maxAttempts: CREATE_SESSION_MAX_ATTEMPTS,
         waitMs,
-        error: detail
+        error: detail,
       });
       await delay(waitMs);
     }
@@ -372,7 +352,7 @@ async function createSessionMutation(c: any, command: CreateSessionCommand): Pro
   return {
     id: null,
     status: "error",
-    error: `sandbox-agent createSession failed after ${attemptsMade} ${attemptLabel}: ${lastDetail}`
+    error: `sandbox-agent createSession failed after ${attemptsMade} ${attemptLabel}: ${lastDetail}`,
   };
 }
 
@@ -405,62 +385,50 @@ async function runSandboxInstanceWorkflow(ctx: any): Promise<void> {
       return Loop.continue(undefined);
     }
 
-      if (msg.name === "sandboxInstance.command.ensure") {
-        await loopCtx.step("sandbox-instance-ensure", async () =>
-          ensureSandboxMutation(loopCtx, msg.body as EnsureSandboxCommand),
-        );
-        await msg.complete({ ok: true });
-        return Loop.continue(undefined);
-      }
+    if (msg.name === "sandboxInstance.command.ensure") {
+      await loopCtx.step("sandbox-instance-ensure", async () => ensureSandboxMutation(loopCtx, msg.body as EnsureSandboxCommand));
+      await msg.complete({ ok: true });
+      return Loop.continue(undefined);
+    }
 
-      if (msg.name === "sandboxInstance.command.updateHealth") {
-        await loopCtx.step("sandbox-instance-update-health", async () =>
-          updateHealthMutation(loopCtx, msg.body as HealthSandboxCommand),
-        );
-        await msg.complete({ ok: true });
-        return Loop.continue(undefined);
-      }
+    if (msg.name === "sandboxInstance.command.updateHealth") {
+      await loopCtx.step("sandbox-instance-update-health", async () => updateHealthMutation(loopCtx, msg.body as HealthSandboxCommand));
+      await msg.complete({ ok: true });
+      return Loop.continue(undefined);
+    }
 
-      if (msg.name === "sandboxInstance.command.destroy") {
-        await loopCtx.step("sandbox-instance-destroy", async () =>
-          destroySandboxMutation(loopCtx),
-        );
-        await msg.complete({ ok: true });
-        return Loop.continue(undefined);
-      }
+    if (msg.name === "sandboxInstance.command.destroy") {
+      await loopCtx.step("sandbox-instance-destroy", async () => destroySandboxMutation(loopCtx));
+      await msg.complete({ ok: true });
+      return Loop.continue(undefined);
+    }
 
-      if (msg.name === "sandboxInstance.command.createSession") {
-        const result = await loopCtx.step({
-          name: "sandbox-instance-create-session",
-          timeout: CREATE_SESSION_STEP_TIMEOUT_MS,
-          run: async () => createSessionMutation(loopCtx, msg.body as CreateSessionCommand),
-        });
-        await msg.complete(result);
-        return Loop.continue(undefined);
-      }
+    if (msg.name === "sandboxInstance.command.createSession") {
+      const result = await loopCtx.step({
+        name: "sandbox-instance-create-session",
+        timeout: CREATE_SESSION_STEP_TIMEOUT_MS,
+        run: async () => createSessionMutation(loopCtx, msg.body as CreateSessionCommand),
+      });
+      await msg.complete(result);
+      return Loop.continue(undefined);
+    }
 
-      if (msg.name === "sandboxInstance.command.sendPrompt") {
-        await loopCtx.step("sandbox-instance-send-prompt", async () =>
-          sendPromptMutation(loopCtx, msg.body as SendPromptCommand),
-        );
-        await msg.complete({ ok: true });
-        return Loop.continue(undefined);
-      }
+    if (msg.name === "sandboxInstance.command.sendPrompt") {
+      await loopCtx.step("sandbox-instance-send-prompt", async () => sendPromptMutation(loopCtx, msg.body as SendPromptCommand));
+      await msg.complete({ ok: true });
+      return Loop.continue(undefined);
+    }
 
-      if (msg.name === "sandboxInstance.command.cancelSession") {
-        await loopCtx.step("sandbox-instance-cancel-session", async () =>
-          cancelSessionMutation(loopCtx, msg.body as SessionControlCommand),
-        );
-        await msg.complete({ ok: true });
-        return Loop.continue(undefined);
-      }
+    if (msg.name === "sandboxInstance.command.cancelSession") {
+      await loopCtx.step("sandbox-instance-cancel-session", async () => cancelSessionMutation(loopCtx, msg.body as SessionControlCommand));
+      await msg.complete({ ok: true });
+      return Loop.continue(undefined);
+    }
 
-      if (msg.name === "sandboxInstance.command.destroySession") {
-        await loopCtx.step("sandbox-instance-destroy-session", async () =>
-          destroySessionMutation(loopCtx, msg.body as SessionControlCommand),
-        );
-        await msg.complete({ ok: true });
-      }
+    if (msg.name === "sandboxInstance.command.destroySession") {
+      await loopCtx.step("sandbox-instance-destroy-session", async () => destroySessionMutation(loopCtx, msg.body as SessionControlCommand));
+      await msg.complete({ ok: true });
+    }
 
     return Loop.continue(undefined);
   });
@@ -518,10 +486,14 @@ export const sandboxInstance = actor({
 
     async destroy(c): Promise<void> {
       const self = selfSandboxInstance(c);
-      await self.send(sandboxInstanceWorkflowQueueName("sandboxInstance.command.destroy"), {}, {
-        wait: true,
-        timeout: 60_000,
-      });
+      await self.send(
+        sandboxInstanceWorkflowQueueName("sandboxInstance.command.destroy"),
+        {},
+        {
+          wait: true,
+          timeout: 60_000,
+        },
+      );
     },
 
     async createSession(c: any, command: CreateSessionCommand): Promise<CreateSessionResult> {
@@ -534,10 +506,7 @@ export const sandboxInstance = actor({
       );
     },
 
-    async listSessions(
-      c: any,
-      command?: ListSessionsCommand
-    ): Promise<{ items: SessionRecord[]; nextCursor?: string }> {
+    async listSessions(c: any, command?: ListSessionsCommand): Promise<{ items: SessionRecord[]; nextCursor?: string }> {
       const persist = new SandboxInstancePersistDriver(c.db);
       try {
         const client = await getSandboxAgentClient(c);
@@ -556,7 +525,7 @@ export const sandboxInstance = actor({
           workspaceId: c.state.workspaceId,
           providerId: c.state.providerId,
           sandboxId: c.state.sandboxId,
-          error: resolveErrorMessage(error)
+          error: resolveErrorMessage(error),
         });
         return await persist.listSessions({
           cursor: command?.cursor,
@@ -565,10 +534,7 @@ export const sandboxInstance = actor({
       }
     },
 
-    async listSessionEvents(
-      c: any,
-      command: ListSessionEventsCommand
-    ): Promise<{ items: SessionEvent[]; nextCursor?: string }> {
+    async listSessionEvents(c: any, command: ListSessionEventsCommand): Promise<{ items: SessionEvent[]; nextCursor?: string }> {
       const persist = new SandboxInstancePersistDriver(c.db);
       return await persist.listEvents({
         sessionId: command.sessionId,
@@ -601,15 +567,9 @@ export const sandboxInstance = actor({
       });
     },
 
-    async sessionStatus(
-      c,
-      command: SessionStatusCommand
-    ): Promise<{ id: string; status: "running" | "idle" | "error" }> {
-      return await derivePersistedSessionStatus(
-        new SandboxInstancePersistDriver(c.db),
-        command.sessionId,
-      );
-    }
+    async sessionStatus(c, command: SessionStatusCommand): Promise<{ id: string; status: "running" | "idle" | "error" }> {
+      return await derivePersistedSessionStatus(new SandboxInstancePersistDriver(c.db), command.sessionId);
+    },
   },
   run: workflow(runSandboxInstanceWorkflow),
 });

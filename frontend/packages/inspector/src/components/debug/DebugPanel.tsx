@@ -59,11 +59,7 @@ const DebugPanel = ({
   return (
     <div className={`debug-panel ${collapsed ? "collapsed" : ""}`}>
       <div className="debug-tabs">
-        <button
-          className="debug-collapse-btn"
-          onClick={onToggleCollapse}
-          title={collapsed ? "Expand panel" : "Collapse panel"}
-        >
+        <button className="debug-collapse-btn" onClick={onToggleCollapse} title={collapsed ? "Expand panel" : "Collapse panel"}>
           {collapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
         </button>
         <button className={`debug-tab ${debugTab === "events" ? "active" : ""}`} onClick={() => onDebugTabChange("events")}>
@@ -98,22 +94,10 @@ const DebugPanel = ({
       </div>
 
       <div className="debug-content">
-        {debugTab === "log" && (
-          <RequestLogTab
-            requestLog={requestLog}
-            copiedLogId={copiedLogId}
-            onClear={onClearRequestLog}
-            onCopy={onCopyRequestLog}
-          />
-        )}
+        {debugTab === "log" && <RequestLogTab requestLog={requestLog} copiedLogId={copiedLogId} onClear={onClearRequestLog} onCopy={onCopyRequestLog} />}
 
         {debugTab === "events" && (
-          <EventsTab
-            events={events}
-            onClear={onResetEvents}
-            highlightedEventId={highlightedEventId}
-            onClearHighlight={onClearHighlight}
-          />
+          <EventsTab events={events} onClear={onResetEvents} highlightedEventId={highlightedEventId} onClearHighlight={onClearHighlight} />
         )}
 
         {debugTab === "agents" && (
@@ -128,21 +112,13 @@ const DebugPanel = ({
           />
         )}
 
-        {debugTab === "mcp" && (
-          <McpTab getClient={getClient} />
-        )}
+        {debugTab === "mcp" && <McpTab getClient={getClient} />}
 
-        {debugTab === "processes" && (
-          <ProcessesTab getClient={getClient} />
-        )}
+        {debugTab === "processes" && <ProcessesTab getClient={getClient} />}
 
-        {debugTab === "run-process" && (
-          <ProcessRunTab getClient={getClient} />
-        )}
+        {debugTab === "run-process" && <ProcessRunTab getClient={getClient} />}
 
-        {debugTab === "skills" && (
-          <SkillsTab getClient={getClient} />
-        )}
+        {debugTab === "skills" && <SkillsTab getClient={getClient} />}
       </div>
     </div>
   );

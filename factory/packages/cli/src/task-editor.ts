@@ -3,11 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
-const DEFAULT_EDITOR_TEMPLATE = [
-  "# Enter handoff task details below.",
-  "# Lines starting with # are ignored.",
-  ""
-].join("\n");
+const DEFAULT_EDITOR_TEMPLATE = ["# Enter handoff task details below.", "# Lines starting with # are ignored.", ""].join("\n");
 
 export function sanitizeEditorTask(input: string): string {
   return input

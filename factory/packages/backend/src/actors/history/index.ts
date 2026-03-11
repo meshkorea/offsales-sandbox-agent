@@ -36,7 +36,7 @@ async function appendHistoryRow(loopCtx: any, body: AppendHistoryCommand): Promi
       branchName: body.branchName ?? null,
       kind: body.kind,
       payloadJson: JSON.stringify(body.payload),
-      createdAt: now
+      createdAt: now,
     })
     .run();
 }
@@ -45,7 +45,7 @@ async function runHistoryWorkflow(ctx: any): Promise<void> {
   await ctx.loop("history-command-loop", async (loopCtx: any) => {
     const msg = await loopCtx.queue.next("next-history-command", {
       names: [...HISTORY_QUEUE_NAMES],
-      completable: true
+      completable: true,
     });
     if (!msg) {
       return Loop.continue(undefined);
@@ -63,11 +63,11 @@ async function runHistoryWorkflow(ctx: any): Promise<void> {
 export const history = actor({
   db: historyDb,
   queues: {
-    "history.command.append": queue()
+    "history.command.append": queue(),
   },
   createState: (_c, input: HistoryInput) => ({
     workspaceId: input.workspaceId,
-    repoId: input.repoId
+    repoId: input.repoId,
   }),
   actions: {
     async append(c, command: AppendHistoryCommand): Promise<void> {
@@ -91,7 +91,7 @@ export const history = actor({
           branchName: events.branchName,
           kind: events.kind,
           payloadJson: events.payloadJson,
-          createdAt: events.createdAt
+          createdAt: events.createdAt,
         })
         .from(events);
 
@@ -103,9 +103,9 @@ export const history = actor({
       return rows.map((row) => ({
         ...row,
         workspaceId: c.state.workspaceId,
-        repoId: c.state.repoId
+        repoId: c.state.repoId,
       }));
-    }
+    },
   },
-  run: workflow(runHistoryWorkflow)
+  run: workflow(runHistoryWorkflow),
 });

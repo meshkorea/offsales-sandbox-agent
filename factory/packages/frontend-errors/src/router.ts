@@ -32,9 +32,7 @@ export function defaultFrontendErrorLogPath(startDirectory: string = process.cwd
   return resolve(root, DEFAULT_RELATIVE_LOG_PATH);
 }
 
-export function createFrontendErrorCollectorRouter(
-  options: FrontendErrorCollectorRouterOptions = {}
-): Hono {
+export function createFrontendErrorCollectorRouter(options: FrontendErrorCollectorRouterOptions = {}): Hono {
   const logFilePath = options.logFilePath ?? defaultFrontendErrorLogPath();
   const reporter = trimText(options.reporter, 128) ?? DEFAULT_REPORTER;
   let ensureLogPathPromise: Promise<void> | null = null;
@@ -46,7 +44,7 @@ export function createFrontendErrorCollectorRouter(
       ok: true,
       logFilePath,
       reporter,
-    })
+    }),
   );
 
   app.post("/events", async (c) => {
@@ -78,7 +76,7 @@ export function createFrontendErrorCollectorRouter(
           userAgent: userAgent ?? null,
           clientIp: clientIp ?? null,
           receivedAt,
-        })
+        }),
       );
     }
 
@@ -96,7 +94,7 @@ export function createFrontendErrorCollectorRouter(
         ok: true,
         accepted: normalizedEvents.length,
       },
-      202
+      202,
     );
   });
 
@@ -260,16 +258,8 @@ function readClientIp(forwardedFor: string | undefined): string | null {
   return trimText(first, 64) ?? null;
 }
 
-function isAllowedContextValue(
-  value: unknown
-): value is string | number | boolean | null | undefined {
-  return (
-    value === null ||
-    value === undefined ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  );
+function isAllowedContextValue(value: unknown): value is string | number | boolean | null | undefined {
+  return value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

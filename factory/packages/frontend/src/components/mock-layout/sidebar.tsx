@@ -4,14 +4,7 @@ import { LabelSmall, LabelXSmall } from "baseui/typography";
 import { CloudUpload, GitPullRequestDraft, Plus } from "lucide-react";
 
 import { formatRelativeAge, type Handoff, type ProjectSection } from "./view-model";
-import {
-  ContextMenuOverlay,
-  HandoffIndicator,
-  PanelHeaderBar,
-  SPanel,
-  ScrollBody,
-  useContextMenu,
-} from "./ui";
+import { ContextMenuOverlay, HandoffIndicator, PanelHeaderBar, SPanel, ScrollBody, useContextMenu } from "./ui";
 
 export const Sidebar = memo(function Sidebar({
   projects,
@@ -91,106 +84,104 @@ export const Sidebar = memo(function Sidebar({
                   >
                     {project.label}
                   </LabelSmall>
-                  <LabelXSmall color={theme.colors.contentTertiary}>
-                    {formatRelativeAge(project.updatedAtMs)}
-                  </LabelXSmall>
+                  <LabelXSmall color={theme.colors.contentTertiary}>{formatRelativeAge(project.updatedAtMs)}</LabelXSmall>
                 </div>
 
                 {project.handoffs.slice(0, visibleCount).map((handoff) => {
-            const isActive = handoff.id === activeId;
-            const isDim = handoff.status === "archived";
-            const isRunning = handoff.tabs.some((tab) => tab.status === "running");
-            const hasUnread = handoff.tabs.some((tab) => tab.unread);
-            const isDraft = handoff.pullRequest == null || handoff.pullRequest.status === "draft";
-            const totalAdded = handoff.fileChanges.reduce((sum, file) => sum + file.added, 0);
-            const totalRemoved = handoff.fileChanges.reduce((sum, file) => sum + file.removed, 0);
-            const hasDiffs = totalAdded > 0 || totalRemoved > 0;
+                  const isActive = handoff.id === activeId;
+                  const isDim = handoff.status === "archived";
+                  const isRunning = handoff.tabs.some((tab) => tab.status === "running");
+                  const hasUnread = handoff.tabs.some((tab) => tab.unread);
+                  const isDraft = handoff.pullRequest == null || handoff.pullRequest.status === "draft";
+                  const totalAdded = handoff.fileChanges.reduce((sum, file) => sum + file.added, 0);
+                  const totalRemoved = handoff.fileChanges.reduce((sum, file) => sum + file.removed, 0);
+                  const hasDiffs = totalAdded > 0 || totalRemoved > 0;
 
-            return (
-              <div
-                key={handoff.id}
-                onClick={() => onSelect(handoff.id)}
-                onContextMenu={(event) =>
-                  contextMenu.open(event, [
-                    { label: "Rename handoff", onClick: () => onRenameHandoff(handoff.id) },
-                    { label: "Rename branch", onClick: () => onRenameBranch(handoff.id) },
-                    { label: "Mark as unread", onClick: () => onMarkUnread(handoff.id) },
-                  ])
-                }
-                className={css({
-                  padding: "12px",
-                  borderRadius: "8px",
-                  border: isActive ? "1px solid rgba(255, 255, 255, 0.2)" : "1px solid transparent",
-                  backgroundColor: isActive ? "rgba(255, 255, 255, 0.06)" : "transparent",
-                  cursor: "pointer",
-                  transition: "all 200ms ease",
-                  ":hover": {
-                    backgroundColor: "rgba(255, 255, 255, 0.06)",
-                    borderColor: theme.colors.borderOpaque,
-                  },
-                })}
-              >
-                <div className={css({ display: "flex", alignItems: "center", gap: "8px" })}>
-                  <div
-                    className={css({
-                      width: "14px",
-                      minWidth: "14px",
-                      height: "14px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                    })}
-                  >
-                    <HandoffIndicator isRunning={isRunning} hasUnread={hasUnread} isDraft={isDraft} />
-                  </div>
-                  <LabelSmall
-                    $style={{
-                      fontWeight: 600,
-                      flex: 1,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                    color={isDim ? theme.colors.contentSecondary : theme.colors.contentPrimary}
-                  >
-                    {handoff.title}
-                  </LabelSmall>
-                  {hasDiffs ? (
-                    <div className={css({ display: "flex", gap: "4px", flexShrink: 0 })}>
-                      <span className={css({ fontSize: "11px", color: "#7ee787" })}>+{totalAdded}</span>
-                      <span className={css({ fontSize: "11px", color: "#ffa198" })}>-{totalRemoved}</span>
+                  return (
+                    <div
+                      key={handoff.id}
+                      onClick={() => onSelect(handoff.id)}
+                      onContextMenu={(event) =>
+                        contextMenu.open(event, [
+                          { label: "Rename handoff", onClick: () => onRenameHandoff(handoff.id) },
+                          { label: "Rename branch", onClick: () => onRenameBranch(handoff.id) },
+                          { label: "Mark as unread", onClick: () => onMarkUnread(handoff.id) },
+                        ])
+                      }
+                      className={css({
+                        padding: "12px",
+                        borderRadius: "8px",
+                        border: isActive ? "1px solid rgba(255, 255, 255, 0.2)" : "1px solid transparent",
+                        backgroundColor: isActive ? "rgba(255, 255, 255, 0.06)" : "transparent",
+                        cursor: "pointer",
+                        transition: "all 200ms ease",
+                        ":hover": {
+                          backgroundColor: "rgba(255, 255, 255, 0.06)",
+                          borderColor: theme.colors.borderOpaque,
+                        },
+                      })}
+                    >
+                      <div className={css({ display: "flex", alignItems: "center", gap: "8px" })}>
+                        <div
+                          className={css({
+                            width: "14px",
+                            minWidth: "14px",
+                            height: "14px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            flexShrink: 0,
+                          })}
+                        >
+                          <HandoffIndicator isRunning={isRunning} hasUnread={hasUnread} isDraft={isDraft} />
+                        </div>
+                        <LabelSmall
+                          $style={{
+                            fontWeight: 600,
+                            flex: 1,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                          color={isDim ? theme.colors.contentSecondary : theme.colors.contentPrimary}
+                        >
+                          {handoff.title}
+                        </LabelSmall>
+                        {hasDiffs ? (
+                          <div className={css({ display: "flex", gap: "4px", flexShrink: 0 })}>
+                            <span className={css({ fontSize: "11px", color: "#7ee787" })}>+{totalAdded}</span>
+                            <span className={css({ fontSize: "11px", color: "#ffa198" })}>-{totalRemoved}</span>
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className={css({ display: "flex", alignItems: "center", marginTop: "4px", gap: "6px" })}>
+                        <LabelXSmall
+                          color={theme.colors.contentTertiary}
+                          $style={{
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            flexShrink: 1,
+                          }}
+                        >
+                          {handoff.repoName}
+                        </LabelXSmall>
+                        {handoff.pullRequest != null ? (
+                          <span className={css({ display: "inline-flex", alignItems: "center", gap: "4px", flexShrink: 0 })}>
+                            <LabelXSmall color={theme.colors.contentSecondary} $style={{ fontWeight: 600 }}>
+                              #{handoff.pullRequest.number}
+                            </LabelXSmall>
+                            {handoff.pullRequest.status === "draft" ? <CloudUpload size={11} color="#ff4f00" /> : null}
+                          </span>
+                        ) : (
+                          <GitPullRequestDraft size={11} color={theme.colors.contentTertiary} />
+                        )}
+                        <LabelXSmall color={theme.colors.contentTertiary} $style={{ marginLeft: "auto", flexShrink: 0 }}>
+                          {formatRelativeAge(handoff.updatedAtMs)}
+                        </LabelXSmall>
+                      </div>
                     </div>
-                  ) : null}
-                </div>
-                <div className={css({ display: "flex", alignItems: "center", marginTop: "4px", gap: "6px" })}>
-                  <LabelXSmall
-                    color={theme.colors.contentTertiary}
-                    $style={{
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                      flexShrink: 1,
-                    }}
-                  >
-                    {handoff.repoName}
-                  </LabelXSmall>
-                  {handoff.pullRequest != null ? (
-                    <span className={css({ display: "inline-flex", alignItems: "center", gap: "4px", flexShrink: 0 })}>
-                      <LabelXSmall color={theme.colors.contentSecondary} $style={{ fontWeight: 600 }}>
-                        #{handoff.pullRequest.number}
-                      </LabelXSmall>
-                      {handoff.pullRequest.status === "draft" ? <CloudUpload size={11} color="#ff4f00" /> : null}
-                    </span>
-                  ) : (
-                    <GitPullRequestDraft size={11} color={theme.colors.contentTertiary} />
-                  )}
-                  <LabelXSmall color={theme.colors.contentTertiary} $style={{ marginLeft: "auto", flexShrink: 0 }}>
-                    {formatRelativeAge(handoff.updatedAtMs)}
-                  </LabelXSmall>
-                </div>
-              </div>
-            );
+                  );
                 })}
 
                 {hiddenCount > 0 ? (

@@ -9,10 +9,7 @@ export interface PushActiveBranchOptions {
   historyKind?: string;
 }
 
-export async function pushActiveBranchActivity(
-  loopCtx: any,
-  options: PushActiveBranchOptions = {}
-): Promise<void> {
+export async function pushActiveBranchActivity(loopCtx: any, options: PushActiveBranchOptions = {}): Promise<void> {
   const record = await getCurrentRecord(loopCtx);
   const activeSandboxId = record.activeSandboxId;
   const branchName = loopCtx.state.branchName ?? record.branchName;
@@ -24,8 +21,7 @@ export async function pushActiveBranchActivity(
     throw new Error("cannot push: handoff branch is not set");
   }
 
-  const activeSandbox =
-    record.sandboxes.find((sandbox: any) => sandbox.sandboxId === activeSandboxId) ?? null;
+  const activeSandbox = record.sandboxes.find((sandbox: any) => sandbox.sandboxId === activeSandboxId) ?? null;
   const providerId = activeSandbox?.providerId ?? record.providerId;
   const cwd = activeSandbox?.cwd ?? null;
   if (!cwd) {
@@ -53,14 +49,14 @@ export async function pushActiveBranchActivity(
     `cd ${JSON.stringify(cwd)}`,
     "git rev-parse --verify HEAD >/dev/null",
     "git config credential.helper '!f() { echo username=x-access-token; echo password=${GH_TOKEN:-$GITHUB_TOKEN}; }; f'",
-    `git push -u origin ${JSON.stringify(branchName)}`
+    `git push -u origin ${JSON.stringify(branchName)}`,
   ].join("; ");
 
   const result = await provider.executeCommand({
     workspaceId: loopCtx.state.workspaceId,
     sandboxId: activeSandboxId,
     command: ["bash", "-lc", JSON.stringify(script)].join(" "),
-    label: `git push ${branchName}`
+    label: `git push ${branchName}`,
   });
 
   if (result.exitCode !== 0) {
@@ -83,6 +79,6 @@ export async function pushActiveBranchActivity(
   await appendHistory(loopCtx, options.historyKind ?? "handoff.push", {
     reason: options.reason ?? null,
     branchName,
-    sandboxId: activeSandboxId
+    sandboxId: activeSandboxId,
   });
 }

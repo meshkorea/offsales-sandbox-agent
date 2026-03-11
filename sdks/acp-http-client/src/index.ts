@@ -195,9 +195,7 @@ export class AcpHttpClient {
     return wrapRpc(this.connection.setSessionMode(request));
   }
 
-  async setSessionConfigOption(
-    request: SetSessionConfigOptionRequest,
-  ): Promise<SetSessionConfigOptionResponse> {
+  async setSessionConfigOption(request: SetSessionConfigOptionRequest): Promise<SetSessionConfigOptionResponse> {
     return wrapRpc(this.connection.setSessionConfigOption(request));
   }
 
@@ -213,9 +211,7 @@ export class AcpHttpClient {
     return wrapRpc(this.connection.unstable_resumeSession(request));
   }
 
-  async unstableSetSessionModel(
-    request: SetSessionModelRequest,
-  ): Promise<SetSessionModelResponse | void> {
+  async unstableSetSessionModel(request: SetSessionModelRequest): Promise<SetSessionModelResponse | void> {
     return wrapRpc(this.connection.unstable_setSessionModel(request));
   }
 
@@ -281,9 +277,7 @@ class StreamableHttpAcpTransport {
     this.token = options.token;
     this.defaultHeaders = options.defaultHeaders;
     this.onEnvelope = options.onEnvelope;
-    this.bootstrapQuery = options.transport?.bootstrapQuery
-      ? buildQueryParams(options.transport.bootstrapQuery)
-      : null;
+    this.bootstrapQuery = options.transport?.bootstrapQuery ? buildQueryParams(options.transport.bootstrapQuery) : null;
 
     this.stream = {
       readable: new ReadableStream<AnyMessage>({

@@ -538,9 +538,17 @@ describe("Integration: TypeScript SDK flat session API", () => {
     const session = await sdk.createSession({ agent: "mock" });
     await session.setMode("plan");
 
-    const modes = await session.getModes();
-    expect(modes?.currentModeId).toBe("plan");
-    expect((await session.getConfigOptions()).find((o) => o.category === "mode")?.currentValue).toBe("plan");
+    const modes = await waitForAsync(async () => {
+      const current = await session.getModes();
+      return current?.currentModeId === "plan" ? current : null;
+    });
+    expect(modes.currentModeId).toBe("plan");
+
+    const modeOption = await waitForAsync(async () => {
+      const option = (await session.getConfigOptions()).find((o) => o.category === "mode");
+      return option?.currentValue === "plan" ? option : null;
+    });
+    expect(modeOption.currentValue).toBe("plan");
 
     await sdk.dispose();
   });

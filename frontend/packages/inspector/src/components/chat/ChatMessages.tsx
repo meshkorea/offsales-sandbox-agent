@@ -4,15 +4,7 @@ import type { TimelineEntry } from "./types";
 import { AlertTriangle, ChevronRight, ChevronDown, Wrench, Brain, Info, ExternalLink, PlayCircle, Shield, Check, X } from "lucide-react";
 import MarkdownText from "./MarkdownText";
 
-const ToolItem = ({
-  entry,
-  isLast,
-  onEventClick
-}: {
-  entry: TimelineEntry;
-  isLast: boolean;
-  onEventClick?: (eventId: string) => void;
-}) => {
+const ToolItem = ({ entry, isLast, onEventClick }: { entry: TimelineEntry; isLast: boolean; onEventClick?: (eventId: string) => void }) => {
   const [expanded, setExpanded] = useState(false);
 
   const isTool = entry.kind === "tool";
@@ -27,9 +19,7 @@ const ToolItem = ({
   let icon = <Info size={12} />;
 
   if (isTool) {
-    const statusLabel = entry.toolStatus && entry.toolStatus !== "completed"
-      ? ` (${entry.toolStatus.replace("_", " ")})`
-      : "";
+    const statusLabel = entry.toolStatus && entry.toolStatus !== "completed" ? ` (${entry.toolStatus.replace("_", " ")})` : "";
     label = `${entry.toolName ?? "tool"}${statusLabel}`;
     icon = <Wrench size={12} />;
   } else if (isReasoning) {
@@ -45,11 +35,7 @@ const ToolItem = ({
     : isReasoning
       ? Boolean(entry.reasoning?.text?.trim())
       : Boolean(entry.meta?.detail?.trim());
-  const canOpenEvent = Boolean(
-    entry.eventId &&
-    onEventClick &&
-    !(isMeta && entry.meta?.title === "Available commands update"),
-  );
+  const canOpenEvent = Boolean(entry.eventId && onEventClick && !(isMeta && entry.meta?.title === "Available commands update"));
 
   return (
     <div className={`tool-item ${isLast ? "last" : ""} ${isFailed ? "failed" : ""}`}>
@@ -58,11 +44,7 @@ const ToolItem = ({
         {!isLast && <div className="tool-item-line" />}
       </div>
       <div className="tool-item-content">
-        <button
-          className={`tool-item-header ${expanded ? "expanded" : ""}`}
-          onClick={() => hasContent && setExpanded(!expanded)}
-          disabled={!hasContent}
-        >
+        <button className={`tool-item-header ${expanded ? "expanded" : ""}`} onClick={() => hasContent && setExpanded(!expanded)} disabled={!hasContent}>
           <span className="tool-item-icon">{icon}</span>
           <span className="tool-item-label">{label}</span>
           {isInProgress && (
@@ -84,11 +66,7 @@ const ToolItem = ({
               <ExternalLink size={10} />
             </span>
           )}
-          {hasContent && (
-            <span className="tool-item-chevron">
-              {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            </span>
-          )}
+          {hasContent && <span className="tool-item-chevron">{expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>}
         </button>
         {expanded && hasContent && (
           <div className="tool-item-body">
@@ -137,32 +115,22 @@ const ToolGroup = ({ entries, onEventClick }: { entries: TimelineEntry[]; onEven
   const summary = `${totalCount} Event${totalCount > 1 ? "s" : ""}`;
 
   // Check if any are in progress
-  const hasInProgress = entries.some(e => e.kind === "tool" && e.toolStatus === "in_progress");
-  const hasFailed = entries.some(e => e.kind === "tool" && e.toolStatus === "failed");
+  const hasInProgress = entries.some((e) => e.kind === "tool" && e.toolStatus === "in_progress");
+  const hasFailed = entries.some((e) => e.kind === "tool" && e.toolStatus === "failed");
 
   return (
     <div className={`tool-group-container ${hasFailed ? "failed" : ""}`}>
-      <button
-        className={`tool-group-header ${expanded ? "expanded" : ""}`}
-        onClick={() => setExpanded(!expanded)}
-      >
+      <button className={`tool-group-header ${expanded ? "expanded" : ""}`} onClick={() => setExpanded(!expanded)}>
         <span className="tool-group-icon">
           <PlayCircle size={14} />
         </span>
         <span className="tool-group-label">{summary}</span>
-        <span className="tool-group-chevron">
-          {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        </span>
+        <span className="tool-group-chevron">{expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
       </button>
       {expanded && (
         <div className="tool-group">
           {entries.map((entry, idx) => (
-            <ToolItem
-              key={entry.id}
-              entry={entry}
-              isLast={idx === entries.length - 1}
-              onEventClick={onEventClick}
-            />
+            <ToolItem key={entry.id} entry={entry} isLast={idx === entries.length - 1} onEventClick={onEventClick} />
           ))}
         </div>
       )}
@@ -209,9 +177,7 @@ const PermissionPrompt = ({
         <Shield size={14} className="permission-icon" />
         <span className="permission-title">{perm.title}</span>
       </div>
-      {perm.description && (
-        <div className="permission-description">{perm.description}</div>
-      )}
+      {perm.description && <div className="permission-description">{perm.description}</div>}
       <div className="permission-actions">
         {perm.options.map((opt) => {
           const isSelected = resolved && selectedId === opt.optionId;
@@ -229,9 +195,7 @@ const PermissionPrompt = ({
             </button>
           );
         })}
-        {resolved && !selectedId && (
-          <span className="permission-auto-resolved">Auto-resolved</span>
-        )}
+        {resolved && !selectedId && <span className="permission-auto-resolved">Auto-resolved</span>}
       </div>
     </div>
   );
@@ -277,8 +241,7 @@ const ChatMessages = ({
   };
 
   for (const entry of entries) {
-    const isStatusDivider = entry.kind === "meta" &&
-      ["Session Started", "Turn Started", "Turn Ended"].includes(entry.meta?.title ?? "");
+    const isStatusDivider = entry.kind === "meta" && ["Session Started", "Turn Started", "Turn Ended"].includes(entry.meta?.title ?? "");
 
     if (entry.kind === "permission") {
       flushToolGroup();
@@ -316,13 +279,7 @@ const ChatMessages = ({
 
         if (group.type === "permission") {
           const entry = group.entries[0];
-          return (
-            <PermissionPrompt
-              key={entry.id}
-              entry={entry}
-              onPermissionReply={onPermissionReply}
-            />
-          );
+          return <PermissionPrompt key={entry.id} entry={entry} onPermissionReply={onPermissionReply} />;
         }
 
         if (group.type === "tool-group") {
@@ -354,11 +311,7 @@ const ChatMessages = ({
       {isThinking && (
         <div className="thinking-row">
           <div className="thinking-avatar">
-            {agentId && agentLogos[agentId] ? (
-              <img src={agentLogos[agentId]} alt="" className="thinking-avatar-img" />
-            ) : (
-              <span className="ai-label">AI</span>
-            )}
+            {agentId && agentLogos[agentId] ? <img src={agentLogos[agentId]} alt="" className="thinking-avatar-img" /> : <span className="ai-label">AI</span>}
           </div>
           <span className="thinking-indicator">
             <span className="thinking-dot" />

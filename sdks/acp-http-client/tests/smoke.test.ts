@@ -14,10 +14,7 @@ function findBinary(): string | null {
     return process.env.SANDBOX_AGENT_BIN;
   }
 
-  const cargoPaths = [
-    resolve(__dirname, "../../../target/debug/sandbox-agent"),
-    resolve(__dirname, "../../../target/release/sandbox-agent"),
-  ];
+  const cargoPaths = [resolve(__dirname, "../../../target/debug/sandbox-agent"), resolve(__dirname, "../../../target/release/sandbox-agent")];
 
   for (const p of cargoPaths) {
     if (existsSync(p)) {
@@ -30,9 +27,7 @@ function findBinary(): string | null {
 
 const BINARY_PATH = findBinary();
 if (!BINARY_PATH) {
-  throw new Error(
-    "sandbox-agent binary not found. Build it (cargo build -p sandbox-agent) or set SANDBOX_AGENT_BIN.",
-  );
+  throw new Error("sandbox-agent binary not found. Build it (cargo build -p sandbox-agent) or set SANDBOX_AGENT_BIN.");
 }
 if (!process.env.SANDBOX_AGENT_BIN) {
   process.env.SANDBOX_AGENT_BIN = BINARY_PATH;
@@ -42,11 +37,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitFor<T>(
-  fn: () => T | undefined | null,
-  timeoutMs = 5000,
-  stepMs = 25,
-): Promise<T> {
+async function waitFor<T>(fn: () => T | undefined | null, timeoutMs = 5000, stepMs = 25): Promise<T> {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     const value = fn();

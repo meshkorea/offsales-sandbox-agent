@@ -14,12 +14,12 @@ function makeConfig(): AppConfig {
       opencode_poll_interval: 2,
       github_poll_interval: 30,
       backup_interval_secs: 3600,
-      backup_retention_days: 7
+      backup_retention_days: 7,
     },
     providers: {
       local: {},
-      daytona: { image: "ubuntu:24.04" }
-    }
+      daytona: { image: "ubuntu:24.04" },
+    },
   });
 }
 
@@ -40,7 +40,7 @@ describe("provider registry", () => {
             apiKey: "test-token",
           },
         },
-      })
+      }),
     );
     expect(registry.defaultProviderId()).toBe("daytona");
   });

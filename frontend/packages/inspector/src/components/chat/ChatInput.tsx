@@ -6,7 +6,7 @@ const ChatInput = ({
   onSendMessage,
   onKeyDown,
   placeholder,
-  disabled
+  disabled,
 }: {
   message: string;
   onMessageChange: (value: string) => void;

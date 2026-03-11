@@ -4,13 +4,7 @@ import { LabelXSmall } from "baseui/typography";
 
 import { formatMessageTimestamp, type HistoryEvent } from "./view-model";
 
-export const HistoryMinimap = memo(function HistoryMinimap({
-  events,
-  onSelect,
-}: {
-  events: HistoryEvent[];
-  onSelect: (event: HistoryEvent) => void;
-}) {
+export const HistoryMinimap = memo(function HistoryMinimap({ events, onSelect }: { events: HistoryEvent[]; onSelect: (event: HistoryEvent) => void }) {
   const [css, theme] = useStyletron();
   const [open, setOpen] = useState(false);
   const [activeEventId, setActiveEventId] = useState<string | null>(events[events.length - 1]?.id ?? null);

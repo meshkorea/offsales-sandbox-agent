@@ -40,5 +40,5 @@ export const handoffIndex = sqliteTable("handoff_index", {
   handoffId: text("handoff_id").notNull().primaryKey(),
   branchName: text("branch_name"),
   createdAt: integer("created_at").notNull(),
-  updatedAt: integer("updated_at").notNull()
+  updatedAt: integer("updated_at").notNull(),
 });
