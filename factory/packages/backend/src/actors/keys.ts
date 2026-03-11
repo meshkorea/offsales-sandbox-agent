@@ -4,41 +4,41 @@ export function workspaceKey(workspaceId: string): ActorKey {
   return ["ws", workspaceId];
 }
 
-export function projectKey(workspaceId: string, repoId: string): ActorKey {
-  return ["ws", workspaceId, "project", repoId];
+export function repoKey(workspaceId: string, repoId: string): ActorKey {
+  return ["ws", workspaceId, "repo", repoId];
 }
 
-export function handoffKey(workspaceId: string, repoId: string, handoffId: string): ActorKey {
-  return ["ws", workspaceId, "project", repoId, "handoff", handoffId];
+export function taskKey(workspaceId: string, taskId: string): ActorKey {
+  return ["ws", workspaceId, "task", taskId];
 }
 
 export function sandboxInstanceKey(
   workspaceId: string,
   providerId: string,
-  sandboxId: string
+  sandboxId: string,
 ): ActorKey {
   return ["ws", workspaceId, "provider", providerId, "sandbox", sandboxId];
 }
 
 export function historyKey(workspaceId: string, repoId: string): ActorKey {
-  return ["ws", workspaceId, "project", repoId, "history"];
+  return ["ws", workspaceId, "repo", repoId, "history"];
 }
 
-export function projectPrSyncKey(workspaceId: string, repoId: string): ActorKey {
-  return ["ws", workspaceId, "project", repoId, "pr-sync"];
+export function repoPrSyncKey(workspaceId: string, repoId: string): ActorKey {
+  return ["ws", workspaceId, "repo", repoId, "pr-sync"];
 }
 
-export function projectBranchSyncKey(workspaceId: string, repoId: string): ActorKey {
-  return ["ws", workspaceId, "project", repoId, "branch-sync"];
+export function repoBranchSyncKey(workspaceId: string, repoId: string): ActorKey {
+  return ["ws", workspaceId, "repo", repoId, "branch-sync"];
 }
 
-export function handoffStatusSyncKey(
+export function taskStatusSyncKey(
   workspaceId: string,
   repoId: string,
-  handoffId: string,
+  taskId: string,
   sandboxId: string,
-  sessionId: string
+  sessionId: string,
 ): ActorKey {
-  // Include sandbox + session so multiple sandboxes/sessions can be tracked per handoff.
-  return ["ws", workspaceId, "project", repoId, "handoff", handoffId, "status-sync", sandboxId, sessionId];
+  // Include sandbox + session so multiple sandboxes/sessions can be tracked per task.
+  return ["ws", workspaceId, "task", taskId, "status-sync", repoId, sandboxId, sessionId];
 }

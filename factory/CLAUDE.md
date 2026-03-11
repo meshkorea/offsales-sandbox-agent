@@ -19,30 +19,48 @@ Use `pnpm` workspaces and Turborepo.
 - Workspace root uses `pnpm-workspace.yaml` and `turbo.json`.
 - Packages live in `packages/*`.
 - `core` is renamed to `shared`.
-- `packages/cli` is disabled and excluded from active workspace validation.
 - Integrations and providers live under `packages/backend/src/{integrations,providers}`.
 
-## CLI Status
+## Product Surface
 
-- `packages/cli` is fully disabled for active development.
-- Do not implement new behavior in `packages/cli` unless explicitly requested.
+- The old CLI package has been removed.
 - Frontend is the primary product surface; prioritize `packages/frontend` + supporting `packages/client`/`packages/backend`.
-- Workspace `build`, `typecheck`, and `test` intentionally exclude `@sandbox-agent/factory-cli`.
-- `pnpm-workspace.yaml` excludes `packages/cli` from workspace package resolution.
+
+## Dev Server Policy
+
+**Always use Docker Compose to run dev servers.** Do not start the backend, frontend, or any other long-running service directly via `bun`, `pnpm dev`, Vite, or tmux. All dev services must run through the Compose stack so that networking, environment variables, and service dependencies are consistent.
+
+- Start the full dev stack (real backend): `just factory-dev`
+- Stop the dev stack: `just factory-dev-down`
+- Tail dev logs: `just factory-dev-logs`
+- Start the mock dev stack (frontend-only, no backend): `just factory-dev-mock`
+- Stop the mock stack: `just factory-dev-mock-down`
+- Tail mock logs: `just factory-dev-mock-logs`
+- Start the production-build preview stack: `just factory-preview`
+- Stop the preview stack: `just factory-preview-down`
+- Tail preview logs: `just factory-preview-logs`
+
+The real dev server runs on port 4173 (frontend) + 7741 (backend). The mock dev server runs on port 4174 (frontend only). Both can run simultaneously.
+
+When making code changes, restart or recreate the relevant Compose services so the running app reflects the latest code (e.g. `docker compose -f factory/compose.dev.yaml up -d --build backend`).
+
+## Mock vs Real Backend — UI Change Policy
+
+**When a user asks to make a UI change, always ask whether they are testing against the real backend or the mock backend before proceeding.**
+
+- **Mock backend** (`compose.mock.yaml`, port 4174):
+  - Only modify `packages/frontend`, `packages/client/src/mock/` (mock client implementation), and `packages/shared` (shared types/contracts).
+  - Ignore typecheck/build errors in the real client (`packages/client/src/remote/`) and backend (`packages/backend`).
+  - The assumption is that the mock server is the only test target; real backend compatibility is out of scope for that change.
+- **Real backend** (`compose.dev.yaml`, port 4173):
+  - All layers must be kept in sync: `packages/frontend`, `packages/client` (both mock and remote), `packages/shared`, and `packages/backend`.
+  - All typecheck, build, and test errors must be resolved across the full stack.
 
 ## Common Commands
 
 - Install deps: `pnpm install`
 - Full active-workspace validation: `pnpm -w typecheck`, `pnpm -w build`, `pnpm -w test`
-- Start the full dev stack: `just factory-dev`
-- Start the local production-build preview stack: `just factory-preview`
-- Start only the backend locally: `just factory-backend-start`
-- Start only the frontend locally: `pnpm --filter @sandbox-agent/factory-frontend dev`
-- Start the frontend against the mock workbench client: `FACTORY_FRONTEND_CLIENT_MODE=mock pnpm --filter @sandbox-agent/factory-frontend dev`
-- Stop the compose dev stack: `just factory-dev-down`
-- Tail compose logs: `just factory-dev-logs`
-- Stop the preview stack: `just factory-preview-down`
-- Tail preview logs: `just factory-preview-logs`
+- Start the frontend against the mock workbench client (no backend needed): `FACTORY_FRONTEND_CLIENT_MODE=mock pnpm --filter @sandbox-agent/factory-frontend dev`
 
 ## Loading & Skeleton UI Policy
 
@@ -57,7 +75,7 @@ Use `pnpm` workspaces and Turborepo.
 ## Frontend + Client Boundary
 
 - Keep a browser-friendly GUI implementation aligned with the TUI interaction model wherever possible.
-- Do not import `rivetkit` directly in CLI or GUI packages. RivetKit client access must stay isolated inside `packages/client`.
+- Do not import `rivetkit` directly in UI packages. RivetKit client access must stay isolated inside `packages/client`.
 - All backend interaction (actor calls, metadata/health checks, backend HTTP endpoint access) must go through the dedicated client library in `packages/client`.
 - Outside `packages/client`, do not call backend endpoints directly (for example `fetch(.../api/rivet...)`), except in black-box E2E tests that intentionally exercise raw transport behavior.
 - GUI state should update in realtime (no manual refresh buttons). Prefer RivetKit push reactivity and actor-driven events; do not add polling/refetch for normal product flows.
@@ -70,8 +88,8 @@ Use `pnpm` workspaces and Turborepo.
 ## Runtime Policy
 
 - Runtime is Bun-native.
-- Use Bun for CLI/backend execution paths and process spawning.
-- Do not add Node compatibility fallbacks for OpenTUI/runtime execution.
+- Use Bun for backend execution paths and process spawning.
+- Do not add Node compatibility fallbacks for removed CLI/OpenTUI paths.
 
 ## Defensive Error Handling
 
@@ -91,18 +109,7 @@ For all Rivet/RivetKit implementation:
    - Do not add `workspaceId`/`repoId`/`handoffId` columns just to "namespace" rows for a given actor instance; use actor state and/or the actor key instead.
    - Example: the `handoff` actor instance already represents `(workspaceId, repoId, handoffId)`, so its SQLite tables should not need those columns for primary keys.
 3. Do not use backend-global SQLite singletons; database access must go through actor `db` providers (`c.db`).
-4. Do not use published RivetKit npm packages.
-5. RivetKit is linked via pnpm `link:` protocol to `../rivet/rivetkit-typescript/packages/rivetkit`. Sub-packages (`@rivetkit/sqlite-vfs`, etc.) resolve transitively from the rivet workspace.
-   - Dedicated local checkout for this workspace: `/Users/nathan/conductor/workspaces/handoff/rivet-checkout`
-   - Dev worktree note: when working on RivetKit fixes for this repo, prefer the dedicated local checkout above and link to `../rivet-checkout/rivetkit-typescript/packages/rivetkit`.
-   - If Docker dev needs a different host path, export `HF_RIVET_CHECKOUT_PATH=/abs/path/to/rivet-checkout` before `docker compose -f factory/compose.dev.yaml up`.
-6. Before using a fresh Rivet checkout, generate RivetKit schemas and build RivetKit in the rivet repo:
-   ```bash
-   cd ../rivet-checkout/rivetkit-typescript
-   pnpm install
-   pnpm --dir packages/rivetkit build:schema
-   pnpm build -F rivetkit
-   ```
+4. Use published RivetKit npm packages (`"rivetkit": "^2.1.6"` or later). Do not use `link:` dependencies pointing outside the workspace.
 
 ## Inspector HTTP API (Workflow Debugging)
 
@@ -141,10 +148,14 @@ For all Rivet/RivetKit implementation:
 ## Workspace + Actor Rules
 
 - Everything is scoped to a workspace.
+- All durable Factory data must live inside actors.
+- App-shell/auth/session/org/billing data is actor-owned data too; do not introduce backend-global stores for it.
+- Do not add standalone SQLite files, JSON stores, in-memory singleton stores, or any other non-actor persistence for Factory product state.
+- If data needs durable persistence, store it in actor `c.state` or the owning actor's SQLite DB via `c.db`.
 - Workspace resolution order: `--workspace` flag -> config default -> `"default"`.
 - `ControlPlaneActor` is replaced by `WorkspaceActor` (workspace coordinator).
 - Every actor key must be prefixed with workspace namespace (`["ws", workspaceId, ...]`).
-- CLI/TUI/GUI must use `@sandbox-agent/factory-client` (`packages/client`) for backend access; `rivetkit/client` imports are only allowed inside `packages/client`.
+- Product surfaces must use `@sandbox-agent/factory-client` (`packages/client`) for backend access; `rivetkit/client` imports are only allowed inside `packages/client`.
 - Do not add custom backend REST endpoints (no `/v1/*` shim layer).
 - We own the sandbox-agent project; treat sandbox-agent defects as first-party bugs and fix them instead of working around them.
 - Keep strict single-writer ownership: each table/row has exactly one actor writer.
@@ -239,4 +250,4 @@ pnpm -w build
 pnpm -w test
 ```
 
-After making code changes, always update the dev server before declaring the work complete. If the dev stack is running through Docker Compose, restart or recreate the relevant dev services so the running app reflects the latest code.
+After making code changes, always update the dev server before declaring the work complete. Restart or recreate the relevant Docker Compose services so the running app reflects the latest code. Do not run dev servers outside of Docker Compose.

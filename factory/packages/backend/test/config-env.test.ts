@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { applyDevelopmentEnvDefaults, loadDevelopmentEnvFiles } from "../src/config/env.js";
@@ -10,6 +10,7 @@ const ENV_KEYS = [
   "BETTER_AUTH_URL",
   "BETTER_AUTH_SECRET",
   "GITHUB_REDIRECT_URI",
+  "GITHUB_APP_PRIVATE_KEY",
 ] as const;
 
 const ORIGINAL_ENV = new Map<string, string | undefined>(
@@ -45,6 +46,21 @@ describe("development env loading", () => {
     expect(process.env.APP_URL).toBe("http://localhost:4999");
   });
 
+  test("walks parent directories to find repo-level development env files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "factory-env-"));
+    const nested = join(dir, "factory", "packages", "backend");
+    mkdirSync(nested, { recursive: true });
+    writeFileSync(join(dir, ".env.development.local"), "APP_URL=http://localhost:4888\n", "utf8");
+
+    process.env.NODE_ENV = "development";
+    delete process.env.APP_URL;
+
+    const loaded = loadDevelopmentEnvFiles(nested);
+
+    expect(loaded).toContain(join(dir, ".env.development.local"));
+    expect(process.env.APP_URL).toBe("http://localhost:4888");
+  });
+
   test("skips dotenv files outside development", () => {
     const dir = mkdtempSync(join(tmpdir(), "factory-env-"));
     writeFileSync(join(dir, ".env.development"), "APP_URL=http://localhost:4999\n", "utf8");
@@ -71,5 +87,21 @@ describe("development env loading", () => {
     expect(process.env.BETTER_AUTH_URL).toBe("http://localhost:4173");
     expect(process.env.BETTER_AUTH_SECRET).toBe("sandbox-agent-factory-development-only-change-me");
     expect(process.env.GITHUB_REDIRECT_URI).toBe("http://localhost:4173/api/rivet/app/auth/github/callback");
+  });
+
+  test("decodes escaped newlines for quoted env values", () => {
+    const dir = mkdtempSync(join(tmpdir(), "factory-env-"));
+    writeFileSync(
+      join(dir, ".env.development"),
+      'GITHUB_APP_PRIVATE_KEY="line-1\\nline-2\\n"\n',
+      "utf8",
+    );
+
+    process.env.NODE_ENV = "development";
+    delete process.env.GITHUB_APP_PRIVATE_KEY;
+
+    loadDevelopmentEnvFiles(dir);
+
+    expect(process.env.GITHUB_APP_PRIVATE_KEY).toBe("line-1\nline-2\n");
   });
 });

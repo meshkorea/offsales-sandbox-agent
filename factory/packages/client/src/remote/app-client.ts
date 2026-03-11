@@ -20,7 +20,7 @@ class RemoteFactoryAppStore implements FactoryAppClient {
   };
   private readonly listeners = new Set<() => void>();
   private refreshPromise: Promise<void> | null = null;
-  private importPollTimeout: ReturnType<typeof setTimeout> | null = null;
+  private syncPollTimeout: ReturnType<typeof setTimeout> | null = null;
 
   constructor(options: RemoteFactoryAppClientOptions) {
     this.backend = options.backend;
@@ -39,9 +39,8 @@ class RemoteFactoryAppStore implements FactoryAppClient {
   }
 
   async signInWithGithub(userId?: string): Promise<void> {
-    this.snapshot = await this.backend.signInWithGithub(userId);
-    this.notify();
-    this.scheduleImportPollingIfNeeded();
+    void userId;
+    await this.backend.signInWithGithub();
   }
 
   async signOut(): Promise<void> {
@@ -52,7 +51,7 @@ class RemoteFactoryAppStore implements FactoryAppClient {
   async selectOrganization(organizationId: string): Promise<void> {
     this.snapshot = await this.backend.selectAppOrganization(organizationId);
     this.notify();
-    this.scheduleImportPollingIfNeeded();
+    this.scheduleSyncPollingIfNeeded();
   }
 
   async updateOrganizationProfile(input: UpdateFactoryOrganizationProfileInput): Promise<void> {
@@ -60,15 +59,18 @@ class RemoteFactoryAppStore implements FactoryAppClient {
     this.notify();
   }
 
-  async triggerRepoImport(organizationId: string): Promise<void> {
+  async triggerGithubSync(organizationId: string): Promise<void> {
     this.snapshot = await this.backend.triggerAppRepoImport(organizationId);
     this.notify();
-    this.scheduleImportPollingIfNeeded();
+    this.scheduleSyncPollingIfNeeded();
   }
 
   async completeHostedCheckout(organizationId: string, planId: FactoryBillingPlanId): Promise<void> {
-    this.snapshot = await this.backend.completeAppHostedCheckout(organizationId, planId);
-    this.notify();
+    await this.backend.completeAppHostedCheckout(organizationId, planId);
+  }
+
+  async openBillingPortal(organizationId: string): Promise<void> {
+    await this.backend.openAppBillingPortal(organizationId);
   }
 
   async cancelScheduledRenewal(organizationId: string): Promise<void> {
@@ -82,8 +84,7 @@ class RemoteFactoryAppStore implements FactoryAppClient {
   }
 
   async reconnectGithub(organizationId: string): Promise<void> {
-    this.snapshot = await this.backend.reconnectAppGithub(organizationId);
-    this.notify();
+    await this.backend.reconnectAppGithub(organizationId);
   }
 
   async recordSeatUsage(workspaceId: string): Promise<void> {
@@ -91,18 +92,18 @@ class RemoteFactoryAppStore implements FactoryAppClient {
     this.notify();
   }
 
-  private scheduleImportPollingIfNeeded(): void {
-    if (this.importPollTimeout) {
-      clearTimeout(this.importPollTimeout);
-      this.importPollTimeout = null;
+  private scheduleSyncPollingIfNeeded(): void {
+    if (this.syncPollTimeout) {
+      clearTimeout(this.syncPollTimeout);
+      this.syncPollTimeout = null;
     }
 
-    if (!this.snapshot.organizations.some((organization) => organization.repoImportStatus === "importing")) {
+    if (!this.snapshot.organizations.some((organization) => organization.github.syncStatus === "syncing")) {
       return;
     }
 
-    this.importPollTimeout = setTimeout(() => {
-      this.importPollTimeout = null;
+    this.syncPollTimeout = setTimeout(() => {
+      this.syncPollTimeout = null;
       void this.refresh();
     }, 500);
   }
@@ -116,7 +117,7 @@ class RemoteFactoryAppStore implements FactoryAppClient {
     this.refreshPromise = (async () => {
       this.snapshot = await this.backend.getAppSnapshot();
       this.notify();
-      this.scheduleImportPollingIfNeeded();
+      this.scheduleSyncPollingIfNeeded();
     })().finally(() => {
       this.refreshPromise = null;
     });

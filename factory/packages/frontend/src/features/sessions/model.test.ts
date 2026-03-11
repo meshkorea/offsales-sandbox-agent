@@ -92,7 +92,7 @@ describe("resolveSessionSelection", () => {
   it("prefers explicit selection when present in session list", () => {
     const resolved = resolveSessionSelection({
       explicitSessionId: "session-2",
-      handoffSessionId: "session-1",
+      taskSessionId: "session-1",
       sessions: [session("session-1"), session("session-2")]
     });
 
@@ -102,10 +102,10 @@ describe("resolveSessionSelection", () => {
     });
   });
 
-  it("falls back to handoff session when explicit selection is missing", () => {
+  it("falls back to task session when explicit selection is missing", () => {
     const resolved = resolveSessionSelection({
       explicitSessionId: null,
-      handoffSessionId: "session-1",
+      taskSessionId: "session-1",
       sessions: [session("session-1")]
     });
 
@@ -118,7 +118,7 @@ describe("resolveSessionSelection", () => {
   it("falls back to the newest available session when configured session IDs are stale", () => {
     const resolved = resolveSessionSelection({
       explicitSessionId: null,
-      handoffSessionId: "session-stale",
+      taskSessionId: "session-stale",
       sessions: [session("session-fresh")]
     });
 
@@ -131,7 +131,7 @@ describe("resolveSessionSelection", () => {
   it("marks stale session when no sessions are available", () => {
     const resolved = resolveSessionSelection({
       explicitSessionId: null,
-      handoffSessionId: "session-stale",
+      taskSessionId: "session-stale",
       sessions: []
     });
 

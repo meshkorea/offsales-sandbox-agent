@@ -53,16 +53,16 @@ export const SkeletonBlock = memo(function SkeletonBlock({
   return <SkeletonLine width={width} height={height} borderRadius={borderRadius} style={style} />;
 });
 
-/** Sidebar skeleton: header + list of handoff placeholders */
+/** Sidebar skeleton: header + list of task placeholders */
 export const SidebarSkeleton = memo(function SidebarSkeleton() {
   return (
     <div style={{ padding: "8px", display: "flex", flexDirection: "column", gap: "4px" }}>
-      {/* Project header skeleton */}
+      {/* Repo header skeleton */}
       <div style={{ padding: "10px 8px 4px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <SkeletonLine width="40%" height={10} />
         <SkeletonLine width={48} height={10} />
       </div>
-      {/* Handoff item skeletons */}
+      {/* Task item skeletons */}
       {[0, 1, 2, 3].map((i) => (
         <div
           key={i}

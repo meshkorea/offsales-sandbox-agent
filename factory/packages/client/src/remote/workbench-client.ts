@@ -1,31 +1,31 @@
 import type {
-  HandoffWorkbenchAddTabResponse,
-  HandoffWorkbenchChangeModelInput,
-  HandoffWorkbenchCreateHandoffInput,
-  HandoffWorkbenchCreateHandoffResponse,
-  HandoffWorkbenchDiffInput,
-  HandoffWorkbenchRenameInput,
-  HandoffWorkbenchRenameSessionInput,
-  HandoffWorkbenchSelectInput,
-  HandoffWorkbenchSetSessionUnreadInput,
-  HandoffWorkbenchSendMessageInput,
-  HandoffWorkbenchSnapshot,
-  HandoffWorkbenchTabInput,
-  HandoffWorkbenchUpdateDraftInput,
+  TaskWorkbenchAddTabResponse,
+  TaskWorkbenchChangeModelInput,
+  TaskWorkbenchCreateTaskInput,
+  TaskWorkbenchCreateTaskResponse,
+  TaskWorkbenchDiffInput,
+  TaskWorkbenchRenameInput,
+  TaskWorkbenchRenameSessionInput,
+  TaskWorkbenchSelectInput,
+  TaskWorkbenchSetSessionUnreadInput,
+  TaskWorkbenchSendMessageInput,
+  TaskWorkbenchTabInput,
+  TaskWorkbenchUpdateDraftInput,
+  TaskWorkbenchSnapshot,
 } from "@sandbox-agent/factory-shared";
 import type { BackendClient } from "../backend-client.js";
-import { groupWorkbenchProjects } from "../workbench-model.js";
-import type { HandoffWorkbenchClient } from "../workbench-client.js";
+import { groupWorkbenchRepos } from "../workbench-model.js";
+import type { TaskWorkbenchClient } from "../workbench-client.js";
 
 export interface RemoteWorkbenchClientOptions {
   backend: BackendClient;
   workspaceId: string;
 }
 
-class RemoteWorkbenchStore implements HandoffWorkbenchClient {
+class RemoteWorkbenchStore implements TaskWorkbenchClient {
   private readonly backend: BackendClient;
   private readonly workspaceId: string;
-  private snapshot: HandoffWorkbenchSnapshot;
+  private snapshot: TaskWorkbenchSnapshot;
   private readonly listeners = new Set<() => void>();
   private unsubscribeWorkbench: (() => void) | null = null;
   private refreshPromise: Promise<void> | null = null;
@@ -37,12 +37,12 @@ class RemoteWorkbenchStore implements HandoffWorkbenchClient {
     this.snapshot = {
       workspaceId: options.workspaceId,
       repos: [],
-      projects: [],
-      handoffs: [],
+      repoSections: [],
+      tasks: [],
     };
   }
 
-  getSnapshot(): HandoffWorkbenchSnapshot {
+  getSnapshot(): TaskWorkbenchSnapshot {
     return this.snapshot;
   }
 
@@ -62,85 +62,85 @@ class RemoteWorkbenchStore implements HandoffWorkbenchClient {
     };
   }
 
-  async createHandoff(input: HandoffWorkbenchCreateHandoffInput): Promise<HandoffWorkbenchCreateHandoffResponse> {
-    const created = await this.backend.createWorkbenchHandoff(this.workspaceId, input);
+  async createTask(input: TaskWorkbenchCreateTaskInput): Promise<TaskWorkbenchCreateTaskResponse> {
+    const created = await this.backend.createWorkbenchTask(this.workspaceId, input);
     await this.refresh();
     return created;
   }
 
-  async markHandoffUnread(input: HandoffWorkbenchSelectInput): Promise<void> {
+  async markTaskUnread(input: TaskWorkbenchSelectInput): Promise<void> {
     await this.backend.markWorkbenchUnread(this.workspaceId, input);
     await this.refresh();
   }
 
-  async renameHandoff(input: HandoffWorkbenchRenameInput): Promise<void> {
-    await this.backend.renameWorkbenchHandoff(this.workspaceId, input);
+  async renameTask(input: TaskWorkbenchRenameInput): Promise<void> {
+    await this.backend.renameWorkbenchTask(this.workspaceId, input);
     await this.refresh();
   }
 
-  async renameBranch(input: HandoffWorkbenchRenameInput): Promise<void> {
+  async renameBranch(input: TaskWorkbenchRenameInput): Promise<void> {
     await this.backend.renameWorkbenchBranch(this.workspaceId, input);
     await this.refresh();
   }
 
-  async archiveHandoff(input: HandoffWorkbenchSelectInput): Promise<void> {
-    await this.backend.runAction(this.workspaceId, input.handoffId, "archive");
+  async archiveTask(input: TaskWorkbenchSelectInput): Promise<void> {
+    await this.backend.runAction(this.workspaceId, input.taskId, "archive");
     await this.refresh();
   }
 
-  async publishPr(input: HandoffWorkbenchSelectInput): Promise<void> {
+  async publishPr(input: TaskWorkbenchSelectInput): Promise<void> {
     await this.backend.publishWorkbenchPr(this.workspaceId, input);
     await this.refresh();
   }
 
-  async pushHandoff(input: HandoffWorkbenchSelectInput): Promise<void> {
-    await this.backend.runAction(this.workspaceId, input.handoffId, "push");
+  async pushTask(input: TaskWorkbenchSelectInput): Promise<void> {
+    await this.backend.runAction(this.workspaceId, input.taskId, "push");
     await this.refresh();
   }
 
-  async revertFile(input: HandoffWorkbenchDiffInput): Promise<void> {
+  async revertFile(input: TaskWorkbenchDiffInput): Promise<void> {
     await this.backend.revertWorkbenchFile(this.workspaceId, input);
     await this.refresh();
   }
 
-  async updateDraft(input: HandoffWorkbenchUpdateDraftInput): Promise<void> {
+  async updateDraft(input: TaskWorkbenchUpdateDraftInput): Promise<void> {
     await this.backend.updateWorkbenchDraft(this.workspaceId, input);
     await this.refresh();
   }
 
-  async sendMessage(input: HandoffWorkbenchSendMessageInput): Promise<void> {
+  async sendMessage(input: TaskWorkbenchSendMessageInput): Promise<void> {
     await this.backend.recordAppSeatUsage(this.workspaceId);
     await this.backend.sendWorkbenchMessage(this.workspaceId, input);
     await this.refresh();
   }
 
-  async stopAgent(input: HandoffWorkbenchTabInput): Promise<void> {
+  async stopAgent(input: TaskWorkbenchTabInput): Promise<void> {
     await this.backend.stopWorkbenchSession(this.workspaceId, input);
     await this.refresh();
   }
 
-  async setSessionUnread(input: HandoffWorkbenchSetSessionUnreadInput): Promise<void> {
+  async setSessionUnread(input: TaskWorkbenchSetSessionUnreadInput): Promise<void> {
     await this.backend.setWorkbenchSessionUnread(this.workspaceId, input);
     await this.refresh();
   }
 
-  async renameSession(input: HandoffWorkbenchRenameSessionInput): Promise<void> {
+  async renameSession(input: TaskWorkbenchRenameSessionInput): Promise<void> {
     await this.backend.renameWorkbenchSession(this.workspaceId, input);
     await this.refresh();
   }
 
-  async closeTab(input: HandoffWorkbenchTabInput): Promise<void> {
+  async closeTab(input: TaskWorkbenchTabInput): Promise<void> {
     await this.backend.closeWorkbenchSession(this.workspaceId, input);
     await this.refresh();
   }
 
-  async addTab(input: HandoffWorkbenchSelectInput): Promise<HandoffWorkbenchAddTabResponse> {
+  async addTab(input: TaskWorkbenchSelectInput): Promise<TaskWorkbenchAddTabResponse> {
     const created = await this.backend.createWorkbenchSession(this.workspaceId, input);
     await this.refresh();
     return created;
   }
 
-  async changeModel(input: HandoffWorkbenchChangeModelInput): Promise<void> {
+  async changeModel(input: TaskWorkbenchChangeModelInput): Promise<void> {
     await this.backend.changeWorkbenchModel(this.workspaceId, input);
     await this.refresh();
   }
@@ -185,7 +185,8 @@ class RemoteWorkbenchStore implements HandoffWorkbenchClient {
       }
       this.snapshot = {
         ...nextSnapshot,
-        projects: nextSnapshot.projects ?? groupWorkbenchProjects(nextSnapshot.repos, nextSnapshot.handoffs),
+        repoSections: nextSnapshot.repoSections ?? groupWorkbenchRepos(nextSnapshot.repos, nextSnapshot.tasks),
+        tasks: nextSnapshot.tasks,
       };
       for (const listener of [...this.listeners]) {
         listener();
@@ -200,6 +201,6 @@ class RemoteWorkbenchStore implements HandoffWorkbenchClient {
 
 export function createRemoteWorkbenchClient(
   options: RemoteWorkbenchClientOptions,
-): HandoffWorkbenchClient {
+): TaskWorkbenchClient {
   return new RemoteWorkbenchStore(options);
 }

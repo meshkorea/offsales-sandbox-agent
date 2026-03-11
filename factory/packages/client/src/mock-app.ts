@@ -1,9 +1,9 @@
 import { injectMockLatency } from "./mock/latency.js";
 
-export type MockBillingPlanId = "free" | "team" | "enterprise";
+export type MockBillingPlanId = "free" | "team";
 export type MockBillingStatus = "active" | "trialing" | "past_due" | "scheduled_cancel";
-export type MockRepoImportStatus = "ready" | "not_started" | "importing";
 export type MockGithubInstallationStatus = "connected" | "install_required" | "reconnect_required";
+export type MockGithubSyncStatus = "pending" | "syncing" | "synced" | "error";
 export type MockOrganizationKind = "personal" | "organization";
 
 export interface MockFactoryUser {
@@ -45,8 +45,10 @@ export interface MockFactoryBillingState {
 export interface MockFactoryGithubState {
   connectedAccount: string;
   installationStatus: MockGithubInstallationStatus;
+  syncStatus: MockGithubSyncStatus;
   importedRepoCount: number;
   lastSyncLabel: string;
+  lastSyncAt: number | null;
 }
 
 export interface MockFactoryOrganizationSettings {
@@ -67,7 +69,6 @@ export interface MockFactoryOrganization {
   billing: MockFactoryBillingState;
   members: MockFactoryOrganizationMember[];
   seatAssignments: string[];
-  repoImportStatus: MockRepoImportStatus;
   repoCatalog: string[];
 }
 
@@ -95,8 +96,9 @@ export interface MockFactoryAppClient {
   signOut(): Promise<void>;
   selectOrganization(organizationId: string): Promise<void>;
   updateOrganizationProfile(input: UpdateMockOrganizationProfileInput): Promise<void>;
-  triggerRepoImport(organizationId: string): Promise<void>;
+  triggerGithubSync(organizationId: string): Promise<void>;
   completeHostedCheckout(organizationId: string, planId: MockBillingPlanId): Promise<void>;
+  openBillingPortal(organizationId: string): Promise<void>;
   cancelScheduledRenewal(organizationId: string): Promise<void>;
   resumeSubscription(organizationId: string): Promise<void>;
   reconnectGithub(organizationId: string): Promise<void>;
@@ -109,6 +111,21 @@ function isoDate(daysFromNow: number): string {
   const value = new Date();
   value.setDate(value.getDate() + daysFromNow);
   return value.toISOString();
+}
+
+function syncStatusFromLegacy(value: unknown): MockGithubSyncStatus {
+  switch (value) {
+    case "ready":
+    case "synced":
+      return "synced";
+    case "importing":
+    case "syncing":
+      return "syncing";
+    case "error":
+      return "error";
+    default:
+      return "pending";
+  }
 }
 
 function buildDefaultSnapshot(): MockFactoryAppSnapshot {
@@ -160,8 +177,10 @@ function buildDefaultSnapshot(): MockFactoryAppSnapshot {
         github: {
           connectedAccount: "nathan",
           installationStatus: "connected",
+          syncStatus: "synced",
           importedRepoCount: 1,
           lastSyncLabel: "Synced just now",
+          lastSyncAt: Date.now() - 60_000,
         },
         billing: {
           planId: "free",
@@ -177,7 +196,6 @@ function buildDefaultSnapshot(): MockFactoryAppSnapshot {
           { id: "member-nathan", name: "Nathan", email: "nathan@acme.dev", role: "owner", state: "active" },
         ],
         seatAssignments: ["nathan@acme.dev"],
-        repoImportStatus: "ready",
         repoCatalog: ["nathan/personal-site"],
       },
       {
@@ -195,8 +213,10 @@ function buildDefaultSnapshot(): MockFactoryAppSnapshot {
         github: {
           connectedAccount: "acme",
           installationStatus: "connected",
+          syncStatus: "pending",
           importedRepoCount: 3,
-          lastSyncLabel: "Synced 4 minutes ago",
+          lastSyncLabel: "Waiting for first import",
+          lastSyncAt: null,
         },
         billing: {
           planId: "team",
@@ -218,7 +238,6 @@ function buildDefaultSnapshot(): MockFactoryAppSnapshot {
           { id: "member-acme-devon", name: "Devon", email: "devon@acme.dev", role: "member", state: "invited" },
         ],
         seatAssignments: ["nathan@acme.dev", "maya@acme.dev"],
-        repoImportStatus: "not_started",
         repoCatalog: ["acme/backend", "acme/frontend", "acme/infra"],
       },
       {
@@ -236,18 +255,20 @@ function buildDefaultSnapshot(): MockFactoryAppSnapshot {
         github: {
           connectedAccount: "rivet-dev",
           installationStatus: "reconnect_required",
+          syncStatus: "error",
           importedRepoCount: 4,
           lastSyncLabel: "Sync stalled 2 hours ago",
+          lastSyncAt: Date.now() - 2 * 60 * 60_000,
         },
         billing: {
-          planId: "enterprise",
+          planId: "team",
           status: "trialing",
-          seatsIncluded: 25,
+          seatsIncluded: 5,
           trialEndsAt: isoDate(12),
           renewalAt: isoDate(12),
-          stripeCustomerId: "cus_mock_rivet_enterprise",
-          paymentMethodLabel: "ACH verified",
-          invoices: [{ id: "inv-rivet-001", label: "Enterprise pilot", issuedAt: "2026-03-04", amountUsd: 0, status: "paid" }],
+          stripeCustomerId: "cus_mock_rivet_team",
+          paymentMethodLabel: "Visa ending in 4242",
+          invoices: [{ id: "inv-rivet-001", label: "Team pilot", issuedAt: "2026-03-04", amountUsd: 0, status: "paid" }],
         },
         members: [
           { id: "member-rivet-jamie", name: "Jamie", email: "jamie@rivet.dev", role: "owner", state: "active" },
@@ -255,7 +276,6 @@ function buildDefaultSnapshot(): MockFactoryAppSnapshot {
           { id: "member-rivet-lena", name: "Lena", email: "lena@rivet.dev", role: "admin", state: "active" },
         ],
         seatAssignments: ["jamie@rivet.dev"],
-        repoImportStatus: "not_started",
         repoCatalog: ["rivet/dashboard", "rivet/agents", "rivet/billing", "rivet/infrastructure"],
       },
       {
@@ -273,8 +293,10 @@ function buildDefaultSnapshot(): MockFactoryAppSnapshot {
         github: {
           connectedAccount: "jamie",
           installationStatus: "connected",
+          syncStatus: "synced",
           importedRepoCount: 1,
           lastSyncLabel: "Synced yesterday",
+          lastSyncAt: Date.now() - 24 * 60 * 60_000,
         },
         billing: {
           planId: "free",
@@ -288,7 +310,6 @@ function buildDefaultSnapshot(): MockFactoryAppSnapshot {
         },
         members: [{ id: "member-jamie", name: "Jamie", email: "jamie@rivet.dev", role: "owner", state: "active" }],
         seatAssignments: ["jamie@rivet.dev"],
-        repoImportStatus: "ready",
         repoCatalog: ["jamie/demo-app"],
       },
     ],
@@ -306,11 +327,23 @@ function parseStoredSnapshot(): MockFactoryAppSnapshot | null {
   }
 
   try {
-    const parsed = JSON.parse(raw) as MockFactoryAppSnapshot;
+    const parsed = JSON.parse(raw) as MockFactoryAppSnapshot & {
+      organizations?: Array<MockFactoryOrganization & { repoImportStatus?: string }>;
+    };
     if (!parsed || typeof parsed !== "object") {
       return null;
     }
-    return parsed;
+    return {
+      ...parsed,
+      organizations: (parsed.organizations ?? []).map((organization: MockFactoryOrganization & { repoImportStatus?: string }) => ({
+        ...organization,
+        github: {
+          ...organization.github,
+          syncStatus: syncStatusFromLegacy(organization.github?.syncStatus ?? organization.repoImportStatus),
+          lastSyncAt: organization.github?.lastSyncAt ?? null,
+        },
+      })),
+    };
   } catch {
     return null;
   }
@@ -330,8 +363,6 @@ function planSeatsIncluded(planId: MockBillingPlanId): number {
       return 1;
     case "team":
       return 5;
-    case "enterprise":
-      return 25;
   }
 }
 
@@ -396,8 +427,8 @@ class MockFactoryAppStore implements MockFactoryAppClient {
       activeOrganizationId: organizationId,
     }));
 
-    if (org.repoImportStatus !== "ready") {
-      await this.triggerRepoImport(organizationId);
+    if (org.github.syncStatus !== "synced") {
+      await this.triggerGithubSync(organizationId);
     }
   }
 
@@ -415,7 +446,7 @@ class MockFactoryAppStore implements MockFactoryAppClient {
     }));
   }
 
-  async triggerRepoImport(organizationId: string): Promise<void> {
+  async triggerGithubSync(organizationId: string): Promise<void> {
     await this.injectAsyncLatency();
     this.requireOrganization(organizationId);
     const existingTimer = this.importTimers.get(organizationId);
@@ -425,22 +456,23 @@ class MockFactoryAppStore implements MockFactoryAppClient {
 
     this.updateOrganization(organizationId, (organization) => ({
       ...organization,
-      repoImportStatus: "importing",
       github: {
         ...organization.github,
-        lastSyncLabel: "Importing repository catalog...",
+        syncStatus: "syncing",
+        lastSyncLabel: "Syncing repositories...",
       },
     }));
 
     const timer = setTimeout(() => {
       this.updateOrganization(organizationId, (organization) => ({
         ...organization,
-        repoImportStatus: "ready",
         github: {
           ...organization.github,
           importedRepoCount: organization.repoCatalog.length,
           installationStatus: "connected",
+          syncStatus: "synced",
           lastSyncLabel: "Synced just now",
+          lastSyncAt: Date.now(),
         },
       }));
       this.importTimers.delete(organizationId);
@@ -461,19 +493,23 @@ class MockFactoryAppStore implements MockFactoryAppClient {
         seatsIncluded: planSeatsIncluded(planId),
         trialEndsAt: null,
         renewalAt: isoDate(30),
-        paymentMethodLabel: planId === "enterprise" ? "ACH verified" : "Visa ending in 4242",
+        paymentMethodLabel: "Visa ending in 4242",
         invoices: [
           {
             id: `inv-${organizationId}-${Date.now()}`,
             label: `${organization.settings.displayName} ${planId} upgrade`,
             issuedAt: new Date().toISOString().slice(0, 10),
-            amountUsd: planId === "team" ? 240 : planId === "enterprise" ? 1200 : 0,
+            amountUsd: planId === "team" ? 240 : 0,
             status: "paid",
           },
           ...organization.billing.invoices,
         ],
       },
     }));
+  }
+
+  async openBillingPortal(_organizationId: string): Promise<void> {
+    await this.injectAsyncLatency();
   }
 
   async cancelScheduledRenewal(organizationId: string): Promise<void> {
@@ -508,7 +544,9 @@ class MockFactoryAppStore implements MockFactoryAppClient {
       github: {
         ...organization.github,
         installationStatus: "connected",
+        syncStatus: "pending",
         lastSyncLabel: "Reconnected just now",
+        lastSyncAt: Date.now(),
       },
     }));
   }

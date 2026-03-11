@@ -1,7 +1,7 @@
 import {
   MODEL_GROUPS,
   buildInitialMockLayoutViewModel,
-  groupWorkbenchProjects,
+  groupWorkbenchRepos,
   nowMs,
   providerAgent,
   randomReply,
@@ -12,24 +12,24 @@ import {
 import { getMockFactoryAppClient } from "../mock-app.js";
 import { injectMockLatency } from "./latency.js";
 import type {
-  HandoffWorkbenchAddTabResponse,
-  HandoffWorkbenchChangeModelInput,
-  HandoffWorkbenchCreateHandoffInput,
-  HandoffWorkbenchCreateHandoffResponse,
-  HandoffWorkbenchDiffInput,
-  HandoffWorkbenchRenameInput,
-  HandoffWorkbenchRenameSessionInput,
-  HandoffWorkbenchSelectInput,
-  HandoffWorkbenchSetSessionUnreadInput,
-  HandoffWorkbenchSendMessageInput,
-  HandoffWorkbenchSnapshot,
-  HandoffWorkbenchTabInput,
-  HandoffWorkbenchUpdateDraftInput,
+  TaskWorkbenchAddTabResponse,
+  TaskWorkbenchChangeModelInput,
+  TaskWorkbenchCreateTaskInput,
+  TaskWorkbenchCreateTaskResponse,
+  TaskWorkbenchDiffInput,
+  TaskWorkbenchRenameInput,
+  TaskWorkbenchRenameSessionInput,
+  TaskWorkbenchSelectInput,
+  TaskWorkbenchSetSessionUnreadInput,
+  TaskWorkbenchSendMessageInput,
+  TaskWorkbenchTabInput,
+  TaskWorkbenchUpdateDraftInput,
   WorkbenchAgentTab as AgentTab,
-  WorkbenchHandoff as Handoff,
+  TaskWorkbenchSnapshot,
+  WorkbenchTask as Task,
   WorkbenchTranscriptEvent as TranscriptEvent,
 } from "@sandbox-agent/factory-shared";
-import type { HandoffWorkbenchClient } from "../workbench-client.js";
+import type { TaskWorkbenchClient } from "../workbench-client.js";
 
 function buildTranscriptEvent(params: {
   sessionId: string;
@@ -49,8 +49,8 @@ function buildTranscriptEvent(params: {
   };
 }
 
-class MockWorkbenchStore implements HandoffWorkbenchClient {
-  private snapshot: HandoffWorkbenchSnapshot;
+class MockWorkbenchStore implements TaskWorkbenchClient {
+  private snapshot: TaskWorkbenchSnapshot;
   private listeners = new Set<() => void>();
   private pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -58,7 +58,7 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
     this.snapshot = buildInitialMockLayoutViewModel(workspaceId);
   }
 
-  getSnapshot(): HandoffWorkbenchSnapshot {
+  getSnapshot(): TaskWorkbenchSnapshot {
     return this.snapshot;
   }
 
@@ -69,18 +69,19 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
     };
   }
 
-  async createHandoff(input: HandoffWorkbenchCreateHandoffInput): Promise<HandoffWorkbenchCreateHandoffResponse> {
+  async createTask(input: TaskWorkbenchCreateTaskInput): Promise<TaskWorkbenchCreateTaskResponse> {
     await this.injectAsyncLatency();
     const id = uid();
     const tabId = `session-${id}`;
     const repo = this.snapshot.repos.find((candidate) => candidate.id === input.repoId);
     if (!repo) {
-      throw new Error(`Cannot create mock handoff for unknown repo ${input.repoId}`);
+      throw new Error(`Cannot create mock task for unknown repo ${input.repoId}`);
     }
-    const nextHandoff: Handoff = {
+    const nextTask: Task = {
       id,
       repoId: repo.id,
-      title: input.title?.trim() || "New Handoff",
+      repoIds: input.repoIds?.length ? [...new Set([repo.id, ...input.repoIds])] : [repo.id],
+      title: input.title?.trim() || "New Task",
       status: "new",
       repoName: repo.label,
       updatedAtMs: nowMs(),
@@ -108,100 +109,100 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
 
     this.updateState((current) => ({
       ...current,
-      handoffs: [nextHandoff, ...current.handoffs],
+      tasks: [nextTask, ...current.tasks],
     }));
 
     const task = input.task.trim();
     if (task) {
       await this.sendMessage({
-        handoffId: id,
+        taskId: id,
         tabId,
         text: task,
         attachments: [],
       });
     }
 
-    return { handoffId: id, tabId };
+    return { taskId: id, tabId };
   }
 
-  async markHandoffUnread(input: HandoffWorkbenchSelectInput): Promise<void> {
+  async markTaskUnread(input: TaskWorkbenchSelectInput): Promise<void> {
     await this.injectAsyncLatency();
-    this.updateHandoff(input.handoffId, (handoff) => {
-      const targetTab = handoff.tabs[handoff.tabs.length - 1] ?? null;
+    this.updateTask(input.taskId, (task) => {
+      const targetTab = task.tabs[task.tabs.length - 1] ?? null;
       if (!targetTab) {
-        return handoff;
+        return task;
       }
 
       return {
-        ...handoff,
-        tabs: handoff.tabs.map((tab) => (tab.id === targetTab.id ? { ...tab, unread: true } : tab)),
+        ...task,
+        tabs: task.tabs.map((tab) => (tab.id === targetTab.id ? { ...tab, unread: true } : tab)),
       };
     });
   }
 
-  async renameHandoff(input: HandoffWorkbenchRenameInput): Promise<void> {
+  async renameTask(input: TaskWorkbenchRenameInput): Promise<void> {
     await this.injectAsyncLatency();
     const value = input.value.trim();
     if (!value) {
-      throw new Error(`Cannot rename handoff ${input.handoffId} to an empty title`);
+      throw new Error(`Cannot rename task ${input.taskId} to an empty title`);
     }
-    this.updateHandoff(input.handoffId, (handoff) => ({ ...handoff, title: value, updatedAtMs: nowMs() }));
+    this.updateTask(input.taskId, (task) => ({ ...task, title: value, updatedAtMs: nowMs() }));
   }
 
-  async renameBranch(input: HandoffWorkbenchRenameInput): Promise<void> {
+  async renameBranch(input: TaskWorkbenchRenameInput): Promise<void> {
     await this.injectAsyncLatency();
     const value = input.value.trim();
     if (!value) {
-      throw new Error(`Cannot rename branch for handoff ${input.handoffId} to an empty value`);
+      throw new Error(`Cannot rename branch for task ${input.taskId} to an empty value`);
     }
-    this.updateHandoff(input.handoffId, (handoff) => ({ ...handoff, branch: value, updatedAtMs: nowMs() }));
+    this.updateTask(input.taskId, (task) => ({ ...task, branch: value, updatedAtMs: nowMs() }));
   }
 
-  async archiveHandoff(input: HandoffWorkbenchSelectInput): Promise<void> {
+  async archiveTask(input: TaskWorkbenchSelectInput): Promise<void> {
     await this.injectAsyncLatency();
-    this.updateHandoff(input.handoffId, (handoff) => ({ ...handoff, status: "archived", updatedAtMs: nowMs() }));
+    this.updateTask(input.taskId, (task) => ({ ...task, status: "archived", updatedAtMs: nowMs() }));
   }
 
-  async publishPr(input: HandoffWorkbenchSelectInput): Promise<void> {
+  async publishPr(input: TaskWorkbenchSelectInput): Promise<void> {
     await this.injectAsyncLatency();
-    const nextPrNumber = Math.max(0, ...this.snapshot.handoffs.map((handoff) => handoff.pullRequest?.number ?? 0)) + 1;
-    this.updateHandoff(input.handoffId, (handoff) => ({
-      ...handoff,
+    const nextPrNumber = Math.max(0, ...this.snapshot.tasks.map((task) => task.pullRequest?.number ?? 0)) + 1;
+    this.updateTask(input.taskId, (task) => ({
+      ...task,
       updatedAtMs: nowMs(),
       pullRequest: { number: nextPrNumber, status: "ready" },
     }));
   }
 
-  async pushHandoff(input: HandoffWorkbenchSelectInput): Promise<void> {
+  async pushTask(input: TaskWorkbenchSelectInput): Promise<void> {
     await this.injectAsyncLatency();
-    this.updateHandoff(input.handoffId, (handoff) => ({
-      ...handoff,
+    this.updateTask(input.taskId, (task) => ({
+      ...task,
       updatedAtMs: nowMs(),
     }));
   }
 
-  async revertFile(input: HandoffWorkbenchDiffInput): Promise<void> {
+  async revertFile(input: TaskWorkbenchDiffInput): Promise<void> {
     await this.injectAsyncLatency();
-    this.updateHandoff(input.handoffId, (handoff) => {
-      const file = handoff.fileChanges.find((entry) => entry.path === input.path);
-      const nextDiffs = { ...handoff.diffs };
+    this.updateTask(input.taskId, (task) => {
+      const file = task.fileChanges.find((entry) => entry.path === input.path);
+      const nextDiffs = { ...task.diffs };
       delete nextDiffs[input.path];
 
       return {
-        ...handoff,
-        fileChanges: handoff.fileChanges.filter((entry) => entry.path !== input.path),
+        ...task,
+        fileChanges: task.fileChanges.filter((entry) => entry.path !== input.path),
         diffs: nextDiffs,
-        fileTree: file?.type === "A" ? removeFileTreePath(handoff.fileTree, input.path) : handoff.fileTree,
+        fileTree: file?.type === "A" ? removeFileTreePath(task.fileTree, input.path) : task.fileTree,
       };
     });
   }
 
-  async updateDraft(input: HandoffWorkbenchUpdateDraftInput): Promise<void> {
-    this.assertTab(input.handoffId, input.tabId);
-    this.updateHandoff(input.handoffId, (handoff) => ({
-      ...handoff,
+  async updateDraft(input: TaskWorkbenchUpdateDraftInput): Promise<void> {
+    this.assertTab(input.taskId, input.tabId);
+    this.updateTask(input.taskId, (task) => ({
+      ...task,
       updatedAtMs: nowMs(),
-      tabs: handoff.tabs.map((tab) =>
+      tabs: task.tabs.map((tab) =>
         tab.id === input.tabId
           ? {
               ...tab,
@@ -216,30 +217,30 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
     }));
   }
 
-  async sendMessage(input: HandoffWorkbenchSendMessageInput): Promise<void> {
+  async sendMessage(input: TaskWorkbenchSendMessageInput): Promise<void> {
     await this.injectAsyncLatency();
     const text = input.text.trim();
     if (!text) {
-      throw new Error(`Cannot send an empty mock prompt for handoff ${input.handoffId}`);
+      throw new Error(`Cannot send an empty mock prompt for task ${input.taskId}`);
     }
 
-    this.assertTab(input.handoffId, input.tabId);
+    this.assertTab(input.taskId, input.tabId);
     const startedAtMs = nowMs();
     getMockFactoryAppClient().recordSeatUsage(this.snapshot.workspaceId);
 
-    this.updateHandoff(input.handoffId, (currentHandoff) => {
-      const isFirstOnHandoff = currentHandoff.status === "new";
+    this.updateTask(input.taskId, (currentTask) => {
+      const isFirstOnTask = currentTask.status === "new";
       const synthesizedTitle = text.length > 50 ? `${text.slice(0, 47)}...` : text;
       const newTitle =
-        isFirstOnHandoff && currentHandoff.title === "New Handoff" ? synthesizedTitle : currentHandoff.title;
+        isFirstOnTask && currentTask.title === "New Task" ? synthesizedTitle : currentTask.title;
       const newBranch =
-        isFirstOnHandoff && !currentHandoff.branch ? `feat/${slugify(synthesizedTitle)}` : currentHandoff.branch;
+        isFirstOnTask && !currentTask.branch ? `feat/${slugify(synthesizedTitle)}` : currentTask.branch;
       const userMessageLines = [text, ...input.attachments.map((attachment) => `@ ${attachment.filePath}:${attachment.lineNumber}`)];
       const userEvent = buildTranscriptEvent({
         sessionId: input.tabId,
         sender: "client",
         createdAt: startedAtMs,
-        eventIndex: candidateEventIndex(currentHandoff, input.tabId),
+        eventIndex: candidateEventIndex(currentTask, input.tabId),
         payload: {
           method: "session/prompt",
           params: {
@@ -249,12 +250,12 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
       });
 
       return {
-        ...currentHandoff,
+        ...currentTask,
         title: newTitle,
         branch: newBranch,
         status: "running",
         updatedAtMs: startedAtMs,
-        tabs: currentHandoff.tabs.map((candidate) =>
+        tabs: currentTask.tabs.map((candidate) =>
           candidate.id === input.tabId
             ? {
                 ...candidate,
@@ -276,14 +277,14 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
     }
 
     const timer = setTimeout(() => {
-      const handoff = this.requireHandoff(input.handoffId);
-      const replyTab = this.requireTab(handoff, input.tabId);
+      const task = this.requireTask(input.taskId);
+      const replyTab = this.requireTab(task, input.tabId);
       const completedAtMs = nowMs();
       const replyEvent = buildTranscriptEvent({
         sessionId: input.tabId,
         sender: "agent",
         createdAt: completedAtMs,
-        eventIndex: candidateEventIndex(handoff, input.tabId),
+        eventIndex: candidateEventIndex(task, input.tabId),
         payload: {
           result: {
             text: randomReply(),
@@ -292,8 +293,8 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
         },
       });
 
-      this.updateHandoff(input.handoffId, (currentHandoff) => {
-        const updatedTabs = currentHandoff.tabs.map((candidate) => {
+      this.updateTask(input.taskId, (currentTask) => {
+        const updatedTabs = currentTask.tabs.map((candidate) => {
           if (candidate.id !== input.tabId) {
             return candidate;
           }
@@ -309,10 +310,10 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
         const anyRunning = updatedTabs.some((candidate) => candidate.status === "running");
 
         return {
-          ...currentHandoff,
+          ...currentTask,
           updatedAtMs: completedAtMs,
           tabs: updatedTabs,
-          status: currentHandoff.status === "archived" ? "archived" : anyRunning ? "running" : "idle",
+          status: currentTask.status === "archived" ? "archived" : anyRunning ? "running" : "idle",
         };
       });
 
@@ -322,75 +323,75 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
     this.pendingTimers.set(input.tabId, timer);
   }
 
-  async stopAgent(input: HandoffWorkbenchTabInput): Promise<void> {
+  async stopAgent(input: TaskWorkbenchTabInput): Promise<void> {
     await this.injectAsyncLatency();
-    this.assertTab(input.handoffId, input.tabId);
+    this.assertTab(input.taskId, input.tabId);
     const existing = this.pendingTimers.get(input.tabId);
     if (existing) {
       clearTimeout(existing);
       this.pendingTimers.delete(input.tabId);
     }
 
-    this.updateHandoff(input.handoffId, (currentHandoff) => {
-      const updatedTabs = currentHandoff.tabs.map((candidate) =>
+    this.updateTask(input.taskId, (currentTask) => {
+      const updatedTabs = currentTask.tabs.map((candidate) =>
         candidate.id === input.tabId ? { ...candidate, status: "idle" as const, thinkingSinceMs: null } : candidate,
       );
       const anyRunning = updatedTabs.some((candidate) => candidate.status === "running");
 
       return {
-        ...currentHandoff,
+        ...currentTask,
         updatedAtMs: nowMs(),
         tabs: updatedTabs,
-        status: currentHandoff.status === "archived" ? "archived" : anyRunning ? "running" : "idle",
+        status: currentTask.status === "archived" ? "archived" : anyRunning ? "running" : "idle",
       };
     });
   }
 
-  async setSessionUnread(input: HandoffWorkbenchSetSessionUnreadInput): Promise<void> {
+  async setSessionUnread(input: TaskWorkbenchSetSessionUnreadInput): Promise<void> {
     await this.injectAsyncLatency();
-    this.updateHandoff(input.handoffId, (currentHandoff) => ({
-      ...currentHandoff,
-      tabs: currentHandoff.tabs.map((candidate) =>
+    this.updateTask(input.taskId, (currentTask) => ({
+      ...currentTask,
+      tabs: currentTask.tabs.map((candidate) =>
         candidate.id === input.tabId ? { ...candidate, unread: input.unread } : candidate,
       ),
     }));
   }
 
-  async renameSession(input: HandoffWorkbenchRenameSessionInput): Promise<void> {
+  async renameSession(input: TaskWorkbenchRenameSessionInput): Promise<void> {
     await this.injectAsyncLatency();
     const title = input.title.trim();
     if (!title) {
       throw new Error(`Cannot rename session ${input.tabId} to an empty title`);
     }
-    this.updateHandoff(input.handoffId, (currentHandoff) => ({
-      ...currentHandoff,
-      tabs: currentHandoff.tabs.map((candidate) =>
+    this.updateTask(input.taskId, (currentTask) => ({
+      ...currentTask,
+      tabs: currentTask.tabs.map((candidate) =>
         candidate.id === input.tabId ? { ...candidate, sessionName: title } : candidate,
       ),
     }));
   }
 
-  async closeTab(input: HandoffWorkbenchTabInput): Promise<void> {
+  async closeTab(input: TaskWorkbenchTabInput): Promise<void> {
     await this.injectAsyncLatency();
-    this.updateHandoff(input.handoffId, (currentHandoff) => {
-      if (currentHandoff.tabs.length <= 1) {
-        return currentHandoff;
+    this.updateTask(input.taskId, (currentTask) => {
+      if (currentTask.tabs.length <= 1) {
+        return currentTask;
       }
 
       return {
-        ...currentHandoff,
-        tabs: currentHandoff.tabs.filter((candidate) => candidate.id !== input.tabId),
+        ...currentTask,
+        tabs: currentTask.tabs.filter((candidate) => candidate.id !== input.tabId),
       };
     });
   }
 
-  async addTab(input: HandoffWorkbenchSelectInput): Promise<HandoffWorkbenchAddTabResponse> {
+  async addTab(input: TaskWorkbenchSelectInput): Promise<TaskWorkbenchAddTabResponse> {
     await this.injectAsyncLatency();
-    this.assertHandoff(input.handoffId);
+    this.assertTask(input.taskId);
     const nextTab: AgentTab = {
       id: uid(),
       sessionId: null,
-      sessionName: `Session ${this.requireHandoff(input.handoffId).tabs.length + 1}`,
+      sessionName: `Session ${this.requireTask(input.taskId).tabs.length + 1}`,
       agent: "Claude",
       model: "claude-sonnet-4",
       status: "idle",
@@ -401,43 +402,44 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
       transcript: [],
     };
 
-    this.updateHandoff(input.handoffId, (currentHandoff) => ({
-      ...currentHandoff,
+    this.updateTask(input.taskId, (currentTask) => ({
+      ...currentTask,
       updatedAtMs: nowMs(),
-      tabs: [...currentHandoff.tabs, nextTab],
+      tabs: [...currentTask.tabs, nextTab],
     }));
     return { tabId: nextTab.id };
   }
 
-  async changeModel(input: HandoffWorkbenchChangeModelInput): Promise<void> {
+  async changeModel(input: TaskWorkbenchChangeModelInput): Promise<void> {
     await this.injectAsyncLatency();
     const group = MODEL_GROUPS.find((candidate) => candidate.models.some((entry) => entry.id === input.model));
     if (!group) {
       throw new Error(`Unable to resolve model provider for ${input.model}`);
     }
 
-    this.updateHandoff(input.handoffId, (currentHandoff) => ({
-      ...currentHandoff,
-      tabs: currentHandoff.tabs.map((candidate) =>
+    this.updateTask(input.taskId, (currentTask) => ({
+      ...currentTask,
+      tabs: currentTask.tabs.map((candidate) =>
         candidate.id === input.tabId ? { ...candidate, model: input.model, agent: providerAgent(group.provider) } : candidate,
       ),
     }));
   }
 
-  private updateState(updater: (current: HandoffWorkbenchSnapshot) => HandoffWorkbenchSnapshot): void {
+  private updateState(updater: (current: TaskWorkbenchSnapshot) => TaskWorkbenchSnapshot): void {
     const nextSnapshot = updater(this.snapshot);
     this.snapshot = {
       ...nextSnapshot,
-      projects: groupWorkbenchProjects(nextSnapshot.repos, nextSnapshot.handoffs),
+      repoSections: groupWorkbenchRepos(nextSnapshot.repos, nextSnapshot.tasks),
+      tasks: nextSnapshot.tasks,
     };
     this.notify();
   }
 
-  private updateHandoff(handoffId: string, updater: (handoff: Handoff) => Handoff): void {
-    this.assertHandoff(handoffId);
+  private updateTask(taskId: string, updater: (task: Task) => Task): void {
+    this.assertTask(taskId);
     this.updateState((current) => ({
       ...current,
-      handoffs: current.handoffs.map((handoff) => (handoff.id === handoffId ? updater(handoff) : handoff)),
+      tasks: current.tasks.map((task) => (task.id === taskId ? updater(task) : task)),
     }));
   }
 
@@ -447,27 +449,27 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
     }
   }
 
-  private assertHandoff(handoffId: string): void {
-    this.requireHandoff(handoffId);
+  private assertTask(taskId: string): void {
+    this.requireTask(taskId);
   }
 
-  private assertTab(handoffId: string, tabId: string): void {
-    const handoff = this.requireHandoff(handoffId);
-    this.requireTab(handoff, tabId);
+  private assertTab(taskId: string, tabId: string): void {
+    const task = this.requireTask(taskId);
+    this.requireTab(task, tabId);
   }
 
-  private requireHandoff(handoffId: string): Handoff {
-    const handoff = this.snapshot.handoffs.find((candidate) => candidate.id === handoffId);
-    if (!handoff) {
-      throw new Error(`Unable to find mock handoff ${handoffId}`);
+  private requireTask(taskId: string): Task {
+    const task = this.snapshot.tasks.find((candidate) => candidate.id === taskId);
+    if (!task) {
+      throw new Error(`Unable to find mock task ${taskId}`);
     }
-    return handoff;
+    return task;
   }
 
-  private requireTab(handoff: Handoff, tabId: string): AgentTab {
-    const tab = handoff.tabs.find((candidate) => candidate.id === tabId);
+  private requireTab(task: Task, tabId: string): AgentTab {
+    const tab = task.tabs.find((candidate) => candidate.id === tabId);
     if (!tab) {
-      throw new Error(`Unable to find mock tab ${tabId} in handoff ${handoff.id}`);
+      throw new Error(`Unable to find mock tab ${tabId} in task ${task.id}`);
     }
     return tab;
   }
@@ -477,14 +479,14 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
   }
 }
 
-function candidateEventIndex(handoff: Handoff, tabId: string): number {
-  const tab = handoff.tabs.find((candidate) => candidate.id === tabId);
+function candidateEventIndex(task: Task, tabId: string): number {
+  const tab = task.tabs.find((candidate) => candidate.id === tabId);
   return (tab?.transcript.length ?? 0) + 1;
 }
 
-const mockWorkbenchClients = new Map<string, HandoffWorkbenchClient>();
+const mockWorkbenchClients = new Map<string, TaskWorkbenchClient>();
 
-export function getMockWorkbenchClient(workspaceId = "default"): HandoffWorkbenchClient {
+export function getMockWorkbenchClient(workspaceId = "default"): TaskWorkbenchClient {
   let client = mockWorkbenchClients.get(workspaceId);
   if (!client) {
     client = new MockWorkbenchStore(workspaceId);

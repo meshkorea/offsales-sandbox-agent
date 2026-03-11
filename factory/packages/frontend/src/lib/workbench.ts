@@ -1,11 +1,11 @@
-import type { HandoffWorkbenchClient } from "@sandbox-agent/factory-client/workbench";
+import type { TaskWorkbenchClient } from "@sandbox-agent/factory-client/workbench";
 import { createWorkbenchRuntimeClient } from "@workbench-runtime";
 import { frontendClientMode } from "./env";
-export { resolveRepoRouteHandoffId } from "./workbench-routing";
+export { resolveRepoRouteTaskId } from "./workbench-routing";
 
-const workbenchClientCache = new Map<string, HandoffWorkbenchClient>();
+const workbenchClientCache = new Map<string, TaskWorkbenchClient>();
 
-export function getHandoffWorkbenchClient(workspaceId: string): HandoffWorkbenchClient {
+export function getTaskWorkbenchClient(workspaceId: string): TaskWorkbenchClient {
   const cacheKey = `${frontendClientMode}:${workspaceId}`;
   const existing = workbenchClientCache.get(cacheKey);
   if (existing) {

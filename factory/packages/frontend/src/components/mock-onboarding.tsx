@@ -6,13 +6,14 @@ import {
   type FactoryUser,
 } from "@sandbox-agent/factory-shared";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, BadgeCheck, Building2, CreditCard, Github, LoaderCircle, ShieldCheck, Users } from "lucide-react";
+import { ArrowLeft, BadgeCheck, Building2, CreditCard, Github, ShieldCheck, Users } from "lucide-react";
 import {
   activeMockUser,
   eligibleOrganizations,
   useMockAppClient,
   useMockAppSnapshot,
 } from "../lib/mock-app";
+import { isMockFrontendClient } from "../lib/env";
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -40,12 +41,6 @@ const planCatalog: Record<
     price: "$240/mo",
     seats: "5 seats included",
     summary: "GitHub org onboarding, shared billing, and seat accrual on first prompt.",
-  },
-  enterprise: {
-    label: "Enterprise",
-    price: "$1,200/mo",
-    seats: "25 seats included",
-    summary: "Enterprise controls, larger seat pools, and procurement-ready billing.",
   },
 };
 
@@ -160,10 +155,6 @@ function settingsPath(organization: FactoryOrganization): string {
 
 function billingPath(organization: FactoryOrganization): string {
   return `/organizations/${organization.id}/billing`;
-}
-
-function importPath(organization: FactoryOrganization): string {
-  return `/organizations/${organization.id}/import`;
 }
 
 function checkoutPath(organization: FactoryOrganization, planId: FactoryBillingPlanId): string {
@@ -330,8 +321,9 @@ export function MockSignInPage() {
               Sign in and land directly in the org onboarding funnel.
             </div>
             <div style={{ fontSize: "16px", lineHeight: 1.6, color: "#d4d4d8", maxWidth: "56ch" }}>
-              This mock screen stands in for a basic GitHub OAuth sign-in page. After sign-in, the user moves into the
-              separate organization selector and then the rest of the onboarding funnel.
+              {isMockFrontendClient
+                ? "This mock screen stands in for a basic GitHub OAuth sign-in page. After sign-in, the user moves into the separate organization selector and then the rest of the onboarding funnel."
+                : "GitHub OAuth starts here. After the callback exchange completes, the app restores the signed-in session and continues into organization selection."}
             </div>
             <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
               <div style={badgeStyle("rgba(255, 255, 255, 0.06)")}>
@@ -361,16 +353,19 @@ export function MockSignInPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
               <div style={{ fontSize: "22px", fontWeight: 800 }}>Continue to Sandbox Agent</div>
               <div style={{ color: "#d4d4d8", lineHeight: 1.55 }}>
-                This mock sign-in uses a single GitHub account so the org selection step remains the place where the
-                user chooses their workspace.
+                {isMockFrontendClient
+                  ? "This mock sign-in uses a single GitHub account so the org selection step remains the place where the user chooses their workspace."
+                  : "This starts the live GitHub OAuth flow and restores the app session when the callback returns."}
               </div>
             </div>
             <button
               type="button"
               onClick={() => {
                 void (async () => {
-                  await client.signInWithGithub("user-nathan");
-                  await navigate({ to: "/organizations" });
+                  await client.signInWithGithub(isMockFrontendClient ? "user-nathan" : undefined);
+                  if (isMockFrontendClient) {
+                    await navigate({ to: "/organizations" });
+                  }
                 })();
               }}
               style={{
@@ -403,10 +398,14 @@ export function MockSignInPage() {
                     @{mockAccount.githubLogin} · {mockAccount.email}
                   </div>
                 </div>
-                <span style={badgeStyle("rgba(24, 140, 255, 0.16)", "#b9d8ff")}>{mockAccount.label}</span>
+                <span style={badgeStyle("rgba(24, 140, 255, 0.16)", "#b9d8ff")}>
+                  {isMockFrontendClient ? mockAccount.label : "Live GitHub identity"}
+                </span>
               </div>
               <div style={{ color: "#a1a1aa", fontSize: "13px", lineHeight: 1.5 }}>
-                Sign-in always lands as this single mock user. Organization choice happens on the next screen.
+                {isMockFrontendClient
+                  ? "Sign-in always lands as this single mock user. Organization choice happens on the next screen."
+                  : "In remote mode this card is replaced by the live GitHub user once the OAuth callback completes."}
               </div>
             </div>
           </div>
@@ -492,9 +491,7 @@ export function MockOrganizationSelectorPage() {
                 onClick={() => {
                   void (async () => {
                     await client.selectOrganization(organization.id);
-                    await navigate({
-                      to: organization.repoImportStatus === "ready" ? workspacePath(organization) : importPath(organization),
-                    });
+                    await navigate({ to: workspacePath(organization) });
                   })();
                 }}
                 style={primaryButtonStyle()}
@@ -515,110 +512,6 @@ export function MockOrganizationSelectorPage() {
   );
 }
 
-export function MockOrganizationImportPage({ organization }: { organization: FactoryOrganization }) {
-  const client = useMockAppClient();
-  const snapshot = useMockAppSnapshot();
-  const user = activeMockUser(snapshot);
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    if (organization.repoImportStatus === "ready") {
-      void navigate({ to: workspacePath(organization), replace: true });
-    }
-  }, [navigate, organization]);
-
-  return (
-    <PageShell
-      user={user}
-      title={`Importing ${organization.settings.displayName}`}
-      eyebrow="Repository Sync"
-      description="This mock view stands in for the post-auth GitHub installation and repository import step. Organization onboarding blocks until repo metadata is ready so the user lands in a populated workspace."
-      actions={
-        <button type="button" onClick={() => void navigate({ to: "/organizations" })} style={secondaryButtonStyle()}>
-          <ArrowLeft size={15} />
-          Back
-        </button>
-      }
-      onSignOut={() => {
-        void (async () => {
-          await client.signOut();
-          await navigate({ to: "/signin" });
-        })();
-      }}
-    >
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(320px, 0.8fr)", gap: "18px" }}>
-        <div style={{ ...cardStyle(), padding: "28px", display: "flex", flexDirection: "column", gap: "18px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <LoaderCircle size={24} style={{ animation: "hf-spin 1s linear infinite" }} />
-            <div>
-              <div style={{ fontSize: "22px", fontWeight: 800 }}>
-                {organization.repoImportStatus === "ready" ? "Import complete" : "Preparing repository catalog"}
-              </div>
-              <div style={{ color: "#a1a1aa", fontSize: "14px" }}>{organization.github.lastSyncLabel}</div>
-            </div>
-          </div>
-          <div style={{ color: "#d4d4d8", lineHeight: 1.6 }}>
-            The mock client now simulates the expected onboarding pause: GitHub app access is validated, repository metadata
-            is imported, and the resulting workspace stays blocked until ready.
-          </div>
-          <div
-            style={{
-              height: "12px",
-              borderRadius: "999px",
-              overflow: "hidden",
-              background: "rgba(255, 255, 255, 0.08)",
-            }}
-          >
-            <div
-              style={{
-                width: organization.repoImportStatus === "ready" ? "100%" : "76%",
-                height: "100%",
-                borderRadius: "999px",
-                background: "linear-gradient(90deg, #ff4f00, #ff9d00)",
-                transition: "width 200ms ease",
-              }}
-            />
-          </div>
-          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-            {organization.github.installationStatus !== "connected" ? (
-              <button
-                type="button"
-                onClick={() => void client.reconnectGithub(organization.id)}
-                style={primaryButtonStyle()}
-              >
-                Reconnect GitHub App
-              </button>
-            ) : null}
-            <button type="button" onClick={() => void client.triggerRepoImport(organization.id)} style={secondaryButtonStyle()}>
-              Re-run import
-            </button>
-            <button type="button" onClick={() => void navigate({ to: settingsPath(organization) })} style={subtleButtonStyle()}>
-              Review org settings
-            </button>
-          </div>
-        </div>
-        <div style={{ display: "grid", gap: "14px" }}>
-          <StatCard
-            label="GitHub"
-            value={organization.github.connectedAccount}
-            caption={organization.github.installationStatus.replaceAll("_", " ")}
-          />
-          <StatCard
-            label="Repositories"
-            value={`${organization.repoCatalog.length}`}
-            caption="Imported into the mock workspace catalog"
-          />
-          <StatCard
-            label="Billing"
-            value={planCatalog[organization.billing.planId]!.label}
-            caption={`${organization.seatAssignments.length} seats accrued so far`}
-          />
-        </div>
-      </div>
-    </PageShell>
-  );
-}
-
 export function MockOrganizationSettingsPage({ organization }: { organization: FactoryOrganization }) {
   const client = useMockAppClient();
   const snapshot = useMockAppSnapshot();
@@ -631,6 +524,12 @@ export function MockOrganizationSettingsPage({ organization }: { organization: F
     () => `${organization.seatAssignments.length} of ${organization.billing.seatsIncluded} seats already accrued`,
     [organization.billing.seatsIncluded, organization.seatAssignments.length],
   );
+  const openWorkspace = () => {
+    void (async () => {
+      await client.selectOrganization(organization.id);
+      await navigate({ to: workspacePath(organization) });
+    })();
+  };
 
   useEffect(() => {
     setDisplayName(organization.settings.displayName);
@@ -648,7 +547,7 @@ export function MockOrganizationSettingsPage({ organization }: { organization: F
       user={user}
       title={`${organization.settings.displayName} settings`}
       eyebrow="Organization"
-      description="This mock settings surface covers the org profile, GitHub installation state, repository import controls, and the seat-accrual rule from the spec. It is intentionally product-shaped even though the real backend is not wired yet."
+      description="This mock settings surface covers the org profile, GitHub installation state, background repository sync controls, and the seat-accrual rule from the spec. It is intentionally product-shaped even though the real backend is not wired yet."
       actions={
         <>
           <button type="button" onClick={() => void navigate({ to: "/organizations" })} style={secondaryButtonStyle()}>
@@ -658,7 +557,7 @@ export function MockOrganizationSettingsPage({ organization }: { organization: F
           <button type="button" onClick={() => void navigate({ to: billingPath(organization) })} style={subtleButtonStyle()}>
             Billing
           </button>
-          <button type="button" onClick={() => void navigate({ to: workspacePath(organization) })} style={primaryButtonStyle()}>
+          <button type="button" onClick={openWorkspace} style={primaryButtonStyle()}>
             Open workspace
           </button>
         </>
@@ -719,8 +618,8 @@ export function MockOrganizationSettingsPage({ organization }: { organization: F
               >
                 Save settings
               </button>
-              <button type="button" onClick={() => void client.triggerRepoImport(organization.id)} style={secondaryButtonStyle()}>
-                Refresh repo import
+              <button type="button" onClick={() => void client.triggerGithubSync(organization.id)} style={secondaryButtonStyle()}>
+                Refresh repo sync
               </button>
             </div>
           </div>
@@ -741,8 +640,8 @@ export function MockOrganizationSettingsPage({ organization }: { organization: F
               <button type="button" onClick={() => void client.reconnectGithub(organization.id)} style={secondaryButtonStyle()}>
                 Reconnect GitHub
               </button>
-              <button type="button" onClick={() => void navigate({ to: importPath(organization) })} style={subtleButtonStyle()}>
-                Open import flow
+              <button type="button" onClick={() => void client.triggerGithubSync(organization.id)} style={subtleButtonStyle()}>
+                Retry sync
               </button>
             </div>
           </div>
@@ -784,19 +683,32 @@ export function MockOrganizationBillingPage({ organization }: { organization: Fa
   const snapshot = useMockAppSnapshot();
   const user = activeMockUser(snapshot);
   const navigate = useNavigate();
+  const hasStripeCustomer = organization.billing.stripeCustomerId.trim().length > 0;
+  const effectivePlanId: FactoryBillingPlanId = hasStripeCustomer ? organization.billing.planId : "free";
+  const effectiveSeatsIncluded = hasStripeCustomer ? organization.billing.seatsIncluded : 1;
+  const openWorkspace = () => {
+    void (async () => {
+      await client.selectOrganization(organization.id);
+      await navigate({ to: workspacePath(organization) });
+    })();
+  };
 
   return (
     <PageShell
       user={user}
       title={`${organization.settings.displayName} billing`}
       eyebrow="Stripe Billing"
-      description="This mock page covers plan selection, hosted checkout entry, renewal controls, seat usage, and invoice history. It is the reviewable UI surface for Milestone 2 billing without wiring the real Stripe backend yet."
+      description={
+        isMockFrontendClient
+          ? "This mock page covers plan selection, hosted checkout entry, renewal controls, seat usage, and invoice history. It is the reviewable UI surface for Milestone 2 billing without wiring the real Stripe backend yet."
+          : "This billing surface drives live Stripe checkout, portal management, renewal controls, seat usage, and invoice history from the persisted organization billing model."
+      }
       actions={
         <>
           <button type="button" onClick={() => void navigate({ to: settingsPath(organization) })} style={secondaryButtonStyle()}>
             Org settings
           </button>
-          <button type="button" onClick={() => void navigate({ to: workspacePath(organization) })} style={primaryButtonStyle()}>
+          <button type="button" onClick={openWorkspace} style={primaryButtonStyle()}>
             Open workspace
           </button>
         </>
@@ -811,12 +723,12 @@ export function MockOrganizationBillingPage({ organization }: { organization: Fa
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "14px" }}>
         <StatCard
           label="Current plan"
-          value={planCatalog[organization.billing.planId]!.label}
+          value={planCatalog[effectivePlanId]!.label}
           caption={organization.billing.status.replaceAll("_", " ")}
         />
         <StatCard
           label="Seats used"
-          value={`${organization.seatAssignments.length}/${organization.billing.seatsIncluded}`}
+          value={`${organization.seatAssignments.length}/${effectiveSeatsIncluded}`}
           caption="Seat accrual happens on first prompt in the workspace."
         />
         <StatCard
@@ -828,7 +740,7 @@ export function MockOrganizationBillingPage({ organization }: { organization: Fa
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "18px" }}>
         {(Object.entries(planCatalog) as Array<[FactoryBillingPlanId, (typeof planCatalog)[FactoryBillingPlanId]]>).map(([planId, plan]) => {
-          const isCurrent = organization.billing.planId === planId;
+          const isCurrent = effectivePlanId === planId;
           return (
             <div key={planId} style={{ ...cardStyle(), padding: "22px", display: "grid", gap: "14px" }}>
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px" }}>
@@ -863,25 +775,41 @@ export function MockOrganizationBillingPage({ organization }: { organization: Fa
             <div style={{ fontSize: "20px", fontWeight: 800 }}>Subscription controls</div>
           </div>
           <div style={{ color: "#d4d4d8", lineHeight: 1.55 }}>
-            Stripe customer {organization.billing.stripeCustomerId}. This mock screen intentionally mirrors a hosted
-            billing portal entry point and the in-product summary beside it.
+            Stripe customer {organization.billing.stripeCustomerId || "pending"}.{" "}
+            {isMockFrontendClient
+              ? "This mock screen intentionally mirrors a hosted billing portal entry point and the in-product summary beside it."
+              : hasStripeCustomer
+                ? "Use the portal for payment method management and invoices, while in-product controls keep renewal state visible in the app shell."
+                : "Complete checkout first, then use the portal and renewal controls once Stripe has created the customer and subscription."}
           </div>
           <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-            {organization.billing.status === "scheduled_cancel" ? (
-              <button type="button" onClick={() => void client.resumeSubscription(organization.id)} style={primaryButtonStyle()}>
-                Resume subscription
-              </button>
+            {hasStripeCustomer ? (
+              organization.billing.status === "scheduled_cancel" ? (
+                <button type="button" onClick={() => void client.resumeSubscription(organization.id)} style={primaryButtonStyle()}>
+                  Resume subscription
+                </button>
+              ) : (
+                <button type="button" onClick={() => void client.cancelScheduledRenewal(organization.id)} style={secondaryButtonStyle()}>
+                  Cancel at period end
+                </button>
+              )
             ) : (
-              <button type="button" onClick={() => void client.cancelScheduledRenewal(organization.id)} style={secondaryButtonStyle()}>
-                Cancel at period end
+              <button type="button" onClick={() => void navigate({ to: checkoutPath(organization, "team") })} style={primaryButtonStyle()}>
+                Start Team checkout
               </button>
             )}
             <button
               type="button"
-              onClick={() => void navigate({ to: checkoutPath(organization, organization.billing.planId) })}
+              onClick={() =>
+                void (isMockFrontendClient
+                  ? navigate({ to: checkoutPath(organization, effectivePlanId) })
+                  : hasStripeCustomer
+                    ? client.openBillingPortal(organization.id)
+                    : navigate({ to: checkoutPath(organization, "team") }))
+              }
               style={subtleButtonStyle()}
             >
-              Open hosted checkout mock
+              {isMockFrontendClient ? "Open hosted checkout mock" : hasStripeCustomer ? "Open Stripe portal" : "Go to checkout"}
             </button>
           </div>
         </div>
@@ -951,7 +879,11 @@ export function MockHostedCheckoutPage({
       user={user}
       title={`Checkout ${plan.label}`}
       eyebrow="Hosted Checkout"
-      description="This is the mock hosted Stripe step. Completing checkout updates the org billing state in the client package and returns the reviewer to the billing screen."
+      description={
+        isMockFrontendClient
+          ? "This is the mock hosted Stripe step. Completing checkout updates the org billing state in the client package and returns the reviewer to the billing screen."
+          : "This hands off to a live Stripe Checkout session. After payment succeeds, the backend finalizes the session and routes back into the billing screen."
+      }
       actions={
         <button type="button" onClick={() => void navigate({ to: billingPath(organization) })} style={secondaryButtonStyle()}>
           <ArrowLeft size={15} />
@@ -975,7 +907,7 @@ export function MockHostedCheckoutPage({
             <CheckoutLine label="Plan" value={plan.label} />
             <CheckoutLine label="Price" value={plan.price} />
             <CheckoutLine label="Included seats" value={plan.seats} />
-            <CheckoutLine label="Payment method" value={planId === "enterprise" ? "ACH mandate" : "Visa ending in 4242"} />
+            <CheckoutLine label="Payment method" value="Visa ending in 4242" />
           </div>
         </div>
         <div style={{ ...cardStyle(), padding: "24px", display: "grid", gap: "16px" }}>
@@ -995,12 +927,14 @@ export function MockHostedCheckoutPage({
             onClick={() => {
               void (async () => {
                 await client.completeHostedCheckout(organization.id, planId);
-                await navigate({ to: billingPath(organization), replace: true });
+                if (isMockFrontendClient) {
+                  await navigate({ to: billingPath(organization), replace: true });
+                }
               })();
             }}
             style={primaryButtonStyle()}
           >
-            Complete checkout
+            {isMockFrontendClient ? "Complete checkout" : "Continue to Stripe"}
           </button>
         </div>
       </div>

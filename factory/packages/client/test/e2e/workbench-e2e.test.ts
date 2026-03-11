@@ -3,10 +3,10 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import type {
-  HandoffRecord,
-  HandoffWorkbenchSnapshot,
+  TaskRecord,
+  TaskWorkbenchSnapshot,
   WorkbenchAgentTab,
-  WorkbenchHandoff,
+  WorkbenchTask,
   WorkbenchModelId,
   WorkbenchTranscriptEvent,
 } from "@sandbox-agent/factory-shared";
@@ -76,18 +76,18 @@ async function resolveBackendContainerName(endpoint: string): Promise<string | n
   return containerName ?? null;
 }
 
-function sandboxRepoPath(record: HandoffRecord): string {
+function sandboxRepoPath(record: TaskRecord): string {
   const activeSandbox =
     record.sandboxes.find((sandbox) => sandbox.sandboxId === record.activeSandboxId) ??
     record.sandboxes.find((sandbox) => typeof sandbox.cwd === "string" && sandbox.cwd.length > 0);
   const cwd = activeSandbox?.cwd?.trim();
   if (!cwd) {
-    throw new Error(`No sandbox cwd is available for handoff ${record.handoffId}`);
+    throw new Error(`No sandbox cwd is available for task ${record.taskId}`);
   }
   return cwd;
 }
 
-async function seedSandboxFile(endpoint: string, record: HandoffRecord, filePath: string, content: string): Promise<void> {
+async function seedSandboxFile(endpoint: string, record: TaskRecord, filePath: string, content: string): Promise<void> {
   const repoPath = sandboxRepoPath(record);
   const containerName = await resolveBackendContainerName(endpoint);
   if (!containerName) {
@@ -128,18 +128,18 @@ async function poll<T>(
   }
 }
 
-function findHandoff(snapshot: HandoffWorkbenchSnapshot, handoffId: string): WorkbenchHandoff {
-  const handoff = snapshot.handoffs.find((candidate) => candidate.id === handoffId);
-  if (!handoff) {
-    throw new Error(`handoff ${handoffId} missing from snapshot`);
+function findTask(snapshot: TaskWorkbenchSnapshot, taskId: string): WorkbenchTask {
+  const task = snapshot.tasks.find((candidate) => candidate.id === taskId);
+  if (!task) {
+    throw new Error(`task ${taskId} missing from snapshot`);
   }
-  return handoff;
+  return task;
 }
 
-function findTab(handoff: WorkbenchHandoff, tabId: string): WorkbenchAgentTab {
-  const tab = handoff.tabs.find((candidate) => candidate.id === tabId);
+function findTab(task: WorkbenchTask, tabId: string): WorkbenchAgentTab {
+  const tab = task.tabs.find((candidate) => candidate.id === tabId);
   if (!tab) {
-    throw new Error(`tab ${tabId} missing from handoff ${handoff.id}`);
+    throw new Error(`tab ${tabId} missing from task ${task.id}`);
   }
   return tab;
 }
@@ -218,7 +218,7 @@ function transcriptIncludesAgentText(
 
 describe("e2e(client): workbench flows", () => {
   it.skipIf(!RUN_WORKBENCH_E2E)(
-    "creates a handoff, adds sessions, exchanges messages, and manages workbench state",
+    "creates a task, adds sessions, exchanges messages, and manages workbench state",
     { timeout: 20 * 60_000 },
     async () => {
       const endpoint =
@@ -237,7 +237,7 @@ describe("e2e(client): workbench flows", () => {
       });
 
       const repo = await client.addRepo(workspaceId, repoRemote);
-      const created = await client.createWorkbenchHandoff(workspaceId, {
+      const created = await client.createWorkbenchTask(workspaceId, {
         repoId: repo.repoId,
         title: `Workbench E2E ${runId}`,
         branch: `e2e/${runId}`,
@@ -246,11 +246,11 @@ describe("e2e(client): workbench flows", () => {
       });
 
       const provisioned = await poll(
-        "handoff provisioning",
+        "task provisioning",
         12 * 60_000,
         2_000,
-        async () => findHandoff(await client.getWorkbench(workspaceId), created.handoffId),
-        (handoff) => handoff.branch === `e2e/${runId}` && handoff.tabs.length > 0,
+        async () => findTask(await client.getWorkbench(workspaceId), created.taskId),
+        (task) => task.branch === `e2e/${runId}` && task.tabs.length > 0,
       );
 
       const primaryTab = provisioned.tabs[0]!;
@@ -259,11 +259,11 @@ describe("e2e(client): workbench flows", () => {
         "initial agent response",
         12 * 60_000,
         2_000,
-        async () => findHandoff(await client.getWorkbench(workspaceId), created.handoffId),
-        (handoff) => {
-          const tab = findTab(handoff, primaryTab.id);
+        async () => findTask(await client.getWorkbench(workspaceId), created.taskId),
+        (task) => {
+          const tab = findTab(task, primaryTab.id);
           return (
-            handoff.status === "idle" &&
+            task.status === "idle" &&
             tab.status === "idle" &&
             transcriptIncludesAgentText(tab.transcript, expectedInitialReply)
           );
@@ -273,41 +273,41 @@ describe("e2e(client): workbench flows", () => {
       expect(findTab(initialCompleted, primaryTab.id).sessionId).toBeTruthy();
       expect(transcriptIncludesAgentText(findTab(initialCompleted, primaryTab.id).transcript, expectedInitialReply)).toBe(true);
 
-      const detail = await client.getHandoff(workspaceId, created.handoffId);
+      const detail = await client.getTask(workspaceId, created.taskId);
       await seedSandboxFile(endpoint, detail, expectedFile, runId);
 
       const fileSeeded = await poll(
         "seeded sandbox file reflected in workbench",
         30_000,
         1_000,
-        async () => findHandoff(await client.getWorkbench(workspaceId), created.handoffId),
-        (handoff) => handoff.fileChanges.some((file) => file.path === expectedFile),
+        async () => findTask(await client.getWorkbench(workspaceId), created.taskId),
+        (task) => task.fileChanges.some((file) => file.path === expectedFile),
       );
       expect(fileSeeded.fileChanges.some((file) => file.path === expectedFile)).toBe(true);
 
-      await client.renameWorkbenchHandoff(workspaceId, {
-        handoffId: created.handoffId,
+      await client.renameWorkbenchTask(workspaceId, {
+        taskId: created.taskId,
         value: `Workbench E2E ${runId} Renamed`,
       });
       await client.renameWorkbenchSession(workspaceId, {
-        handoffId: created.handoffId,
+        taskId: created.taskId,
         tabId: primaryTab.id,
         title: "Primary Session",
       });
 
       const secondTab = await client.createWorkbenchSession(workspaceId, {
-        handoffId: created.handoffId,
+        taskId: created.taskId,
         model,
       });
 
       await client.renameWorkbenchSession(workspaceId, {
-        handoffId: created.handoffId,
+        taskId: created.taskId,
         tabId: secondTab.tabId,
         title: "Follow-up Session",
       });
 
       await client.updateWorkbenchDraft(workspaceId, {
-        handoffId: created.handoffId,
+        taskId: created.taskId,
         tabId: secondTab.tabId,
         text: `Reply with exactly: ${expectedReply}`,
         attachments: [
@@ -320,12 +320,12 @@ describe("e2e(client): workbench flows", () => {
         ],
       });
 
-      const drafted = findHandoff(await client.getWorkbench(workspaceId), created.handoffId);
+      const drafted = findTask(await client.getWorkbench(workspaceId), created.taskId);
       expect(findTab(drafted, secondTab.tabId).draft.text).toContain(expectedReply);
       expect(findTab(drafted, secondTab.tabId).draft.attachments).toHaveLength(1);
 
       await client.sendWorkbenchMessage(workspaceId, {
-        handoffId: created.handoffId,
+        taskId: created.taskId,
         tabId: secondTab.tabId,
         text: `Reply with exactly: ${expectedReply}`,
         attachments: [],
@@ -335,9 +335,9 @@ describe("e2e(client): workbench flows", () => {
         "follow-up session response",
         10 * 60_000,
         2_000,
-        async () => findHandoff(await client.getWorkbench(workspaceId), created.handoffId),
-        (handoff) => {
-          const tab = findTab(handoff, secondTab.tabId);
+        async () => findTask(await client.getWorkbench(workspaceId), created.taskId),
+        (task) => {
+          const tab = findTab(task, secondTab.tabId);
           return (
             tab.status === "idle" &&
             transcriptIncludesAgentText(tab.transcript, expectedReply)
@@ -349,17 +349,17 @@ describe("e2e(client): workbench flows", () => {
       expect(transcriptIncludesAgentText(secondTranscript, expectedReply)).toBe(true);
 
       await client.setWorkbenchSessionUnread(workspaceId, {
-        handoffId: created.handoffId,
+        taskId: created.taskId,
         tabId: secondTab.tabId,
         unread: false,
       });
-      await client.markWorkbenchUnread(workspaceId, { handoffId: created.handoffId });
+      await client.markWorkbenchUnread(workspaceId, { taskId: created.taskId });
 
-      const unreadSnapshot = findHandoff(await client.getWorkbench(workspaceId), created.handoffId);
+      const unreadSnapshot = findTask(await client.getWorkbench(workspaceId), created.taskId);
       expect(unreadSnapshot.tabs.some((tab) => tab.unread)).toBe(true);
 
       await client.closeWorkbenchSession(workspaceId, {
-        handoffId: created.handoffId,
+        taskId: created.taskId,
         tabId: secondTab.tabId,
       });
 
@@ -367,13 +367,13 @@ describe("e2e(client): workbench flows", () => {
         "secondary session closed",
         30_000,
         1_000,
-        async () => findHandoff(await client.getWorkbench(workspaceId), created.handoffId),
-        (handoff) => !handoff.tabs.some((tab) => tab.id === secondTab.tabId),
+        async () => findTask(await client.getWorkbench(workspaceId), created.taskId),
+        (task) => !task.tabs.some((tab) => tab.id === secondTab.tabId),
       );
       expect(closedSnapshot.tabs).toHaveLength(1);
 
       await client.revertWorkbenchFile(workspaceId, {
-        handoffId: created.handoffId,
+        taskId: created.taskId,
         path: expectedFile,
       });
 
@@ -381,8 +381,8 @@ describe("e2e(client): workbench flows", () => {
         "file revert reflected in workbench",
         30_000,
         1_000,
-        async () => findHandoff(await client.getWorkbench(workspaceId), created.handoffId),
-        (handoff) => !handoff.fileChanges.some((file) => file.path === expectedFile),
+        async () => findTask(await client.getWorkbench(workspaceId), created.taskId),
+        (task) => !task.fileChanges.some((file) => file.path === expectedFile),
       );
 
       expect(revertedSnapshot.fileChanges.some((file) => file.path === expectedFile)).toBe(false);

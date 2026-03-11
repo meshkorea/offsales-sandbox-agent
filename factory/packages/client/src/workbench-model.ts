@@ -3,13 +3,13 @@ import type {
   WorkbenchAgentTab as AgentTab,
   WorkbenchDiffLineKind as DiffLineKind,
   WorkbenchFileTreeNode as FileTreeNode,
-  WorkbenchHandoff as Handoff,
-  HandoffWorkbenchSnapshot,
+  WorkbenchTask as Task,
+  TaskWorkbenchSnapshot,
   WorkbenchHistoryEvent as HistoryEvent,
   WorkbenchModelGroup as ModelGroup,
   WorkbenchModelId as ModelId,
   WorkbenchParsedDiffLine as ParsedDiffLine,
-  WorkbenchProjectSection,
+  WorkbenchRepoSection,
   WorkbenchRepo,
   WorkbenchTranscriptEvent as TranscriptEvent,
 } from "@sandbox-agent/factory-shared";
@@ -260,7 +260,7 @@ export function removeFileTreePath(nodes: FileTreeNode[], targetPath: string): F
   });
 }
 
-export function buildInitialHandoffs(): Handoff[] {
+export function buildInitialTasks(): Task[] {
   return [
     {
       id: "h1",
@@ -913,7 +913,7 @@ export function buildInitialHandoffs(): Handoff[] {
   ];
 }
 
-function buildPersonalHandoffs(ownerName: string, repoId: string, repoName: string): Handoff[] {
+function buildPersonalTasks(ownerName: string, repoId: string, repoName: string): Task[] {
   return [
     {
       id: "h-personal-1",
@@ -950,7 +950,7 @@ function buildPersonalHandoffs(ownerName: string, repoId: string, repoName: stri
               agent: "claude",
               createdAtMs: minutesAgo(20),
               lines: [
-                "Updated the hero copy to focus on speed-to-handoff and clearer user outcomes.",
+                "Updated the hero copy to focus on speed-to-task and clearer user outcomes.",
                 "",
                 "I also adjusted the primary CTA to feel more action-oriented.",
               ],
@@ -966,10 +966,10 @@ function buildPersonalHandoffs(ownerName: string, repoId: string, repoName: stri
       diffs: {
         "src/content/home.ts": [
           "@@ -1,6 +1,9 @@",
-          "-export const heroHeadline = 'Build AI handoffs faster';",
-          "+export const heroHeadline = 'Ship clean handoffs without the chaos';",
+          "-export const heroHeadline = 'Build AI tasks faster';",
+          "+export const heroHeadline = 'Ship clean tasks without the chaos';",
           " export const heroBody = [",
-          "-  'OpenHandoff keeps context, diffs, and follow-up work in one place.',",
+          "-  'OpenTask keeps context, diffs, and follow-up work in one place.',",
           "+  'Review work, keep context, and hand tasks across your team without losing the thread.',",
           "+  'Everything stays attached to the repo, the branch, and the transcript.',",
           " ];",
@@ -1000,7 +1000,7 @@ function buildPersonalHandoffs(ownerName: string, repoId: string, repoName: stri
   ];
 }
 
-function buildRivetHandoffs(): Handoff[] {
+function buildRivetTasks(): Task[] {
   return [
     {
       id: "rivet-h1",
@@ -1092,18 +1092,18 @@ function buildRivetHandoffs(): Handoff[] {
   ];
 }
 
-export function buildInitialMockLayoutViewModel(workspaceId = "default"): HandoffWorkbenchSnapshot {
+export function buildInitialMockLayoutViewModel(workspaceId = "default"): TaskWorkbenchSnapshot {
   let repos: WorkbenchRepo[];
-  let handoffs: Handoff[];
+  let tasks: Task[];
 
   switch (workspaceId) {
     case "personal-nathan":
       repos = [{ id: "nathan-personal-site", label: "nathan/personal-site" }];
-      handoffs = buildPersonalHandoffs("Nathan", "nathan-personal-site", "nathan/personal-site");
+      tasks = buildPersonalTasks("Nathan", "nathan-personal-site", "nathan/personal-site");
       break;
     case "personal-jamie":
       repos = [{ id: "jamie-demo-app", label: "jamie/demo-app" }];
-      handoffs = buildPersonalHandoffs("Jamie", "jamie-demo-app", "jamie/demo-app");
+      tasks = buildPersonalTasks("Jamie", "jamie-demo-app", "jamie/demo-app");
       break;
     case "rivet":
       repos = [
@@ -1112,7 +1112,7 @@ export function buildInitialMockLayoutViewModel(workspaceId = "default"): Handof
         { id: "rivet-billing", label: "rivet/billing" },
         { id: "rivet-infrastructure", label: "rivet/infrastructure" },
       ];
-      handoffs = buildRivetHandoffs();
+      tasks = buildRivetTasks();
       break;
     case "acme":
     case "default":
@@ -1122,49 +1122,54 @@ export function buildInitialMockLayoutViewModel(workspaceId = "default"): Handof
         { id: "acme-frontend", label: "acme/frontend" },
         { id: "acme-infra", label: "acme/infra" },
       ];
-      handoffs = buildInitialHandoffs();
+      tasks = buildInitialTasks();
       break;
   }
 
   return {
     workspaceId,
     repos,
-    projects: groupWorkbenchProjects(repos, handoffs),
-    handoffs,
+    repoSections: groupWorkbenchRepos(repos, tasks),
+    tasks,
   };
 }
 
-export function groupWorkbenchProjects(repos: WorkbenchRepo[], handoffs: Handoff[]): WorkbenchProjectSection[] {
-  const grouped = new Map<string, WorkbenchProjectSection>();
+export function groupWorkbenchRepos(repos: WorkbenchRepo[], tasks: Task[]): WorkbenchRepoSection[] {
+  const grouped = new Map<string, WorkbenchRepoSection>();
 
   for (const repo of repos) {
     grouped.set(repo.id, {
       id: repo.id,
       label: repo.label,
       updatedAtMs: 0,
-      handoffs: [],
+      tasks: [],
     });
   }
 
-  for (const handoff of handoffs) {
-    const existing = grouped.get(handoff.repoId) ?? {
-      id: handoff.repoId,
-      label: handoff.repoName,
-      updatedAtMs: 0,
-      handoffs: [],
-    };
+  for (const task of tasks) {
+    const linkedRepoIds = task.repoIds?.length ? task.repoIds : [task.repoId];
+    for (const repoId of linkedRepoIds) {
+      const existing = grouped.get(repoId) ?? {
+        id: repoId,
+        label: repoId === task.repoId ? task.repoName : repoId,
+        updatedAtMs: 0,
+        tasks: [],
+      };
 
-    existing.handoffs.push(handoff);
-    existing.updatedAtMs = Math.max(existing.updatedAtMs, handoff.updatedAtMs);
-    grouped.set(handoff.repoId, existing);
+      existing.tasks.push(task);
+      existing.updatedAtMs = Math.max(existing.updatedAtMs, task.updatedAtMs);
+      grouped.set(repoId, existing);
+    }
   }
 
   return [...grouped.values()]
-    .map((project) => ({
-      ...project,
-      handoffs: [...project.handoffs].sort((a, b) => b.updatedAtMs - a.updatedAtMs),
+    .map((repoSection) => ({
+      ...repoSection,
+      tasks: [...repoSection.tasks].sort((a, b) => b.updatedAtMs - a.updatedAtMs),
       updatedAtMs:
-        project.handoffs.length > 0 ? Math.max(...project.handoffs.map((handoff) => handoff.updatedAtMs)) : project.updatedAtMs,
+        repoSection.tasks.length > 0
+          ? Math.max(...repoSection.tasks.map((task) => task.updatedAtMs))
+          : repoSection.updatedAtMs,
     }))
     .sort((a, b) => b.updatedAtMs - a.updatedAtMs);
 }

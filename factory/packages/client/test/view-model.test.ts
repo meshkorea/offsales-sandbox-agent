@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
-import type { HandoffRecord } from "@sandbox-agent/factory-shared";
+import type { TaskRecord } from "@sandbox-agent/factory-shared";
 import {
-  filterHandoffs,
+  filterTasks,
   formatRelativeAge,
   fuzzyMatch,
-  summarizeHandoffs
+  summarizeTasks
 } from "../src/view-model.js";
 
-const sample: HandoffRecord = {
+const sample: TaskRecord = {
   workspaceId: "default",
   repoId: "repo-a",
   repoRemote: "https://example.com/repo-a.git",
-  handoffId: "handoff-1",
+  taskId: "task-1",
   branchName: "feature/test",
   title: "Test Title",
   task: "Do test",
@@ -53,19 +53,19 @@ describe("search helpers", () => {
   });
 
   it("filters rows across branch and title", () => {
-    const rows: HandoffRecord[] = [
+    const rows: TaskRecord[] = [
       sample,
       {
         ...sample,
-        handoffId: "handoff-2",
+        taskId: "task-2",
         branchName: "docs/update-intro",
         title: "Docs Intro Refresh",
         status: "idle"
       }
     ];
-    expect(filterHandoffs(rows, "doc")).toHaveLength(1);
-    expect(filterHandoffs(rows, "h2")).toHaveLength(1);
-    expect(filterHandoffs(rows, "test")).toHaveLength(2);
+    expect(filterTasks(rows, "doc")).toHaveLength(1);
+    expect(filterTasks(rows, "h2")).toHaveLength(1);
+    expect(filterTasks(rows, "test")).toHaveLength(2);
   });
 });
 
@@ -76,13 +76,13 @@ describe("summary helpers", () => {
   });
 
   it("summarizes by status and provider", () => {
-    const rows: HandoffRecord[] = [
+    const rows: TaskRecord[] = [
       sample,
-      { ...sample, handoffId: "handoff-2", status: "idle", providerId: "daytona" },
-      { ...sample, handoffId: "handoff-3", status: "error", providerId: "daytona" }
+      { ...sample, taskId: "task-2", status: "idle", providerId: "daytona" },
+      { ...sample, taskId: "task-3", status: "error", providerId: "daytona" }
     ];
 
-    const summary = summarizeHandoffs(rows);
+    const summary = summarizeTasks(rows);
     expect(summary.total).toBe(3);
     expect(summary.byStatus.running).toBe(1);
     expect(summary.byStatus.idle).toBe(1);

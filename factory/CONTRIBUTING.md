@@ -25,7 +25,7 @@ pnpm -w build
 
 - `packages/shared`: contracts/schemas
 - `packages/backend`: RivetKit actors + DB + providers + integrations
-- `packages/cli`: `hf` and `hf tui` (OpenTUI)
+- `packages/frontend`: primary UI surface
 
 ## Local RivetKit Dependency
 

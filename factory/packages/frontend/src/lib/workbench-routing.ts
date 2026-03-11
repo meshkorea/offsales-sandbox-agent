@@ -1,8 +1,11 @@
-import type { HandoffWorkbenchSnapshot } from "@sandbox-agent/factory-shared";
+import type { TaskWorkbenchSnapshot } from "@sandbox-agent/factory-shared";
 
-export function resolveRepoRouteHandoffId(
-  snapshot: HandoffWorkbenchSnapshot,
+export function resolveRepoRouteTaskId(
+  snapshot: TaskWorkbenchSnapshot,
   repoId: string,
 ): string | null {
-  return snapshot.handoffs.find((handoff) => handoff.repoId === repoId)?.id ?? null;
+  const tasks = (snapshot as TaskWorkbenchSnapshot & { tasks?: TaskWorkbenchSnapshot["tasks"] }).tasks ?? snapshot.tasks;
+  return tasks.find((task) =>
+    (task.repoIds?.length ? task.repoIds : [task.repoId]).includes(repoId)
+  )?.id ?? null;
 }

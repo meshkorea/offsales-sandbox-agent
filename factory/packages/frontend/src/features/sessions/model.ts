@@ -107,7 +107,7 @@ export function buildTranscript(events: SandboxSessionEventRecord[]): Array<{
 
 export function resolveSessionSelection(input: {
   explicitSessionId: string | null;
-  handoffSessionId: string | null;
+  taskSessionId: string | null;
   sessions: SandboxSessionRecord[];
 }): {
   sessionId: string | null;
@@ -120,8 +120,8 @@ export function resolveSessionSelection(input: {
     return { sessionId: input.explicitSessionId, staleSessionId: null };
   }
 
-  if (hasSession(input.handoffSessionId)) {
-    return { sessionId: input.handoffSessionId, staleSessionId: null };
+  if (hasSession(input.taskSessionId)) {
+    return { sessionId: input.taskSessionId, staleSessionId: null };
   }
 
   const fallbackSessionId = input.sessions[0]?.id ?? null;
@@ -133,8 +133,8 @@ export function resolveSessionSelection(input: {
     return { sessionId: null, staleSessionId: input.explicitSessionId };
   }
 
-  if (input.handoffSessionId) {
-    return { sessionId: null, staleSessionId: input.handoffSessionId };
+  if (input.taskSessionId) {
+    return { sessionId: null, staleSessionId: input.taskSessionId };
   }
 
   return { sessionId: null, staleSessionId: null };

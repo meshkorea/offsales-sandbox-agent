@@ -111,7 +111,7 @@ export const UnreadDot = memo(function UnreadDot() {
   );
 });
 
-export const HandoffIndicator = memo(function HandoffIndicator({
+export const TaskIndicator = memo(function TaskIndicator({
   isRunning,
   hasUnread,
   isDraft,

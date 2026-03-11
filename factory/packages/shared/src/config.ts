@@ -24,7 +24,7 @@ export const ConfigSchema = z.object({
   backend: z.object({
     host: z.string().default("127.0.0.1"),
     port: z.number().int().min(1).max(65535).default(7741),
-    dbPath: z.string().default("~/.local/share/sandbox-agent-factory/handoff.db"),
+    dbPath: z.string().default("~/.local/share/sandbox-agent-factory/task.db"),
     opencode_poll_interval: z.number().default(2),
     github_poll_interval: z.number().default(30),
     backup_interval_secs: z.number().default(3600),
@@ -32,7 +32,7 @@ export const ConfigSchema = z.object({
   }).default({
     host: "127.0.0.1",
     port: 7741,
-    dbPath: "~/.local/share/sandbox-agent-factory/handoff.db",
+    dbPath: "~/.local/share/sandbox-agent-factory/task.db",
     opencode_poll_interval: 2,
     github_poll_interval: 30,
     backup_interval_secs: 3600,

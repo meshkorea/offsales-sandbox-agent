@@ -16,8 +16,9 @@ export interface FactoryAppClient {
   signOut(): Promise<void>;
   selectOrganization(organizationId: string): Promise<void>;
   updateOrganizationProfile(input: UpdateFactoryOrganizationProfileInput): Promise<void>;
-  triggerRepoImport(organizationId: string): Promise<void>;
+  triggerGithubSync(organizationId: string): Promise<void>;
   completeHostedCheckout(organizationId: string, planId: FactoryBillingPlanId): Promise<void>;
+  openBillingPortal(organizationId: string): Promise<void>;
   cancelScheduledRenewal(organizationId: string): Promise<void>;
   resumeSubscription(organizationId: string): Promise<void>;
   reconnectGithub(organizationId: string): Promise<void>;
@@ -62,4 +63,3 @@ export function eligibleFactoryOrganizations(snapshot: FactoryAppSnapshot): Fact
   const eligible = new Set(user.eligibleOrganizationIds);
   return snapshot.organizations.filter((organization) => eligible.has(organization.id));
 }
-

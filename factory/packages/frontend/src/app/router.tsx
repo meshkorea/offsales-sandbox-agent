@@ -14,7 +14,6 @@ import { MockLayout } from "../components/mock-layout";
 import {
   MockHostedCheckoutPage,
   MockOrganizationBillingPage,
-  MockOrganizationImportPage,
   MockOrganizationSelectorPage,
   MockOrganizationSettingsPage,
   MockSignInPage,
@@ -24,10 +23,12 @@ import {
   activeMockOrganization,
   activeMockUser,
   getMockOrganizationById,
+  isAppSnapshotBootstrapping,
   eligibleOrganizations,
+  useMockAppClient,
   useMockAppSnapshot,
 } from "../lib/mock-app";
-import { getHandoffWorkbenchClient, resolveRepoRouteHandoffId } from "../lib/workbench";
+import { getTaskWorkbenchClient, resolveRepoRouteTaskId } from "../lib/workbench";
 
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -49,12 +50,6 @@ const organizationsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/organizations",
   component: OrganizationsRoute,
-});
-
-const organizationImportRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/organizations/$organizationId/import",
-  component: OrganizationImportRoute,
 });
 
 const organizationSettingsRoute = createRoute({
@@ -87,13 +82,13 @@ const workspaceIndexRoute = createRoute({
   component: WorkspaceRoute,
 });
 
-const handoffRoute = createRoute({
+const taskRoute = createRoute({
   getParentRoute: () => workspaceRoute,
-  path: "handoffs/$handoffId",
+  path: "tasks/$taskId",
   validateSearch: (search: Record<string, unknown>) => ({
     sessionId: typeof search.sessionId === "string" && search.sessionId.trim().length > 0 ? search.sessionId : undefined,
   }),
-  component: HandoffRoute,
+  component: TaskRoute,
 });
 
 const repoRoute = createRoute({
@@ -106,11 +101,10 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   signInRoute,
   organizationsRoute,
-  organizationImportRoute,
   organizationSettingsRoute,
   organizationBillingRoute,
   organizationCheckoutRoute,
-  workspaceRoute.addChildren([workspaceIndexRoute, handoffRoute, repoRoute]),
+  workspaceRoute.addChildren([workspaceIndexRoute, taskRoute, repoRoute]),
 ]);
 
 export const router = createRouter({ routeTree });
@@ -132,6 +126,9 @@ function IndexRoute() {
 
 function SignInRoute() {
   const snapshot = useMockAppSnapshot();
+  if (isAppSnapshotBootstrapping(snapshot)) {
+    return <AppBootstrapPending />;
+  }
 
   if (snapshot.auth.status === "signed_in") {
     return <NavigateToMockHome snapshot={snapshot} replace />;
@@ -142,6 +139,9 @@ function SignInRoute() {
 
 function OrganizationsRoute() {
   const snapshot = useMockAppSnapshot();
+  if (isAppSnapshotBootstrapping(snapshot)) {
+    return <AppBootstrapPending />;
+  }
 
   if (snapshot.auth.status === "signed_out") {
     return <Navigate to="/signin" replace />;
@@ -150,24 +150,12 @@ function OrganizationsRoute() {
   return <MockOrganizationSelectorPage />;
 }
 
-function OrganizationImportRoute() {
-  const snapshot = useMockAppSnapshot();
-  const organization = useGuardedMockOrganization(organizationImportRoute.useParams().organizationId);
-
-  if (snapshot.auth.status === "signed_out") {
-    return <Navigate to="/signin" replace />;
-  }
-
-  if (!organization) {
-    return <Navigate to="/organizations" replace />;
-  }
-
-  return <MockOrganizationImportPage organization={organization} />;
-}
-
 function OrganizationSettingsRoute() {
   const snapshot = useMockAppSnapshot();
   const organization = useGuardedMockOrganization(organizationSettingsRoute.useParams().organizationId);
+  if (isAppSnapshotBootstrapping(snapshot)) {
+    return <AppBootstrapPending />;
+  }
 
   if (snapshot.auth.status === "signed_out") {
     return <Navigate to="/signin" replace />;
@@ -183,6 +171,9 @@ function OrganizationSettingsRoute() {
 function OrganizationBillingRoute() {
   const snapshot = useMockAppSnapshot();
   const organization = useGuardedMockOrganization(organizationBillingRoute.useParams().organizationId);
+  if (isAppSnapshotBootstrapping(snapshot)) {
+    return <AppBootstrapPending />;
+  }
 
   if (snapshot.auth.status === "signed_out") {
     return <Navigate to="/signin" replace />;
@@ -199,6 +190,9 @@ function OrganizationCheckoutRoute() {
   const { organizationId, planId } = organizationCheckoutRoute.useParams();
   const snapshot = useMockAppSnapshot();
   const organization = useGuardedMockOrganization(organizationId);
+  if (isAppSnapshotBootstrapping(snapshot)) {
+    return <AppBootstrapPending />;
+  }
 
   if (snapshot.auth.status === "signed_out") {
     return <Navigate to="/signin" replace />;
@@ -226,18 +220,18 @@ function WorkspaceRoute() {
 
   return (
     <MockWorkspaceGate workspaceId={workspaceId}>
-      <WorkspaceView workspaceId={workspaceId} selectedHandoffId={null} selectedSessionId={null} />
+      <WorkspaceView workspaceId={workspaceId} selectedTaskId={null} selectedSessionId={null} />
     </MockWorkspaceGate>
   );
 }
 
-function HandoffRoute() {
-  const { workspaceId, handoffId } = handoffRoute.useParams();
-  const { sessionId } = handoffRoute.useSearch();
+function TaskRoute() {
+  const { workspaceId, taskId } = taskRoute.useParams();
+  const { sessionId } = taskRoute.useSearch();
 
   return (
     <MockWorkspaceGate workspaceId={workspaceId}>
-      <WorkspaceView workspaceId={workspaceId} selectedHandoffId={handoffId} selectedSessionId={sessionId ?? null} />
+      <WorkspaceView workspaceId={workspaceId} selectedTaskId={taskId} selectedSessionId={sessionId ?? null} />
     </MockWorkspaceGate>
   );
 }
@@ -253,7 +247,7 @@ function RepoRoute() {
 }
 
 function RepoRouteInner({ workspaceId, repoId }: { workspaceId: string; repoId: string }) {
-  const client = getHandoffWorkbenchClient(workspaceId);
+  const client = getTaskWorkbenchClient(workspaceId);
   const snapshot = useSyncExternalStore(
     client.subscribe.bind(client),
     client.getSnapshot.bind(client),
@@ -263,13 +257,13 @@ function RepoRouteInner({ workspaceId, repoId }: { workspaceId: string; repoId: 
   useEffect(() => {
     setFrontendErrorContext({
       workspaceId,
-      handoffId: undefined,
+      taskId: undefined,
       repoId,
     });
   }, [repoId, workspaceId]);
 
-  const activeHandoffId = resolveRepoRouteHandoffId(snapshot, repoId);
-  if (!activeHandoffId) {
+  const activeTaskId = resolveRepoRouteTaskId(snapshot, repoId);
+  if (!activeTaskId) {
     return (
       <Navigate
         to="/workspaces/$workspaceId"
@@ -280,10 +274,10 @@ function RepoRouteInner({ workspaceId, repoId }: { workspaceId: string; repoId: 
   }
   return (
     <Navigate
-      to="/workspaces/$workspaceId/handoffs/$handoffId"
+      to="/workspaces/$workspaceId/tasks/$taskId"
       params={{
         workspaceId,
-        handoffId: activeHandoffId,
+        taskId: activeTaskId,
       }}
       search={{ sessionId: undefined }}
       replace
@@ -293,14 +287,15 @@ function RepoRouteInner({ workspaceId, repoId }: { workspaceId: string; repoId: 
 
 function WorkspaceView({
   workspaceId,
-  selectedHandoffId,
+  selectedTaskId,
   selectedSessionId,
 }: {
   workspaceId: string;
-  selectedHandoffId: string | null;
+  selectedTaskId: string | null;
   selectedSessionId: string | null;
 }) {
-  const client = getHandoffWorkbenchClient(workspaceId);
+  const appClient = useMockAppClient();
+  const client = getTaskWorkbenchClient(workspaceId);
   const navigate = useNavigate();
   const snapshot = useMockAppSnapshot();
   const organization = eligibleOrganizations(snapshot).find((candidate) => candidate.workspaceId === workspaceId) ?? null;
@@ -308,16 +303,16 @@ function WorkspaceView({
   useEffect(() => {
     setFrontendErrorContext({
       workspaceId,
-      handoffId: selectedHandoffId ?? undefined,
+      taskId: selectedTaskId ?? undefined,
       repoId: undefined,
     });
-  }, [selectedHandoffId, workspaceId]);
+  }, [selectedTaskId, workspaceId]);
 
   return (
     <MockLayout
       client={client}
       workspaceId={workspaceId}
-      selectedHandoffId={selectedHandoffId}
+      selectedTaskId={selectedTaskId}
       selectedSessionId={selectedSessionId}
       sidebarTitle={organization?.settings.displayName}
       sidebarSubtitle={
@@ -325,6 +320,9 @@ function WorkspaceView({
           ? `${organization.billing.planId} plan · ${organization.seatAssignments.length}/${organization.billing.seatsIncluded} seats`
           : undefined
       }
+      organizationGithub={organization?.github}
+      onRetryGithubSync={organization ? () => void appClient.triggerGithubSync(organization.id) : undefined}
+      onReconnectGithub={organization ? () => void appClient.reconnectGithub(organization.id) : undefined}
       sidebarActions={
         organization
           ? [
@@ -363,6 +361,9 @@ function MockWorkspaceGate({
   children: React.ReactNode;
 }) {
   const snapshot = useMockAppSnapshot();
+  if (isAppSnapshotBootstrapping(snapshot)) {
+    return <AppBootstrapPending />;
+  }
 
   if (snapshot.auth.status === "signed_out") {
     return <Navigate to="/signin" replace />;
@@ -379,16 +380,6 @@ function MockWorkspaceGate({
     return <Navigate to="/organizations" replace />;
   }
 
-  if (workspaceOrganization.repoImportStatus !== "ready") {
-    return (
-      <Navigate
-        to="/organizations/$organizationId/import"
-        params={{ organizationId: workspaceOrganization.id }}
-        replace
-      />
-    );
-  }
-
   return <>{children}</>;
 }
 
@@ -399,6 +390,10 @@ function NavigateToMockHome({
   snapshot: ReturnType<typeof useMockAppSnapshot>;
   replace?: boolean;
 }) {
+  if (isAppSnapshotBootstrapping(snapshot)) {
+    return <AppBootstrapPending />;
+  }
+
   const activeOrganization = activeMockOrganization(snapshot);
   const organizations = eligibleOrganizations(snapshot);
   const targetOrganization =
@@ -417,16 +412,6 @@ function NavigateToMockHome({
       />
     ) : (
       <Navigate to="/organizations" replace={replace} />
-    );
-  }
-
-  if (targetOrganization.repoImportStatus !== "ready") {
-    return (
-      <Navigate
-        to="/organizations/$organizationId/import"
-        params={{ organizationId: targetOrganization.id }}
-        replace={replace}
-      />
     );
   }
 
@@ -456,7 +441,7 @@ function useGuardedMockOrganization(organizationId: string) {
 }
 
 function isMockBillingPlanId(planId: string): planId is MockBillingPlanId {
-  return planId === "free" || planId === "team" || planId === "enterprise";
+  return planId === "free" || planId === "team";
 }
 
 function RootLayout() {
@@ -465,6 +450,40 @@ function RootLayout() {
       <RouteContextSync />
       <Outlet />
     </>
+  );
+}
+
+function AppBootstrapPending() {
+  return (
+    <div
+      style={{
+        minHeight: "100dvh",
+        display: "grid",
+        placeItems: "center",
+        background:
+          "radial-gradient(circle at top left, rgba(255, 79, 0, 0.16), transparent 28%), radial-gradient(circle at top right, rgba(24, 140, 255, 0.18), transparent 32%), #050505",
+        color: "#ffffff",
+      }}
+    >
+      <div
+        style={{
+          width: "min(520px, calc(100vw - 40px))",
+          padding: "32px",
+          borderRadius: "28px",
+          border: "1px solid rgba(255, 255, 255, 0.1)",
+          background: "linear-gradient(180deg, rgba(21, 21, 24, 0.96), rgba(10, 10, 11, 0.98))",
+          boxShadow: "0 18px 40px rgba(0, 0, 0, 0.36)",
+        }}
+      >
+        <div style={{ fontSize: "12px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#a1a1aa" }}>
+          Restoring session
+        </div>
+        <div style={{ marginTop: "8px", fontSize: "28px", fontWeight: 800 }}>Loading Factory state</div>
+        <div style={{ marginTop: "12px", color: "#d4d4d8", lineHeight: 1.6 }}>
+          Applying the returned app session and loading your organizations before routing deeper into Factory.
+        </div>
+      </div>
+    </div>
   );
 }
 

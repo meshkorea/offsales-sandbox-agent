@@ -4,10 +4,10 @@ import { LabelSmall, LabelXSmall } from "baseui/typography";
 import { CloudUpload, GitPullRequestDraft, Plus } from "lucide-react";
 
 import { SidebarSkeleton } from "./skeleton";
-import { formatRelativeAge, type Handoff, type ProjectSection } from "./view-model";
+import { formatRelativeAge, type Task, type RepoSection } from "./view-model";
 import {
   ContextMenuOverlay,
-  HandoffIndicator,
+  TaskIndicator,
   PanelHeaderBar,
   SPanel,
   ScrollBody,
@@ -17,7 +17,7 @@ import {
 export const Sidebar = memo(function Sidebar({
   workspaceId,
   repoCount,
-  projects,
+  repos,
   activeId,
   title,
   subtitle,
@@ -25,12 +25,12 @@ export const Sidebar = memo(function Sidebar({
   onSelect,
   onCreate,
   onMarkUnread,
-  onRenameHandoff,
+  onRenameTask,
   onRenameBranch,
 }: {
   workspaceId: string;
   repoCount: number;
-  projects: ProjectSection[];
+  repos: RepoSection[];
   activeId: string;
   title?: string;
   subtitle?: string;
@@ -41,12 +41,12 @@ export const Sidebar = memo(function Sidebar({
   onSelect: (id: string) => void;
   onCreate: () => void;
   onMarkUnread: (id: string) => void;
-  onRenameHandoff: (id: string) => void;
+  onRenameTask: (id: string) => void;
   onRenameBranch: (id: string) => void;
 }) {
   const [css, theme] = useStyletron();
   const contextMenu = useContextMenu();
-  const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
+  const [expandedRepos, setExpandedRepos] = useState<Record<string, boolean>>({});
 
   return (
     <SPanel>
@@ -61,7 +61,7 @@ export const Sidebar = memo(function Sidebar({
         </div>
         <button
           onClick={onCreate}
-          aria-label="Create handoff"
+          aria-label="Create task"
           className={css({
             all: "unset",
             width: "24px",
@@ -115,16 +115,20 @@ export const Sidebar = memo(function Sidebar({
         </div>
       ) : null}
       <ScrollBody>
-        {projects.length === 0 ? (
+        {repos.length === 0 && repoCount === 0 ? (
           <SidebarSkeleton />
+        ) : repos.length === 0 ? (
+          <div className={css({ padding: "16px", textAlign: "center", opacity: 0.5, fontSize: "13px" })}>
+            No tasks yet
+          </div>
         ) : (
         <div className={css({ padding: "8px", display: "flex", flexDirection: "column", gap: "4px" })}>
-          {projects.map((project) => {
-            const visibleCount = expandedProjects[project.id] ? project.handoffs.length : Math.min(project.handoffs.length, 5);
-            const hiddenCount = Math.max(0, project.handoffs.length - visibleCount);
+          {repos.map((repo) => {
+            const visibleCount = expandedRepos[repo.id] ? repo.tasks.length : Math.min(repo.tasks.length, 5);
+            const hiddenCount = Math.max(0, repo.tasks.length - visibleCount);
 
             return (
-              <div key={project.id} className={css({ display: "flex", flexDirection: "column", gap: "4px" })}>
+              <div key={repo.id} className={css({ display: "flex", flexDirection: "column", gap: "4px" })}>
                 <div
                   className={css({
                     display: "flex",
@@ -146,14 +150,14 @@ export const Sidebar = memo(function Sidebar({
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {project.label}
+                    {repo.label}
                   </LabelSmall>
                   <LabelXSmall color={theme.colors.contentTertiary}>
-                    {project.updatedAtMs > 0 ? formatRelativeAge(project.updatedAtMs) : "No handoffs"}
+                    {repo.updatedAtMs > 0 ? formatRelativeAge(repo.updatedAtMs) : "No tasks"}
                   </LabelXSmall>
                 </div>
 
-                {project.handoffs.length === 0 ? (
+                {repo.tasks.length === 0 ? (
                   <div
                     className={css({
                       padding: "0 12px 10px 34px",
@@ -161,29 +165,29 @@ export const Sidebar = memo(function Sidebar({
                       fontSize: "12px",
                     })}
                   >
-                    No handoffs yet
+                    No tasks yet
                   </div>
                 ) : null}
 
-                {project.handoffs.slice(0, visibleCount).map((handoff) => {
-            const isActive = handoff.id === activeId;
-            const isDim = handoff.status === "archived";
-            const isRunning = handoff.tabs.some((tab) => tab.status === "running");
-            const hasUnread = handoff.tabs.some((tab) => tab.unread);
-            const isDraft = handoff.pullRequest == null || handoff.pullRequest.status === "draft";
-            const totalAdded = handoff.fileChanges.reduce((sum, file) => sum + file.added, 0);
-            const totalRemoved = handoff.fileChanges.reduce((sum, file) => sum + file.removed, 0);
+                {repo.tasks.slice(0, visibleCount).map((task) => {
+            const isActive = task.id === activeId;
+            const isDim = task.status === "archived";
+            const isRunning = task.tabs.some((tab) => tab.status === "running");
+            const hasUnread = task.tabs.some((tab) => tab.unread);
+            const isDraft = task.pullRequest == null || task.pullRequest.status === "draft";
+            const totalAdded = task.fileChanges.reduce((sum, file) => sum + file.added, 0);
+            const totalRemoved = task.fileChanges.reduce((sum, file) => sum + file.removed, 0);
             const hasDiffs = totalAdded > 0 || totalRemoved > 0;
 
             return (
               <div
-                key={handoff.id}
-                onClick={() => onSelect(handoff.id)}
+                key={task.id}
+                onClick={() => onSelect(task.id)}
                 onContextMenu={(event) =>
                   contextMenu.open(event, [
-                    { label: "Rename handoff", onClick: () => onRenameHandoff(handoff.id) },
-                    { label: "Rename branch", onClick: () => onRenameBranch(handoff.id) },
-                    { label: "Mark as unread", onClick: () => onMarkUnread(handoff.id) },
+                    { label: "Rename task", onClick: () => onRenameTask(task.id) },
+                    { label: "Rename branch", onClick: () => onRenameBranch(task.id) },
+                    { label: "Mark as unread", onClick: () => onMarkUnread(task.id) },
                   ])
                 }
                 className={css({
@@ -211,7 +215,7 @@ export const Sidebar = memo(function Sidebar({
                       flexShrink: 0,
                     })}
                   >
-                    <HandoffIndicator isRunning={isRunning} hasUnread={hasUnread} isDraft={isDraft} />
+                    <TaskIndicator isRunning={isRunning} hasUnread={hasUnread} isDraft={isDraft} />
                   </div>
                   <LabelSmall
                     $style={{
@@ -223,7 +227,7 @@ export const Sidebar = memo(function Sidebar({
                     }}
                     color={isDim ? theme.colors.contentSecondary : theme.colors.contentPrimary}
                   >
-                    {handoff.title}
+                    {task.title}
                   </LabelSmall>
                   {hasDiffs ? (
                     <div className={css({ display: "flex", gap: "4px", flexShrink: 0 })}>
@@ -242,20 +246,20 @@ export const Sidebar = memo(function Sidebar({
                       flexShrink: 1,
                     }}
                   >
-                    {handoff.repoName}
+                    {task.repoName}
                   </LabelXSmall>
-                  {handoff.pullRequest != null ? (
+                  {task.pullRequest != null ? (
                     <span className={css({ display: "inline-flex", alignItems: "center", gap: "4px", flexShrink: 0 })}>
                       <LabelXSmall color={theme.colors.contentSecondary} $style={{ fontWeight: 600 }}>
-                        #{handoff.pullRequest.number}
+                        #{task.pullRequest.number}
                       </LabelXSmall>
-                      {handoff.pullRequest.status === "draft" ? <CloudUpload size={11} color="#ff4f00" /> : null}
+                      {task.pullRequest.status === "draft" ? <CloudUpload size={11} color="#ff4f00" /> : null}
                     </span>
                   ) : (
                     <GitPullRequestDraft size={11} color={theme.colors.contentTertiary} />
                   )}
                   <LabelXSmall color={theme.colors.contentTertiary} $style={{ marginLeft: "auto", flexShrink: 0 }}>
-                    {formatRelativeAge(handoff.updatedAtMs)}
+                    {formatRelativeAge(task.updatedAtMs)}
                   </LabelXSmall>
                 </div>
               </div>
@@ -266,9 +270,9 @@ export const Sidebar = memo(function Sidebar({
                   <button
                     type="button"
                     onClick={() =>
-                      setExpandedProjects((current) => ({
+                      setExpandedRepos((current) => ({
                         ...current,
-                        [project.id]: true,
+                        [repo.id]: true,
                       }))
                     }
                     className={css({

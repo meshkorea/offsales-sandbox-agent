@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
-import type { HandoffWorkbenchSnapshot } from "@sandbox-agent/factory-shared";
-import { resolveRepoRouteHandoffId } from "./workbench-routing";
+import type { TaskWorkbenchSnapshot } from "@sandbox-agent/factory-shared";
+import { resolveRepoRouteTaskId } from "./workbench-routing";
 
-const snapshot: HandoffWorkbenchSnapshot = {
+const snapshot: TaskWorkbenchSnapshot = {
   workspaceId: "default",
   repos: [
     { id: "repo-a", label: "acme/repo-a" },
     { id: "repo-b", label: "acme/repo-b" },
   ],
-  projects: [],
-  handoffs: [
+  repoSections: [],
+  tasks: [
     {
-      id: "handoff-a",
+      id: "task-a",
       repoId: "repo-a",
       title: "Alpha",
       status: "idle",
@@ -27,12 +27,12 @@ const snapshot: HandoffWorkbenchSnapshot = {
   ],
 };
 
-describe("resolveRepoRouteHandoffId", () => {
-  it("finds the active handoff for a repo route", () => {
-    expect(resolveRepoRouteHandoffId(snapshot, "repo-a")).toBe("handoff-a");
+describe("resolveRepoRouteTaskId", () => {
+  it("finds the active task for a repo route", () => {
+    expect(resolveRepoRouteTaskId(snapshot, "repo-a")).toBe("task-a");
   });
 
-  it("returns null when a repo has no handoff yet", () => {
-    expect(resolveRepoRouteHandoffId(snapshot, "repo-b")).toBeNull();
+  it("returns null when a repo has no task yet", () => {
+    expect(resolveRepoRouteTaskId(snapshot, "repo-b")).toBeNull();
   });
 });

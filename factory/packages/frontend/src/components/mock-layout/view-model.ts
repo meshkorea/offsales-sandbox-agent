@@ -4,18 +4,19 @@ import type {
   WorkbenchDiffLineKind as DiffLineKind,
   WorkbenchFileChange as FileChange,
   WorkbenchFileTreeNode as FileTreeNode,
-  WorkbenchHandoff as Handoff,
+  WorkbenchTask as WorkbenchTask,
   WorkbenchHistoryEvent as HistoryEvent,
   WorkbenchLineAttachment as LineAttachment,
   WorkbenchModelGroup as ModelGroup,
   WorkbenchModelId as ModelId,
   WorkbenchParsedDiffLine as ParsedDiffLine,
-  WorkbenchProjectSection as ProjectSection,
+  WorkbenchRepoSection as WorkbenchRepoSection,
   WorkbenchTranscriptEvent as TranscriptEvent,
 } from "@sandbox-agent/factory-shared";
 import { extractEventText } from "../../features/sessions/model";
 
-export type { ProjectSection };
+export type Task = WorkbenchTask;
+export type RepoSection = WorkbenchRepoSection;
 
 export const MODEL_GROUPS: ModelGroup[] = [
   {
@@ -329,7 +330,6 @@ export type {
   DiffLineKind,
   FileChange,
   FileTreeNode,
-  Handoff,
   HistoryEvent,
   LineAttachment,
   ModelGroup,

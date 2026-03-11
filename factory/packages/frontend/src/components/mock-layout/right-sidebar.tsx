@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 
 import { type ContextMenuItem, ContextMenuOverlay, PanelHeaderBar, SPanel, ScrollBody, useContextMenu } from "./ui";
-import { type FileTreeNode, type Handoff, diffTabId } from "./view-model";
+import { type FileTreeNode, type Task, diffTabId } from "./view-model";
 
 const StatusCard = memo(function StatusCard({
   label,
@@ -145,7 +145,7 @@ const FileTree = memo(function FileTree({
 });
 
 export const RightSidebar = memo(function RightSidebar({
-  handoff,
+  task,
   activeTabId,
   onOpenDiff,
   onArchive,
@@ -153,7 +153,7 @@ export const RightSidebar = memo(function RightSidebar({
   onRevertFile,
   onPublishPr,
 }: {
-  handoff: Handoff;
+  task: Task;
   activeTabId: string | null;
   onOpenDiff: (path: string) => void;
   onArchive: () => void;
@@ -164,14 +164,14 @@ export const RightSidebar = memo(function RightSidebar({
   const [css, theme] = useStyletron();
   const [rightTab, setRightTab] = useState<"changes" | "files">("changes");
   const contextMenu = useContextMenu();
-  const changedPaths = useMemo(() => new Set(handoff.fileChanges.map((file) => file.path)), [handoff.fileChanges]);
-  const isTerminal = handoff.status === "archived";
-  const canPush = !isTerminal && Boolean(handoff.branch);
-  const pullRequestUrl = handoff.pullRequest != null ? `https://github.com/${handoff.repoName}/pull/${handoff.pullRequest.number}` : null;
+  const changedPaths = useMemo(() => new Set(task.fileChanges.map((file) => file.path)), [task.fileChanges]);
+  const isTerminal = task.status === "archived";
+  const canPush = !isTerminal && Boolean(task.branch);
+  const pullRequestUrl = task.pullRequest != null ? `https://github.com/${task.repoName}/pull/${task.pullRequest.number}` : null;
   const pullRequestStatus =
-    handoff.pullRequest == null
+    task.pullRequest == null
       ? "Not published"
-      : `#${handoff.pullRequest.number} ${handoff.pullRequest.status === "draft" ? "Draft" : "Ready"}`;
+      : `#${task.pullRequest.number} ${task.pullRequest.status === "draft" ? "Draft" : "Ready"}`;
 
   const copyFilePath = useCallback(async (path: string) => {
     try {
@@ -309,7 +309,7 @@ export const RightSidebar = memo(function RightSidebar({
           })}
         >
           Changes
-          {handoff.fileChanges.length > 0 ? (
+          {task.fileChanges.length > 0 ? (
             <span
               className={css({
                 display: "inline-flex",
@@ -325,7 +325,7 @@ export const RightSidebar = memo(function RightSidebar({
                 borderRadius: "8px",
               })}
             >
-              {handoff.fileChanges.length}
+              {task.fileChanges.length}
             </span>
           ) : null}
         </button>
@@ -356,17 +356,17 @@ export const RightSidebar = memo(function RightSidebar({
 
       <ScrollBody>
         <div className={css({ padding: "12px 14px 0", display: "grid", gap: "8px" })}>
-          <StatusCard label="Branch" value={handoff.branch ?? "Not created"} mono />
+          <StatusCard label="Branch" value={task.branch ?? "Not created"} mono />
           <StatusCard label="Pull Request" value={pullRequestStatus} />
         </div>
         {rightTab === "changes" ? (
           <div className={css({ padding: "10px 14px", display: "flex", flexDirection: "column", gap: "2px" })}>
-            {handoff.fileChanges.length === 0 ? (
+            {task.fileChanges.length === 0 ? (
               <div className={css({ padding: "20px 0", textAlign: "center" })}>
                 <LabelSmall color={theme.colors.contentTertiary}>No changes yet</LabelSmall>
               </div>
             ) : null}
-            {handoff.fileChanges.map((file) => {
+            {task.fileChanges.map((file) => {
               const isActive = activeTabId === diffTabId(file.path);
               const TypeIcon = file.type === "A" ? FilePlus : file.type === "D" ? FileX : FileCode;
               const iconColor = file.type === "A" ? "#7ee787" : file.type === "D" ? "#ffa198" : theme.colors.contentTertiary;
@@ -421,9 +421,9 @@ export const RightSidebar = memo(function RightSidebar({
           </div>
         ) : (
           <div className={css({ padding: "6px 0" })}>
-            {handoff.fileTree.length > 0 ? (
+            {task.fileTree.length > 0 ? (
               <FileTree
-                nodes={handoff.fileTree}
+                nodes={task.fileTree}
                 depth={0}
                 onSelectFile={onOpenDiff}
                 onFileContextMenu={openFileMenu}

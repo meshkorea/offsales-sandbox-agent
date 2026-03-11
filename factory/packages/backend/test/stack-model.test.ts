@@ -3,7 +3,7 @@ import {
   normalizeParentBranch,
   parentLookupFromStack,
   sortBranchesForOverview,
-} from "../src/actors/project/stack-model.js";
+} from "../src/actors/repo/stack-model.js";
 
 describe("stack-model", () => {
   it("normalizes self-parent references to null", () => {

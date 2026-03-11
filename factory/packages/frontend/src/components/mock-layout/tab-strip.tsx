@@ -4,10 +4,10 @@ import { LabelXSmall } from "baseui/typography";
 import { FileCode, Plus, X } from "lucide-react";
 
 import { ContextMenuOverlay, TabAvatar, useContextMenu } from "./ui";
-import { diffTabId, fileName, type Handoff } from "./view-model";
+import { diffTabId, fileName, type Task } from "./view-model";
 
 export const TabStrip = memo(function TabStrip({
-  handoff,
+  task,
   activeTabId,
   openDiffs,
   editingSessionTabId,
@@ -22,7 +22,7 @@ export const TabStrip = memo(function TabStrip({
   onCloseDiffTab,
   onAddTab,
 }: {
-  handoff: Handoff;
+  task: Task;
   activeTabId: string | null;
   openDiffs: string[];
   editingSessionTabId: string | null;
@@ -56,7 +56,7 @@ export const TabStrip = memo(function TabStrip({
           "::-webkit-scrollbar": { display: "none" },
         })}
       >
-        {handoff.tabs.map((tab) => {
+        {task.tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           return (
             <div
@@ -64,7 +64,7 @@ export const TabStrip = memo(function TabStrip({
               onClick={() => onSwitchTab(tab.id)}
               onDoubleClick={() => onStartRenamingTab(tab.id)}
               onMouseDown={(event) => {
-                if (event.button === 1 && handoff.tabs.length > 1) {
+                if (event.button === 1 && task.tabs.length > 1) {
                   event.preventDefault();
                   onCloseTab(tab.id);
                 }
@@ -76,7 +76,7 @@ export const TabStrip = memo(function TabStrip({
                     label: tab.unread ? "Mark as read" : "Mark as unread",
                     onClick: () => onSetTabUnread(tab.id, !tab.unread),
                   },
-                  ...(handoff.tabs.length > 1 ? [{ label: "Close tab", onClick: () => onCloseTab(tab.id) }] : []),
+                  ...(task.tabs.length > 1 ? [{ label: "Close tab", onClick: () => onCloseTab(tab.id) }] : []),
                 ])
               }
               className={css({
@@ -134,7 +134,7 @@ export const TabStrip = memo(function TabStrip({
                   {tab.sessionName}
                 </LabelXSmall>
               )}
-              {handoff.tabs.length > 1 ? (
+              {task.tabs.length > 1 ? (
                 <X
                   size={11}
                   color={theme.colors.contentTertiary}

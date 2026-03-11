@@ -9,8 +9,9 @@ import { createBackends, createNotificationService } from "./notifications/index
 import { createDefaultDriver } from "./driver.js";
 import { createProviderRegistry } from "./providers/index.js";
 import { createClient } from "rivetkit/client";
-import { FactoryAppStore } from "./services/app-state.js";
-import type { FactoryBillingPlanId, FactoryOrganization } from "@sandbox-agent/factory-shared";
+import type { FactoryBillingPlanId } from "@sandbox-agent/factory-shared";
+import { createDefaultAppShellServices } from "./services/app-shell-runtime.js";
+import { APP_SHELL_WORKSPACE_ID } from "./actors/workspace/app-shell.js";
 
 export interface BackendStartOptions {
   host?: string;
@@ -18,6 +19,7 @@ export interface BackendStartOptions {
 }
 
 export async function startBackend(options: BackendStartOptions = {}): Promise<void> {
+  process.env.NODE_ENV ||= "development";
   loadDevelopmentEnvFiles();
   applyDevelopmentEnvDefaults();
 
@@ -50,36 +52,15 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
   const providers = createProviderRegistry(config, driver);
   const backends = await createBackends(config.notify);
   const notifications = createNotificationService(backends);
-  initActorRuntimeContext(config, providers, notifications, driver);
+  initActorRuntimeContext(config, providers, notifications, driver, createDefaultAppShellServices());
 
+  registry.startRunner();
   const inner = registry.serve();
   const actorClient = createClient({
     endpoint: `http://127.0.0.1:${resolveManagerPort()}`,
     disableMetadataLookup: true,
   }) as any;
 
-  const syncOrganizationRepos = async (organization: FactoryOrganization): Promise<void> => {
-    const workspace = await actorClient.workspace.getOrCreate(workspaceKey(organization.workspaceId), {
-      createWithInput: organization.workspaceId,
-    });
-    const existing = await workspace.listRepos({ workspaceId: organization.workspaceId });
-    const existingRemotes = new Set(existing.map((repo: { remoteUrl: string }) => repo.remoteUrl));
-
-    for (const repo of organization.repoCatalog) {
-      const remoteUrl = `mockgithub://${repo}`;
-      if (existingRemotes.has(remoteUrl)) {
-        continue;
-      }
-      await workspace.addRepo({
-        workspaceId: organization.workspaceId,
-        remoteUrl,
-      });
-    }
-  };
-
-  const appStore = new FactoryAppStore({
-    onOrganizationReposReady: syncOrganizationRepos,
-  });
   const managerOrigin = `http://127.0.0.1:${resolveManagerPort()}`;
 
   // Wrap in a Hono app mounted at /api/rivet to serve on the backend port.
@@ -87,14 +68,31 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
   // RivetKit's internal Bun.serve manager server (Bun bug: mixing Node HTTP
   // server and Bun.serve in the same process breaks Bun.serve's fetch handler).
   const app = new Hono();
+  const allowHeaders = [
+    "Content-Type",
+    "Authorization",
+    "x-rivet-token",
+    "x-rivet-encoding",
+    "x-rivet-query",
+    "x-rivet-conn-params",
+    "x-rivet-actor",
+    "x-rivet-target",
+    "x-rivet-namespace",
+    "x-rivet-endpoint",
+    "x-rivet-total-slots",
+    "x-rivet-runner-name",
+    "x-rivet-namespace-name",
+    "x-factory-session",
+  ];
+  const exposeHeaders = ["Content-Type", "x-factory-session", "x-rivet-ray-id"];
   app.use(
     "/api/rivet/*",
     cors({
       origin: (origin) => origin ?? "*",
       credentials: true,
-      allowHeaders: ["Content-Type", "Authorization", "x-rivet-token", "x-factory-session"],
+      allowHeaders,
       allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      exposeHeaders: ["Content-Type", "x-factory-session"],
+      exposeHeaders,
     })
   );
   app.use(
@@ -102,44 +100,68 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     cors({
       origin: (origin) => origin ?? "*",
       credentials: true,
-      allowHeaders: ["Content-Type", "Authorization", "x-rivet-token", "x-factory-session"],
+      allowHeaders,
       allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      exposeHeaders: ["Content-Type", "x-factory-session"],
+      exposeHeaders,
     })
   );
-  const resolveSessionId = (c: any): string => {
+  const appWorkspace = async () =>
+    await actorClient.workspace.getOrCreate(workspaceKey(APP_SHELL_WORKSPACE_ID), {
+      createWithInput: APP_SHELL_WORKSPACE_ID,
+    });
+
+  const resolveSessionId = async (c: any): Promise<string> => {
     const requested = c.req.header("x-factory-session");
-    const sessionId = appStore.ensureSession(requested);
+    const { sessionId } = await (await appWorkspace()).ensureAppSession({
+      requestedSessionId: requested ?? null,
+    });
     c.header("x-factory-session", sessionId);
     return sessionId;
   };
 
-  app.get("/api/rivet/app/snapshot", (c) => {
-    const sessionId = resolveSessionId(c);
-    return c.json(appStore.getSnapshot(sessionId));
+  app.get("/api/rivet/app/snapshot", async (c) => {
+    const sessionId = await resolveSessionId(c);
+    return c.json(await (await appWorkspace()).getAppSnapshot({ sessionId }));
   });
 
-  app.post("/api/rivet/app/sign-in", async (c) => {
-    const sessionId = resolveSessionId(c);
-    const body = await c.req.json().catch(() => ({}));
-    const userId = typeof body?.userId === "string" ? body.userId : undefined;
-    return c.json(appStore.signInWithGithub(sessionId, userId));
+  app.get("/api/rivet/app/auth/github/start", async (c) => {
+    const sessionId = await resolveSessionId(c);
+    const result = await (await appWorkspace()).startAppGithubAuth({ sessionId });
+    return Response.redirect(result.url, 302);
   });
 
-  app.post("/api/rivet/app/sign-out", (c) => {
-    const sessionId = resolveSessionId(c);
-    return c.json(appStore.signOut(sessionId));
+  app.get("/api/rivet/app/auth/github/callback", async (c) => {
+    const code = c.req.query("code");
+    const state = c.req.query("state");
+    if (!code || !state) {
+      return c.text("Missing GitHub OAuth callback parameters", 400);
+    }
+    const result = await (await appWorkspace()).completeAppGithubAuth({ code, state });
+    c.header("x-factory-session", result.sessionId);
+    return Response.redirect(result.redirectTo, 302);
+  });
+
+  app.post("/api/rivet/app/sign-out", async (c) => {
+    const sessionId = await resolveSessionId(c);
+    return c.json(await (await appWorkspace()).signOutApp({ sessionId }));
   });
 
   app.post("/api/rivet/app/organizations/:organizationId/select", async (c) => {
-    const sessionId = resolveSessionId(c);
-    return c.json(await appStore.selectOrganization(sessionId, c.req.param("organizationId")));
+    const sessionId = await resolveSessionId(c);
+    return c.json(
+      await (await appWorkspace()).selectAppOrganization({
+        sessionId,
+        organizationId: c.req.param("organizationId"),
+      }),
+    );
   });
 
   app.patch("/api/rivet/app/organizations/:organizationId/profile", async (c) => {
+    const sessionId = await resolveSessionId(c);
     const body = await c.req.json();
     return c.json(
-      appStore.updateOrganizationProfile({
+      await (await appWorkspace()).updateAppOrganizationProfile({
+        sessionId,
         organizationId: c.req.param("organizationId"),
         displayName: typeof body?.displayName === "string" ? body.displayName : "",
         slug: typeof body?.slug === "string" ? body.slug : "",
@@ -149,38 +171,116 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
   });
 
   app.post("/api/rivet/app/organizations/:organizationId/import", async (c) => {
-    return c.json(await appStore.triggerRepoImport(c.req.param("organizationId")));
+    const sessionId = await resolveSessionId(c);
+    return c.json(
+      await (await appWorkspace()).triggerAppRepoImport({
+        sessionId,
+        organizationId: c.req.param("organizationId"),
+      }),
+    );
   });
 
-  app.post("/api/rivet/app/organizations/:organizationId/reconnect", (c) => {
-    return c.json(appStore.reconnectGithub(c.req.param("organizationId")));
+  app.post("/api/rivet/app/organizations/:organizationId/reconnect", async (c) => {
+    const sessionId = await resolveSessionId(c);
+    return c.json(
+      await (await appWorkspace()).beginAppGithubInstall({
+        sessionId,
+        organizationId: c.req.param("organizationId"),
+      }),
+    );
   });
 
   app.post("/api/rivet/app/organizations/:organizationId/billing/checkout", async (c) => {
+    const sessionId = await resolveSessionId(c);
     const body = await c.req.json().catch(() => ({}));
-    const planId =
-      body?.planId === "free" || body?.planId === "team" || body?.planId === "enterprise"
-        ? (body.planId as FactoryBillingPlanId)
-        : "team";
-    return c.json(appStore.completeHostedCheckout(c.req.param("organizationId"), planId));
+    const planId = body?.planId === "free" || body?.planId === "team" ? (body.planId as FactoryBillingPlanId) : "team";
+    return c.json(
+      await (await appWorkspace()).createAppCheckoutSession({
+        sessionId,
+        organizationId: c.req.param("organizationId"),
+        planId,
+      }),
+    );
   });
 
-  app.post("/api/rivet/app/organizations/:organizationId/billing/cancel", (c) => {
-    return c.json(appStore.cancelScheduledRenewal(c.req.param("organizationId")));
-  });
-
-  app.post("/api/rivet/app/organizations/:organizationId/billing/resume", (c) => {
-    return c.json(appStore.resumeSubscription(c.req.param("organizationId")));
-  });
-
-  app.post("/api/rivet/app/workspaces/:workspaceId/seat-usage", (c) => {
-    const sessionId = resolveSessionId(c);
-    const workspaceId = c.req.param("workspaceId");
-    const userEmail = appStore.findUserEmailForWorkspace(workspaceId, sessionId);
-    if (userEmail) {
-      appStore.recordSeatUsage(workspaceId, userEmail);
+  app.get("/api/rivet/app/billing/checkout/complete", async (c) => {
+    const organizationId = c.req.query("organizationId");
+    const sessionId = c.req.query("factorySession");
+    const checkoutSessionId = c.req.query("session_id");
+    if (!organizationId || !sessionId || !checkoutSessionId) {
+      return c.text("Missing Stripe checkout completion parameters", 400);
     }
-    return c.json(appStore.getSnapshot(sessionId));
+    const result = await (await appWorkspace()).finalizeAppCheckoutSession({
+      organizationId,
+      sessionId,
+      checkoutSessionId,
+    });
+    return Response.redirect(result.redirectTo, 302);
+  });
+
+  app.post("/api/rivet/app/organizations/:organizationId/billing/portal", async (c) => {
+    const sessionId = await resolveSessionId(c);
+    return c.json(
+      await (await appWorkspace()).createAppBillingPortalSession({
+        sessionId,
+        organizationId: c.req.param("organizationId"),
+      }),
+    );
+  });
+
+  app.post("/api/rivet/app/organizations/:organizationId/billing/cancel", async (c) => {
+    const sessionId = await resolveSessionId(c);
+    return c.json(
+      await (await appWorkspace()).cancelAppScheduledRenewal({
+        sessionId,
+        organizationId: c.req.param("organizationId"),
+      }),
+    );
+  });
+
+  app.post("/api/rivet/app/organizations/:organizationId/billing/resume", async (c) => {
+    const sessionId = await resolveSessionId(c);
+    return c.json(
+      await (await appWorkspace()).resumeAppSubscription({
+        sessionId,
+        organizationId: c.req.param("organizationId"),
+      }),
+    );
+  });
+
+  const handleStripeWebhook = async (c: any) => {
+    const payload = await c.req.text();
+    await (await appWorkspace()).handleAppStripeWebhook({
+      payload,
+      signatureHeader: c.req.header("stripe-signature") ?? null,
+    });
+    return c.json({ ok: true });
+  };
+
+  app.post("/api/rivet/app/webhooks/stripe", handleStripeWebhook);
+  app.post("/api/rivet/app/stripe/webhook", handleStripeWebhook);
+
+  const handleGithubWebhook = async (c: any) => {
+    const payload = await c.req.text();
+    await (await appWorkspace()).handleAppGithubWebhook({
+      payload,
+      signatureHeader: c.req.header("x-hub-signature-256") ?? null,
+      eventHeader: c.req.header("x-github-event") ?? null,
+    });
+    return c.json({ ok: true });
+  };
+
+  app.post("/api/rivet/app/webhooks/github", handleGithubWebhook);
+
+  app.post("/api/rivet/app/workspaces/:workspaceId/seat-usage", async (c) => {
+    const sessionId = await resolveSessionId(c);
+    const workspaceId = c.req.param("workspaceId");
+    return c.json(
+      await (await appWorkspace()).recordAppSeatUsage({
+        sessionId,
+        workspaceId,
+      }),
+    );
   });
 
   const proxyManagerRequest = async (c: any) => {
@@ -192,7 +292,17 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
   const forward = async (c: any) => {
     try {
       const pathname = new URL(c.req.url).pathname;
+      if (pathname === "/api/rivet/app/webhooks/stripe" || pathname === "/api/rivet/app/stripe/webhook") {
+        return await handleStripeWebhook(c);
+      }
+      if (pathname === "/api/rivet/app/webhooks/github") {
+        return await handleGithubWebhook(c);
+      }
+      if (pathname.startsWith("/api/rivet/app/")) {
+        return c.text("Not Found", 404);
+      }
       if (
+        pathname === "/api/rivet/metadata" ||
         pathname === "/api/rivet/actors" ||
         pathname.startsWith("/api/rivet/actors/") ||
         pathname.startsWith("/api/rivet/gateway/")

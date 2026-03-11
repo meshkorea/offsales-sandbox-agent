@@ -1,7 +1,7 @@
-export type FactoryBillingPlanId = "free" | "team" | "enterprise";
+export type FactoryBillingPlanId = "free" | "team";
 export type FactoryBillingStatus = "active" | "trialing" | "past_due" | "scheduled_cancel";
-export type FactoryRepoImportStatus = "ready" | "not_started" | "importing";
 export type FactoryGithubInstallationStatus = "connected" | "install_required" | "reconnect_required";
+export type FactoryGithubSyncStatus = "pending" | "syncing" | "synced" | "error";
 export type FactoryOrganizationKind = "personal" | "organization";
 
 export interface FactoryUser {
@@ -43,8 +43,10 @@ export interface FactoryBillingState {
 export interface FactoryGithubState {
   connectedAccount: string;
   installationStatus: FactoryGithubInstallationStatus;
+  syncStatus: FactoryGithubSyncStatus;
   importedRepoCount: number;
   lastSyncLabel: string;
+  lastSyncAt: number | null;
 }
 
 export interface FactoryOrganizationSettings {
@@ -65,7 +67,6 @@ export interface FactoryOrganization {
   billing: FactoryBillingState;
   members: FactoryOrganizationMember[];
   seatAssignments: string[];
-  repoImportStatus: FactoryRepoImportStatus;
   repoCatalog: string[];
 }
 
@@ -85,4 +86,3 @@ export interface UpdateFactoryOrganizationProfileInput {
   slug: string;
   primaryDomain: string;
 }
-

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { AgentType, HandoffRecord, HandoffSummary, RepoBranchRecord, RepoOverview, RepoStackAction } from "@sandbox-agent/factory-shared";
+import type { AgentType, TaskRecord, TaskSummary, RepoBranchRecord, RepoOverview, RepoStackAction } from "@sandbox-agent/factory-shared";
 import type { SandboxSessionEventRecord } from "@sandbox-agent/factory-client";
-import { groupHandoffStatus } from "@sandbox-agent/factory-client/view-model";
+import { groupTaskStatus } from "@sandbox-agent/factory-client/view-model";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Button } from "baseui/button";
@@ -15,13 +15,13 @@ import { StyledDivider } from "baseui/divider";
 import { styled, useStyletron } from "baseui";
 import { HeadingSmall, HeadingXSmall, LabelSmall, LabelXSmall, MonoLabelSmall, ParagraphSmall } from "baseui/typography";
 import { Bot, CircleAlert, FolderGit2, GitBranch, MessageSquareText, SendHorizontal, Shuffle } from "lucide-react";
-import { formatDiffStat } from "../features/handoffs/model";
+import { formatDiffStat } from "../features/tasks/model";
 import { buildTranscript, resolveSessionSelection } from "../features/sessions/model";
 import { backendClient } from "../lib/backend";
 
 interface WorkspaceDashboardProps {
   workspaceId: string;
-  selectedHandoffId?: string;
+  selectedTaskId?: string;
   selectedRepoId?: string;
 }
 
@@ -87,7 +87,7 @@ const DetailRail = styled("aside", ({ $theme }) => ({
 
 const FILTER_OPTIONS: SelectItem[] = [
   { id: "active", label: "Active + Unmapped" },
-  { id: "archived", label: "Archived Handoffs" },
+  { id: "archived", label: "Archived Tasks" },
   { id: "unmapped", label: "Unmapped Only" },
   { id: "all", label: "All Branches" },
 ];
@@ -97,8 +97,8 @@ const AGENT_OPTIONS: SelectItem[] = [
   { id: "claude", label: "claude" },
 ];
 
-function statusKind(status: HandoffSummary["status"]): StatusTagKind {
-  const group = groupHandoffStatus(status);
+function statusKind(status: TaskSummary["status"]): StatusTagKind {
+  const group = groupTaskStatus(status);
   if (group === "running") return "positive";
   if (group === "queued") return "warning";
   if (group === "error") return "negative";
@@ -137,21 +137,21 @@ function branchTestIdToken(value: string): string {
 }
 
 function useSessionEvents(
-  handoff: HandoffRecord | null,
+  task: TaskRecord | null,
   sessionId: string | null
 ): ReturnType<typeof useQuery<{ items: SandboxSessionEventRecord[]; nextCursor?: string }, Error>> {
   return useQuery({
-    queryKey: ["workspace", handoff?.workspaceId ?? "", "session", handoff?.handoffId ?? "", sessionId ?? ""],
-    enabled: Boolean(handoff?.activeSandboxId && sessionId),
+    queryKey: ["workspace", task?.workspaceId ?? "", "session", task?.taskId ?? "", sessionId ?? ""],
+    enabled: Boolean(task?.activeSandboxId && sessionId),
     refetchInterval: 2_500,
     queryFn: async () => {
-      if (!handoff?.activeSandboxId || !sessionId) {
+      if (!task?.activeSandboxId || !sessionId) {
         return { items: [] };
       }
       return backendClient.listSandboxSessionEvents(
-        handoff.workspaceId,
-        handoff.providerId,
-        handoff.activeSandboxId,
+        task.workspaceId,
+        task.providerId,
+        task.activeSandboxId,
         {
           sessionId,
           limit: 120,
@@ -186,7 +186,7 @@ function repoSummary(overview: RepoOverview | undefined): {
   let openPrs = 0;
 
   for (const row of overview.branches) {
-    if (row.handoffId) {
+    if (row.taskId) {
       mapped += 1;
     }
     if (row.conflictsWithMain) {
@@ -225,13 +225,13 @@ function branchKind(row: RepoBranchRecord): StatusTagKind {
 
 function matchesOverviewFilter(branch: RepoBranchRecord, filter: RepoOverviewFilter): boolean {
   if (filter === "archived") {
-    return branch.handoffStatus === "archived";
+    return branch.taskStatus === "archived";
   }
   if (filter === "unmapped") {
-    return branch.handoffId === null;
+    return branch.taskId === null;
   }
   if (filter === "active") {
-    return branch.handoffStatus !== "archived";
+    return branch.taskStatus !== "archived";
   }
   return true;
 }
@@ -364,7 +364,7 @@ function MetaRow({ label, value, mono = false }: { label: string; value: string;
   );
 }
 
-export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRepoId }: WorkspaceDashboardProps) {
+export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId }: WorkspaceDashboardProps) {
   const [css, theme] = useStyletron();
   const navigate = useNavigate();
   const repoOverviewMode = typeof selectedRepoId === "string" && selectedRepoId.length > 0;
@@ -377,7 +377,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
   const [newBranchName, setNewBranchName] = useState("");
   const [createOnBranch, setCreateOnBranch] = useState<string | null>(null);
   const [addRepoOpen, setAddRepoOpen] = useState(false);
-  const [createHandoffOpen, setCreateHandoffOpen] = useState(false);
+  const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const [addRepoRemote, setAddRepoRemote] = useState("");
   const [addRepoError, setAddRepoError] = useState<string | null>(null);
   const [stackActionError, setStackActionError] = useState<string | null>(null);
@@ -396,21 +396,21 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
   });
   const [createError, setCreateError] = useState<string | null>(null);
 
-  const handoffsQuery = useQuery({
-    queryKey: ["workspace", workspaceId, "handoffs"],
-    queryFn: async () => backendClient.listHandoffs(workspaceId),
+  const tasksQuery = useQuery({
+    queryKey: ["workspace", workspaceId, "tasks"],
+    queryFn: async () => backendClient.listTasks(workspaceId),
     refetchInterval: 2_500,
   });
 
-  const handoffDetailQuery = useQuery({
-    queryKey: ["workspace", workspaceId, "handoff-detail", selectedHandoffId],
-    enabled: Boolean(selectedHandoffId && !repoOverviewMode),
+  const taskDetailQuery = useQuery({
+    queryKey: ["workspace", workspaceId, "task-detail", selectedTaskId],
+    enabled: Boolean(selectedTaskId && !repoOverviewMode),
     refetchInterval: 2_500,
     queryFn: async () => {
-      if (!selectedHandoffId) {
-        throw new Error("No handoff");
+      if (!selectedTaskId) {
+        throw new Error("No task");
       }
-      return backendClient.getHandoff(workspaceId, selectedHandoffId);
+      return backendClient.getTask(workspaceId, selectedTaskId);
     },
   });
 
@@ -453,9 +453,9 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
     }
   }, [newAgentType]);
 
-  const rows = handoffsQuery.data ?? [];
+  const rows = tasksQuery.data ?? [];
   const repoGroups = useMemo(() => {
-    const byRepo = new Map<string, HandoffSummary[]>();
+    const byRepo = new Map<string, TaskSummary[]>();
     for (const row of rows) {
       const bucket = byRepo.get(row.repoId);
       if (bucket) {
@@ -467,13 +467,13 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
 
     return repos
       .map((repo) => {
-        const handoffs = [...(byRepo.get(repo.repoId) ?? [])].sort((a, b) => b.updatedAt - a.updatedAt);
-        const latestHandoffAt = handoffs[0]?.updatedAt ?? 0;
+        const tasks = [...(byRepo.get(repo.repoId) ?? [])].sort((a, b) => b.updatedAt - a.updatedAt);
+        const latestTaskAt = tasks[0]?.updatedAt ?? 0;
         return {
           repoId: repo.repoId,
           repoRemote: repo.remoteUrl,
-          latestActivityAt: Math.max(repo.updatedAt, latestHandoffAt),
-          handoffs,
+          latestActivityAt: Math.max(repo.updatedAt, latestTaskAt),
+          tasks,
         };
       })
       .sort((a, b) => {
@@ -485,11 +485,11 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
   }, [repos, rows]);
 
   const selectedSummary = useMemo(
-    () => rows.find((row) => row.handoffId === selectedHandoffId) ?? rows[0] ?? null,
-    [rows, selectedHandoffId]
+    () => rows.find((row) => row.taskId === selectedTaskId) ?? rows[0] ?? null,
+    [rows, selectedTaskId]
   );
 
-  const selectedForSession = repoOverviewMode ? null : (handoffDetailQuery.data ?? null);
+  const selectedForSession = repoOverviewMode ? null : (taskDetailQuery.data ?? null);
 
   const activeSandbox = useMemo(() => {
     if (!selectedForSession) return null;
@@ -500,23 +500,23 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
   }, [selectedForSession]);
 
   useEffect(() => {
-    if (!repoOverviewMode && !selectedHandoffId && rows.length > 0) {
+    if (!repoOverviewMode && !selectedTaskId && rows.length > 0) {
       void navigate({
-        to: "/workspaces/$workspaceId/handoffs/$handoffId",
+        to: "/workspaces/$workspaceId/tasks/$taskId",
         params: {
           workspaceId,
-          handoffId: rows[0]!.handoffId,
+          taskId: rows[0]!.taskId,
         },
         search: { sessionId: undefined },
         replace: true,
       });
     }
-  }, [navigate, repoOverviewMode, rows, selectedHandoffId, workspaceId]);
+  }, [navigate, repoOverviewMode, rows, selectedTaskId, workspaceId]);
 
   useEffect(() => {
     setActiveSessionId(null);
     setDraft("");
-  }, [selectedForSession?.handoffId]);
+  }, [selectedForSession?.taskId]);
 
   const sessionsQuery = useQuery({
     queryKey: ["workspace", workspaceId, "sandbox", activeSandbox?.sandboxId ?? "", "sessions"],
@@ -537,7 +537,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
     () =>
       resolveSessionSelection({
         explicitSessionId: activeSessionId,
-        handoffSessionId: selectedForSession?.activeSessionId ?? null,
+        taskSessionId: selectedForSession?.activeSessionId ?? null,
         sessions: sessionRows,
       }),
     [activeSessionId, selectedForSession?.activeSessionId, sessionRows]
@@ -547,9 +547,9 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
   const eventsQuery = useSessionEvents(selectedForSession, resolvedSessionId);
   const canStartSession = Boolean(selectedForSession && activeSandbox?.sandboxId);
 
-  const startSessionFromHandoff = async (): Promise<{ id: string; status: "running" | "idle" | "error" }> => {
+  const startSessionFromTask = async (): Promise<{ id: string; status: "running" | "idle" | "error" }> => {
     if (!selectedForSession || !activeSandbox?.sandboxId) {
-      throw new Error("No sandbox is available for this handoff");
+      throw new Error("No sandbox is available for this task");
     }
     return backendClient.createSandboxSession({
       workspaceId,
@@ -562,7 +562,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
   };
 
   const createSession = useMutation({
-    mutationFn: async () => startSessionFromHandoff(),
+    mutationFn: async () => startSessionFromTask(),
     onSuccess: async (session) => {
       setActiveSessionId(session.id);
       await Promise.all([sessionsQuery.refetch(), eventsQuery.refetch()]);
@@ -573,7 +573,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
     if (resolvedSessionId) {
       return resolvedSessionId;
     }
-    const created = await startSessionFromHandoff();
+    const created = await startSessionFromTask();
     setActiveSessionId(created.id);
     await sessionsQuery.refetch();
     return created.id;
@@ -582,7 +582,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
   const sendPrompt = useMutation({
     mutationFn: async (prompt: string) => {
       if (!selectedForSession || !activeSandbox?.sandboxId) {
-        throw new Error("No sandbox is available for this handoff");
+        throw new Error("No sandbox is available for this task");
       }
       const sessionId = await ensureSessionForPrompt();
       await backendClient.sendSandboxPrompt({
@@ -600,9 +600,9 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
   });
 
   const transcript = buildTranscript(eventsQuery.data?.items ?? []);
-  const canCreateHandoff = createRepoId.trim().length > 0 && newTask.trim().length > 0;
+  const canCreateTask = createRepoId.trim().length > 0 && newTask.trim().length > 0;
 
-  const createHandoff = useMutation({
+  const createTask = useMutation({
     mutationFn: async () => {
       const repoId = createRepoId.trim();
       const task = newTask.trim();
@@ -613,7 +613,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
       const draftTitle = newTitle.trim();
       const draftBranchName = newBranchName.trim();
 
-      return backendClient.createHandoff({
+      return backendClient.createTask({
         workspaceId,
         repoId,
         task,
@@ -623,20 +623,20 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
         onBranch: createOnBranch ?? undefined,
       });
     },
-    onSuccess: async (handoff) => {
+    onSuccess: async (task) => {
       setCreateError(null);
       setNewTask("");
       setNewTitle("");
       setNewBranchName("");
       setCreateOnBranch(null);
-      setCreateHandoffOpen(false);
-      await handoffsQuery.refetch();
+      setCreateTaskOpen(false);
+      await tasksQuery.refetch();
       await repoOverviewQuery.refetch();
       await navigate({
-        to: "/workspaces/$workspaceId/handoffs/$handoffId",
+        to: "/workspaces/$workspaceId/tasks/$taskId",
         params: {
           workspaceId,
-          handoffId: handoff.handoffId,
+          taskId: task.taskId,
         },
         search: { sessionId: undefined },
       });
@@ -696,7 +696,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
         setStackActionMessage(null);
         setStackActionError(result.message);
       }
-      await Promise.all([repoOverviewQuery.refetch(), handoffsQuery.refetch()]);
+      await Promise.all([repoOverviewQuery.refetch(), tasksQuery.refetch()]);
     },
     onError: (error) => {
       setStackActionMessage(null);
@@ -712,7 +712,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
     if (!newTask.trim()) {
       setNewTask(`Continue work on ${branchName}`);
     }
-    setCreateHandoffOpen(true);
+    setCreateTaskOpen(true);
   };
 
   const repoOptions = useMemo(() => repos.map((repo) => createOption({ id: repo.repoId, label: repo.remoteUrl })), [repos]);
@@ -858,19 +858,19 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                 borderTop: `1px solid ${theme.colors.borderOpaque}`,
               })}
             >
-              <LabelXSmall color="contentSecondary">Handoffs</LabelXSmall>
+              <LabelXSmall color="contentSecondary">Tasks</LabelXSmall>
             </div>
           </PanelHeader>
 
           <ScrollBody>
-            {handoffsQuery.isLoading ? (
+            {tasksQuery.isLoading ? (
               <>
                 <Skeleton rows={3} height="72px" />
               </>
             ) : null}
 
-            {!handoffsQuery.isLoading && repoGroups.length === 0 ? (
-              <EmptyState>No repos or handoffs yet. Add a repo to start a workspace.</EmptyState>
+            {!tasksQuery.isLoading && repoGroups.length === 0 ? (
+              <EmptyState>No repos or tasks yet. Add a repo to start a workspace.</EmptyState>
             ) : null}
 
             {repoGroups.map((group) => (
@@ -912,15 +912,15 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                     gap: "0",
                   })}
                 >
-                  {group.handoffs
-                    .filter((handoff) => handoff.status !== "archived" || handoff.handoffId === selectedSummary?.handoffId)
-                    .map((handoff) => {
-                      const isActive = !repoOverviewMode && handoff.handoffId === selectedSummary?.handoffId;
+                  {group.tasks
+                    .filter((task) => task.status !== "archived" || task.taskId === selectedSummary?.taskId)
+                    .map((task) => {
+                      const isActive = !repoOverviewMode && task.taskId === selectedSummary?.taskId;
                       return (
                         <Link
-                          key={handoff.handoffId}
-                          to="/workspaces/$workspaceId/handoffs/$handoffId"
-                          params={{ workspaceId, handoffId: handoff.handoffId }}
+                          key={task.taskId}
+                          to="/workspaces/$workspaceId/tasks/$taskId"
+                          params={{ workspaceId, taskId: task.taskId }}
                           search={{ sessionId: undefined }}
                           className={css({
                             display: "block",
@@ -929,7 +929,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                             borderTop: `1px solid ${theme.colors.borderOpaque}`,
                             backgroundColor: isActive
                               ? "rgba(143, 180, 255, 0.08)"
-                              : handoff.status === "archived"
+                              : task.status === "archived"
                                 ? "rgba(255, 255, 255, 0.02)"
                                 : "transparent",
                             padding: "10px 12px 10px 14px",
@@ -940,7 +940,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                           })}
                         >
                           <LabelSmall marginTop="0" marginBottom="0">
-                            {handoff.title ?? "Determining title..."}
+                            {task.title ?? "Determining title..."}
                           </LabelSmall>
                           <div
                             className={css({
@@ -957,9 +957,9 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                               color="contentSecondary"
                               overrides={{ Block: { style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } } }}
                             >
-                              {handoff.branchName ?? "Determining branch..."}
+                              {task.branchName ?? "Determining branch..."}
                             </ParagraphSmall>
-                            <StatusPill kind={statusKind(handoff.status)}>{handoff.status}</StatusPill>
+                            <StatusPill kind={statusKind(task.status)}>{task.status}</StatusPill>
                           </div>
                         </Link>
                       );
@@ -982,11 +982,11 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                       setCreateRepoId(group.repoId);
                       setCreateOnBranch(null);
                       setCreateError(null);
-                      setCreateHandoffOpen(true);
+                      setCreateTaskOpen(true);
                     }}
-                    data-testid={group.repoId === createRepoId ? "handoff-create-open" : `handoff-create-open-${group.repoId}`}
+                    data-testid={group.repoId === createRepoId ? "task-create-open" : `task-create-open-${group.repoId}`}
                   >
-                    Create Handoff
+                    Create Task
                   </Button>
                 </div>
               </section>
@@ -1198,8 +1198,8 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                                   <ParagraphSmall marginTop="0" marginBottom="0" color="contentSecondary">
                                     {formatRelativeAge(branch.updatedAt)}
                                   </ParagraphSmall>
-                                  <StatusPill kind={branch.handoffId ? "positive" : "warning"}>
-                                    {branch.handoffId ? "handoff" : "unmapped"}
+                                  <StatusPill kind={branch.taskId ? "positive" : "warning"}>
+                                    {branch.taskId ? "task" : "unmapped"}
                                   </StatusPill>
                                   {branch.trackedInStack ? <StatusPill kind="neutral">stack</StatusPill> : null}
                                 </div>
@@ -1282,7 +1282,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                                     Reparent
                                   </Button>
 
-                                  {!branch.handoffId ? (
+                                  {!branch.taskId ? (
                                     <Button
                                       size="compact"
                                       kind="secondary"
@@ -1292,7 +1292,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                                       }}
                                       data-testid={`repo-overview-create-${branchToken}`}
                                     >
-                                      Create Handoff
+                                      Create Task
                                     </Button>
                                   ) : null}
 
@@ -1332,7 +1332,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                   >
                     <Bot size={16} />
                     <HeadingXSmall marginTop="0" marginBottom="0">
-                      {selectedForSession ? selectedForSession.title ?? "Determining title..." : "No handoff selected"}
+                      {selectedForSession ? selectedForSession.title ?? "Determining title..." : "No task selected"}
                     </HeadingXSmall>
                     {selectedForSession ? (
                       <StatusPill kind={statusKind(selectedForSession.status)}>{selectedForSession.status}</StatusPill>
@@ -1365,7 +1365,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                 })}
               >
                 {!selectedForSession ? (
-                  <EmptyState>Select a handoff from the left sidebar.</EmptyState>
+                  <EmptyState>Select a task from the left sidebar.</EmptyState>
                 ) : (
                   <>
                     <div
@@ -1417,7 +1417,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                                   setActiveSessionId(next);
                                 }
                               }}
-                              overrides={selectTestIdOverrides("handoff-session-select")}
+                              overrides={selectTestIdOverrides("task-session-select")}
                             />
                           </div>
                         ) : null}
@@ -1436,17 +1436,17 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
 
                         {transcript.length === 0 && !eventsQuery.isLoading ? (
                           <EmptyState testId="session-transcript-empty">
-                            {groupHandoffStatus(selectedForSession.status) === "error" && selectedForSession.statusMessage
+                            {groupTaskStatus(selectedForSession.status) === "error" && selectedForSession.statusMessage
                               ? `Session failed: ${selectedForSession.statusMessage}`
                               : !activeSandbox?.sandboxId
                                 ? selectedForSession.statusMessage
                                   ? `Sandbox unavailable: ${selectedForSession.statusMessage}`
-                                  : "This handoff is still provisioning its sandbox."
+                                  : "This task is still provisioning its sandbox."
                               : staleSessionId
                                 ? `Session ${staleSessionId} is unavailable. Start a new session to continue.`
                                 : resolvedSessionId
                                   ? "No transcript events yet. Send a prompt to start this session."
-                                  : "No active session for this handoff."}
+                                  : "No active session for this task."}
                           </EmptyState>
                         ) : null}
 
@@ -1519,7 +1519,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                         placeholder="Send a follow-up prompt to this session"
                         rows={5}
                         disabled={!activeSandbox?.sandboxId}
-                        overrides={textareaTestIdOverrides("handoff-session-prompt")}
+                        overrides={textareaTestIdOverrides("task-session-prompt")}
                       />
                       <div
                         className={css({
@@ -1566,7 +1566,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
         <DetailRail>
           <PanelHeader>
             <HeadingSmall marginTop="0" marginBottom="0">
-              {repoOverviewMode ? "Repo Details" : "Handoff Details"}
+              {repoOverviewMode ? "Repo Details" : "Task Details"}
             </HeadingSmall>
           </PanelHeader>
 
@@ -1619,8 +1619,8 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                         <MetaRow label="Commit" value={selectedBranchOverview.commitSha.slice(0, 10)} mono />
                         <MetaRow label="Diff" value={formatDiffStat(selectedBranchOverview.diffStat)} />
                         <MetaRow
-                          label="Handoff"
-                          value={selectedBranchOverview.handoffTitle ?? selectedBranchOverview.handoffId ?? "-"}
+                          label="Task"
+                          value={selectedBranchOverview.taskTitle ?? selectedBranchOverview.taskId ?? "-"}
                         />
                       </div>
                     )}
@@ -1629,7 +1629,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
               )
             ) : !selectedForSession ? (
               <ParagraphSmall marginTop="0" marginBottom="0" color="contentSecondary">
-                No handoff selected.
+                No task selected.
               </ParagraphSmall>
             ) : (
               <>
@@ -1645,7 +1645,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                       gap: theme.sizing.scale300,
                     })}
                   >
-                    <MetaRow label="Handoff" value={selectedForSession.handoffId} mono />
+                    <MetaRow label="Task" value={selectedForSession.taskId} mono />
                     <MetaRow label="Sandbox" value={selectedForSession.activeSandboxId ?? "-"} mono />
                     <MetaRow label="Session" value={resolvedSessionId ?? "-"} mono />
                   </div>
@@ -1689,7 +1689,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                   </div>
                 </section>
 
-                {groupHandoffStatus(selectedForSession.status) === "error" ? (
+                {groupTaskStatus(selectedForSession.status) === "error" ? (
                   <div
                     className={css({
                       padding: "12px",
@@ -1767,14 +1767,14 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
         </Modal>
 
         <Modal
-          isOpen={createHandoffOpen}
+          isOpen={createTaskOpen}
           onClose={() => {
-            setCreateHandoffOpen(false);
+            setCreateTaskOpen(false);
             setCreateOnBranch(null);
           }}
           overrides={modalOverrides}
         >
-          <ModalHeader>Create Handoff</ModalHeader>
+          <ModalHeader>Create Task</ModalHeader>
           <ModalBody>
             <div
               className={css({
@@ -1784,7 +1784,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
               })}
             >
               <ParagraphSmall marginTop="0" marginBottom="0" color="contentSecondary">
-                Pick a repo, describe the task, and the backend will create a handoff.
+                Pick a repo, describe the task, and the backend will create a task.
               </ParagraphSmall>
 
               <div>
@@ -1803,7 +1803,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                       setCreateRepoId(next);
                     }
                   }}
-                  overrides={selectTestIdOverrides("handoff-create-repo")}
+                  overrides={selectTestIdOverrides("task-create-repo")}
                 />
                 {repos.length === 0 ? (
                   <div
@@ -1826,7 +1826,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                       size="compact"
                       kind="secondary"
                       onClick={() => {
-                        setCreateHandoffOpen(false);
+                        setCreateTaskOpen(false);
                         setAddRepoError(null);
                         setAddRepoOpen(true);
                       }}
@@ -1852,7 +1852,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                       setNewAgentType(next);
                     }
                   }}
-                  overrides={selectTestIdOverrides("handoff-create-agent")}
+                  overrides={selectTestIdOverrides("task-create-agent")}
                 />
               </div>
 
@@ -1865,7 +1865,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                   onChange={(event) => setNewTask(event.target.value)}
                   placeholder="Task"
                   rows={6}
-                  overrides={textareaTestIdOverrides("handoff-create-task")}
+                  overrides={textareaTestIdOverrides("task-create-task")}
                 />
               </div>
 
@@ -1877,7 +1877,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                   placeholder="Title (optional)"
                   value={newTitle}
                   onChange={(event) => setNewTitle(event.target.value)}
-                  overrides={inputTestIdOverrides("handoff-create-title")}
+                  overrides={inputTestIdOverrides("task-create-title")}
                 />
               </div>
 
@@ -1886,19 +1886,19 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                   Branch
                 </LabelXSmall>
                 {createOnBranch ? (
-                  <Input value={createOnBranch} disabled overrides={inputTestIdOverrides("handoff-create-branch")} />
+                  <Input value={createOnBranch} disabled overrides={inputTestIdOverrides("task-create-branch")} />
                 ) : (
                   <Input
                     placeholder="Branch name (optional)"
                     value={newBranchName}
                     onChange={(event) => setNewBranchName(event.target.value)}
-                    overrides={inputTestIdOverrides("handoff-create-branch")}
+                    overrides={inputTestIdOverrides("task-create-branch")}
                   />
                 )}
               </div>
 
               {createError ? (
-                <ParagraphSmall marginTop="0" marginBottom="0" color="negative" data-testid="handoff-create-error">
+                <ParagraphSmall marginTop="0" marginBottom="0" color="negative" data-testid="task-create-error">
                   {createError}
                 </ParagraphSmall>
               ) : null}
@@ -1908,21 +1908,21 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
             <Button
               kind="tertiary"
               onClick={() => {
-                setCreateHandoffOpen(false);
+                setCreateTaskOpen(false);
                 setCreateOnBranch(null);
               }}
             >
               Cancel
             </Button>
             <Button
-              disabled={!canCreateHandoff || createHandoff.isPending}
+              disabled={!canCreateTask || createTask.isPending}
               onClick={() => {
                 setCreateError(null);
-                void createHandoff.mutateAsync();
+                void createTask.mutateAsync();
               }}
-              data-testid="handoff-create-submit"
+              data-testid="task-create-submit"
             >
-              Create Handoff
+              Create Task
             </Button>
           </ModalFooter>
         </Modal>
