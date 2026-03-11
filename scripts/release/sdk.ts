@@ -278,7 +278,8 @@ export async function publishNpmLibraries(opts: ReleaseOpts) {
 	// Exclude CLI and gigacode directories (handled by publishNpmCli)
 	const libraries = all.filter(p => {
 		const rel = relative(opts.root, p.dir);
-		return !rel.startsWith("sdks/cli/") && !rel.startsWith("sdks/gigacode/");
+		return !(rel === "sdks/cli" || rel.startsWith("sdks/cli/")) &&
+			!(rel === "sdks/gigacode" || rel.startsWith("sdks/gigacode/"));
 	});
 
 	const sorted = topoSort(libraries);

@@ -153,7 +153,7 @@ export class SandboxAgentClient {
     // and waiting here can stall session creation long enough to trip handoff init
     // step timeouts even though the session itself was created.
     if (modeId) {
-      void session.send("session/set_mode", { modeId }).catch(() => {
+      void session.rawSend("session/set_mode", { modeId }).catch(() => {
         // ignore
       });
     }
@@ -224,7 +224,7 @@ export class SandboxAgentClient {
     const modeId = modeIdForAgent(this.agent);
     // Keep mode update best-effort and non-blocking for the same reason as createSession.
     if (modeId) {
-      void session.send("session/set_mode", { modeId }).catch(() => {
+      void session.rawSend("session/set_mode", { modeId }).catch(() => {
         // ignore
       });
     }
@@ -271,7 +271,7 @@ export class SandboxAgentClient {
     }
 
     const session = await sdk.resumeSession(sessionId);
-    await session.send("session/cancel", {});
+    await session.rawSend("session/cancel", {});
     this.setStatus(sessionId, "idle");
   }
 
