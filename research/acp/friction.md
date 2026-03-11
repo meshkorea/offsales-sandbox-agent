@@ -247,3 +247,13 @@ Update this file continuously during the migration.
 - Outcome: Accepted (spec updated).
 - Status: in_progress
 - Files: `research/acp/simplify-server.md`, `docs/mcp-config.mdx`, `docs/skills-config.mdx`
+
+- Date: 2026-03-10
+- Commit: uncommitted
+- Author: Unassigned
+- Implementing: ACP HTTP client transport reentrancy for human-in-the-loop requests
+- Friction/issue: The TypeScript `acp-http-client` serialized the full lifetime of each POST on a single write queue. A long-running `session/prompt` request therefore blocked the client from POSTing a response to an agent-initiated `session/request_permission`, deadlocking permission approval flows.
+- Attempted fix/workaround: Make the HTTP transport fire POSTs asynchronously after preserving outbound ordering at enqueue time, rather than waiting for the entire HTTP response before the next write can begin. Keep response bodies routed back into the readable stream so request promises still resolve normally.
+- Outcome: Accepted and implemented in `acp-http-client`.
+- Status: resolved
+- Files: `sdks/acp-http-client/src/index.ts`, `sdks/acp-http-client/tests/smoke.test.ts`, `sdks/typescript/tests/integration.test.ts`

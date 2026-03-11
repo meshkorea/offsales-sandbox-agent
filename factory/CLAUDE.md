@@ -109,7 +109,11 @@ For all Rivet/RivetKit implementation:
    - Do not add `workspaceId`/`repoId`/`handoffId` columns just to "namespace" rows for a given actor instance; use actor state and/or the actor key instead.
    - Example: the `handoff` actor instance already represents `(workspaceId, repoId, handoffId)`, so its SQLite tables should not need those columns for primary keys.
 3. Do not use backend-global SQLite singletons; database access must go through actor `db` providers (`c.db`).
-4. Use published RivetKit npm packages (`"rivetkit": "^2.1.6"` or later). Do not use `link:` dependencies pointing outside the workspace.
+4. Use published RivetKit npm packages (`"rivetkit": "2.1.6"` by default). Do not use `link:` dependencies pointing outside the workspace unless you are doing a temporary local RivetKit debugging pass.
+5. Temporary local relink is allowed only when actively debugging RivetKit against the local checkout at `/Users/nathan/conductor/workspaces/handoff/rivet-checkout`.
+   - Preferred link target: `../rivet-checkout/rivetkit-typescript/packages/rivetkit`
+   - Before using the local checkout, build RivetKit from that repo so the linked package has fresh output.
+   - After the debugging pass, switch dependencies back to the published package version.
 
 ## Inspector HTTP API (Workflow Debugging)
 

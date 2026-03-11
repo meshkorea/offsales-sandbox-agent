@@ -118,7 +118,6 @@ const agents = await client.listAgents();
 await client.createSession("demo", {
   agent: "codex",
   agentMode: "default",
-  permissionMode: "plan",
 });
 
 await client.postMessage("demo", { message: "Hello from the SDK." });
@@ -128,9 +127,7 @@ for await (const event of client.streamEvents("demo", { offset: 0 })) {
 }
 ```
 
-`permissionMode: "acceptEdits"` passes through to Claude, auto-approves file changes for Codex, and is treated as `default` for other agents.
-
-[SDK documentation](https://sandboxagent.dev/docs/sdks/typescript) — [Building a Chat UI](https://sandboxagent.dev/docs/building-chat-ui) — [Managing Sessions](https://sandboxagent.dev/docs/manage-sessions)
+[SDK documentation](https://sandboxagent.dev/docs/sdks/typescript) — [Managing Sessions](https://sandboxagent.dev/docs/manage-sessions)
 
 ### HTTP Server
 
