@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { getMessageClass } from "./messageUtils";
 import type { TimelineEntry } from "./types";
-import { AlertTriangle, ChevronRight, ChevronDown, Wrench, Brain, Info, ExternalLink, PlayCircle } from "lucide-react";
+import { AlertTriangle, ChevronRight, ChevronDown, Wrench, Brain, Info, ExternalLink, PlayCircle, Shield, Check, X } from "lucide-react";
 import MarkdownText from "./MarkdownText";
 
 const ToolItem = ({
@@ -170,6 +170,73 @@ const ToolGroup = ({ entries, onEventClick }: { entries: TimelineEntry[]; onEven
   );
 };
 
+const PermissionPrompt = ({
+  entry,
+  onPermissionReply,
+}: {
+  entry: TimelineEntry;
+  onPermissionReply?: (permissionId: string, reply: "once" | "always" | "reject") => void;
+}) => {
+  const perm = entry.permission;
+  if (!perm) return null;
+
+  const resolved = perm.resolved;
+  const selectedId = perm.selectedOptionId;
+
+  const replyForOption = (kind: string): "once" | "always" | "reject" => {
+    if (kind === "allow_once") return "once";
+    if (kind === "allow_always") return "always";
+    return "reject";
+  };
+
+  const labelForKind = (kind: string, name: string): string => {
+    if (name) return name;
+    if (kind === "allow_once") return "Allow Once";
+    if (kind === "allow_always") return "Always Allow";
+    if (kind === "reject_once") return "Reject";
+    if (kind === "reject_always") return "Reject Always";
+    return kind;
+  };
+
+  const classForKind = (kind: string): string => {
+    if (kind.startsWith("allow")) return "allow";
+    return "reject";
+  };
+
+  return (
+    <div className={`permission-prompt ${resolved ? "resolved" : ""}`}>
+      <div className="permission-header">
+        <Shield size={14} className="permission-icon" />
+        <span className="permission-title">{perm.title}</span>
+      </div>
+      {perm.description && (
+        <div className="permission-description">{perm.description}</div>
+      )}
+      <div className="permission-actions">
+        {perm.options.map((opt) => {
+          const isSelected = resolved && selectedId === opt.optionId;
+          const wasRejected = resolved && !isSelected && selectedId != null;
+          return (
+            <button
+              key={opt.optionId}
+              type="button"
+              className={`permission-btn ${classForKind(opt.kind)} ${isSelected ? "selected" : ""} ${wasRejected ? "dimmed" : ""}`}
+              disabled={resolved}
+              onClick={() => onPermissionReply?.(perm.permissionId, replyForOption(opt.kind))}
+            >
+              {isSelected && (opt.kind.startsWith("allow") ? <Check size={12} /> : <X size={12} />)}
+              {labelForKind(opt.kind, opt.name)}
+            </button>
+          );
+        })}
+        {resolved && !selectedId && (
+          <span className="permission-auto-resolved">Auto-resolved</span>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const agentLogos: Record<string, string> = {
   claude: `${import.meta.env.BASE_URL}logos/claude.svg`,
   codex: `${import.meta.env.BASE_URL}logos/openai.svg`,
@@ -185,7 +252,8 @@ const ChatMessages = ({
   messagesEndRef,
   onEventClick,
   isThinking,
-  agentId
+  agentId,
+  onPermissionReply,
 }: {
   entries: TimelineEntry[];
   sessionError: string | null;
@@ -194,9 +262,10 @@ const ChatMessages = ({
   onEventClick?: (eventId: string) => void;
   isThinking?: boolean;
   agentId?: string;
+  onPermissionReply?: (permissionId: string, reply: "once" | "always" | "reject") => void;
 }) => {
   // Group consecutive tool/reasoning/meta entries together
-  const groupedEntries: Array<{ type: "message" | "tool-group" | "divider"; entries: TimelineEntry[] }> = [];
+  const groupedEntries: Array<{ type: "message" | "tool-group" | "divider" | "permission"; entries: TimelineEntry[] }> = [];
 
   let currentToolGroup: TimelineEntry[] = [];
 
@@ -211,7 +280,10 @@ const ChatMessages = ({
     const isStatusDivider = entry.kind === "meta" &&
       ["Session Started", "Turn Started", "Turn Ended"].includes(entry.meta?.title ?? "");
 
-    if (isStatusDivider) {
+    if (entry.kind === "permission") {
+      flushToolGroup();
+      groupedEntries.push({ type: "permission", entries: [entry] });
+    } else if (isStatusDivider) {
       flushToolGroup();
       groupedEntries.push({ type: "divider", entries: [entry] });
     } else if (entry.kind === "tool" || entry.kind === "reasoning" || (entry.kind === "meta" && entry.meta?.detail)) {
@@ -239,6 +311,17 @@ const ChatMessages = ({
               <span className="status-divider-text">{title}</span>
               <div className="status-divider-line" />
             </div>
+          );
+        }
+
+        if (group.type === "permission") {
+          const entry = group.entries[0];
+          return (
+            <PermissionPrompt
+              key={entry.id}
+              entry={entry}
+              onPermissionReply={onPermissionReply}
+            />
           );
         }
 

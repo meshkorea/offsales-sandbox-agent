@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@openhandoff/shared": "workspace:*",
-    "rivetkit": "link:../../../../../handoff/rivet-checkout/rivetkit-typescript/packages/rivetkit"
+    "rivetkit": "2.1.6"
   },
   "devDependencies": {
     "tsup": "^8.5.0"

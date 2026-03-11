@@ -81,11 +81,12 @@ For all Rivet/RivetKit implementation:
    - Do not add `workspaceId`/`repoId`/`handoffId` columns just to "namespace" rows for a given actor instance; use actor state and/or the actor key instead.
    - Example: the `handoff` actor instance already represents `(workspaceId, repoId, handoffId)`, so its SQLite tables should not need those columns for primary keys.
 3. Do not use backend-global SQLite singletons; database access must go through actor `db` providers (`c.db`).
-4. Do not use published RivetKit npm packages.
-5. RivetKit is linked via pnpm `link:` protocol to `../rivet/rivetkit-typescript/packages/rivetkit`. Sub-packages (`@rivetkit/sqlite-vfs`, etc.) resolve transitively from the rivet workspace.
+4. The default dependency source for RivetKit is the published `rivetkit` package so workspace installs and CI remain self-contained.
+5. When working on coordinated RivetKit changes, you may temporarily relink to a local checkout instead of the published package.
    - Dedicated local checkout for this workspace: `/Users/nathan/conductor/workspaces/handoff/rivet-checkout`
-   - Dev worktree note: when working on RivetKit fixes for this repo, prefer the dedicated local checkout above and link to `../rivet-checkout/rivetkit-typescript/packages/rivetkit`.
-6. Before using, build RivetKit in the rivet repo:
+   - Preferred local link target: `../rivet-checkout/rivetkit-typescript/packages/rivetkit`
+   - Sub-packages (`@rivetkit/sqlite-vfs`, etc.) resolve transitively from the RivetKit workspace when using the local checkout.
+6. Before using a local checkout, build RivetKit in the rivet repo:
    ```bash
    cd ../rivet-checkout/rivetkit-typescript
    pnpm install
