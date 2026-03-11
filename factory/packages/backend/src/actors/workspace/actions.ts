@@ -25,6 +25,8 @@ import type {
   RepoStackActionInput,
   RepoStackActionResult,
   RepoRecord,
+  StarSandboxAgentRepoInput,
+  StarSandboxAgentRepoResult,
   SwitchResult,
   WorkspaceUseInput,
 } from "@openhandoff/shared";
@@ -59,6 +61,7 @@ interface RepoOverviewInput {
 }
 
 const WORKSPACE_QUEUE_NAMES = ["workspace.command.addRepo", "workspace.command.createHandoff", "workspace.command.refreshProviderProfiles"] as const;
+const SANDBOX_AGENT_REPO = "rivet-dev/sandbox-agent";
 
 type WorkspaceQueueName = (typeof WORKSPACE_QUEUE_NAMES)[number];
 
@@ -413,6 +416,16 @@ export const workspaceActions = {
         timeout: 12 * 60_000,
       }),
     );
+  },
+
+  async starSandboxAgentRepo(c: any, input: StarSandboxAgentRepoInput): Promise<StarSandboxAgentRepoResult> {
+    assertWorkspace(c, input.workspaceId);
+    const { driver } = getActorRuntimeContext();
+    await driver.github.starRepository(SANDBOX_AGENT_REPO);
+    return {
+      repo: SANDBOX_AGENT_REPO,
+      starredAt: Date.now(),
+    };
   },
 
   async getWorkbench(c: any, input: WorkspaceUseInput): Promise<HandoffWorkbenchSnapshot> {

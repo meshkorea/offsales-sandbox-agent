@@ -25,6 +25,8 @@ import type {
   RepoStackActionInput,
   RepoStackActionResult,
   RepoRecord,
+  StarSandboxAgentRepoInput,
+  StarSandboxAgentRepoResult,
   SwitchResult,
 } from "@openhandoff/shared";
 import { sandboxInstanceKey, workspaceKey } from "./keys.js";
@@ -76,6 +78,7 @@ interface WorkspaceHandle {
   archiveHandoff(input: { workspaceId: string; handoffId: string; reason?: string }): Promise<void>;
   killHandoff(input: { workspaceId: string; handoffId: string; reason?: string }): Promise<void>;
   useWorkspace(input: { workspaceId: string }): Promise<{ workspaceId: string }>;
+  starSandboxAgentRepo(input: StarSandboxAgentRepoInput): Promise<StarSandboxAgentRepoResult>;
   getWorkbench(input: { workspaceId: string }): Promise<HandoffWorkbenchSnapshot>;
   createWorkbenchHandoff(input: HandoffWorkbenchCreateHandoffInput): Promise<HandoffWorkbenchCreateHandoffResponse>;
   markWorkbenchUnread(input: HandoffWorkbenchSelectInput): Promise<void>;
@@ -197,6 +200,7 @@ export interface BackendClient {
   revertWorkbenchFile(workspaceId: string, input: HandoffWorkbenchDiffInput): Promise<void>;
   health(): Promise<{ ok: true }>;
   useWorkspace(workspaceId: string): Promise<{ workspaceId: string }>;
+  starSandboxAgentRepo(workspaceId: string): Promise<StarSandboxAgentRepoResult>;
 }
 
 export function rivetEndpoint(config: AppConfig): string {
@@ -502,6 +506,10 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 
     async createHandoff(input: CreateHandoffInput): Promise<HandoffRecord> {
       return (await workspace(input.workspaceId)).createHandoff(input);
+    },
+
+    async starSandboxAgentRepo(workspaceId: string): Promise<StarSandboxAgentRepoResult> {
+      return (await workspace(workspaceId)).starSandboxAgentRepo({ workspaceId });
     },
 
     async listHandoffs(workspaceId: string, repoId?: string): Promise<HandoffSummary[]> {
