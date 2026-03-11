@@ -57,7 +57,7 @@
 								"icon": "server",
 								"pages": [
 									"deploy/local",
-									"deploy/factory-self-hosting",
+									"deploy/foundry-self-hosting",
 									"deploy/computesdk",
 									"deploy/e2b",
 									"deploy/daytona",

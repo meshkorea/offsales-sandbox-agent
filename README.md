@@ -157,7 +157,7 @@ sandbox-agent server --no-token --host 127.0.0.1 --port 2468
 
 [Quickstart](https://sandboxagent.dev/docs/quickstart) — [Deployment guides](https://sandboxagent.dev/docs/deploy)
 
-Factory self-hosting setup for auth, GitHub, and billing: [docs/deploy/factory-self-hosting.mdx](docs/deploy/factory-self-hosting.mdx)
+Foundry self-hosting setup for auth, GitHub, and billing: [docs/deploy/foundry-self-hosting.mdx](docs/deploy/foundry-self-hosting.mdx)
 
 ### CLI
 

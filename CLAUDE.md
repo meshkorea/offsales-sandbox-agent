@@ -102,7 +102,7 @@
 - `research/acp/todo.md`
 - `research/friction/rivetkit.md`
 - `research/friction/sandbox-agent-sdk.md`
-- `research/friction/factory.md`
+- `research/friction/foundry.md`
 
 ## Change Tracking
 
@@ -114,7 +114,7 @@
   - `research/acp/friction.md` — ACP protocol, migration, and spec issues.
   - `research/friction/rivetkit.md` — RivetKit runtime, actor model, queues, keys, workflows.
   - `research/friction/sandbox-agent-sdk.md` — Sandbox Agent SDK/API, TypeScript clients, ACP HTTP client.
-  - `research/friction/factory.md` — Factory product development, frontend, backend, client.
+  - `research/friction/foundry.md` — Foundry product development, frontend, backend, client.
 - Friction log entry format (all logs use the same template):
   ```
   - Date:

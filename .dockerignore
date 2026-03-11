@@ -17,7 +17,7 @@ coverage/
 # Environment
 .env
 .env.*
-.sandbox-agent-factory/
+.sandbox-agent-foundry/
 
 # IDE
 .idea/

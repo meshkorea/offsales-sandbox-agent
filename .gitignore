@@ -49,12 +49,14 @@ Cargo.lock
 .claude/
 .opencode/
 .context/
-factory/.context/
+foundry/.context/
+**/.sandbox-agent-factory/
+**/.sandbox-agent-foundry/
 
 # Example temp files
 .tmp-upload/
 *.db
-.sandbox-agent-factory/
+.sandbox-agent-foundry/
 .openhandoff/
 
 # CLI binaries (downloaded during npm publish)
