@@ -1,0 +1,90 @@
+name: foundry
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: foundry/docker/backend.dev.Dockerfile
+    image: foundry-backend-dev
+    working_dir: /app
+    environment:
+      HF_BACKEND_HOST: "0.0.0.0"
+      HF_BACKEND_PORT: "7741"
+      HF_RIVET_MANAGER_PORT: "8750"
+      RIVETKIT_STORAGE_PATH: "/root/.local/share/foundry/rivetkit"
+      # Pass through credentials needed for agent execution + PR creation in dev/e2e.
+      # Do not hardcode secrets; set these in your environment when starting compose.
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      CLAUDE_API_KEY: "${CLAUDE_API_KEY:-${ANTHROPIC_API_KEY:-}}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      # sandbox-agent codex plugin currently expects CODEX_API_KEY. Map from OPENAI_API_KEY for convenience.
+      CODEX_API_KEY: "${CODEX_API_KEY:-${OPENAI_API_KEY:-}}"
+      # Support either GITHUB_TOKEN or GITHUB_PAT in local env files.
+      GITHUB_TOKEN: "${GITHUB_TOKEN:-${GITHUB_PAT:-}}"
+      GH_TOKEN: "${GH_TOKEN:-${GITHUB_TOKEN:-${GITHUB_PAT:-}}}"
+      DAYTONA_ENDPOINT: "${DAYTONA_ENDPOINT:-}"
+      DAYTONA_API_KEY: "${DAYTONA_API_KEY:-}"
+      HF_DAYTONA_ENDPOINT: "${HF_DAYTONA_ENDPOINT:-}"
+      HF_DAYTONA_API_KEY: "${HF_DAYTONA_API_KEY:-}"
+    ports:
+      - "7741:7741"
+      # RivetKit manager (used by browser clients after /api/rivet metadata redirect in dev)
+      - "8750:8750"
+    volumes:
+      - "..:/app"
+      # The linked RivetKit checkout resolves from Foundry packages to /task/rivet-checkout in-container.
+      - "../../../task/rivet-checkout:/task/rivet-checkout:ro"
+      # Reuse the host Codex auth profile for local sandbox-agent Codex sessions in dev.
+      - "${HOME}/.codex:/root/.codex"
+      # Keep backend dependency installs Linux-native instead of using host node_modules.
+      - "foundry_backend_root_node_modules:/app/node_modules"
+      - "foundry_backend_backend_node_modules:/app/foundry/packages/backend/node_modules"
+      - "foundry_backend_shared_node_modules:/app/foundry/packages/shared/node_modules"
+      - "foundry_backend_persist_rivet_node_modules:/app/sdks/persist-rivet/node_modules"
+      - "foundry_backend_typescript_node_modules:/app/sdks/typescript/node_modules"
+      - "foundry_backend_pnpm_store:/root/.local/share/pnpm/store"
+      # Persist backend-managed local git clones across container restarts.
+      - "foundry_git_repos:/root/.local/share/foundry/repos"
+      # Persist RivetKit local storage across container restarts.
+      - "foundry_rivetkit_storage:/root/.local/share/foundry/rivetkit"
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: foundry/docker/frontend.dev.Dockerfile
+    working_dir: /app
+    depends_on:
+      - backend
+    environment:
+      HOME: "/tmp"
+      HF_BACKEND_HTTP: "http://backend:7741"
+    ports:
+      - "4173:4173"
+    volumes:
+      - "..:/app"
+      # Ensure logs in .foundry/ persist on the host even if we change source mounts later.
+      - "./.foundry:/app/foundry/.foundry"
+      - "../../../task/rivet-checkout:/task/rivet-checkout:ro"
+      # Use Linux-native workspace dependencies inside the container instead of host node_modules.
+      - "foundry_node_modules:/app/node_modules"
+      - "foundry_client_node_modules:/app/foundry/packages/client/node_modules"
+      - "foundry_frontend_errors_node_modules:/app/foundry/packages/frontend-errors/node_modules"
+      - "foundry_frontend_node_modules:/app/foundry/packages/frontend/node_modules"
+      - "foundry_shared_node_modules:/app/foundry/packages/shared/node_modules"
+      - "foundry_pnpm_store:/tmp/.local/share/pnpm/store"
+
+volumes:
+  foundry_backend_root_node_modules: {}
+  foundry_backend_backend_node_modules: {}
+  foundry_backend_shared_node_modules: {}
+  foundry_backend_persist_rivet_node_modules: {}
+  foundry_backend_typescript_node_modules: {}
+  foundry_backend_pnpm_store: {}
+  foundry_git_repos: {}
+  foundry_rivetkit_storage: {}
+  foundry_node_modules: {}
+  foundry_client_node_modules: {}
+  foundry_frontend_errors_node_modules: {}
+  foundry_frontend_node_modules: {}
+  foundry_shared_node_modules: {}
+  foundry_pnpm_store: {}
