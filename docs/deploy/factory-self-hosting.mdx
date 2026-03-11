@@ -80,6 +80,8 @@ If your Factory deployment uses GitHub App-backed organization install and repo 
 | `GITHUB_APP_CLIENT_SECRET` | Yes | GitHub App client secret |
 | `GITHUB_APP_PRIVATE_KEY` | Yes | PEM private key for installation auth |
 
+For `.env.development` and `.env.development.local`, store `GITHUB_APP_PRIVATE_KEY` as a quoted single-line value with `\n` escapes instead of raw multi-line PEM text.
+
 Recommended GitHub App permissions:
 
 - Repository `Metadata: Read`
@@ -88,12 +90,18 @@ Recommended GitHub App permissions:
 - Repository `Checks: Read`
 - Repository `Commit statuses: Read`
 
+Set the webhook URL to `https://<your-backend-host>/api/rivet/app/webhooks/github` and generate a webhook secret. Store the secret as `GITHUB_WEBHOOK_SECRET`.
+
 Recommended webhook subscriptions:
 
 - `installation`
 - `installation_repositories`
 - `pull_request`
+- `pull_request_review`
+- `pull_request_review_comment`
 - `push`
+- `create`
+- `delete`
 - `check_suite`
 - `check_run`
 - `status`
@@ -119,6 +127,7 @@ For live billing, configure:
 | `STRIPE_SECRET_KEY` | Yes | Server-side Stripe secret key |
 | `STRIPE_PUBLISHABLE_KEY` | Yes | Client-side Stripe publishable key |
 | `STRIPE_WEBHOOK_SECRET` | Yes | Signing secret for billing webhooks |
+| `STRIPE_PRICE_TEAM` | Yes | Stripe price id for the Team plan checkout session |
 
 Stripe should own:
 

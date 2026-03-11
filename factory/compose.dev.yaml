@@ -32,8 +32,6 @@ services:
       - "8750:8750"
     volumes:
       - "..:/app"
-      # Override HF_RIVET_CHECKOUT_PATH when the linked Rivet workspace lives outside the default sibling checkout.
-      - "${HF_RIVET_CHECKOUT_PATH:-../../../handoff/rivet-checkout}:/handoff/rivet-checkout:ro"
       # Reuse the host Codex auth profile for local sandbox-agent Codex sessions in dev.
       - "${HOME}/.codex:/root/.codex"
       # Keep backend dependency installs Linux-native instead of using host node_modules.
@@ -64,7 +62,6 @@ services:
       - "..:/app"
       # Ensure logs in .sandbox-agent-factory/ persist on the host even if we change source mounts later.
       - "./.sandbox-agent-factory:/app/factory/.sandbox-agent-factory"
-      - "${HF_RIVET_CHECKOUT_PATH:-../../../handoff/rivet-checkout}:/handoff/rivet-checkout:ro"
       # Use Linux-native workspace dependencies inside the container instead of host node_modules.
       - "sandbox-agent-factory_node_modules:/app/node_modules"
       - "sandbox-agent-factory_client_node_modules:/app/factory/packages/client/node_modules"

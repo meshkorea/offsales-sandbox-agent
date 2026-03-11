@@ -1,9 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
 const DEVELOPMENT_ENV_FILES = [".env.development.local", ".env.development"] as const;
 const LOCAL_DEV_BETTER_AUTH_SECRET = "sandbox-agent-factory-development-only-change-me";
 const LOCAL_DEV_APP_URL = "http://localhost:4173";
+
+function decodeQuotedEnvValue(value: string): string {
+  return value.replace(/\\n/g, "\n").replace(/\\r/g, "\r").replace(/\\t/g, "\t");
+}
 
 function loadEnvFile(path: string): void {
   const source = readFileSync(path, "utf8");
@@ -29,7 +33,7 @@ function loadEnvFile(path: string): void {
       (value.startsWith('"') && value.endsWith('"')) ||
       (value.startsWith("'") && value.endsWith("'"))
     ) {
-      value = value.slice(1, -1);
+      value = decodeQuotedEnvValue(value.slice(1, -1));
     }
     process.env[key] = value;
   }
@@ -44,14 +48,27 @@ export function loadDevelopmentEnvFiles(cwd = process.cwd()): string[] {
     return [];
   }
 
-  const loaded: string[] = [];
-  for (const fileName of DEVELOPMENT_ENV_FILES) {
-    const path = resolve(cwd, fileName);
-    if (!existsSync(path)) {
-      continue;
+  const searchDirs: string[] = [];
+  let current = resolve(cwd);
+  for (;;) {
+    searchDirs.push(current);
+    const parent = dirname(current);
+    if (parent === current) {
+      break;
     }
-    loadEnvFile(path);
-    loaded.push(path);
+    current = parent;
+  }
+
+  const loaded: string[] = [];
+  for (const dir of searchDirs) {
+    for (const fileName of DEVELOPMENT_ENV_FILES) {
+      const path = resolve(dir, fileName);
+      if (!existsSync(path) || loaded.includes(path)) {
+        continue;
+      }
+      loadEnvFile(path);
+      loaded.push(path);
+    }
   }
   return loaded;
 }

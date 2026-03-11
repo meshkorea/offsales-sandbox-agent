@@ -141,9 +141,18 @@ factory-frontend-dev host='127.0.0.1' port='4173' backend='http://127.0.0.1:7741
 	VITE_HF_BACKEND_ENDPOINT="{{backend}}" pnpm --filter @sandbox-agent/factory-frontend dev -- --host {{host}} --port {{port}}
 
 [group('factory')]
-factory-dev-mock host='127.0.0.1' port='4173':
+factory-dev-mock:
 	pnpm install
-	FACTORY_FRONTEND_CLIENT_MODE=mock pnpm --filter @sandbox-agent/factory-frontend dev -- --host {{host}} --port {{port}}
+	mkdir -p factory/.sandbox-agent-factory/logs
+	docker compose -f factory/compose.mock.yaml up --build --force-recreate -d
+
+[group('factory')]
+factory-dev-mock-down:
+	docker compose -f factory/compose.mock.yaml down
+
+[group('factory')]
+factory-dev-mock-logs:
+	docker compose -f factory/compose.mock.yaml logs -f --tail=200
 
 [group('factory')]
 factory-dev-turbo:

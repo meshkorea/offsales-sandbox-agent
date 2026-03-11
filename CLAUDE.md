@@ -78,6 +78,9 @@
 - `research/acp/v1-schema-to-acp-mapping.md`
 - `research/acp/friction.md`
 - `research/acp/todo.md`
+- `research/friction/rivetkit.md`
+- `research/friction/sandbox-agent-sdk.md`
+- `research/friction/factory.md`
 
 ## Change Tracking
 
@@ -85,7 +88,32 @@
 - Update `docs/cli.mdx` when CLI behavior changes.
 - Regenerate `docs/openapi.json` when HTTP contracts change.
 - Keep `docs/inspector.mdx` and `docs/sdks/typescript.mdx` aligned with implementation.
-- Append blockers/decisions to `research/acp/friction.md` during ACP work.
+- Append blockers/decisions to the appropriate friction log during work:
+  - `research/acp/friction.md` — ACP protocol, migration, and spec issues.
+  - `research/friction/rivetkit.md` — RivetKit runtime, actor model, queues, keys, workflows.
+  - `research/friction/sandbox-agent-sdk.md` — Sandbox Agent SDK/API, TypeScript clients, ACP HTTP client.
+  - `research/friction/factory.md` — Factory product development, frontend, backend, client.
+- Friction log entry format (all logs use the same template):
+  ```
+  - Date:
+  - Commit: (SHA or `uncommitted`)
+  - Author: (current git user)
+  - Implementing:
+  - Friction/issue:
+  - Attempted fix/workaround:
+  - Outcome:
+  - Status: `open` | `in_progress` | `resolved` | `deferred`
+  - Files:
+  ```
+  - `Date`: the date of the commit or when the entry was written.
+  - `Commit`: the commit SHA associated with the friction, or `uncommitted` if no commit yet.
+  - `Author`: the current git user (`git config user.name`).
+  - `Implementing`: what you were working on when friction was encountered.
+  - `Friction/issue`: the friction or issue encountered.
+  - `Attempted fix/workaround`: what was tried to resolve it.
+  - `Outcome`: the result of the attempt.
+  - `Status`: one of `open`, `in_progress`, `resolved`, or `deferred`.
+  - `Files`: relevant file paths.
 - `docs/agent-capabilities.mdx` lists models/modes/thought levels per agent. Update it when adding a new agent or changing `fallback_config_options`. If its "Last updated" date is >2 weeks old, re-run `cd scripts/agent-configs && npx tsx dump.ts` and update the doc to match. Source data: `scripts/agent-configs/resources/*.json` and hardcoded entries in `server/packages/sandbox-agent/src/router/support.rs` (`fallback_config_options`).
 - Some agent models are gated by subscription (e.g. Claude `opus`). The live report only shows models available to the current credentials. The static doc and JSON resource files should list all known models regardless of subscription tier.
 - TypeScript SDK tests should run against a real running server/runtime over real `/v1` HTTP APIs, typically using the real `mock` agent for deterministic behavior.
