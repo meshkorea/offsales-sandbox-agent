@@ -49,8 +49,8 @@ const TranscriptMessageBody = memo(function TranscriptMessageBody({
           borderTopRightRadius: "16px",
           ...(isUser
             ? {
-                backgroundColor: "#ffffff",
-                color: "#000000",
+                backgroundColor: "rgba(255, 255, 255, 0.10)",
+                color: "#e4e4e7",
                 borderBottomLeftRadius: "16px",
                 borderBottomRightRadius: "4px",
               }
@@ -107,7 +107,7 @@ const TranscriptMessageBody = memo(function TranscriptMessageBody({
           })}
         >
           <Copy size={11} />
-          {isCopied ? "Copied" : "Copy"}
+          {isCopied ? "Copied" : null}
         </button>
       </div>
     </div>

@@ -42,12 +42,18 @@ export const TabStrip = memo(function TabStrip({
 
   return (
     <>
+      <style>{`
+        [data-tab]:hover [data-tab-close] { opacity: 0.5 !important; }
+        [data-tab]:hover [data-tab-close]:hover { opacity: 1 !important; }
+      `}</style>
       <div
         className={css({
           display: "flex",
           alignItems: "stretch",
           borderBottom: `1px solid ${theme.colors.borderOpaque}`,
-          backgroundColor: theme.colors.backgroundSecondary,
+          gap: "4px",
+          backgroundColor: "#09090b",
+          paddingLeft: "6px",
           height: "41px",
           minHeight: "41px",
           overflowX: "auto",
@@ -79,16 +85,20 @@ export const TabStrip = memo(function TabStrip({
                   ...(handoff.tabs.length > 1 ? [{ label: "Close tab", onClick: () => onCloseTab(tab.id) }] : []),
                 ])
               }
+              data-tab
               className={css({
                 display: "flex",
                 alignItems: "center",
                 gap: "6px",
-                padding: "0 14px",
-                borderBottom: isActive ? "2px solid #ff4f00" : "2px solid transparent",
+                padding: "4px 12px",
+                marginTop: "6px",
+                marginBottom: "6px",
+                borderRadius: "8px",
+                backgroundColor: isActive ? "rgba(255, 255, 255, 0.06)" : "transparent",
                 cursor: "pointer",
-                transition: "color 200ms ease, border-color 200ms ease",
+                transition: "color 200ms ease, background-color 200ms ease",
                 flexShrink: 0,
-                ":hover": { color: "#e4e4e7" },
+                ":hover": { color: "#e4e4e7", backgroundColor: isActive ? "rgba(255, 255, 255, 0.06)" : "rgba(255, 255, 255, 0.04)" },
               })}
             >
               <div
@@ -130,7 +140,7 @@ export const TabStrip = memo(function TabStrip({
                   })}
                 />
               ) : (
-                <LabelXSmall color={isActive ? theme.colors.contentPrimary : theme.colors.contentSecondary} $style={{ fontWeight: 600 }}>
+                <LabelXSmall color={isActive ? theme.colors.contentPrimary : theme.colors.contentSecondary} $style={{ fontWeight: 500 }}>
                   {tab.sessionName}
                 </LabelXSmall>
               )}
@@ -138,7 +148,8 @@ export const TabStrip = memo(function TabStrip({
                 <X
                   size={11}
                   color={theme.colors.contentTertiary}
-                  className={css({ cursor: "pointer", opacity: 0.5, ":hover": { opacity: 1 } })}
+                  data-tab-close
+                  className={css({ cursor: "pointer", opacity: 0 })}
                   onClick={(event) => {
                     event.stopPropagation();
                     onCloseTab(tab.id);
@@ -161,29 +172,34 @@ export const TabStrip = memo(function TabStrip({
                   onCloseDiffTab(path);
                 }
               }}
+              data-tab
               className={css({
                 display: "flex",
                 alignItems: "center",
                 gap: "6px",
-                padding: "0 14px",
-                borderBottom: "2px solid transparent",
+                padding: "4px 12px",
+                marginTop: "6px",
+                marginBottom: "6px",
+                borderRadius: "8px",
+                backgroundColor: isActive ? "rgba(255, 255, 255, 0.06)" : "transparent",
                 cursor: "pointer",
-                transition: "color 200ms ease, border-color 200ms ease",
+                transition: "color 200ms ease, background-color 200ms ease",
                 flexShrink: 0,
-                ":hover": { color: "#e4e4e7" },
+                ":hover": { color: "#e4e4e7", backgroundColor: isActive ? "rgba(255, 255, 255, 0.06)" : "rgba(255, 255, 255, 0.04)" },
               })}
             >
               <FileCode size={12} color={isActive ? theme.colors.contentPrimary : theme.colors.contentSecondary} />
               <LabelXSmall
                 color={isActive ? theme.colors.contentPrimary : theme.colors.contentSecondary}
-                $style={{ fontWeight: 600, fontFamily: '"IBM Plex Mono", monospace' }}
+                $style={{ fontWeight: 500, fontFamily: '"IBM Plex Mono", monospace' }}
               >
                 {fileName(path)}
               </LabelXSmall>
               <X
                 size={11}
                 color={theme.colors.contentTertiary}
-                className={css({ cursor: "pointer", opacity: 0.5, ":hover": { opacity: 1 } })}
+                data-tab-close
+                className={css({ cursor: "pointer", opacity: 0 })}
                 onClick={(event) => {
                   event.stopPropagation();
                   onCloseDiffTab(path);

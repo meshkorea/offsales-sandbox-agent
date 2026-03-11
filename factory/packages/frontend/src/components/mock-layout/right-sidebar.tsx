@@ -135,8 +135,8 @@ export const RightSidebar = memo(function RightSidebar({
   );
 
   return (
-    <SPanel>
-      <PanelHeaderBar>
+    <SPanel $style={{ backgroundColor: "#09090b" }}>
+      <PanelHeaderBar $style={{ backgroundColor: "#0f0f11", borderBottom: "none" }}>
         <div className={css({ flex: 1 })} />
         {!isTerminal ? (
           <div className={css({ display: "flex", alignItems: "center", gap: "4px" })}>
@@ -208,12 +208,14 @@ export const RightSidebar = memo(function RightSidebar({
         ) : null}
       </PanelHeaderBar>
 
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", borderTop: `1px solid rgba(255, 255, 255, 0.10)` }}>
       <div
         className={css({
           display: "flex",
           alignItems: "stretch",
+          gap: "4px",
           borderBottom: `1px solid ${theme.colors.borderOpaque}`,
-          backgroundColor: theme.colors.backgroundSecondary,
+          backgroundColor: "#09090b",
           height: "41px",
           minHeight: "41px",
           flexShrink: 0,
@@ -226,19 +228,21 @@ export const RightSidebar = memo(function RightSidebar({
             display: "flex",
             alignItems: "center",
             gap: "6px",
-            height: "100%",
-            padding: "0 16px",
+            padding: "4px 12px",
+            marginTop: "6px",
+            marginBottom: "6px",
+            marginLeft: "6px",
+            borderRadius: "8px",
             cursor: "pointer",
             fontSize: "12px",
-            fontWeight: 600,
+            fontWeight: 500,
             whiteSpace: "nowrap",
             color: rightTab === "changes" ? theme.colors.contentPrimary : theme.colors.contentSecondary,
-            borderBottom: `2px solid ${rightTab === "changes" ? "#ff4f00" : "transparent"}`,
-            marginBottom: "-1px",
-            transitionProperty: "color, border-color",
+            backgroundColor: rightTab === "changes" ? "rgba(255, 255, 255, 0.06)" : "transparent",
+            transitionProperty: "color, background-color",
             transitionDuration: "200ms",
             transitionTimingFunction: "ease",
-            ":hover": { color: "#e4e4e7" },
+            ":hover": { color: "#e4e4e7", backgroundColor: rightTab === "changes" ? "rgba(255, 255, 255, 0.06)" : "rgba(255, 255, 255, 0.04)" },
           })}
         >
           Changes
@@ -268,19 +272,20 @@ export const RightSidebar = memo(function RightSidebar({
             all: "unset",
             display: "flex",
             alignItems: "center",
-            height: "100%",
-            padding: "0 16px",
+            padding: "4px 12px",
+            marginTop: "6px",
+            marginBottom: "6px",
+            borderRadius: "8px",
             cursor: "pointer",
             fontSize: "12px",
-            fontWeight: 600,
+            fontWeight: 500,
             whiteSpace: "nowrap",
             color: rightTab === "files" ? theme.colors.contentPrimary : theme.colors.contentSecondary,
-            borderBottom: `2px solid ${rightTab === "files" ? "#ff4f00" : "transparent"}`,
-            marginBottom: "-1px",
-            transitionProperty: "color, border-color",
+            backgroundColor: rightTab === "files" ? "rgba(255, 255, 255, 0.06)" : "transparent",
+            transitionProperty: "color, background-color",
             transitionDuration: "200ms",
             transitionTimingFunction: "ease",
-            ":hover": { color: "#e4e4e7" },
+            ":hover": { color: "#e4e4e7", backgroundColor: rightTab === "files" ? "rgba(255, 255, 255, 0.06)" : "rgba(255, 255, 255, 0.04)" },
           })}
         >
           All Files
@@ -360,6 +365,7 @@ export const RightSidebar = memo(function RightSidebar({
           </div>
         )}
       </ScrollBody>
+      </div>
       {contextMenu.menu ? <ContextMenuOverlay menu={contextMenu.menu} onClose={contextMenu.close} /> : null}
     </SPanel>
   );

@@ -178,8 +178,8 @@ export const Shell = styled("div", ({ $theme }) => ({
   display: "grid",
   gap: "1px",
   height: "100dvh",
-  backgroundColor: $theme.colors.borderOpaque,
-  gridTemplateColumns: "280px minmax(0, 1fr) 380px",
+  backgroundColor: $theme.colors.backgroundSecondary,
+  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.5fr) 380px",
   overflow: "hidden",
 }));
 
