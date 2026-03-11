@@ -225,4 +225,11 @@ export function ConversationPane({
 }
 ```
 
+Useful `ChatComposer` props:
+
+- `className` and `classNames` for external styling
+- `inputRef` to manage focus or autoresize from the consumer
+- `textareaProps` for lower-level textarea behavior
+- `allowEmptySubmit` when the submit action is valid without draft text, such as a stop button
+
 Use `transcriptProps` and `composerProps` when you want the shared composition but still need custom rendering or behavior. Use `transcriptClassNames` and `composerClassNames` when you want styling hooks for each subcomponent.

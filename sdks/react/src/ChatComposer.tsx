@@ -1,6 +1,6 @@
 "use client";
 
-import type { KeyboardEvent, ReactNode, TextareaHTMLAttributes } from "react";
+import type { KeyboardEvent, ReactNode, Ref, TextareaHTMLAttributes } from "react";
 
 export interface ChatComposerClassNames {
   root: string;
@@ -18,9 +18,11 @@ export interface ChatComposerProps {
   placeholder?: string;
   disabled?: boolean;
   submitDisabled?: boolean;
+  allowEmptySubmit?: boolean;
   submitLabel?: string;
   className?: string;
   classNames?: Partial<ChatComposerClassNames>;
+  inputRef?: Ref<HTMLTextAreaElement>;
   rows?: number;
   textareaProps?: Omit<
     TextareaHTMLAttributes<HTMLTextAreaElement>,
@@ -58,15 +60,17 @@ export const ChatComposer = ({
   placeholder,
   disabled = false,
   submitDisabled = false,
+  allowEmptySubmit = false,
   submitLabel = "Send",
   className,
   classNames: classNameOverrides,
+  inputRef,
   rows = 1,
   textareaProps,
   renderSubmitContent,
 }: ChatComposerProps) => {
   const resolvedClassNames = mergeClassNames(DEFAULT_CLASS_NAMES, classNameOverrides);
-  const isSubmitDisabled = disabled || submitDisabled || message.trim().length === 0;
+  const isSubmitDisabled = disabled || submitDisabled || (!allowEmptySubmit && message.trim().length === 0);
 
   return (
     <div className={cx(resolvedClassNames.root, className)} data-slot="root">
@@ -82,6 +86,7 @@ export const ChatComposer = ({
       >
         <textarea
           {...textareaProps}
+          ref={inputRef}
           className={resolvedClassNames.input}
           data-slot="input"
           data-disabled={disabled ? "true" : undefined}
