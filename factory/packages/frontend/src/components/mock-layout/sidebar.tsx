@@ -1,7 +1,7 @@
 import { memo, useState } from "react";
 import { useStyletron } from "baseui";
 import { LabelSmall, LabelXSmall } from "baseui/typography";
-import { CloudUpload, GitPullRequestDraft, Plus } from "lucide-react";
+import { ChevronDown, ChevronUp, CloudUpload, GitPullRequestDraft, ListChecks, Plus } from "lucide-react";
 
 import { formatRelativeAge, type Handoff, type ProjectSection } from "./view-model";
 import { ContextMenuOverlay, HandoffIndicator, PanelHeaderBar, SPanel, ScrollBody, useContextMenu } from "./ui";
@@ -25,13 +25,22 @@ export const Sidebar = memo(function Sidebar({
 }) {
   const [css, theme] = useStyletron();
   const contextMenu = useContextMenu();
-  const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
+  const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
 
   return (
     <SPanel>
+      <style>{`
+        [data-project-header]:hover [data-chevron] {
+          display: inline-flex !important;
+        }
+      `}</style>
       <PanelHeaderBar>
-        <LabelSmall color={theme.colors.contentPrimary} $style={{ fontWeight: 600, flex: 1, fontSize: "13px" }}>
-          Handoffs
+        <LabelSmall
+          color={theme.colors.contentPrimary}
+          $style={{ fontWeight: 600, flex: 1, fontSize: "13px", display: "flex", alignItems: "center", gap: "6px" }}
+        >
+          <ListChecks size={14} />
+          Tasks
         </LabelSmall>
         <button
           onClick={onCreate}
@@ -56,38 +65,58 @@ export const Sidebar = memo(function Sidebar({
       <ScrollBody>
         <div className={css({ padding: "8px", display: "flex", flexDirection: "column", gap: "4px" })}>
           {projects.map((project) => {
-            const visibleCount = expandedProjects[project.id] ? project.handoffs.length : Math.min(project.handoffs.length, 5);
-            const hiddenCount = Math.max(0, project.handoffs.length - visibleCount);
+            const isCollapsed = collapsedProjects[project.id] === true;
 
             return (
               <div key={project.id} className={css({ display: "flex", flexDirection: "column", gap: "4px" })}>
                 <div
+                  onClick={() =>
+                    setCollapsedProjects((current) => ({
+                      ...current,
+                      [project.id]: !current[project.id],
+                    }))
+                  }
+                  data-project-header
                   className={css({
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
                     padding: "10px 8px 4px",
                     gap: "8px",
+                    cursor: "pointer",
+                    userSelect: "none",
+                    ":hover": { opacity: 0.8 },
                   })}
                 >
-                  <LabelSmall
-                    color={theme.colors.contentSecondary}
-                    $style={{
-                      fontSize: "11px",
-                      fontWeight: 700,
-                      letterSpacing: "0.05em",
-                      textTransform: "uppercase",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {project.label}
-                  </LabelSmall>
-                  <LabelXSmall color={theme.colors.contentTertiary}>{formatRelativeAge(project.updatedAtMs)}</LabelXSmall>
+                  <div className={css({ display: "flex", alignItems: "center", gap: "4px", overflow: "hidden" })}>
+                    <span className={css({ display: "none", flexShrink: 0 })} data-chevron>
+                      {isCollapsed ? (
+                        <ChevronDown size={12} color={theme.colors.contentTertiary} />
+                      ) : (
+                        <ChevronUp size={12} color={theme.colors.contentTertiary} />
+                      )}
+                    </span>
+                    <LabelSmall
+                      color={theme.colors.contentSecondary}
+                      $style={{
+                        fontSize: "11px",
+                        fontWeight: 700,
+                        letterSpacing: "0.05em",
+                        textTransform: "uppercase",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {project.label}
+                    </LabelSmall>
+                  </div>
+                  <LabelXSmall color={theme.colors.contentTertiary}>
+                    {formatRelativeAge(project.updatedAtMs)}
+                  </LabelXSmall>
                 </div>
 
-                {project.handoffs.slice(0, visibleCount).map((handoff) => {
+                {!isCollapsed && project.handoffs.map((handoff) => {
                   const isActive = handoff.id === activeId;
                   const isDim = handoff.status === "archived";
                   const isRunning = handoff.tabs.some((tab) => tab.status === "running");
@@ -103,7 +132,7 @@ export const Sidebar = memo(function Sidebar({
                       onClick={() => onSelect(handoff.id)}
                       onContextMenu={(event) =>
                         contextMenu.open(event, [
-                          { label: "Rename handoff", onClick: () => onRenameHandoff(handoff.id) },
+                          { label: "Rename task", onClick: () => onRenameHandoff(handoff.id) },
                           { label: "Rename branch", onClick: () => onRenameBranch(handoff.id) },
                           { label: "Mark as unread", onClick: () => onMarkUnread(handoff.id) },
                         ])
@@ -111,7 +140,7 @@ export const Sidebar = memo(function Sidebar({
                       className={css({
                         padding: "12px",
                         borderRadius: "8px",
-                        border: isActive ? "1px solid rgba(255, 255, 255, 0.2)" : "1px solid transparent",
+                        border: "1px solid transparent",
                         backgroundColor: isActive ? "rgba(255, 255, 255, 0.06)" : "transparent",
                         cursor: "pointer",
                         transition: "all 200ms ease",
@@ -184,27 +213,6 @@ export const Sidebar = memo(function Sidebar({
                   );
                 })}
 
-                {hiddenCount > 0 ? (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setExpandedProjects((current) => ({
-                        ...current,
-                        [project.id]: true,
-                      }))
-                    }
-                    className={css({
-                      all: "unset",
-                      padding: "8px 12px 10px 34px",
-                      color: theme.colors.contentSecondary,
-                      fontSize: "12px",
-                      cursor: "pointer",
-                      ":hover": { color: theme.colors.contentPrimary },
-                    })}
-                  >
-                    Show {hiddenCount} more
-                  </button>
-                ) : null}
               </div>
             );
           })}
