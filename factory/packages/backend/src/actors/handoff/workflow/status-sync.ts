@@ -26,21 +26,16 @@ export async function statusUpdateActivity(loopCtx: any, body: any): Promise<boo
   const runtime = await db
     .select({
       activeSandboxId: handoffRuntime.activeSandboxId,
-      activeSessionId: handoffRuntime.activeSessionId
+      activeSessionId: handoffRuntime.activeSessionId,
     })
     .from(handoffRuntime)
     .where(eq(handoffRuntime.id, HANDOFF_ROW_ID))
     .get();
 
-  const isActive =
-    runtime?.activeSandboxId === body.sandboxId && runtime?.activeSessionId === body.sessionId;
+  const isActive = runtime?.activeSandboxId === body.sandboxId && runtime?.activeSessionId === body.sessionId;
 
   if (isActive) {
-    await db
-      .update(handoffTable)
-      .set({ status: newStatus, updatedAt: body.at })
-      .where(eq(handoffTable.id, HANDOFF_ROW_ID))
-      .run();
+    await db.update(handoffTable).set({ status: newStatus, updatedAt: body.at }).where(eq(handoffTable.id, HANDOFF_ROW_ID)).run();
 
     await db
       .update(handoffRuntime)
@@ -58,7 +53,7 @@ export async function statusUpdateActivity(loopCtx: any, body: any): Promise<boo
   await appendHistory(loopCtx, "handoff.status", {
     status: body.status,
     sessionId: body.sessionId,
-    sandboxId: body.sandboxId
+    sandboxId: body.sandboxId,
   });
 
   if (isActive) {
@@ -78,11 +73,7 @@ export async function idleSubmitPrActivity(loopCtx: any): Promise<void> {
   const { driver } = getActorRuntimeContext();
   const db = loopCtx.db;
 
-  const self = await db
-    .select({ prSubmitted: handoffTable.prSubmitted })
-    .from(handoffTable)
-    .where(eq(handoffTable.id, HANDOFF_ROW_ID))
-    .get();
+  const self = await db.select({ prSubmitted: handoffTable.prSubmitted }).from(handoffTable).where(eq(handoffTable.id, HANDOFF_ROW_ID)).get();
 
   if (self && self.prSubmitted) return;
 
@@ -93,7 +84,7 @@ export async function idleSubmitPrActivity(loopCtx: any): Promise<void> {
       workspaceId: loopCtx.state.workspaceId,
       repoId: loopCtx.state.repoId,
       handoffId: loopCtx.state.handoffId,
-      error: resolveErrorMessage(error)
+      error: resolveErrorMessage(error),
     });
   }
 
@@ -104,34 +95,26 @@ export async function idleSubmitPrActivity(loopCtx: any): Promise<void> {
   try {
     await pushActiveBranchActivity(loopCtx, {
       reason: "auto_submit_idle",
-      historyKind: "handoff.push.auto"
+      historyKind: "handoff.push.auto",
     });
 
-    const pr = await driver.github.createPr(
-      loopCtx.state.repoLocalPath,
-      loopCtx.state.branchName,
-      loopCtx.state.title
-    );
+    const pr = await driver.github.createPr(loopCtx.state.repoLocalPath, loopCtx.state.branchName, loopCtx.state.title);
 
-    await db
-      .update(handoffTable)
-      .set({ prSubmitted: 1, updatedAt: Date.now() })
-      .where(eq(handoffTable.id, HANDOFF_ROW_ID))
-      .run();
+    await db.update(handoffTable).set({ prSubmitted: 1, updatedAt: Date.now() }).where(eq(handoffTable.id, HANDOFF_ROW_ID)).run();
 
     await appendHistory(loopCtx, "handoff.step", {
       step: "pr_submit",
       handoffId: loopCtx.state.handoffId,
       branchName: loopCtx.state.branchName,
       prUrl: pr.url,
-      prNumber: pr.number
+      prNumber: pr.number,
     });
 
     await appendHistory(loopCtx, "handoff.pr_created", {
       handoffId: loopCtx.state.handoffId,
       branchName: loopCtx.state.branchName,
       prUrl: pr.url,
-      prNumber: pr.number
+      prNumber: pr.number,
     });
   } catch (error) {
     const detail = resolveErrorDetail(error);
@@ -139,7 +122,7 @@ export async function idleSubmitPrActivity(loopCtx: any): Promise<void> {
       .update(handoffRuntime)
       .set({
         statusMessage: `pr submit failed: ${detail}`,
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
       })
       .where(eq(handoffRuntime.id, HANDOFF_ROW_ID))
       .run();
@@ -147,7 +130,7 @@ export async function idleSubmitPrActivity(loopCtx: any): Promise<void> {
     await appendHistory(loopCtx, "handoff.pr_create_failed", {
       handoffId: loopCtx.state.handoffId,
       branchName: loopCtx.state.branchName,
-      error: detail
+      error: detail,
     });
   }
 }

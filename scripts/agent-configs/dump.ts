@@ -87,9 +87,7 @@ for (let i = 0; i < args.length; i++) {
 }
 
 const RESOURCES_DIR = path.join(__dirname, "resources");
-const agents = agentFilter.length
-  ? agentFilter
-  : ["claude", "codex", "opencode", "cursor"];
+const agents = agentFilter.length ? agentFilter : ["claude", "codex", "opencode", "cursor"];
 
 async function main() {
   fs.mkdirSync(RESOURCES_DIR, { recursive: true });
@@ -123,13 +121,8 @@ function writeList(agent: string, list: AgentModelList) {
   fs.writeFileSync(filePath, JSON.stringify(list, null, 2) + "\n");
   const modeCount = list.modes?.length ?? 0;
   const thoughtCount = list.thoughtLevels?.length ?? 0;
-  const extras = [
-    modeCount ? `${modeCount} modes` : null,
-    thoughtCount ? `${thoughtCount} thought levels` : null,
-  ].filter(Boolean).join(", ");
-  console.log(
-    `  Wrote ${list.models.length} models${extras ? `, ${extras}` : ""} to ${filePath} (default: ${list.defaultModel})`
-  );
+  const extras = [modeCount ? `${modeCount} modes` : null, thoughtCount ? `${thoughtCount} thought levels` : null].filter(Boolean).join(", ");
+  console.log(`  Wrote ${list.models.length} models${extras ? `, ${extras}` : ""} to ${filePath} (default: ${list.defaultModel})`);
 }
 
 // ─── Claude ───────────────────────────────────────────────────────────────────
@@ -177,16 +170,12 @@ async function dumpClaude() {
 
   const response = await fetch(ANTHROPIC_API_URL, { headers });
   if (response.status === 401 || response.status === 403) {
-    console.log(
-      `  API returned ${response.status}, using fallback aliases`
-    );
+    console.log(`  API returned ${response.status}, using fallback aliases`);
     writeList("claude", CLAUDE_FALLBACK);
     return;
   }
   if (!response.ok) {
-    throw new Error(
-      `Anthropic API returned ${response.status}: ${await response.text()}`
-    );
+    throw new Error(`Anthropic API returned ${response.status}: ${await response.text()}`);
   }
 
   const body = (await response.json()) as {
@@ -330,9 +319,22 @@ async function dumpCodex() {
     models,
     defaultMode: "read-only",
     modes: [
-      { id: "read-only", name: "Read Only", description: "Codex can read files in the current workspace. Approval is required to edit files or access the internet." },
-      { id: "auto", name: "Default", description: "Codex can read and edit files in the current workspace, and run commands. Approval is required to access the internet or edit other files." },
-      { id: "full-access", name: "Full Access", description: "Codex can edit files outside this workspace and access the internet without asking for approval." },
+      {
+        id: "read-only",
+        name: "Read Only",
+        description: "Codex can read files in the current workspace. Approval is required to edit files or access the internet.",
+      },
+      {
+        id: "auto",
+        name: "Default",
+        description:
+          "Codex can read and edit files in the current workspace, and run commands. Approval is required to access the internet or edit other files.",
+      },
+      {
+        id: "full-access",
+        name: "Full Access",
+        description: "Codex can edit files outside this workspace and access the internet without asking for approval.",
+      },
     ],
     defaultThoughtLevel: "high",
     thoughtLevels: [
@@ -344,10 +346,7 @@ async function dumpCodex() {
   });
 }
 
-function readLineWithTimeout(
-  rl: readline.Interface,
-  timeoutMs: number
-): Promise<string> {
+function readLineWithTimeout(rl: readline.Interface, timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       reject(new Error("readline timeout"));
@@ -368,17 +367,12 @@ function readLineWithTimeout(
 async function dumpOpencode() {
   const baseUrl = opencodeUrl ?? process.env.OPENCODE_URL;
   if (!baseUrl) {
-    console.log(
-      "  Skipped: --opencode-url not provided (set OPENCODE_URL or pass --opencode-url)"
-    );
+    console.log("  Skipped: --opencode-url not provided (set OPENCODE_URL or pass --opencode-url)");
     return;
   }
   console.log(`Fetching OpenCode models from ${baseUrl}...`);
 
-  const endpoints = [
-    `${baseUrl}/config/providers`,
-    `${baseUrl}/provider`,
-  ];
+  const endpoints = [`${baseUrl}/config/providers`, `${baseUrl}/provider`];
 
   for (const url of endpoints) {
     try {
@@ -402,16 +396,14 @@ async function dumpOpencode() {
   throw new Error("OpenCode model endpoints unavailable");
 }
 
-function parseOpencodeProviders(
-  value: Record<string, unknown>
-): AgentModelList | null {
-  const providers = (
-    (value.providers as unknown[]) ?? (value.all as unknown[])
-  ) as Array<{
-    id: string;
-    name?: string;
-    models?: Record<string, { id?: string; name?: string }>;
-  }> | undefined;
+function parseOpencodeProviders(value: Record<string, unknown>): AgentModelList | null {
+  const providers = ((value.providers as unknown[]) ?? (value.all as unknown[])) as
+    | Array<{
+        id: string;
+        name?: string;
+        models?: Record<string, { id?: string; name?: string }>;
+      }>
+    | undefined;
   if (!providers) return null;
 
   const defaultMap = (value.default as Record<string, string>) ?? {};
@@ -455,8 +447,7 @@ function parseOpencodeProviders(
       {
         id: "build",
         name: "Build",
-        description:
-          "The default agent. Executes tools based on configured permissions.",
+        description: "The default agent. Executes tools based on configured permissions.",
       },
       {
         id: "plan",
@@ -473,9 +464,7 @@ async function dumpCursor() {
   console.log("Fetching Cursor models...");
   const binary = cursorPath ?? findBinary("cursor-agent");
   if (!binary) {
-    throw new Error(
-      "cursor-agent binary not found (set --cursor-path or add to PATH)"
-    );
+    throw new Error("cursor-agent binary not found (set --cursor-path or add to PATH)");
   }
   console.log(`  Using binary: ${binary}`);
 
@@ -491,9 +480,7 @@ async function dumpCursor() {
   for (const rawLine of output.split("\n")) {
     // Strip ANSI escape codes
     const line = rawLine.replace(/\x1b\[[0-9;]*[A-Za-z]|\x1b\[?[0-9;]*[A-Za-z]/g, "").trim();
-    const match = line.match(
-      /^(\S+)\s+-\s+(.+?)(?:\s+\((current|default)\))?$/
-    );
+    const match = line.match(/^(\S+)\s+-\s+(.+?)(?:\s+\((current|default)\))?$/);
     if (!match) continue;
     const [, id, name, tag] = match;
     models.push({ id, name: name.trim() });
@@ -503,9 +490,7 @@ async function dumpCursor() {
   }
 
   if (models.length === 0) {
-    throw new Error(
-      "cursor-agent models returned no parseable models"
-    );
+    throw new Error("cursor-agent models returned no parseable models");
   }
 
   writeList("cursor", {
@@ -518,13 +503,7 @@ async function dumpCursor() {
 
 function findBinary(name: string): string | null {
   // Check sandbox-agent install dir
-  const installDir = path.join(
-    process.env.HOME ?? "",
-    ".local",
-    "share",
-    "sandbox-agent",
-    "bin"
-  );
+  const installDir = path.join(process.env.HOME ?? "", ".local", "share", "sandbox-agent", "bin");
   const installed = path.join(installDir, name);
   if (fs.existsSync(installed)) return installed;
 

@@ -8,18 +8,11 @@ import {
   getOrCreateProject,
   getOrCreateSandboxInstance,
   getSandboxInstance,
-  selfHandoff
+  selfHandoff,
 } from "../../handles.js";
 import { logActorWarning, resolveErrorMessage } from "../../logging.js";
 import { handoff as handoffTable, handoffRuntime, handoffSandboxes } from "../db/schema.js";
-import {
-  HANDOFF_ROW_ID,
-  appendHistory,
-  buildAgentPrompt,
-  collectErrorMessages,
-  resolveErrorDetail,
-  setHandoffState
-} from "./common.js";
+import { HANDOFF_ROW_ID, appendHistory, buildAgentPrompt, collectErrorMessages, resolveErrorDetail, setHandoffState } from "./common.js";
 import { handoffWorkflowQueueName } from "./queue.js";
 
 const DEFAULT_INIT_CREATE_SANDBOX_ACTIVITY_TIMEOUT_MS = 180_000;
@@ -43,15 +36,11 @@ function debugInit(loopCtx: any, message: string, context?: Record<string, unkno
     workspaceId: loopCtx.state.workspaceId,
     repoId: loopCtx.state.repoId,
     handoffId: loopCtx.state.handoffId,
-    ...(context ?? {})
+    ...(context ?? {}),
   });
 }
 
-async function withActivityTimeout<T>(
-  timeoutMs: number,
-  label: string,
-  run: () => Promise<T>
-): Promise<T> {
+async function withActivityTimeout<T>(timeoutMs: number, label: string, run: () => Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | null = null;
   try {
     return await Promise.race([
@@ -60,7 +49,7 @@ async function withActivityTimeout<T>(
         timer = setTimeout(() => {
           reject(new Error(`${label} timed out after ${timeoutMs}ms`));
         }, timeoutMs);
-      })
+      }),
     ]);
   } finally {
     if (timer) {
@@ -88,7 +77,7 @@ export async function initBootstrapDbActivity(loopCtx: any, body: any): Promise<
         status: "init_bootstrap_db",
         agentType: loopCtx.state.agentType ?? config.default_agent,
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
       })
       .onConflictDoUpdate({
         target: handoffTable.id,
@@ -99,8 +88,8 @@ export async function initBootstrapDbActivity(loopCtx: any, body: any): Promise<
           providerId,
           status: "init_bootstrap_db",
           agentType: loopCtx.state.agentType ?? config.default_agent,
-          updatedAt: now
-        }
+          updatedAt: now,
+        },
       })
       .run();
 
@@ -113,7 +102,7 @@ export async function initBootstrapDbActivity(loopCtx: any, body: any): Promise<
         activeSwitchTarget: null,
         activeCwd: null,
         statusMessage: initialStatusMessage,
-        updatedAt: now
+        updatedAt: now,
       })
       .onConflictDoUpdate({
         target: handoffRuntime.id,
@@ -123,8 +112,8 @@ export async function initBootstrapDbActivity(loopCtx: any, body: any): Promise<
           activeSwitchTarget: null,
           activeCwd: null,
           statusMessage: initialStatusMessage,
-          updatedAt: now
-        }
+          updatedAt: now,
+        },
       })
       .run();
   } catch (error) {
@@ -155,7 +144,7 @@ export async function initEnsureNameActivity(loopCtx: any): Promise<void> {
   const existing = await loopCtx.db
     .select({
       branchName: handoffTable.branchName,
-      title: handoffTable.title
+      title: handoffTable.title,
     })
     .from(handoffTable)
     .where(eq(handoffTable.id, HANDOFF_ROW_ID))
@@ -175,19 +164,12 @@ export async function initEnsureNameActivity(loopCtx: any): Promise<void> {
       workspaceId: loopCtx.state.workspaceId,
       repoId: loopCtx.state.repoId,
       handoffId: loopCtx.state.handoffId,
-      error: resolveErrorMessage(error)
+      error: resolveErrorMessage(error),
     });
   }
-  const remoteBranches = (await driver.git.listRemoteBranches(loopCtx.state.repoLocalPath)).map(
-    (branch: any) => branch.branchName
-  );
+  const remoteBranches = (await driver.git.listRemoteBranches(loopCtx.state.repoLocalPath)).map((branch: any) => branch.branchName);
 
-  const project = await getOrCreateProject(
-    loopCtx,
-    loopCtx.state.workspaceId,
-    loopCtx.state.repoId,
-    loopCtx.state.repoRemote
-  );
+  const project = await getOrCreateProject(loopCtx, loopCtx.state.workspaceId, loopCtx.state.repoId, loopCtx.state.repoRemote);
   const reservedBranches = await project.listReservedBranches({});
 
   const resolved = resolveCreateFlowDecision({
@@ -195,7 +177,7 @@ export async function initEnsureNameActivity(loopCtx: any): Promise<void> {
     explicitTitle: loopCtx.state.explicitTitle ?? undefined,
     explicitBranchName: loopCtx.state.explicitBranchName ?? undefined,
     localBranches: remoteBranches,
-    handoffBranches: reservedBranches
+    handoffBranches: reservedBranches,
   });
 
   const now = Date.now();
@@ -204,7 +186,7 @@ export async function initEnsureNameActivity(loopCtx: any): Promise<void> {
     .set({
       branchName: resolved.branchName,
       title: resolved.title,
-      updatedAt: now
+      updatedAt: now,
     })
     .where(eq(handoffTable.id, HANDOFF_ROW_ID))
     .run();
@@ -218,19 +200,19 @@ export async function initEnsureNameActivity(loopCtx: any): Promise<void> {
     .update(handoffRuntime)
     .set({
       statusMessage: "provisioning",
-      updatedAt: now
+      updatedAt: now,
     })
     .where(eq(handoffRuntime.id, HANDOFF_ROW_ID))
     .run();
 
   await project.registerHandoffBranch({
     handoffId: loopCtx.state.handoffId,
-    branchName: resolved.branchName
+    branchName: resolved.branchName,
   });
 
   await appendHistory(loopCtx, "handoff.named", {
     title: resolved.title,
-    branchName: resolved.branchName
+    branchName: resolved.branchName,
   });
 }
 
@@ -252,7 +234,7 @@ export async function initCreateSandboxActivity(loopCtx: any, body: any): Promis
   debugInit(loopCtx, "init_create_sandbox started", {
     providerId,
     timeoutMs,
-    supportsSessionReuse: provider.capabilities().supportsSessionReuse
+    supportsSessionReuse: provider.capabilities().supportsSessionReuse,
   });
 
   if (provider.capabilities().supportsSessionReuse) {
@@ -274,18 +256,16 @@ export async function initCreateSandboxActivity(loopCtx: any, body: any): Promis
     if (sandboxId) {
       debugInit(loopCtx, "init_create_sandbox attempting resume", { sandboxId });
       try {
-        const resumed = await withActivityTimeout(
-          timeoutMs,
-          "resumeSandbox",
-          async () => provider.resumeSandbox({
+        const resumed = await withActivityTimeout(timeoutMs, "resumeSandbox", async () =>
+          provider.resumeSandbox({
             workspaceId: loopCtx.state.workspaceId,
-            sandboxId
-          })
+            sandboxId,
+          }),
         );
 
         debugInit(loopCtx, "init_create_sandbox resume succeeded", {
           sandboxId: resumed.sandboxId,
-          durationMs: Date.now() - startedAt
+          durationMs: Date.now() - startedAt,
         });
         return resumed;
       } catch (error) {
@@ -294,39 +274,37 @@ export async function initCreateSandboxActivity(loopCtx: any, body: any): Promis
           repoId: loopCtx.state.repoId,
           handoffId: loopCtx.state.handoffId,
           sandboxId,
-          error: resolveErrorMessage(error)
+          error: resolveErrorMessage(error),
         });
       }
     }
   }
 
   debugInit(loopCtx, "init_create_sandbox creating fresh sandbox", {
-    branchName: loopCtx.state.branchName
+    branchName: loopCtx.state.branchName,
   });
 
   try {
-    const sandbox = await withActivityTimeout(
-      timeoutMs,
-      "createSandbox",
-      async () => provider.createSandbox({
+    const sandbox = await withActivityTimeout(timeoutMs, "createSandbox", async () =>
+      provider.createSandbox({
         workspaceId: loopCtx.state.workspaceId,
         repoId: loopCtx.state.repoId,
         repoRemote: loopCtx.state.repoRemote,
         branchName: loopCtx.state.branchName,
         handoffId: loopCtx.state.handoffId,
-        debug: (message, context) => debugInit(loopCtx, message, context)
-      })
+        debug: (message, context) => debugInit(loopCtx, message, context),
+      }),
     );
 
     debugInit(loopCtx, "init_create_sandbox create succeeded", {
       sandboxId: sandbox.sandboxId,
-      durationMs: Date.now() - startedAt
+      durationMs: Date.now() - startedAt,
     });
     return sandbox;
   } catch (error) {
     debugInit(loopCtx, "init_create_sandbox failed", {
       durationMs: Date.now() - startedAt,
-      error: resolveErrorMessage(error)
+      error: resolveErrorMessage(error),
     });
     throw error;
   }
@@ -339,67 +317,49 @@ export async function initEnsureAgentActivity(loopCtx: any, body: any, sandbox: 
   const provider = providers.get(providerId);
   return await provider.ensureSandboxAgent({
     workspaceId: loopCtx.state.workspaceId,
-    sandboxId: sandbox.sandboxId
+    sandboxId: sandbox.sandboxId,
   });
 }
 
-export async function initStartSandboxInstanceActivity(
-  loopCtx: any,
-  body: any,
-  sandbox: any,
-  agent: any
-): Promise<any> {
+export async function initStartSandboxInstanceActivity(loopCtx: any, body: any, sandbox: any, agent: any): Promise<any> {
   await setHandoffState(loopCtx, "init_start_sandbox_instance", "starting sandbox runtime");
   try {
     const providerId = body?.providerId ?? loopCtx.state.providerId;
-    const sandboxInstance = await getOrCreateSandboxInstance(
-      loopCtx,
-      loopCtx.state.workspaceId,
+    const sandboxInstance = await getOrCreateSandboxInstance(loopCtx, loopCtx.state.workspaceId, providerId, sandbox.sandboxId, {
+      workspaceId: loopCtx.state.workspaceId,
       providerId,
-      sandbox.sandboxId,
-      {
-        workspaceId: loopCtx.state.workspaceId,
-        providerId,
-        sandboxId: sandbox.sandboxId
-      }
-    );
+      sandboxId: sandbox.sandboxId,
+    });
 
     await sandboxInstance.ensure({
       metadata: sandbox.metadata,
       status: "ready",
       agentEndpoint: agent.endpoint,
-      agentToken: agent.token
+      agentToken: agent.token,
     });
 
-    const actorId = typeof (sandboxInstance as any).resolve === "function"
-      ? await (sandboxInstance as any).resolve()
-      : null;
+    const actorId = typeof (sandboxInstance as any).resolve === "function" ? await (sandboxInstance as any).resolve() : null;
 
     return {
       ok: true as const,
-      actorId: typeof actorId === "string" ? actorId : null
+      actorId: typeof actorId === "string" ? actorId : null,
     };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     return {
       ok: false as const,
-      error: `sandbox-instance ensure failed: ${detail}`
+      error: `sandbox-instance ensure failed: ${detail}`,
     };
   }
 }
 
-export async function initCreateSessionActivity(
-  loopCtx: any,
-  body: any,
-  sandbox: any,
-  sandboxInstanceReady: any
-): Promise<any> {
+export async function initCreateSessionActivity(loopCtx: any, body: any, sandbox: any, sandboxInstanceReady: any): Promise<any> {
   await setHandoffState(loopCtx, "init_create_session", "creating agent session");
   if (!sandboxInstanceReady.ok) {
     return {
       id: null,
       status: "error",
-      error: sandboxInstanceReady.error ?? "sandbox instance is not ready"
+      error: sandboxInstanceReady.error ?? "sandbox instance is not ready",
     } as const;
   }
 
@@ -407,10 +367,7 @@ export async function initCreateSessionActivity(
   const providerId = body?.providerId ?? loopCtx.state.providerId;
   const sandboxInstance = getSandboxInstance(loopCtx, loopCtx.state.workspaceId, providerId, sandbox.sandboxId);
 
-  const cwd =
-    sandbox.metadata && typeof (sandbox.metadata as any).cwd === "string"
-      ? ((sandbox.metadata as any).cwd as string)
-      : undefined;
+  const cwd = sandbox.metadata && typeof (sandbox.metadata as any).cwd === "string" ? ((sandbox.metadata as any).cwd as string) : undefined;
 
   return await sandboxInstance.createSession({
     prompt:
@@ -418,32 +375,19 @@ export async function initCreateSessionActivity(
         ? loopCtx.state.initialPrompt
         : buildAgentPrompt(loopCtx.state.task),
     cwd,
-    agent: (loopCtx.state.agentType ?? config.default_agent) as any
+    agent: (loopCtx.state.agentType ?? config.default_agent) as any,
   });
 }
 
-export async function initWriteDbActivity(
+export async function initExposeSandboxActivity(
   loopCtx: any,
   body: any,
   sandbox: any,
-  session: any,
   sandboxInstanceReady?: { actorId?: string | null }
 ): Promise<void> {
-  await setHandoffState(loopCtx, "init_write_db", "persisting handoff runtime");
   const providerId = body?.providerId ?? loopCtx.state.providerId;
-  const { config } = getActorRuntimeContext();
   const now = Date.now();
   const db = loopCtx.db;
-  const sessionId = session?.id ?? null;
-  const sessionHealthy = Boolean(sessionId) && session?.status !== "error";
-  const activeSessionId = sessionHealthy ? sessionId : null;
-  const statusMessage =
-    sessionHealthy
-      ? "session created"
-      : session?.status === "error"
-        ? (session.error ?? "session create failed")
-        : "session unavailable";
-
   const activeCwd =
     sandbox.metadata && typeof (sandbox.metadata as any).cwd === "string"
       ? ((sandbox.metadata as any).cwd as string)
@@ -454,12 +398,70 @@ export async function initWriteDbActivity(
       : null;
 
   await db
+    .insert(handoffSandboxes)
+    .values({
+      sandboxId: sandbox.sandboxId,
+      providerId,
+      sandboxActorId,
+      switchTarget: sandbox.switchTarget,
+      cwd: activeCwd,
+      statusMessage: "sandbox ready",
+      createdAt: now,
+      updatedAt: now
+    })
+    .onConflictDoUpdate({
+      target: handoffSandboxes.sandboxId,
+      set: {
+        providerId,
+        sandboxActorId,
+        switchTarget: sandbox.switchTarget,
+        cwd: activeCwd,
+        statusMessage: "sandbox ready",
+        updatedAt: now
+      }
+    })
+    .run();
+
+  await db
+    .update(handoffRuntime)
+    .set({
+      activeSandboxId: sandbox.sandboxId,
+      activeSwitchTarget: sandbox.switchTarget,
+      activeCwd,
+      statusMessage: "sandbox ready",
+      updatedAt: now
+    })
+    .where(eq(handoffRuntime.id, HANDOFF_ROW_ID))
+    .run();
+}
+
+export async function initWriteDbActivity(
+  loopCtx: any,
+  body: any,
+  sandbox: any,
+  session: any,
+  sandboxInstanceReady?: { actorId?: string | null },
+): Promise<void> {
+  await setHandoffState(loopCtx, "init_write_db", "persisting handoff runtime");
+  const providerId = body?.providerId ?? loopCtx.state.providerId;
+  const { config } = getActorRuntimeContext();
+  const now = Date.now();
+  const db = loopCtx.db;
+  const sessionId = session?.id ?? null;
+  const sessionHealthy = Boolean(sessionId) && session?.status !== "error";
+  const activeSessionId = sessionHealthy ? sessionId : null;
+  const statusMessage = sessionHealthy ? "session created" : session?.status === "error" ? (session.error ?? "session create failed") : "session unavailable";
+
+  const activeCwd = sandbox.metadata && typeof (sandbox.metadata as any).cwd === "string" ? ((sandbox.metadata as any).cwd as string) : null;
+  const sandboxActorId = typeof sandboxInstanceReady?.actorId === "string" && sandboxInstanceReady.actorId.length > 0 ? sandboxInstanceReady.actorId : null;
+
+  await db
     .update(handoffTable)
     .set({
       providerId,
       status: sessionHealthy ? "running" : "error",
       agentType: loopCtx.state.agentType ?? config.default_agent,
-      updatedAt: now
+      updatedAt: now,
     })
     .where(eq(handoffTable.id, HANDOFF_ROW_ID))
     .run();
@@ -474,7 +476,7 @@ export async function initWriteDbActivity(
       cwd: activeCwd,
       statusMessage,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
     })
     .onConflictDoUpdate({
       target: handoffSandboxes.sandboxId,
@@ -484,8 +486,8 @@ export async function initWriteDbActivity(
         switchTarget: sandbox.switchTarget,
         cwd: activeCwd,
         statusMessage,
-        updatedAt: now
-      }
+        updatedAt: now,
+      },
     })
     .run();
 
@@ -498,7 +500,7 @@ export async function initWriteDbActivity(
       activeSwitchTarget: sandbox.switchTarget,
       activeCwd,
       statusMessage,
-      updatedAt: now
+      updatedAt: now,
     })
     .onConflictDoUpdate({
       target: handoffRuntime.id,
@@ -508,18 +510,13 @@ export async function initWriteDbActivity(
         activeSwitchTarget: sandbox.switchTarget,
         activeCwd,
         statusMessage,
-        updatedAt: now
-      }
+        updatedAt: now,
+      },
     })
     .run();
 }
 
-export async function initStartStatusSyncActivity(
-  loopCtx: any,
-  body: any,
-  sandbox: any,
-  session: any
-): Promise<void> {
+export async function initStartStatusSyncActivity(loopCtx: any, body: any, sandbox: any, session: any): Promise<void> {
   const sessionId = session?.id ?? null;
   if (!sessionId || session?.status === "error") {
     return;
@@ -541,8 +538,8 @@ export async function initStartStatusSyncActivity(
       providerId,
       sandboxId: sandbox.sandboxId,
       sessionId,
-      intervalMs: 2_000
-    }
+      intervalMs: 2_000,
+    },
   );
 
   await sync.start();
@@ -561,21 +558,18 @@ export async function initCompleteActivity(loopCtx: any, body: any, sandbox: any
       kind: "handoff.initialized",
       handoffId: loopCtx.state.handoffId,
       branchName: loopCtx.state.branchName,
-      payload: { providerId, sandboxId: sandbox.sandboxId, sessionId }
+      payload: { providerId, sandboxId: sandbox.sandboxId, sessionId },
     });
 
     loopCtx.state.initialized = true;
     return;
   }
 
-  const detail =
-    session?.status === "error"
-      ? (session.error ?? "session create failed")
-      : "session unavailable";
+  const detail = session?.status === "error" ? (session.error ?? "session create failed") : "session unavailable";
   await setHandoffState(loopCtx, "error", detail);
   await appendHistory(loopCtx, "handoff.error", {
     detail,
-    messages: [detail]
+    messages: [detail],
   });
   loopCtx.state.initialized = false;
 }
@@ -599,7 +593,7 @@ export async function initFailedActivity(loopCtx: any, error: unknown): Promise<
       status: "error",
       agentType: loopCtx.state.agentType ?? config.default_agent,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
     })
     .onConflictDoUpdate({
       target: handoffTable.id,
@@ -610,8 +604,8 @@ export async function initFailedActivity(loopCtx: any, error: unknown): Promise<
         providerId,
         status: "error",
         agentType: loopCtx.state.agentType ?? config.default_agent,
-        updatedAt: now
-      }
+        updatedAt: now,
+      },
     })
     .run();
 
@@ -624,7 +618,7 @@ export async function initFailedActivity(loopCtx: any, error: unknown): Promise<
       activeSwitchTarget: null,
       activeCwd: null,
       statusMessage: detail,
-      updatedAt: now
+      updatedAt: now,
     })
     .onConflictDoUpdate({
       target: handoffRuntime.id,
@@ -634,13 +628,13 @@ export async function initFailedActivity(loopCtx: any, error: unknown): Promise<
         activeSwitchTarget: null,
         activeCwd: null,
         statusMessage: detail,
-        updatedAt: now
-      }
+        updatedAt: now,
+      },
     })
     .run();
 
   await appendHistory(loopCtx, "handoff.error", {
     detail,
-    messages
+    messages,
   });
 }

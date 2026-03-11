@@ -54,7 +54,7 @@ async function poll<T>(
   intervalMs: number,
   fn: () => Promise<T>,
   isDone: (value: T) => boolean,
-  onTick?: (value: T) => void
+  onTick?: (value: T) => void,
 ): Promise<T> {
   const start = Date.now();
   let last: T;
@@ -117,7 +117,7 @@ async function debugDump(client: ReturnType<typeof createBackendClient>, workspa
           prSubmitted: handoff.prSubmitted,
         },
         null,
-        2
+        2,
       ),
       "=== history (most recent first) ===",
       historySummary || "(none)",
@@ -143,209 +143,190 @@ async function githubApi(token: string, path: string, init?: RequestInit): Promi
 }
 
 describe("e2e: backend -> sandbox-agent -> git -> PR", () => {
-  it.skipIf(!RUN_E2E)(
-    "creates a handoff, waits for agent to implement, and opens a PR",
-    { timeout: 15 * 60_000 },
-    async () => {
-      const endpoint =
-        process.env.HF_E2E_BACKEND_ENDPOINT?.trim() || "http://127.0.0.1:7741/api/rivet";
-      const workspaceId = process.env.HF_E2E_WORKSPACE?.trim() || "default";
-      const repoRemote = requiredEnv("HF_E2E_GITHUB_REPO");
-      const githubToken = requiredEnv("GITHUB_TOKEN");
+  it.skipIf(!RUN_E2E)("creates a handoff, waits for agent to implement, and opens a PR", { timeout: 15 * 60_000 }, async () => {
+    const endpoint = process.env.HF_E2E_BACKEND_ENDPOINT?.trim() || "http://127.0.0.1:7741/api/rivet";
+    const workspaceId = process.env.HF_E2E_WORKSPACE?.trim() || "default";
+    const repoRemote = requiredEnv("HF_E2E_GITHUB_REPO");
+    const githubToken = requiredEnv("GITHUB_TOKEN");
 
-      const { fullName } = parseGithubRepo(repoRemote);
-      const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-      const expectedFile = `e2e/${runId}.txt`;
+    const { fullName } = parseGithubRepo(repoRemote);
+    const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const expectedFile = `e2e/${runId}.txt`;
 
-      const client = createBackendClient({
-        endpoint,
-        defaultWorkspaceId: workspaceId,
+    const client = createBackendClient({
+      endpoint,
+      defaultWorkspaceId: workspaceId,
+    });
+
+    const repo = await client.addRepo(workspaceId, repoRemote);
+
+    const created = await client.createHandoff({
+      workspaceId,
+      repoId: repo.repoId,
+      task: [
+        "E2E test task:",
+        `1. Create a new file at ${expectedFile} containing the single line: ${runId}`,
+        "2. git add the file",
+        `3. git commit -m \"test(e2e): ${runId}\"`,
+        "4. git push the branch to origin",
+        "5. Stop when done (agent should go idle).",
+      ].join("\n"),
+      providerId: "daytona",
+      explicitTitle: `test(e2e): ${runId}`,
+      explicitBranchName: `e2e/${runId}`,
+    });
+
+    let prNumber: number | null = null;
+    let branchName: string | null = null;
+    let sandboxId: string | null = null;
+    let sessionId: string | null = null;
+    let lastStatus: string | null = null;
+
+    try {
+      const namedAndProvisioned = await poll<HandoffRecord>(
+        "handoff naming + sandbox provisioning",
+        // Cold Daytona snapshot/image preparation can exceed 5 minutes on first run.
+        8 * 60_000,
+        1_000,
+        async () => client.getHandoff(workspaceId, created.handoffId),
+        (h) => Boolean(h.title && h.branchName && h.activeSandboxId),
+        (h) => {
+          if (h.status !== lastStatus) {
+            lastStatus = h.status;
+          }
+          if (h.status === "error") {
+            throw new Error("handoff entered error state during provisioning");
+          }
+        },
+      ).catch(async (err) => {
+        const dump = await debugDump(client, workspaceId, created.handoffId);
+        throw new Error(`${err instanceof Error ? err.message : String(err)}\n${dump}`);
       });
 
-      const repo = await client.addRepo(workspaceId, repoRemote);
+      branchName = namedAndProvisioned.branchName!;
+      sandboxId = namedAndProvisioned.activeSandboxId!;
 
-      const created = await client.createHandoff({
-        workspaceId,
-        repoId: repo.repoId,
-        task: [
-          "E2E test task:",
-          `1. Create a new file at ${expectedFile} containing the single line: ${runId}`,
-          "2. git add the file",
-          `3. git commit -m \"test(e2e): ${runId}\"`,
-          "4. git push the branch to origin",
-          "5. Stop when done (agent should go idle).",
-        ].join("\n"),
-        providerId: "daytona",
-        explicitTitle: `test(e2e): ${runId}`,
-        explicitBranchName: `e2e/${runId}`,
+      const withSession = await poll<HandoffRecord>(
+        "handoff to create active session",
+        3 * 60_000,
+        1_500,
+        async () => client.getHandoff(workspaceId, created.handoffId),
+        (h) => Boolean(h.activeSessionId),
+        (h) => {
+          if (h.status === "error") {
+            throw new Error("handoff entered error state while waiting for active session");
+          }
+        },
+      ).catch(async (err) => {
+        const dump = await debugDump(client, workspaceId, created.handoffId);
+        throw new Error(`${err instanceof Error ? err.message : String(err)}\n${dump}`);
       });
 
-      let prNumber: number | null = null;
-      let branchName: string | null = null;
-      let sandboxId: string | null = null;
-      let sessionId: string | null = null;
-      let lastStatus: string | null = null;
+      sessionId = withSession.activeSessionId!;
 
-      try {
-        const namedAndProvisioned = await poll<HandoffRecord>(
-          "handoff naming + sandbox provisioning",
-          // Cold Daytona snapshot/image preparation can exceed 5 minutes on first run.
-          8 * 60_000,
-          1_000,
-          async () => client.getHandoff(workspaceId, created.handoffId),
-          (h) => Boolean(h.title && h.branchName && h.activeSandboxId),
-          (h) => {
-            if (h.status !== lastStatus) {
-              lastStatus = h.status;
-            }
-            if (h.status === "error") {
-              throw new Error("handoff entered error state during provisioning");
-            }
+      await poll<{ id: string }[]>(
+        "session transcript bootstrap events",
+        2 * 60_000,
+        2_000,
+        async () =>
+          (
+            await client.listSandboxSessionEvents(workspaceId, withSession.providerId, sandboxId!, {
+              sessionId: sessionId!,
+              limit: 40,
+            })
+          ).items,
+        (events) => events.length > 0,
+      ).catch(async (err) => {
+        const dump = await debugDump(client, workspaceId, created.handoffId);
+        throw new Error(`${err instanceof Error ? err.message : String(err)}\n${dump}`);
+      });
+
+      await poll<HandoffRecord>(
+        "handoff to reach idle state",
+        8 * 60_000,
+        2_000,
+        async () => client.getHandoff(workspaceId, created.handoffId),
+        (h) => h.status === "idle",
+        (h) => {
+          if (h.status === "error") {
+            throw new Error("handoff entered error state while waiting for idle");
           }
-        ).catch(async (err) => {
+        },
+      ).catch(async (err) => {
+        const dump = await debugDump(client, workspaceId, created.handoffId);
+        throw new Error(`${err instanceof Error ? err.message : String(err)}\n${dump}`);
+      });
+
+      const prCreatedEvent = await poll<HistoryEvent[]>(
+        "PR creation history event",
+        3 * 60_000,
+        2_000,
+        async () => client.listHistory({ workspaceId, handoffId: created.handoffId, limit: 200 }),
+        (events) => events.some((e) => e.kind === "handoff.pr_created"),
+      )
+        .catch(async (err) => {
           const dump = await debugDump(client, workspaceId, created.handoffId);
           throw new Error(`${err instanceof Error ? err.message : String(err)}\n${dump}`);
-        });
+        })
+        .then((events) => events.find((e) => e.kind === "handoff.pr_created")!);
 
-        branchName = namedAndProvisioned.branchName!;
-        sandboxId = namedAndProvisioned.activeSandboxId!;
+      const payload = parseHistoryPayload(prCreatedEvent);
+      prNumber = Number(payload.prNumber);
+      const prUrl = String(payload.prUrl ?? "");
 
-        const withSession = await poll<HandoffRecord>(
-          "handoff to create active session",
-          3 * 60_000,
-          1_500,
-          async () => client.getHandoff(workspaceId, created.handoffId),
-          (h) => Boolean(h.activeSessionId),
-          (h) => {
-            if (h.status === "error") {
-              throw new Error("handoff entered error state while waiting for active session");
-            }
-          }
-        ).catch(async (err) => {
-          const dump = await debugDump(client, workspaceId, created.handoffId);
-          throw new Error(`${err instanceof Error ? err.message : String(err)}\n${dump}`);
-        });
+      expect(prNumber).toBeGreaterThan(0);
+      expect(prUrl).toContain("/pull/");
 
-        sessionId = withSession.activeSessionId!;
+      const prFilesRes = await githubApi(githubToken, `repos/${fullName}/pulls/${prNumber}/files?per_page=100`, { method: "GET" });
+      if (!prFilesRes.ok) {
+        const body = await prFilesRes.text();
+        throw new Error(`GitHub PR files request failed: ${prFilesRes.status} ${body}`);
+      }
+      const prFiles = (await prFilesRes.json()) as Array<{ filename: string }>;
+      expect(prFiles.some((f) => f.filename === expectedFile)).toBe(true);
 
-        await poll<{ id: string }[]>(
-          "session transcript bootstrap events",
+      // Close the handoff and assert the sandbox is released (stopped).
+      await client.runAction(workspaceId, created.handoffId, "archive");
+
+      await poll<HandoffRecord>(
+        "handoff to become archived (session released)",
+        60_000,
+        1_000,
+        async () => client.getHandoff(workspaceId, created.handoffId),
+        (h) => h.status === "archived" && h.activeSessionId === null,
+      ).catch(async (err) => {
+        const dump = await debugDump(client, workspaceId, created.handoffId);
+        throw new Error(`${err instanceof Error ? err.message : String(err)}\n${dump}`);
+      });
+
+      if (sandboxId) {
+        await poll<{ providerId: string; sandboxId: string; state: string; at: number }>(
+          "daytona sandbox to stop",
           2 * 60_000,
           2_000,
-          async () =>
-            (
-              await client.listSandboxSessionEvents(workspaceId, withSession.providerId, sandboxId!, {
-                sessionId: sessionId!,
-                limit: 40,
-              })
-            ).items,
-          (events) => events.length > 0
+          async () => client.sandboxProviderState(workspaceId, "daytona", sandboxId!),
+          (s) => {
+            const st = String(s.state).toLowerCase();
+            return st.includes("stopped") || st.includes("suspended") || st.includes("paused");
+          },
         ).catch(async (err) => {
           const dump = await debugDump(client, workspaceId, created.handoffId);
-          throw new Error(`${err instanceof Error ? err.message : String(err)}\n${dump}`);
+          const state = await client.sandboxProviderState(workspaceId, "daytona", sandboxId!).catch(() => null);
+          throw new Error(`${err instanceof Error ? err.message : String(err)}\n` + `sandbox state: ${state ? state.state : "unknown"}\n` + `${dump}`);
         });
+      }
+    } finally {
+      if (prNumber && Number.isFinite(prNumber)) {
+        await githubApi(githubToken, `repos/${fullName}/pulls/${prNumber}`, {
+          method: "PATCH",
+          body: JSON.stringify({ state: "closed" }),
+          headers: { "Content-Type": "application/json" },
+        }).catch(() => {});
+      }
 
-        await poll<HandoffRecord>(
-          "handoff to reach idle state",
-          8 * 60_000,
-          2_000,
-          async () => client.getHandoff(workspaceId, created.handoffId),
-          (h) => h.status === "idle",
-          (h) => {
-            if (h.status === "error") {
-              throw new Error("handoff entered error state while waiting for idle");
-            }
-          }
-        ).catch(async (err) => {
-          const dump = await debugDump(client, workspaceId, created.handoffId);
-          throw new Error(`${err instanceof Error ? err.message : String(err)}\n${dump}`);
-        });
-
-        const prCreatedEvent = await poll<HistoryEvent[]>(
-          "PR creation history event",
-          3 * 60_000,
-          2_000,
-          async () => client.listHistory({ workspaceId, handoffId: created.handoffId, limit: 200 }),
-          (events) => events.some((e) => e.kind === "handoff.pr_created")
-        )
-          .catch(async (err) => {
-            const dump = await debugDump(client, workspaceId, created.handoffId);
-            throw new Error(`${err instanceof Error ? err.message : String(err)}\n${dump}`);
-          })
-          .then((events) => events.find((e) => e.kind === "handoff.pr_created")!);
-
-        const payload = parseHistoryPayload(prCreatedEvent);
-        prNumber = Number(payload.prNumber);
-        const prUrl = String(payload.prUrl ?? "");
-
-        expect(prNumber).toBeGreaterThan(0);
-        expect(prUrl).toContain("/pull/");
-
-        const prFilesRes = await githubApi(
-          githubToken,
-          `repos/${fullName}/pulls/${prNumber}/files?per_page=100`,
-          { method: "GET" }
-        );
-        if (!prFilesRes.ok) {
-          const body = await prFilesRes.text();
-          throw new Error(`GitHub PR files request failed: ${prFilesRes.status} ${body}`);
-        }
-        const prFiles = (await prFilesRes.json()) as Array<{ filename: string }>;
-        expect(prFiles.some((f) => f.filename === expectedFile)).toBe(true);
-
-        // Close the handoff and assert the sandbox is released (stopped).
-        await client.runAction(workspaceId, created.handoffId, "archive");
-
-        await poll<HandoffRecord>(
-          "handoff to become archived (session released)",
-          60_000,
-          1_000,
-          async () => client.getHandoff(workspaceId, created.handoffId),
-          (h) => h.status === "archived" && h.activeSessionId === null
-        ).catch(async (err) => {
-          const dump = await debugDump(client, workspaceId, created.handoffId);
-          throw new Error(`${err instanceof Error ? err.message : String(err)}\n${dump}`);
-        });
-
-        if (sandboxId) {
-          await poll<{ providerId: string; sandboxId: string; state: string; at: number }>(
-            "daytona sandbox to stop",
-            2 * 60_000,
-            2_000,
-            async () => client.sandboxProviderState(workspaceId, "daytona", sandboxId!),
-            (s) => {
-              const st = String(s.state).toLowerCase();
-              return st.includes("stopped") || st.includes("suspended") || st.includes("paused");
-            }
-          ).catch(async (err) => {
-            const dump = await debugDump(client, workspaceId, created.handoffId);
-            const state = await client
-              .sandboxProviderState(workspaceId, "daytona", sandboxId!)
-              .catch(() => null);
-            throw new Error(
-              `${err instanceof Error ? err.message : String(err)}\n` +
-                `sandbox state: ${state ? state.state : "unknown"}\n` +
-                `${dump}`
-            );
-          });
-        }
-      } finally {
-        if (prNumber && Number.isFinite(prNumber)) {
-          await githubApi(githubToken, `repos/${fullName}/pulls/${prNumber}`, {
-            method: "PATCH",
-            body: JSON.stringify({ state: "closed" }),
-            headers: { "Content-Type": "application/json" },
-          }).catch(() => {});
-        }
-
-        if (branchName) {
-          await githubApi(
-            githubToken,
-            `repos/${fullName}/git/refs/heads/${encodeURIComponent(branchName)}`,
-            { method: "DELETE" }
-          ).catch(() => {});
-        }
+      if (branchName) {
+        await githubApi(githubToken, `repos/${fullName}/git/refs/heads/${encodeURIComponent(branchName)}`, { method: "DELETE" }).catch(() => {});
       }
     }
-  );
+  });
 });

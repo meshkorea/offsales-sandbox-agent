@@ -50,6 +50,6 @@ describe("frontend error collector script", () => {
       endpoint: "/__openhandoff/frontend-errors/events",
     });
     expect(script).toContain("/__openhandoff/frontend-errors/events");
-    expect(script).toContain("window.addEventListener(\"error\"");
+    expect(script).toContain('window.addEventListener("error"');
   });
 });

@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { motion } from 'framer-motion';
-import { Workflow, Server, Database, Download, Globe, Plug } from 'lucide-react';
+import { motion } from "framer-motion";
+import { Workflow, Server, Database, Download, Globe, Plug } from "lucide-react";
 
 export function FeatureGrid() {
   return (
@@ -44,8 +44,7 @@ export function FeatureGrid() {
               <h4 className="text-base font-normal text-white">Universal Agent API</h4>
             </div>
             <p className="text-zinc-500 leading-relaxed text-base max-w-2xl">
-              Claude Code, Codex, OpenCode, and Amp each have different APIs. We provide a single,
-              unified interface to control them all.
+              Claude Code, Codex, OpenCode, and Amp each have different APIs. We provide a single, unified interface to control them all.
             </p>
           </div>
 
@@ -108,11 +107,11 @@ export function FeatureGrid() {
                 <Plug className="h-4 w-4" />
               </div>
               <h4 className="text-base font-normal text-white">OpenCode Support</h4>
-              <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-medium text-zinc-500 transition-colors group-hover:text-pink-400 group-hover:border-pink-400/30">Experimental</span>
+              <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-medium text-zinc-500 transition-colors group-hover:text-pink-400 group-hover:border-pink-400/30">
+                Experimental
+              </span>
             </div>
-            <p className="text-zinc-500 text-sm leading-relaxed">
-              Connect OpenCode CLI, SDK, or web UI to control agents through familiar OpenCode tooling.
-            </p>
+            <p className="text-zinc-500 text-sm leading-relaxed">Connect OpenCode CLI, SDK, or web UI to control agents through familiar OpenCode tooling.</p>
           </div>
         </motion.div>
       </div>

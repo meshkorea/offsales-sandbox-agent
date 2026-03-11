@@ -1,13 +1,6 @@
 import { useEffect } from "react";
 import { setFrontendErrorContext } from "@openhandoff/frontend-errors/client";
-import {
-  Navigate,
-  Outlet,
-  createRootRoute,
-  createRoute,
-  createRouter,
-  useRouterState,
-} from "@tanstack/react-router";
+import { Navigate, Outlet, createRootRoute, createRoute, createRouter, useRouterState } from "@tanstack/react-router";
 import { MockLayout } from "../components/mock-layout";
 import { defaultWorkspaceId } from "../lib/env";
 import { handoffWorkbenchClient } from "../lib/workbench";
@@ -19,13 +12,7 @@ const rootRoute = createRootRoute({
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: () => (
-    <Navigate
-      to="/workspaces/$workspaceId"
-      params={{ workspaceId: defaultWorkspaceId }}
-      replace
-    />
-  ),
+  component: () => <Navigate to="/workspaces/$workspaceId" params={{ workspaceId: defaultWorkspaceId }} replace />,
 });
 
 const workspaceRoute = createRoute({
@@ -55,10 +42,7 @@ const repoRoute = createRoute({
   component: RepoRoute,
 });
 
-const routeTree = rootRoute.addChildren([
-  indexRoute,
-  workspaceRoute.addChildren([workspaceIndexRoute, handoffRoute, repoRoute]),
-]);
+const routeTree = rootRoute.addChildren([indexRoute, workspaceRoute.addChildren([workspaceIndexRoute, handoffRoute, repoRoute])]);
 
 export const router = createRouter({ routeTree });
 
@@ -105,17 +89,9 @@ function RepoRoute() {
       repoId,
     });
   }, [repoId, workspaceId]);
-  const activeHandoffId = handoffWorkbenchClient.getSnapshot().handoffs.find(
-    (handoff) => handoff.repoId === repoId,
-  )?.id;
+  const activeHandoffId = handoffWorkbenchClient.getSnapshot().handoffs.find((handoff) => handoff.repoId === repoId)?.id;
   if (!activeHandoffId) {
-    return (
-      <Navigate
-        to="/workspaces/$workspaceId"
-        params={{ workspaceId }}
-        replace
-      />
-    );
+    return <Navigate to="/workspaces/$workspaceId" params={{ workspaceId }} replace />;
   }
   return (
     <Navigate

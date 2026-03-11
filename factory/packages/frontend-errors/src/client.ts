@@ -27,13 +27,7 @@ export function setFrontendErrorContext(context: FrontendErrorContext): void {
 function sanitizeContext(input: FrontendErrorContext): FrontendErrorContext {
   const output: FrontendErrorContext = {};
   for (const [key, value] of Object.entries(input)) {
-    if (
-      value === null ||
-      value === undefined ||
-      typeof value === "string" ||
-      typeof value === "number" ||
-      typeof value === "boolean"
-    ) {
+    if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
       output[key] = value;
     }
   }

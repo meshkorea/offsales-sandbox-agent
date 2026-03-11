@@ -10,10 +10,11 @@ import {
   initCreateSessionActivity,
   initEnsureAgentActivity,
   initEnsureNameActivity,
+  initExposeSandboxActivity,
   initFailedActivity,
   initStartSandboxInstanceActivity,
   initStartStatusSyncActivity,
-  initWriteDbActivity
+  initWriteDbActivity,
 } from "./init.js";
 import {
   handleArchiveActivity,
@@ -23,7 +24,7 @@ import {
   handleSimpleCommandActivity,
   handleSwitchActivity,
   killDestroySandboxActivity,
-  killWriteDbActivity
+  killWriteDbActivity,
 } from "./commands.js";
 import { idleNotifyActivity, idleSubmitPrActivity, statusUpdateActivity } from "./status-sync.js";
 import { HANDOFF_QUEUE_NAMES } from "./queue.js";
@@ -57,16 +58,13 @@ const commandHandlers: Record<HandoffQueueName, WorkflowHandler> = {
     await loopCtx.step("init-bootstrap-db", async () => initBootstrapDbActivity(loopCtx, body));
     await loopCtx.removed("init-enqueue-provision", "step");
     await loopCtx.removed("init-dispatch-provision-v2", "step");
-    const currentRecord = await loopCtx.step(
-      "init-read-current-record",
-      async () => getCurrentRecord(loopCtx)
-    );
+    const currentRecord = await loopCtx.step("init-read-current-record", async () => getCurrentRecord(loopCtx));
 
     try {
       await msg.complete(currentRecord);
     } catch (error) {
       logActorWarning("handoff.workflow", "initialize completion failed", {
-        error: resolveErrorMessage(error)
+        error: resolveErrorMessage(error),
       });
     }
   },
@@ -93,16 +91,17 @@ const commandHandlers: Record<HandoffQueueName, WorkflowHandler> = {
         timeout: 60_000,
         run: async () => initStartSandboxInstanceActivity(loopCtx, body, sandbox, agent),
       });
+      await loopCtx.step(
+        "init-expose-sandbox",
+        async () => initExposeSandboxActivity(loopCtx, body, sandbox, sandboxInstanceReady),
+      );
       const session = await loopCtx.step({
         name: "init-create-session",
         timeout: 180_000,
         run: async () => initCreateSessionActivity(loopCtx, body, sandbox, sandboxInstanceReady),
       });
 
-      await loopCtx.step(
-        "init-write-db",
-        async () => initWriteDbActivity(loopCtx, body, sandbox, session, sandboxInstanceReady)
-      );
+      await loopCtx.step("init-write-db", async () => initWriteDbActivity(loopCtx, body, sandbox, session, sandboxInstanceReady));
       await loopCtx.step("init-start-status-sync", async () => initStartStatusSyncActivity(loopCtx, body, sandbox, session));
       await loopCtx.step("init-complete", async () => initCompleteActivity(loopCtx, body, sandbox, session));
       await msg.complete({ ok: true });
@@ -125,17 +124,11 @@ const commandHandlers: Record<HandoffQueueName, WorkflowHandler> = {
   },
 
   "handoff.command.sync": async (loopCtx, msg) => {
-    await loopCtx.step(
-      "handle-sync",
-      async () => handleSimpleCommandActivity(loopCtx, msg, "sync requested", "handoff.sync")
-    );
+    await loopCtx.step("handle-sync", async () => handleSimpleCommandActivity(loopCtx, msg, "sync requested", "handoff.sync"));
   },
 
   "handoff.command.merge": async (loopCtx, msg) => {
-    await loopCtx.step(
-      "handle-merge",
-      async () => handleSimpleCommandActivity(loopCtx, msg, "merge requested", "handoff.merge")
-    );
+    await loopCtx.step("handle-merge", async () => handleSimpleCommandActivity(loopCtx, msg, "merge requested", "handoff.merge"));
   },
 
   "handoff.command.archive": async (loopCtx, msg) => {
@@ -180,30 +173,22 @@ const commandHandlers: Record<HandoffQueueName, WorkflowHandler> = {
   },
 
   "handoff.command.workbench.rename_session": async (loopCtx, msg) => {
-    await loopCtx.step("workbench-rename-session", async () =>
-      renameWorkbenchSession(loopCtx, msg.body.sessionId, msg.body.title),
-    );
+    await loopCtx.step("workbench-rename-session", async () => renameWorkbenchSession(loopCtx, msg.body.sessionId, msg.body.title));
     await msg.complete({ ok: true });
   },
 
   "handoff.command.workbench.set_session_unread": async (loopCtx, msg) => {
-    await loopCtx.step("workbench-set-session-unread", async () =>
-      setWorkbenchSessionUnread(loopCtx, msg.body.sessionId, msg.body.unread),
-    );
+    await loopCtx.step("workbench-set-session-unread", async () => setWorkbenchSessionUnread(loopCtx, msg.body.sessionId, msg.body.unread));
     await msg.complete({ ok: true });
   },
 
   "handoff.command.workbench.update_draft": async (loopCtx, msg) => {
-    await loopCtx.step("workbench-update-draft", async () =>
-      updateWorkbenchDraft(loopCtx, msg.body.sessionId, msg.body.text, msg.body.attachments),
-    );
+    await loopCtx.step("workbench-update-draft", async () => updateWorkbenchDraft(loopCtx, msg.body.sessionId, msg.body.text, msg.body.attachments));
     await msg.complete({ ok: true });
   },
 
   "handoff.command.workbench.change_model": async (loopCtx, msg) => {
-    await loopCtx.step("workbench-change-model", async () =>
-      changeWorkbenchModel(loopCtx, msg.body.sessionId, msg.body.model),
-    );
+    await loopCtx.step("workbench-change-model", async () => changeWorkbenchModel(loopCtx, msg.body.sessionId, msg.body.model));
     await msg.complete({ ok: true });
   },
 
@@ -226,9 +211,7 @@ const commandHandlers: Record<HandoffQueueName, WorkflowHandler> = {
   },
 
   "handoff.command.workbench.sync_session_status": async (loopCtx, msg) => {
-    await loopCtx.step("workbench-sync-session-status", async () =>
-      syncWorkbenchSessionStatus(loopCtx, msg.body.sessionId, msg.body.status, msg.body.at),
-    );
+    await loopCtx.step("workbench-sync-session-status", async () => syncWorkbenchSessionStatus(loopCtx, msg.body.sessionId, msg.body.status, msg.body.at));
     await msg.complete({ ok: true });
   },
 
@@ -269,14 +252,14 @@ const commandHandlers: Record<HandoffQueueName, WorkflowHandler> = {
       }
       await loopCtx.step("idle-notify", async () => idleNotifyActivity(loopCtx));
     }
-  }
+  },
 };
 
 export async function runHandoffWorkflow(ctx: any): Promise<void> {
   await ctx.loop("handoff-command-loop", async (loopCtx: any) => {
     const msg = await loopCtx.queue.next("next-command", {
       names: [...HANDOFF_QUEUE_NAMES],
-      completable: true
+      completable: true,
     });
     if (!msg) {
       return Loop.continue(undefined);

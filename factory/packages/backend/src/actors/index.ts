@@ -35,10 +35,10 @@ export const registry = setup({
     history,
     projectPrSync,
     projectBranchSync,
-    handoffStatusSync
+    handoffStatusSync,
   },
   managerPort: resolveManagerPort(),
-  managerHost: resolveManagerHost()
+  managerHost: resolveManagerHost(),
 });
 
 export * from "./context.js";

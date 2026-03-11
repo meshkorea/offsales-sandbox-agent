@@ -32,7 +32,7 @@ const CONTROL = {
   start: "handoff.status_sync.control.start",
   stop: "handoff.status_sync.control.stop",
   setInterval: "handoff.status_sync.control.set_interval",
-  force: "handoff.status_sync.control.force"
+  force: "handoff.status_sync.control.force",
 } as const;
 
 async function pollSessionStatus(c: { state: HandoffStatusSyncState }): Promise<void> {
@@ -43,7 +43,7 @@ async function pollSessionStatus(c: { state: HandoffStatusSyncState }): Promise<
   await parent.syncWorkbenchSessionStatus({
     sessionId: c.state.sessionId,
     status: status.status,
-    at: Date.now()
+    at: Date.now(),
   });
 }
 
@@ -56,7 +56,7 @@ export const handoffStatusSync = actor({
   },
   options: {
     // Polling actors rely on timer-based wakeups; sleeping would pause the timer and stop polling.
-    noSleep: true
+    noSleep: true,
   },
   createState: (_c, input: HandoffStatusSyncInput): HandoffStatusSyncState => ({
     workspaceId: input.workspaceId,
@@ -66,7 +66,7 @@ export const handoffStatusSync = actor({
     sandboxId: input.sandboxId,
     sessionId: input.sessionId,
     intervalMs: input.intervalMs,
-    running: true
+    running: true,
   }),
   actions: {
     async start(c): Promise<void> {
@@ -87,7 +87,7 @@ export const handoffStatusSync = actor({
     async force(c): Promise<void> {
       const self = selfHandoffStatusSync(c);
       await self.send(CONTROL.force, {}, { wait: true, timeout: 5 * 60_000 });
-    }
+    },
   },
   run: workflow(async (ctx) => {
     await runWorkflowPollingLoop<HandoffStatusSyncState>(ctx, {
@@ -99,10 +99,10 @@ export const handoffStatusSync = actor({
         } catch (error) {
           logActorWarning("handoff-status-sync", "poll failed", {
             error: resolveErrorMessage(error),
-            stack: resolveErrorStack(error)
+            stack: resolveErrorStack(error),
           });
         }
-      }
+      },
     });
-  })
+  }),
 });

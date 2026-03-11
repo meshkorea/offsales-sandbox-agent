@@ -3,7 +3,15 @@ import { eq } from "drizzle-orm";
 import { actor, queue } from "rivetkit";
 import { Loop, workflow } from "rivetkit/workflow";
 import type { ProviderId } from "@openhandoff/shared";
-import type { SessionEvent, SessionRecord } from "sandbox-agent";
+import type {
+  ProcessCreateRequest,
+  ProcessInfo,
+  ProcessLogFollowQuery,
+  ProcessLogsResponse,
+  ProcessSignalQuery,
+  SessionEvent,
+  SessionRecord,
+} from "sandbox-agent";
 import { sandboxInstanceDb } from "./db/db.js";
 import { sandboxInstance as sandboxInstanceTable } from "./db/schema.js";
 import { SandboxInstancePersistDriver } from "./persist.js";
@@ -18,14 +26,17 @@ export interface SandboxInstanceInput {
   sandboxId: string;
 }
 
+interface SandboxAgentConnection {
+  endpoint: string;
+  token?: string;
+}
+
 const SANDBOX_ROW_ID = 1;
 const CREATE_SESSION_MAX_ATTEMPTS = 3;
 const CREATE_SESSION_RETRY_BASE_MS = 1_000;
 const CREATE_SESSION_STEP_TIMEOUT_MS = 10 * 60_000;
 
-function normalizeStatusFromEventPayload(
-  payload: unknown,
-): "running" | "idle" | "error" | null {
+function normalizeStatusFromEventPayload(payload: unknown): "running" | "idle" | "error" | null {
   if (payload && typeof payload === "object") {
     const envelope = payload as {
       error?: unknown;
@@ -49,11 +60,7 @@ function normalizeStatusFromEventPayload(
       if (lowered.includes("error") || lowered.includes("failed")) {
         return "error";
       }
-      if (
-        lowered.includes("ended") ||
-        lowered.includes("complete") ||
-        lowered.includes("stopped")
-      ) {
+      if (lowered.includes("ended") || lowered.includes("complete") || lowered.includes("stopped")) {
         return "idle";
       }
     }
@@ -79,7 +86,7 @@ function parseMetadata(metadataJson: string): Record<string, unknown> {
   }
 }
 
-async function loadPersistedAgentConfig(c: any): Promise<{ endpoint: string; token?: string } | null> {
+async function loadPersistedAgentConfig(c: any): Promise<SandboxAgentConnection | null> {
   try {
     const row = await c.db
       .select({ metadataJson: sandboxInstanceTable.metadataJson })
@@ -101,7 +108,7 @@ async function loadPersistedAgentConfig(c: any): Promise<{ endpoint: string; tok
   return null;
 }
 
-async function loadFreshDaytonaAgentConfig(c: any): Promise<{ endpoint: string; token?: string }> {
+async function loadFreshDaytonaAgentConfig(c: any): Promise<SandboxAgentConnection> {
   const { config, driver } = getActorRuntimeContext();
   const daytona = driver.daytona.createClient({
     apiUrl: config.providers.daytona.endpoint,
@@ -116,7 +123,7 @@ async function loadFreshDaytonaAgentConfig(c: any): Promise<{ endpoint: string; 
   return preview.token ? { endpoint: preview.url, token: preview.token } : { endpoint: preview.url };
 }
 
-async function loadFreshProviderAgentConfig(c: any): Promise<{ endpoint: string; token?: string }> {
+async function loadFreshProviderAgentConfig(c: any): Promise<SandboxAgentConnection> {
   const { providers } = getActorRuntimeContext();
   const provider = providers.get(c.state.providerId);
   return await provider.ensureSandboxAgent({
@@ -125,7 +132,7 @@ async function loadFreshProviderAgentConfig(c: any): Promise<{ endpoint: string;
   });
 }
 
-async function loadAgentConfig(c: any): Promise<{ endpoint: string; token?: string }> {
+async function loadAgentConfig(c: any): Promise<SandboxAgentConnection> {
   const persisted = await loadPersistedAgentConfig(c);
   if (c.state.providerId === "daytona") {
     // Keep one stable signed preview endpoint per sandbox-instance actor.
@@ -183,12 +190,7 @@ async function derivePersistedSessionStatus(
 
 function isTransientSessionCreateError(detail: string): boolean {
   const lowered = detail.toLowerCase();
-  if (
-    lowered.includes("timed out") ||
-    lowered.includes("timeout") ||
-    lowered.includes("504") ||
-    lowered.includes("gateway timeout")
-  ) {
+  if (lowered.includes("timed out") || lowered.includes("timeout") || lowered.includes("504") || lowered.includes("gateway timeout")) {
     // ACP timeout errors are expensive and usually deterministic for the same
     // request; immediate retries spawn additional sessions/processes and make
     // recovery harder.
@@ -196,11 +198,7 @@ function isTransientSessionCreateError(detail: string): boolean {
   }
 
   return (
-    lowered.includes("502") ||
-    lowered.includes("503") ||
-    lowered.includes("bad gateway") ||
-    lowered.includes("econnreset") ||
-    lowered.includes("econnrefused")
+    lowered.includes("502") || lowered.includes("503") || lowered.includes("bad gateway") || lowered.includes("econnreset") || lowered.includes("econnrefused")
   );
 }
 
@@ -265,9 +263,7 @@ const SANDBOX_INSTANCE_QUEUE_NAMES = [
 
 type SandboxInstanceQueueName = (typeof SANDBOX_INSTANCE_QUEUE_NAMES)[number];
 
-function sandboxInstanceWorkflowQueueName(
-  name: SandboxInstanceQueueName,
-): SandboxInstanceQueueName {
+function sandboxInstanceWorkflowQueueName(name: SandboxInstanceQueueName): SandboxInstanceQueueName {
   return name;
 }
 
@@ -279,6 +275,13 @@ async function getSandboxAgentClient(c: any) {
     endpoint,
     token,
     persist,
+  });
+}
+
+function broadcastProcessesUpdated(c: any): void {
+  c.broadcast("processesUpdated", {
+    sandboxId: c.state.sandboxId,
+    at: Date.now(),
   });
 }
 
@@ -297,15 +300,15 @@ async function ensureSandboxMutation(c: any, command: EnsureSandboxCommand): Pro
       id: SANDBOX_ROW_ID,
       metadataJson,
       status: command.status,
-      updatedAt: now
+      updatedAt: now,
     })
     .onConflictDoUpdate({
       target: sandboxInstanceTable.id,
       set: {
         metadataJson,
         status: command.status,
-        updatedAt: now
-      }
+        updatedAt: now,
+      },
     })
     .run();
 }
@@ -315,17 +318,14 @@ async function updateHealthMutation(c: any, command: HealthSandboxCommand): Prom
     .update(sandboxInstanceTable)
     .set({
       status: `${command.status}:${command.message}`,
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
     })
     .where(eq(sandboxInstanceTable.id, SANDBOX_ROW_ID))
     .run();
 }
 
 async function destroySandboxMutation(c: any): Promise<void> {
-  await c.db
-    .delete(sandboxInstanceTable)
-    .where(eq(sandboxInstanceTable.id, SANDBOX_ROW_ID))
-    .run();
+  await c.db.delete(sandboxInstanceTable).where(eq(sandboxInstanceTable.id, SANDBOX_ROW_ID)).run();
 }
 
 async function createSessionMutation(c: any, command: CreateSessionCommand): Promise<CreateSessionResult> {
@@ -362,7 +362,7 @@ async function createSessionMutation(c: any, command: CreateSessionCommand): Pro
         attempt,
         maxAttempts: CREATE_SESSION_MAX_ATTEMPTS,
         waitMs,
-        error: detail
+        error: detail,
       });
       await delay(waitMs);
     }
@@ -372,7 +372,7 @@ async function createSessionMutation(c: any, command: CreateSessionCommand): Pro
   return {
     id: null,
     status: "error",
-    error: `sandbox-agent createSession failed after ${attemptsMade} ${attemptLabel}: ${lastDetail}`
+    error: `sandbox-agent createSession failed after ${attemptsMade} ${attemptLabel}: ${lastDetail}`,
   };
 }
 
@@ -405,62 +405,50 @@ async function runSandboxInstanceWorkflow(ctx: any): Promise<void> {
       return Loop.continue(undefined);
     }
 
-      if (msg.name === "sandboxInstance.command.ensure") {
-        await loopCtx.step("sandbox-instance-ensure", async () =>
-          ensureSandboxMutation(loopCtx, msg.body as EnsureSandboxCommand),
-        );
-        await msg.complete({ ok: true });
-        return Loop.continue(undefined);
-      }
+    if (msg.name === "sandboxInstance.command.ensure") {
+      await loopCtx.step("sandbox-instance-ensure", async () => ensureSandboxMutation(loopCtx, msg.body as EnsureSandboxCommand));
+      await msg.complete({ ok: true });
+      return Loop.continue(undefined);
+    }
 
-      if (msg.name === "sandboxInstance.command.updateHealth") {
-        await loopCtx.step("sandbox-instance-update-health", async () =>
-          updateHealthMutation(loopCtx, msg.body as HealthSandboxCommand),
-        );
-        await msg.complete({ ok: true });
-        return Loop.continue(undefined);
-      }
+    if (msg.name === "sandboxInstance.command.updateHealth") {
+      await loopCtx.step("sandbox-instance-update-health", async () => updateHealthMutation(loopCtx, msg.body as HealthSandboxCommand));
+      await msg.complete({ ok: true });
+      return Loop.continue(undefined);
+    }
 
-      if (msg.name === "sandboxInstance.command.destroy") {
-        await loopCtx.step("sandbox-instance-destroy", async () =>
-          destroySandboxMutation(loopCtx),
-        );
-        await msg.complete({ ok: true });
-        return Loop.continue(undefined);
-      }
+    if (msg.name === "sandboxInstance.command.destroy") {
+      await loopCtx.step("sandbox-instance-destroy", async () => destroySandboxMutation(loopCtx));
+      await msg.complete({ ok: true });
+      return Loop.continue(undefined);
+    }
 
-      if (msg.name === "sandboxInstance.command.createSession") {
-        const result = await loopCtx.step({
-          name: "sandbox-instance-create-session",
-          timeout: CREATE_SESSION_STEP_TIMEOUT_MS,
-          run: async () => createSessionMutation(loopCtx, msg.body as CreateSessionCommand),
-        });
-        await msg.complete(result);
-        return Loop.continue(undefined);
-      }
+    if (msg.name === "sandboxInstance.command.createSession") {
+      const result = await loopCtx.step({
+        name: "sandbox-instance-create-session",
+        timeout: CREATE_SESSION_STEP_TIMEOUT_MS,
+        run: async () => createSessionMutation(loopCtx, msg.body as CreateSessionCommand),
+      });
+      await msg.complete(result);
+      return Loop.continue(undefined);
+    }
 
-      if (msg.name === "sandboxInstance.command.sendPrompt") {
-        await loopCtx.step("sandbox-instance-send-prompt", async () =>
-          sendPromptMutation(loopCtx, msg.body as SendPromptCommand),
-        );
-        await msg.complete({ ok: true });
-        return Loop.continue(undefined);
-      }
+    if (msg.name === "sandboxInstance.command.sendPrompt") {
+      await loopCtx.step("sandbox-instance-send-prompt", async () => sendPromptMutation(loopCtx, msg.body as SendPromptCommand));
+      await msg.complete({ ok: true });
+      return Loop.continue(undefined);
+    }
 
-      if (msg.name === "sandboxInstance.command.cancelSession") {
-        await loopCtx.step("sandbox-instance-cancel-session", async () =>
-          cancelSessionMutation(loopCtx, msg.body as SessionControlCommand),
-        );
-        await msg.complete({ ok: true });
-        return Loop.continue(undefined);
-      }
+    if (msg.name === "sandboxInstance.command.cancelSession") {
+      await loopCtx.step("sandbox-instance-cancel-session", async () => cancelSessionMutation(loopCtx, msg.body as SessionControlCommand));
+      await msg.complete({ ok: true });
+      return Loop.continue(undefined);
+    }
 
-      if (msg.name === "sandboxInstance.command.destroySession") {
-        await loopCtx.step("sandbox-instance-destroy-session", async () =>
-          destroySessionMutation(loopCtx, msg.body as SessionControlCommand),
-        );
-        await msg.complete({ ok: true });
-      }
+    if (msg.name === "sandboxInstance.command.destroySession") {
+      await loopCtx.step("sandbox-instance-destroy-session", async () => destroySessionMutation(loopCtx, msg.body as SessionControlCommand));
+      await msg.complete({ ok: true });
+    }
 
     return Loop.continue(undefined);
   });
@@ -478,6 +466,56 @@ export const sandboxInstance = actor({
     sandboxId: input.sandboxId,
   }),
   actions: {
+    async sandboxAgentConnection(c: any): Promise<SandboxAgentConnection> {
+      return await loadAgentConfig(c);
+    },
+
+    async createProcess(c: any, request: ProcessCreateRequest): Promise<ProcessInfo> {
+      const client = await getSandboxAgentClient(c);
+      const created = await client.createProcess(request);
+      broadcastProcessesUpdated(c);
+      return created;
+    },
+
+    async listProcesses(c: any): Promise<{ processes: ProcessInfo[] }> {
+      const client = await getSandboxAgentClient(c);
+      return await client.listProcesses();
+    },
+
+    async getProcessLogs(
+      c: any,
+      request: { processId: string; query?: ProcessLogFollowQuery }
+    ): Promise<ProcessLogsResponse> {
+      const client = await getSandboxAgentClient(c);
+      return await client.getProcessLogs(request.processId, request.query);
+    },
+
+    async stopProcess(
+      c: any,
+      request: { processId: string; query?: ProcessSignalQuery }
+    ): Promise<ProcessInfo> {
+      const client = await getSandboxAgentClient(c);
+      const stopped = await client.stopProcess(request.processId, request.query);
+      broadcastProcessesUpdated(c);
+      return stopped;
+    },
+
+    async killProcess(
+      c: any,
+      request: { processId: string; query?: ProcessSignalQuery }
+    ): Promise<ProcessInfo> {
+      const client = await getSandboxAgentClient(c);
+      const killed = await client.killProcess(request.processId, request.query);
+      broadcastProcessesUpdated(c);
+      return killed;
+    },
+
+    async deleteProcess(c: any, request: { processId: string }): Promise<void> {
+      const client = await getSandboxAgentClient(c);
+      await client.deleteProcess(request.processId);
+      broadcastProcessesUpdated(c);
+    },
+
     async providerState(c: any): Promise<{ providerId: ProviderId; sandboxId: string; state: string; at: number }> {
       const at = Date.now();
       const { config, driver } = getActorRuntimeContext();
@@ -518,10 +556,14 @@ export const sandboxInstance = actor({
 
     async destroy(c): Promise<void> {
       const self = selfSandboxInstance(c);
-      await self.send(sandboxInstanceWorkflowQueueName("sandboxInstance.command.destroy"), {}, {
-        wait: true,
-        timeout: 60_000,
-      });
+      await self.send(
+        sandboxInstanceWorkflowQueueName("sandboxInstance.command.destroy"),
+        {},
+        {
+          wait: true,
+          timeout: 60_000,
+        },
+      );
     },
 
     async createSession(c: any, command: CreateSessionCommand): Promise<CreateSessionResult> {
@@ -534,10 +576,7 @@ export const sandboxInstance = actor({
       );
     },
 
-    async listSessions(
-      c: any,
-      command?: ListSessionsCommand
-    ): Promise<{ items: SessionRecord[]; nextCursor?: string }> {
+    async listSessions(c: any, command?: ListSessionsCommand): Promise<{ items: SessionRecord[]; nextCursor?: string }> {
       const persist = new SandboxInstancePersistDriver(c.db);
       try {
         const client = await getSandboxAgentClient(c);
@@ -556,7 +595,7 @@ export const sandboxInstance = actor({
           workspaceId: c.state.workspaceId,
           providerId: c.state.providerId,
           sandboxId: c.state.sandboxId,
-          error: resolveErrorMessage(error)
+          error: resolveErrorMessage(error),
         });
         return await persist.listSessions({
           cursor: command?.cursor,
@@ -565,10 +604,7 @@ export const sandboxInstance = actor({
       }
     },
 
-    async listSessionEvents(
-      c: any,
-      command: ListSessionEventsCommand
-    ): Promise<{ items: SessionEvent[]; nextCursor?: string }> {
+    async listSessionEvents(c: any, command: ListSessionEventsCommand): Promise<{ items: SessionEvent[]; nextCursor?: string }> {
       const persist = new SandboxInstancePersistDriver(c.db);
       return await persist.listEvents({
         sessionId: command.sessionId,
@@ -601,15 +637,9 @@ export const sandboxInstance = actor({
       });
     },
 
-    async sessionStatus(
-      c,
-      command: SessionStatusCommand
-    ): Promise<{ id: string; status: "running" | "idle" | "error" }> {
-      return await derivePersistedSessionStatus(
-        new SandboxInstancePersistDriver(c.db),
-        command.sessionId,
-      );
-    }
+    async sessionStatus(c, command: SessionStatusCommand): Promise<{ id: string; status: "running" | "idle" | "error" }> {
+      return await derivePersistedSessionStatus(new SandboxInstancePersistDriver(c.db), command.sessionId);
+    },
   },
   run: workflow(runSandboxInstanceWorkflow),
 });

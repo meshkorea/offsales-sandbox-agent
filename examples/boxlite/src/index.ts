@@ -11,17 +11,14 @@ setupImage();
 
 console.log("Creating BoxLite sandbox...");
 const box = new SimpleBox({
-	rootfsPath: OCI_DIR,
-	env,
-	ports: [{ hostPort: 3000, guestPort: 3000 }],
-	diskSizeGb: 4,
+  rootfsPath: OCI_DIR,
+  env,
+  ports: [{ hostPort: 3000, guestPort: 3000 }],
+  diskSizeGb: 4,
 });
 
 console.log("Starting server...");
-const result = await box.exec(
-	"sh", "-c",
-	"nohup sandbox-agent server --no-token --host 0.0.0.0 --port 3000 >/tmp/sandbox-agent.log 2>&1 &",
-);
+const result = await box.exec("sh", "-c", "nohup sandbox-agent server --no-token --host 0.0.0.0 --port 3000 >/tmp/sandbox-agent.log 2>&1 &");
 if (result.exitCode !== 0) throw new Error(`Failed to start server: ${result.stderr}`);
 
 const baseUrl = "http://localhost:3000";
@@ -36,9 +33,9 @@ console.log("  Press Ctrl+C to stop.");
 
 const keepAlive = setInterval(() => {}, 60_000);
 const cleanup = async () => {
-	clearInterval(keepAlive);
-	await box.stop();
-	process.exit(0);
+  clearInterval(keepAlive);
+  await box.stop();
+  process.exit(0);
 };
 process.once("SIGINT", cleanup);
 process.once("SIGTERM", cleanup);

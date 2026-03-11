@@ -33,10 +33,8 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     return undefined;
   };
 
-  config.providers.daytona.endpoint =
-    envFirst("HF_DAYTONA_ENDPOINT", "DAYTONA_ENDPOINT") ?? config.providers.daytona.endpoint;
-  config.providers.daytona.apiKey =
-    envFirst("HF_DAYTONA_API_KEY", "DAYTONA_API_KEY") ?? config.providers.daytona.apiKey;
+  config.providers.daytona.endpoint = envFirst("HF_DAYTONA_ENDPOINT", "DAYTONA_ENDPOINT") ?? config.providers.daytona.endpoint;
+  config.providers.daytona.apiKey = envFirst("HF_DAYTONA_API_KEY", "DAYTONA_API_KEY") ?? config.providers.daytona.apiKey;
 
   const driver = createDefaultDriver();
   const providers = createProviderRegistry(config, driver);
@@ -58,7 +56,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
       allowHeaders: ["Content-Type", "Authorization", "x-rivet-token"],
       allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       exposeHeaders: ["Content-Type"],
-    })
+    }),
   );
   app.use(
     "/api/rivet",
@@ -67,7 +65,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
       allowHeaders: ["Content-Type", "Authorization", "x-rivet-token"],
       allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       exposeHeaders: ["Content-Type"],
-    })
+    }),
   );
   const forward = async (c: any) => {
     try {
@@ -86,7 +84,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
   const server = Bun.serve({
     fetch: app.fetch,
     hostname: config.backend.host,
-    port: config.backend.port
+    port: config.backend.port,
   });
 
   process.on("SIGINT", async () => {
@@ -130,13 +128,13 @@ async function main(): Promise<void> {
   const port = parseArg("--port") ?? process.env.PORT ?? process.env.HF_BACKEND_PORT;
   await startBackend({
     host,
-    port: parseEnvPort(port)
+    port: parseEnvPort(port),
   });
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((err: unknown) => {
-    const message = err instanceof Error ? err.stack ?? err.message : String(err);
+    const message = err instanceof Error ? (err.stack ?? err.message) : String(err);
     console.error(message);
     process.exit(1);
   });

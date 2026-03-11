@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type {
-  HandoffWorkbenchSnapshot,
-  WorkbenchAgentTab,
-  WorkbenchHandoff,
-  WorkbenchModelId,
-  WorkbenchTranscriptEvent,
-} from "@openhandoff/shared";
+import type { HandoffWorkbenchSnapshot, WorkbenchAgentTab, WorkbenchHandoff, WorkbenchModelId, WorkbenchTranscriptEvent } from "@openhandoff/shared";
 import { createBackendClient } from "../../src/backend-client.js";
 
 const RUN_WORKBENCH_LOAD_E2E = process.env.HF_ENABLE_DAEMON_WORKBENCH_LOAD_E2E === "1";
@@ -44,13 +38,7 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function poll<T>(
-  label: string,
-  timeoutMs: number,
-  intervalMs: number,
-  fn: () => Promise<T>,
-  isDone: (value: T) => boolean,
-): Promise<T> {
+async function poll<T>(label: string, timeoutMs: number, intervalMs: number, fn: () => Promise<T>, isDone: (value: T) => boolean): Promise<T> {
   const startedAt = Date.now();
   let lastValue: T;
 
@@ -174,8 +162,7 @@ async function measureWorkbenchSnapshot(
   const payloadBytes = Buffer.byteLength(JSON.stringify(finalSnapshot), "utf8");
   const tabCount = finalSnapshot.handoffs.reduce((sum, handoff) => sum + handoff.tabs.length, 0);
   const transcriptEventCount = finalSnapshot.handoffs.reduce(
-    (sum, handoff) =>
-      sum + handoff.tabs.reduce((tabSum, tab) => tabSum + tab.transcript.length, 0),
+    (sum, handoff) => sum + handoff.tabs.reduce((tabSum, tab) => tabSum + tab.transcript.length, 0),
     0,
   );
 
@@ -190,142 +177,133 @@ async function measureWorkbenchSnapshot(
 }
 
 describe("e2e(client): workbench load", () => {
-  it.skipIf(!RUN_WORKBENCH_LOAD_E2E)(
-    "runs a simple sequential load profile against the real backend",
-    { timeout: 30 * 60_000 },
-    async () => {
-      const endpoint = process.env.HF_E2E_BACKEND_ENDPOINT?.trim() || "http://127.0.0.1:7741/api/rivet";
-      const workspaceId = process.env.HF_E2E_WORKSPACE?.trim() || "default";
-      const repoRemote = requiredEnv("HF_E2E_GITHUB_REPO");
-      const model = workbenchModelEnv("HF_E2E_MODEL", "gpt-4o");
-      const handoffCount = intEnv("HF_LOAD_HANDOFF_COUNT", 3);
-      const extraSessionCount = intEnv("HF_LOAD_EXTRA_SESSION_COUNT", 2);
-      const pollIntervalMs = intEnv("HF_LOAD_POLL_INTERVAL_MS", 2_000);
+  it.skipIf(!RUN_WORKBENCH_LOAD_E2E)("runs a simple sequential load profile against the real backend", { timeout: 30 * 60_000 }, async () => {
+    const endpoint = process.env.HF_E2E_BACKEND_ENDPOINT?.trim() || "http://127.0.0.1:7741/api/rivet";
+    const workspaceId = process.env.HF_E2E_WORKSPACE?.trim() || "default";
+    const repoRemote = requiredEnv("HF_E2E_GITHUB_REPO");
+    const model = workbenchModelEnv("HF_E2E_MODEL", "gpt-4o");
+    const handoffCount = intEnv("HF_LOAD_HANDOFF_COUNT", 3);
+    const extraSessionCount = intEnv("HF_LOAD_EXTRA_SESSION_COUNT", 2);
+    const pollIntervalMs = intEnv("HF_LOAD_POLL_INTERVAL_MS", 2_000);
 
-      const client = createBackendClient({
-        endpoint,
-        defaultWorkspaceId: workspaceId,
+    const client = createBackendClient({
+      endpoint,
+      defaultWorkspaceId: workspaceId,
+    });
+
+    const repo = await client.addRepo(workspaceId, repoRemote);
+    const createHandoffLatencies: number[] = [];
+    const provisionLatencies: number[] = [];
+    const createSessionLatencies: number[] = [];
+    const messageRoundTripLatencies: number[] = [];
+    const snapshotSeries: Array<{
+      handoffCount: number;
+      avgMs: number;
+      maxMs: number;
+      payloadBytes: number;
+      tabCount: number;
+      transcriptEventCount: number;
+    }> = [];
+
+    snapshotSeries.push(await measureWorkbenchSnapshot(client, workspaceId, 2));
+
+    for (let handoffIndex = 0; handoffIndex < handoffCount; handoffIndex += 1) {
+      const runId = `load-${handoffIndex}-${Date.now().toString(36)}`;
+      const initialReply = `LOAD_INIT_${runId}`;
+
+      const createStartedAt = performance.now();
+      const created = await client.createWorkbenchHandoff(workspaceId, {
+        repoId: repo.repoId,
+        title: `Workbench Load ${runId}`,
+        branch: `load/${runId}`,
+        model,
+        task: `Reply with exactly: ${initialReply}`,
       });
+      createHandoffLatencies.push(performance.now() - createStartedAt);
 
-      const repo = await client.addRepo(workspaceId, repoRemote);
-      const createHandoffLatencies: number[] = [];
-      const provisionLatencies: number[] = [];
-      const createSessionLatencies: number[] = [];
-      const messageRoundTripLatencies: number[] = [];
-      const snapshotSeries: Array<{
-        handoffCount: number;
-        avgMs: number;
-        maxMs: number;
-        payloadBytes: number;
-        tabCount: number;
-        transcriptEventCount: number;
-      }> = [];
+      const provisionStartedAt = performance.now();
+      const provisioned = await poll(
+        `handoff ${runId} provisioning`,
+        12 * 60_000,
+        pollIntervalMs,
+        async () => findHandoff(await client.getWorkbench(workspaceId), created.handoffId),
+        (handoff) => {
+          const tab = handoff.tabs[0];
+          return Boolean(tab && handoff.status === "idle" && tab.status === "idle" && transcriptIncludesAgentText(tab.transcript, initialReply));
+        },
+      );
+      provisionLatencies.push(performance.now() - provisionStartedAt);
 
-      snapshotSeries.push(await measureWorkbenchSnapshot(client, workspaceId, 2));
+      expect(provisioned.tabs.length).toBeGreaterThan(0);
+      const primaryTab = provisioned.tabs[0]!;
+      expect(transcriptIncludesAgentText(primaryTab.transcript, initialReply)).toBe(true);
 
-      for (let handoffIndex = 0; handoffIndex < handoffCount; handoffIndex += 1) {
-        const runId = `load-${handoffIndex}-${Date.now().toString(36)}`;
-        const initialReply = `LOAD_INIT_${runId}`;
-
-        const createStartedAt = performance.now();
-        const created = await client.createWorkbenchHandoff(workspaceId, {
-          repoId: repo.repoId,
-          title: `Workbench Load ${runId}`,
-          branch: `load/${runId}`,
+      for (let sessionIndex = 0; sessionIndex < extraSessionCount; sessionIndex += 1) {
+        const expectedReply = `LOAD_REPLY_${runId}_${sessionIndex}`;
+        const createSessionStartedAt = performance.now();
+        const createdSession = await client.createWorkbenchSession(workspaceId, {
+          handoffId: created.handoffId,
           model,
-          task: `Reply with exactly: ${initialReply}`,
         });
-        createHandoffLatencies.push(performance.now() - createStartedAt);
+        createSessionLatencies.push(performance.now() - createSessionStartedAt);
 
-        const provisionStartedAt = performance.now();
-        const provisioned = await poll(
-          `handoff ${runId} provisioning`,
-          12 * 60_000,
+        await client.sendWorkbenchMessage(workspaceId, {
+          handoffId: created.handoffId,
+          tabId: createdSession.tabId,
+          text: `Run pwd in the repo, then reply with exactly: ${expectedReply}`,
+          attachments: [],
+        });
+
+        const messageStartedAt = performance.now();
+        const withReply = await poll(
+          `handoff ${runId} session ${sessionIndex} reply`,
+          10 * 60_000,
           pollIntervalMs,
           async () => findHandoff(await client.getWorkbench(workspaceId), created.handoffId),
           (handoff) => {
-            const tab = handoff.tabs[0];
-            return Boolean(
-              tab &&
-                handoff.status === "idle" &&
-                tab.status === "idle" &&
-                transcriptIncludesAgentText(tab.transcript, initialReply),
-            );
+            const tab = findTab(handoff, createdSession.tabId);
+            return tab.status === "idle" && transcriptIncludesAgentText(tab.transcript, expectedReply);
           },
         );
-        provisionLatencies.push(performance.now() - provisionStartedAt);
+        messageRoundTripLatencies.push(performance.now() - messageStartedAt);
 
-        expect(provisioned.tabs.length).toBeGreaterThan(0);
-        const primaryTab = provisioned.tabs[0]!;
-        expect(transcriptIncludesAgentText(primaryTab.transcript, initialReply)).toBe(true);
-
-        for (let sessionIndex = 0; sessionIndex < extraSessionCount; sessionIndex += 1) {
-          const expectedReply = `LOAD_REPLY_${runId}_${sessionIndex}`;
-          const createSessionStartedAt = performance.now();
-          const createdSession = await client.createWorkbenchSession(workspaceId, {
-            handoffId: created.handoffId,
-            model,
-          });
-          createSessionLatencies.push(performance.now() - createSessionStartedAt);
-
-          await client.sendWorkbenchMessage(workspaceId, {
-            handoffId: created.handoffId,
-            tabId: createdSession.tabId,
-            text: `Run pwd in the repo, then reply with exactly: ${expectedReply}`,
-            attachments: [],
-          });
-
-          const messageStartedAt = performance.now();
-          const withReply = await poll(
-            `handoff ${runId} session ${sessionIndex} reply`,
-            10 * 60_000,
-            pollIntervalMs,
-            async () => findHandoff(await client.getWorkbench(workspaceId), created.handoffId),
-            (handoff) => {
-              const tab = findTab(handoff, createdSession.tabId);
-              return tab.status === "idle" && transcriptIncludesAgentText(tab.transcript, expectedReply);
-            },
-          );
-          messageRoundTripLatencies.push(performance.now() - messageStartedAt);
-
-          expect(transcriptIncludesAgentText(findTab(withReply, createdSession.tabId).transcript, expectedReply)).toBe(true);
-        }
-
-        const snapshotMetrics = await measureWorkbenchSnapshot(client, workspaceId, 3);
-        snapshotSeries.push(snapshotMetrics);
-        console.info(
-          "[workbench-load-snapshot]",
-          JSON.stringify({
-            handoffIndex: handoffIndex + 1,
-            ...snapshotMetrics,
-          }),
-        );
+        expect(transcriptIncludesAgentText(findTab(withReply, createdSession.tabId).transcript, expectedReply)).toBe(true);
       }
 
-      const firstSnapshot = snapshotSeries[0]!;
-      const lastSnapshot = snapshotSeries[snapshotSeries.length - 1]!;
-      const summary = {
-        handoffCount,
-        extraSessionCount,
-        createHandoffAvgMs: Math.round(average(createHandoffLatencies)),
-        provisionAvgMs: Math.round(average(provisionLatencies)),
-        createSessionAvgMs: Math.round(average(createSessionLatencies)),
-        messageRoundTripAvgMs: Math.round(average(messageRoundTripLatencies)),
-        snapshotReadBaselineAvgMs: firstSnapshot.avgMs,
-        snapshotReadFinalAvgMs: lastSnapshot.avgMs,
-        snapshotReadFinalMaxMs: lastSnapshot.maxMs,
-        snapshotPayloadBaselineBytes: firstSnapshot.payloadBytes,
-        snapshotPayloadFinalBytes: lastSnapshot.payloadBytes,
-        snapshotTabFinalCount: lastSnapshot.tabCount,
-        snapshotTranscriptFinalCount: lastSnapshot.transcriptEventCount,
-      };
+      const snapshotMetrics = await measureWorkbenchSnapshot(client, workspaceId, 3);
+      snapshotSeries.push(snapshotMetrics);
+      console.info(
+        "[workbench-load-snapshot]",
+        JSON.stringify({
+          handoffIndex: handoffIndex + 1,
+          ...snapshotMetrics,
+        }),
+      );
+    }
 
-      console.info("[workbench-load-summary]", JSON.stringify(summary));
+    const firstSnapshot = snapshotSeries[0]!;
+    const lastSnapshot = snapshotSeries[snapshotSeries.length - 1]!;
+    const summary = {
+      handoffCount,
+      extraSessionCount,
+      createHandoffAvgMs: Math.round(average(createHandoffLatencies)),
+      provisionAvgMs: Math.round(average(provisionLatencies)),
+      createSessionAvgMs: Math.round(average(createSessionLatencies)),
+      messageRoundTripAvgMs: Math.round(average(messageRoundTripLatencies)),
+      snapshotReadBaselineAvgMs: firstSnapshot.avgMs,
+      snapshotReadFinalAvgMs: lastSnapshot.avgMs,
+      snapshotReadFinalMaxMs: lastSnapshot.maxMs,
+      snapshotPayloadBaselineBytes: firstSnapshot.payloadBytes,
+      snapshotPayloadFinalBytes: lastSnapshot.payloadBytes,
+      snapshotTabFinalCount: lastSnapshot.tabCount,
+      snapshotTranscriptFinalCount: lastSnapshot.transcriptEventCount,
+    };
 
-      expect(createHandoffLatencies.length).toBe(handoffCount);
-      expect(provisionLatencies.length).toBe(handoffCount);
-      expect(createSessionLatencies.length).toBe(handoffCount * extraSessionCount);
-      expect(messageRoundTripLatencies.length).toBe(handoffCount * extraSessionCount);
-    },
-  );
+    console.info("[workbench-load-summary]", JSON.stringify(summary));
+
+    expect(createHandoffLatencies.length).toBe(handoffCount);
+    expect(provisionLatencies.length).toBe(handoffCount);
+    expect(createSessionLatencies.length).toBe(handoffCount * extraSessionCount);
+    expect(messageRoundTripLatencies.length).toBe(handoffCount * extraSessionCount);
+  });
 });

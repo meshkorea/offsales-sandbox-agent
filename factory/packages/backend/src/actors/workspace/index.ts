@@ -10,7 +10,7 @@ export const workspace = actor({
     actionTimeout: 5 * 60_000,
   },
   createState: (_c, workspaceId: string) => ({
-    workspaceId
+    workspaceId,
   }),
   actions: workspaceActions,
   run: workflow(runWorkspaceWorkflow),

@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HandoffRecord } from "@openhandoff/shared";
-import {
-  filterHandoffs,
-  formatRelativeAge,
-  fuzzyMatch,
-  summarizeHandoffs
-} from "../src/view-model.js";
+import { filterHandoffs, formatRelativeAge, fuzzyMatch, summarizeHandoffs } from "../src/view-model.js";
 
 const sample: HandoffRecord = {
   workspaceId: "default",
@@ -28,8 +23,8 @@ const sample: HandoffRecord = {
       switchTarget: "daytona://sandbox-1",
       cwd: null,
       createdAt: 1,
-      updatedAt: 1
-    }
+      updatedAt: 1,
+    },
   ],
   agentType: null,
   prSubmitted: false,
@@ -43,7 +38,7 @@ const sample: HandoffRecord = {
   hasUnpushed: null,
   parentBranch: null,
   createdAt: 1,
-  updatedAt: 1
+  updatedAt: 1,
 };
 
 describe("search helpers", () => {
@@ -60,8 +55,8 @@ describe("search helpers", () => {
         handoffId: "handoff-2",
         branchName: "docs/update-intro",
         title: "Docs Intro Refresh",
-        status: "idle"
-      }
+        status: "idle",
+      },
     ];
     expect(filterHandoffs(rows, "doc")).toHaveLength(1);
     expect(filterHandoffs(rows, "h2")).toHaveLength(1);
@@ -79,7 +74,7 @@ describe("summary helpers", () => {
     const rows: HandoffRecord[] = [
       sample,
       { ...sample, handoffId: "handoff-2", status: "idle", providerId: "daytona" },
-      { ...sample, handoffId: "handoff-3", status: "error", providerId: "daytona" }
+      { ...sample, handoffId: "handoff-3", status: "error", providerId: "daytona" },
     ];
 
     const summary = summarizeHandoffs(rows);

@@ -9,7 +9,7 @@ import type {
   HandoffWorkbenchSetSessionUnreadInput,
   HandoffWorkbenchSendMessageInput,
   HandoffWorkbenchUpdateDraftInput,
-  ProviderId
+  ProviderId,
 } from "@openhandoff/shared";
 import { expectQueueResponse } from "../../services/queue.js";
 import { selfHandoff } from "../handles.js";
@@ -30,13 +30,9 @@ import {
   syncWorkbenchSessionStatus,
   setWorkbenchSessionUnread,
   stopWorkbenchSession,
-  updateWorkbenchDraft
+  updateWorkbenchDraft,
 } from "./workbench.js";
-import {
-  HANDOFF_QUEUE_NAMES,
-  handoffWorkflowQueueName,
-  runHandoffWorkflow
-} from "./workflow/index.js";
+import { HANDOFF_QUEUE_NAMES, handoffWorkflowQueueName, runHandoffWorkflow } from "./workflow/index.js";
 
 export interface HandoffInput {
   workspaceId: string;
@@ -115,7 +111,7 @@ export const handoff = actor({
   db: handoffDb,
   queues: Object.fromEntries(HANDOFF_QUEUE_NAMES.map((name) => [name, queue()])),
   options: {
-    actionTimeout: 5 * 60_000
+    actionTimeout: 5 * 60_000,
   },
   createState: (_c, input: HandoffInput) => ({
     workspaceId: input.workspaceId,
@@ -157,17 +153,21 @@ export const handoff = actor({
       const self = selfHandoff(c);
       const result = await self.send(handoffWorkflowQueueName("handoff.command.attach"), cmd ?? {}, {
         wait: true,
-        timeout: 20_000
+        timeout: 20_000,
       });
       return expectQueueResponse<{ target: string; sessionId: string | null }>(result);
     },
 
     async switch(c): Promise<{ switchTarget: string }> {
       const self = selfHandoff(c);
-      const result = await self.send(handoffWorkflowQueueName("handoff.command.switch"), {}, {
-        wait: true,
-        timeout: 20_000
-      });
+      const result = await self.send(
+        handoffWorkflowQueueName("handoff.command.switch"),
+        {},
+        {
+          wait: true,
+          timeout: 20_000,
+        },
+      );
       return expectQueueResponse<{ switchTarget: string }>(result);
     },
 
@@ -175,7 +175,7 @@ export const handoff = actor({
       const self = selfHandoff(c);
       await self.send(handoffWorkflowQueueName("handoff.command.push"), cmd ?? {}, {
         wait: true,
-        timeout: 180_000
+        timeout: 180_000,
       });
     },
 
@@ -183,7 +183,7 @@ export const handoff = actor({
       const self = selfHandoff(c);
       await self.send(handoffWorkflowQueueName("handoff.command.sync"), cmd ?? {}, {
         wait: true,
-        timeout: 30_000
+        timeout: 30_000,
       });
     },
 
@@ -191,7 +191,7 @@ export const handoff = actor({
       const self = selfHandoff(c);
       await self.send(handoffWorkflowQueueName("handoff.command.merge"), cmd ?? {}, {
         wait: true,
-        timeout: 30_000
+        timeout: 30_000,
       });
     },
 
@@ -214,7 +214,7 @@ export const handoff = actor({
       const self = selfHandoff(c);
       await self.send(handoffWorkflowQueueName("handoff.command.kill"), cmd ?? {}, {
         wait: true,
-        timeout: 60_000
+        timeout: 60_000,
       });
     },
 
@@ -228,17 +228,9 @@ export const handoff = actor({
 
     async markWorkbenchUnread(c): Promise<void> {
       const self = selfHandoff(c);
-      await self.send(handoffWorkflowQueueName("handoff.command.workbench.mark_unread"), {}, {
-        wait: true,
-        timeout: 20_000,
-      });
-    },
-
-    async renameWorkbenchHandoff(c, input: HandoffWorkbenchRenameInput): Promise<void> {
-      const self = selfHandoff(c);
       await self.send(
-        handoffWorkflowQueueName("handoff.command.workbench.rename_handoff"),
-        { value: input.value } satisfies HandoffWorkbenchValueCommand,
+        handoffWorkflowQueueName("handoff.command.workbench.mark_unread"),
+        {},
         {
           wait: true,
           timeout: 20_000,
@@ -246,16 +238,20 @@ export const handoff = actor({
       );
     },
 
+    async renameWorkbenchHandoff(c, input: HandoffWorkbenchRenameInput): Promise<void> {
+      const self = selfHandoff(c);
+      await self.send(handoffWorkflowQueueName("handoff.command.workbench.rename_handoff"), { value: input.value } satisfies HandoffWorkbenchValueCommand, {
+        wait: true,
+        timeout: 20_000,
+      });
+    },
+
     async renameWorkbenchBranch(c, input: HandoffWorkbenchRenameInput): Promise<void> {
       const self = selfHandoff(c);
-      await self.send(
-        handoffWorkflowQueueName("handoff.command.workbench.rename_branch"),
-        { value: input.value } satisfies HandoffWorkbenchValueCommand,
-        {
-          wait: true,
-          timeout: 5 * 60_000,
-        },
-      );
+      await self.send(handoffWorkflowQueueName("handoff.command.workbench.rename_branch"), { value: input.value } satisfies HandoffWorkbenchValueCommand, {
+        wait: true,
+        timeout: 5 * 60_000,
+      });
     },
 
     async createWorkbenchSession(c, input?: { model?: string }): Promise<{ tabId: string }> {
@@ -341,26 +337,18 @@ export const handoff = actor({
 
     async stopWorkbenchSession(c, input: HandoffTabCommand): Promise<void> {
       const self = selfHandoff(c);
-      await self.send(
-        handoffWorkflowQueueName("handoff.command.workbench.stop_session"),
-        { sessionId: input.tabId } satisfies HandoffWorkbenchSessionCommand,
-        {
-          wait: true,
-          timeout: 5 * 60_000,
-        },
-      );
+      await self.send(handoffWorkflowQueueName("handoff.command.workbench.stop_session"), { sessionId: input.tabId } satisfies HandoffWorkbenchSessionCommand, {
+        wait: true,
+        timeout: 5 * 60_000,
+      });
     },
 
     async syncWorkbenchSessionStatus(c, input: HandoffStatusSyncCommand): Promise<void> {
       const self = selfHandoff(c);
-      await self.send(
-        handoffWorkflowQueueName("handoff.command.workbench.sync_session_status"),
-        input,
-        {
-          wait: true,
-          timeout: 20_000,
-        },
-      );
+      await self.send(handoffWorkflowQueueName("handoff.command.workbench.sync_session_status"), input, {
+        wait: true,
+        timeout: 20_000,
+      });
     },
 
     async closeWorkbenchSession(c, input: HandoffTabCommand): Promise<void> {
@@ -377,25 +365,25 @@ export const handoff = actor({
 
     async publishWorkbenchPr(c): Promise<void> {
       const self = selfHandoff(c);
-      await self.send(handoffWorkflowQueueName("handoff.command.workbench.publish_pr"), {}, {
-        wait: true,
-        timeout: 10 * 60_000,
-      });
+      await self.send(
+        handoffWorkflowQueueName("handoff.command.workbench.publish_pr"),
+        {},
+        {
+          wait: true,
+          timeout: 10 * 60_000,
+        },
+      );
     },
 
     async revertWorkbenchFile(c, input: { path: string }): Promise<void> {
       const self = selfHandoff(c);
-      await self.send(
-        handoffWorkflowQueueName("handoff.command.workbench.revert_file"),
-        input,
-        {
-          wait: true,
-          timeout: 5 * 60_000,
-        },
-      );
-    }
+      await self.send(handoffWorkflowQueueName("handoff.command.workbench.revert_file"), input, {
+        wait: true,
+        timeout: 5 * 60_000,
+      });
+    },
   },
-  run: workflow(runHandoffWorkflow)
+  run: workflow(runHandoffWorkflow),
 });
 
 export { HANDOFF_QUEUE_NAMES };

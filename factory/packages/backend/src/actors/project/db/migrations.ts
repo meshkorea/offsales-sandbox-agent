@@ -3,32 +3,32 @@
 // Do not hand-edit this file.
 
 const journal = {
-  "entries": [
+  entries: [
     {
-      "idx": 0,
-      "when": 1770924376062,
-      "tag": "0000_stormy_the_hunter",
-      "breakpoints": true
+      idx: 0,
+      when: 1770924376062,
+      tag: "0000_stormy_the_hunter",
+      breakpoints: true,
     },
     {
-      "idx": 1,
-      "when": 1770947252449,
-      "tag": "0001_wild_carlie_cooper",
-      "breakpoints": true
+      idx: 1,
+      when: 1770947252449,
+      tag: "0001_wild_carlie_cooper",
+      breakpoints: true,
     },
     {
-      "idx": 2,
-      "when": 1771276338465,
-      "tag": "0002_far_war_machine",
-      "breakpoints": true
+      idx: 2,
+      when: 1771276338465,
+      tag: "0002_far_war_machine",
+      breakpoints: true,
     },
     {
-      "idx": 3,
-      "when": 1771369000000,
-      "tag": "0003_busy_legacy",
-      "breakpoints": true
-    }
-  ]
+      idx: 3,
+      when: 1771369000000,
+      tag: "0003_busy_legacy",
+      breakpoints: true,
+    },
+  ],
 } as const;
 
 export default {
@@ -77,5 +77,5 @@ ALTER TABLE \`branches\` DROP COLUMN \`worktree_path\`;`,
 );
 `,
     m0003: `ALTER TABLE \`branches\` ADD \`tracked_in_stack\` integer;`,
-  } as const
+  } as const,
 };

@@ -15,14 +15,7 @@ export class PrStateTracker {
     this.states = new Map();
   }
 
-  update(
-    repoId: string,
-    branchName: string,
-    prNumber: number,
-    ci: CiState,
-    review: ReviewState,
-    reviewer?: string,
-  ): PrStateTransition[] {
+  update(repoId: string, branchName: string, prNumber: number, ci: CiState, review: ReviewState, reviewer?: string): PrStateTransition[] {
     const key = `${repoId}:${branchName}`;
     const prev = this.states.get(key);
     const transitions: PrStateTransition[] = [];

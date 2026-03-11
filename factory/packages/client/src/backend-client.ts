@@ -25,8 +25,18 @@ import type {
   RepoStackActionInput,
   RepoStackActionResult,
   RepoRecord,
-  SwitchResult
+  StarSandboxAgentRepoInput,
+  StarSandboxAgentRepoResult,
+  SwitchResult,
 } from "@openhandoff/shared";
+import type {
+  ProcessCreateRequest,
+  ProcessInfo,
+  ProcessLogFollowQuery,
+  ProcessLogsResponse,
+  ProcessSignalQuery,
+} from "sandbox-agent";
+import { createMockBackendClient } from "./mock/backend-client.js";
 import { sandboxInstanceKey, workspaceKey } from "./keys.js";
 
 export type HandoffAction = "push" | "sync" | "merge" | "archive" | "kill";
@@ -59,6 +69,8 @@ export interface SandboxSessionEventRecord {
   payload: unknown;
 }
 
+export type SandboxProcessRecord = ProcessInfo;
+
 interface WorkspaceHandle {
   addRepo(input: AddRepoInput): Promise<RepoRecord>;
   listRepos(input: { workspaceId: string }): Promise<RepoRecord[]>;
@@ -76,6 +88,7 @@ interface WorkspaceHandle {
   archiveHandoff(input: { workspaceId: string; handoffId: string; reason?: string }): Promise<void>;
   killHandoff(input: { workspaceId: string; handoffId: string; reason?: string }): Promise<void>;
   useWorkspace(input: { workspaceId: string }): Promise<{ workspaceId: string }>;
+  starSandboxAgentRepo(input: StarSandboxAgentRepoInput): Promise<StarSandboxAgentRepoResult>;
   getWorkbench(input: { workspaceId: string }): Promise<HandoffWorkbenchSnapshot>;
   createWorkbenchHandoff(input: HandoffWorkbenchCreateHandoffInput): Promise<HandoffWorkbenchCreateHandoffResponse>;
   markWorkbenchUnread(input: HandoffWorkbenchSelectInput): Promise<void>;
@@ -94,11 +107,22 @@ interface WorkspaceHandle {
 }
 
 interface SandboxInstanceHandle {
-  createSession(input: { prompt: string; cwd?: string; agent?: AgentType | "opencode" }): Promise<{ id: string | null; status: "running" | "idle" | "error"; error?: string }>;
+  createSession(input: {
+    prompt: string;
+    cwd?: string;
+    agent?: AgentType | "opencode";
+  }): Promise<{ id: string | null; status: "running" | "idle" | "error"; error?: string }>;
   listSessions(input?: { cursor?: string; limit?: number }): Promise<{ items: SandboxSessionRecord[]; nextCursor?: string }>;
   listSessionEvents(input: { sessionId: string; cursor?: string; limit?: number }): Promise<{ items: SandboxSessionEventRecord[]; nextCursor?: string }>;
+  createProcess(input: ProcessCreateRequest): Promise<SandboxProcessRecord>;
+  listProcesses(): Promise<{ processes: SandboxProcessRecord[] }>;
+  getProcessLogs(input: { processId: string; query?: ProcessLogFollowQuery }): Promise<ProcessLogsResponse>;
+  stopProcess(input: { processId: string; query?: ProcessSignalQuery }): Promise<SandboxProcessRecord>;
+  killProcess(input: { processId: string; query?: ProcessSignalQuery }): Promise<SandboxProcessRecord>;
+  deleteProcess(input: { processId: string }): Promise<void>;
   sendPrompt(input: { sessionId: string; prompt: string; notification?: boolean }): Promise<void>;
   sessionStatus(input: { sessionId: string }): Promise<{ id: string; status: "running" | "idle" | "error" }>;
+  sandboxAgentConnection(): Promise<{ endpoint: string; token?: string }>;
   providerState(): Promise<{ providerId: ProviderId; sandboxId: string; state: string; at: number }>;
 }
 
@@ -114,6 +138,7 @@ interface RivetClient {
 export interface BackendClientOptions {
   endpoint: string;
   defaultWorkspaceId?: string;
+  mode?: "remote" | "mock";
 }
 
 export interface BackendMetadata {
@@ -148,14 +173,58 @@ export interface BackendClient {
     workspaceId: string,
     providerId: ProviderId,
     sandboxId: string,
-    input?: { cursor?: string; limit?: number }
+    input?: { cursor?: string; limit?: number },
   ): Promise<{ items: SandboxSessionRecord[]; nextCursor?: string }>;
   listSandboxSessionEvents(
     workspaceId: string,
     providerId: ProviderId,
     sandboxId: string,
-    input: { sessionId: string; cursor?: string; limit?: number }
+    input: { sessionId: string; cursor?: string; limit?: number },
   ): Promise<{ items: SandboxSessionEventRecord[]; nextCursor?: string }>;
+  createSandboxProcess(input: {
+    workspaceId: string;
+    providerId: ProviderId;
+    sandboxId: string;
+    request: ProcessCreateRequest;
+  }): Promise<SandboxProcessRecord>;
+  listSandboxProcesses(
+    workspaceId: string,
+    providerId: ProviderId,
+    sandboxId: string
+  ): Promise<{ processes: SandboxProcessRecord[] }>;
+  getSandboxProcessLogs(
+    workspaceId: string,
+    providerId: ProviderId,
+    sandboxId: string,
+    processId: string,
+    query?: ProcessLogFollowQuery
+  ): Promise<ProcessLogsResponse>;
+  stopSandboxProcess(
+    workspaceId: string,
+    providerId: ProviderId,
+    sandboxId: string,
+    processId: string,
+    query?: ProcessSignalQuery
+  ): Promise<SandboxProcessRecord>;
+  killSandboxProcess(
+    workspaceId: string,
+    providerId: ProviderId,
+    sandboxId: string,
+    processId: string,
+    query?: ProcessSignalQuery
+  ): Promise<SandboxProcessRecord>;
+  deleteSandboxProcess(
+    workspaceId: string,
+    providerId: ProviderId,
+    sandboxId: string,
+    processId: string
+  ): Promise<void>;
+  subscribeSandboxProcesses(
+    workspaceId: string,
+    providerId: ProviderId,
+    sandboxId: string,
+    listener: () => void
+  ): () => void;
   sendSandboxPrompt(input: {
     workspaceId: string;
     providerId: ProviderId;
@@ -168,31 +237,27 @@ export interface BackendClient {
     workspaceId: string,
     providerId: ProviderId,
     sandboxId: string,
-    sessionId: string
+    sessionId: string,
   ): Promise<{ id: string; status: "running" | "idle" | "error" }>;
   sandboxProviderState(
     workspaceId: string,
     providerId: ProviderId,
-    sandboxId: string
+    sandboxId: string,
   ): Promise<{ providerId: ProviderId; sandboxId: string; state: string; at: number }>;
+  getSandboxAgentConnection(
+    workspaceId: string,
+    providerId: ProviderId,
+    sandboxId: string
+  ): Promise<{ endpoint: string; token?: string }>;
   getWorkbench(workspaceId: string): Promise<HandoffWorkbenchSnapshot>;
   subscribeWorkbench(workspaceId: string, listener: () => void): () => void;
-  createWorkbenchHandoff(
-    workspaceId: string,
-    input: HandoffWorkbenchCreateHandoffInput
-  ): Promise<HandoffWorkbenchCreateHandoffResponse>;
+  createWorkbenchHandoff(workspaceId: string, input: HandoffWorkbenchCreateHandoffInput): Promise<HandoffWorkbenchCreateHandoffResponse>;
   markWorkbenchUnread(workspaceId: string, input: HandoffWorkbenchSelectInput): Promise<void>;
   renameWorkbenchHandoff(workspaceId: string, input: HandoffWorkbenchRenameInput): Promise<void>;
   renameWorkbenchBranch(workspaceId: string, input: HandoffWorkbenchRenameInput): Promise<void>;
-  createWorkbenchSession(
-    workspaceId: string,
-    input: HandoffWorkbenchSelectInput & { model?: string }
-  ): Promise<{ tabId: string }>;
+  createWorkbenchSession(workspaceId: string, input: HandoffWorkbenchSelectInput & { model?: string }): Promise<{ tabId: string }>;
   renameWorkbenchSession(workspaceId: string, input: HandoffWorkbenchRenameSessionInput): Promise<void>;
-  setWorkbenchSessionUnread(
-    workspaceId: string,
-    input: HandoffWorkbenchSetSessionUnreadInput
-  ): Promise<void>;
+  setWorkbenchSessionUnread(workspaceId: string, input: HandoffWorkbenchSetSessionUnreadInput): Promise<void>;
   updateWorkbenchDraft(workspaceId: string, input: HandoffWorkbenchUpdateDraftInput): Promise<void>;
   changeWorkbenchModel(workspaceId: string, input: HandoffWorkbenchChangeModelInput): Promise<void>;
   sendWorkbenchMessage(workspaceId: string, input: HandoffWorkbenchSendMessageInput): Promise<void>;
@@ -202,6 +267,7 @@ export interface BackendClient {
   revertWorkbenchFile(workspaceId: string, input: HandoffWorkbenchDiffInput): Promise<void>;
   health(): Promise<{ ok: true }>;
   useWorkspace(workspaceId: string): Promise<{ workspaceId: string }>;
+  starSandboxAgentRepo(workspaceId: string): Promise<StarSandboxAgentRepoResult>;
 }
 
 export function rivetEndpoint(config: AppConfig): string {
@@ -211,7 +277,7 @@ export function rivetEndpoint(config: AppConfig): string {
 export function createBackendClientFromConfig(config: AppConfig): BackendClient {
   return createBackendClient({
     endpoint: rivetEndpoint(config),
-    defaultWorkspaceId: config.workspace.default
+    defaultWorkspaceId: config.workspace.default,
   });
 }
 
@@ -250,7 +316,7 @@ async function fetchJsonWithTimeout(url: string, timeoutMs: number): Promise<unk
 async function fetchMetadataWithRetry(
   endpoint: string,
   namespace: string | undefined,
-  opts: { timeoutMs: number; requestTimeoutMs: number }
+  opts: { timeoutMs: number; requestTimeoutMs: number },
 ): Promise<RivetMetadataResponse> {
   const base = new URL(endpoint);
   base.pathname = base.pathname.replace(/\/$/, "") + "/metadata";
@@ -268,10 +334,7 @@ async function fetchMetadataWithRetry(
       const data = json as Record<string, unknown>;
       return {
         runtime: typeof data.runtime === "string" ? data.runtime : undefined,
-        actorNames:
-          data.actorNames && typeof data.actorNames === "object"
-            ? (data.actorNames as Record<string, unknown>)
-            : undefined,
+        actorNames: data.actorNames && typeof data.actorNames === "object" ? (data.actorNames as Record<string, unknown>) : undefined,
         clientEndpoint: typeof data.clientEndpoint === "string" ? data.clientEndpoint : undefined,
         clientNamespace: typeof data.clientNamespace === "string" ? data.clientNamespace : undefined,
         clientToken: typeof data.clientToken === "string" ? data.clientToken : undefined,
@@ -286,11 +349,7 @@ async function fetchMetadataWithRetry(
   }
 }
 
-export async function readBackendMetadata(input: {
-  endpoint: string;
-  namespace?: string;
-  timeoutMs?: number;
-}): Promise<BackendMetadata> {
+export async function readBackendMetadata(input: { endpoint: string; namespace?: string; timeoutMs?: number }): Promise<BackendMetadata> {
   const base = new URL(input.endpoint);
   base.pathname = base.pathname.replace(/\/$/, "") + "/metadata";
   if (input.namespace) {
@@ -304,21 +363,14 @@ export async function readBackendMetadata(input: {
   const data = json as Record<string, unknown>;
   return {
     runtime: typeof data.runtime === "string" ? data.runtime : undefined,
-    actorNames:
-      data.actorNames && typeof data.actorNames === "object"
-        ? (data.actorNames as Record<string, unknown>)
-        : undefined,
+    actorNames: data.actorNames && typeof data.actorNames === "object" ? (data.actorNames as Record<string, unknown>) : undefined,
     clientEndpoint: typeof data.clientEndpoint === "string" ? data.clientEndpoint : undefined,
     clientNamespace: typeof data.clientNamespace === "string" ? data.clientNamespace : undefined,
     clientToken: typeof data.clientToken === "string" ? data.clientToken : undefined,
   };
 }
 
-export async function checkBackendHealth(input: {
-  endpoint: string;
-  namespace?: string;
-  timeoutMs?: number;
-}): Promise<boolean> {
+export async function checkBackendHealth(input: { endpoint: string; namespace?: string; timeoutMs?: number }): Promise<boolean> {
   try {
     const metadata = await readBackendMetadata(input);
     return metadata.runtime === "rivetkit" && Boolean(metadata.actorNames);
@@ -327,11 +379,7 @@ export async function checkBackendHealth(input: {
   }
 }
 
-async function probeMetadataEndpoint(
-  endpoint: string,
-  namespace: string | undefined,
-  timeoutMs: number
-): Promise<boolean> {
+async function probeMetadataEndpoint(endpoint: string, namespace: string | undefined, timeoutMs: number): Promise<boolean> {
   try {
     const base = new URL(endpoint);
     base.pathname = base.pathname.replace(/\/$/, "") + "/metadata";
@@ -346,8 +394,19 @@ async function probeMetadataEndpoint(
 }
 
 export function createBackendClient(options: BackendClientOptions): BackendClient {
+  if (options.mode === "mock") {
+    return createMockBackendClient(options.defaultWorkspaceId);
+  }
+
   let clientPromise: Promise<RivetClient> | null = null;
   const workbenchSubscriptions = new Map<
+    string,
+    {
+      listeners: Set<() => void>;
+      disposeConnPromise: Promise<(() => Promise<void>) | null> | null;
+    }
+  >();
+  const sandboxProcessSubscriptions = new Map<
     string,
     {
       listeners: Set<() => void>;
@@ -370,19 +429,15 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       const initialNamespace = undefined;
       const metadata = await fetchMetadataWithRetry(options.endpoint, initialNamespace, {
         timeoutMs: 30_000,
-        requestTimeoutMs: 8_000
+        requestTimeoutMs: 8_000,
       });
 
       // Candidate endpoint: manager endpoint if provided, otherwise stick to the configured endpoint.
-      const candidateEndpoint = metadata.clientEndpoint
-        ? rewriteLoopbackClientEndpoint(metadata.clientEndpoint, configuredOrigin)
-        : options.endpoint;
+      const candidateEndpoint = metadata.clientEndpoint ? rewriteLoopbackClientEndpoint(metadata.clientEndpoint, configuredOrigin) : options.endpoint;
 
       // If the manager port isn't reachable from this client (common behind reverse proxies),
       // fall back to the configured serverless endpoint to avoid hanging requests.
-      const shouldUseCandidate = metadata.clientEndpoint
-        ? await probeMetadataEndpoint(candidateEndpoint, metadata.clientNamespace, 1_500)
-        : true;
+      const shouldUseCandidate = metadata.clientEndpoint ? await probeMetadataEndpoint(candidateEndpoint, metadata.clientNamespace, 1_500) : true;
       const resolvedEndpoint = shouldUseCandidate ? candidateEndpoint : options.endpoint;
 
       return createClient({
@@ -399,14 +454,10 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 
   const workspace = async (workspaceId: string): Promise<WorkspaceHandle> =>
     (await getClient()).workspace.getOrCreate(workspaceKey(workspaceId), {
-      createWithInput: workspaceId
+      createWithInput: workspaceId,
     });
 
-  const sandboxByKey = async (
-    workspaceId: string,
-    providerId: ProviderId,
-    sandboxId: string
-  ): Promise<SandboxInstanceHandle> => {
+  const sandboxByKey = async (workspaceId: string, providerId: ProviderId, sandboxId: string): Promise<SandboxInstanceHandle> => {
     const client = await getClient();
     return (client as any).sandboxInstance.get(sandboxInstanceKey(workspaceId, providerId, sandboxId));
   };
@@ -416,11 +467,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     return message.includes("Actor not found");
   }
 
-  const sandboxByActorIdFromHandoff = async (
-    workspaceId: string,
-    providerId: ProviderId,
-    sandboxId: string
-  ): Promise<SandboxInstanceHandle | null> => {
+  const sandboxByActorIdFromHandoff = async (workspaceId: string, providerId: ProviderId, sandboxId: string): Promise<SandboxInstanceHandle | null> => {
     const ws = await workspace(workspaceId);
     const rows = await ws.listHandoffs({ workspaceId });
     const candidates = [...rows].sort((a, b) => b.updatedAt - a.updatedAt);
@@ -431,12 +478,13 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
         if (detail.providerId !== providerId) {
           continue;
         }
-        const sandbox = detail.sandboxes.find((sb) =>
-          sb.sandboxId === sandboxId &&
-          sb.providerId === providerId &&
-          typeof (sb as any).sandboxActorId === "string" &&
-          (sb as any).sandboxActorId.length > 0
-        ) as ({ sandboxActorId?: string } | undefined);
+        const sandbox = detail.sandboxes.find(
+          (sb) =>
+            sb.sandboxId === sandboxId &&
+            sb.providerId === providerId &&
+            typeof (sb as any).sandboxActorId === "string" &&
+            (sb as any).sandboxActorId.length > 0,
+        ) as { sandboxActorId?: string } | undefined;
         if (sandbox?.sandboxActorId) {
           const client = await getClient();
           return (client as any).sandboxInstance.getForId(sandbox.sandboxActorId);
@@ -457,7 +505,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     workspaceId: string,
     providerId: ProviderId,
     sandboxId: string,
-    run: (handle: SandboxInstanceHandle) => Promise<T>
+    run: (handle: SandboxInstanceHandle) => Promise<T>,
   ): Promise<T> => {
     const handle = await sandboxByKey(workspaceId, providerId, sandboxId);
     try {
@@ -525,6 +573,69 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     };
   };
 
+  const sandboxProcessSubscriptionKey = (
+    workspaceId: string,
+    providerId: ProviderId,
+    sandboxId: string,
+  ): string => `${workspaceId}:${providerId}:${sandboxId}`;
+
+  const subscribeSandboxProcesses = (
+    workspaceId: string,
+    providerId: ProviderId,
+    sandboxId: string,
+    listener: () => void,
+  ): (() => void) => {
+    const key = sandboxProcessSubscriptionKey(workspaceId, providerId, sandboxId);
+    let entry = sandboxProcessSubscriptions.get(key);
+    if (!entry) {
+      entry = {
+        listeners: new Set(),
+        disposeConnPromise: null,
+      };
+      sandboxProcessSubscriptions.set(key, entry);
+    }
+
+    entry.listeners.add(listener);
+
+    if (!entry.disposeConnPromise) {
+      entry.disposeConnPromise = (async () => {
+        const handle = await sandboxByKey(workspaceId, providerId, sandboxId);
+        const conn = (handle as any).connect();
+        const unsubscribeEvent = conn.on("processesUpdated", () => {
+          const current = sandboxProcessSubscriptions.get(key);
+          if (!current) {
+            return;
+          }
+          for (const currentListener of [...current.listeners]) {
+            currentListener();
+          }
+        });
+        const unsubscribeError = conn.onError(() => {});
+        return async () => {
+          unsubscribeEvent();
+          unsubscribeError();
+          await conn.dispose();
+        };
+      })().catch(() => null);
+    }
+
+    return () => {
+      const current = sandboxProcessSubscriptions.get(key);
+      if (!current) {
+        return;
+      }
+      current.listeners.delete(listener);
+      if (current.listeners.size > 0) {
+        return;
+      }
+
+      sandboxProcessSubscriptions.delete(key);
+      void current.disposeConnPromise?.then(async (disposeConn) => {
+        await disposeConn?.();
+      });
+    };
+  };
+
   return {
     async addRepo(workspaceId: string, remoteUrl: string): Promise<RepoRecord> {
       return (await workspace(workspaceId)).addRepo({ workspaceId, remoteUrl });
@@ -536,6 +647,10 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 
     async createHandoff(input: CreateHandoffInput): Promise<HandoffRecord> {
       return (await workspace(input.workspaceId)).createHandoff(input);
+    },
+
+    async starSandboxAgentRepo(workspaceId: string): Promise<StarSandboxAgentRepoResult> {
+      return (await workspace(workspaceId)).starSandboxAgentRepo({ workspaceId });
     },
 
     async listHandoffs(workspaceId: string, repoId?: string): Promise<HandoffSummary[]> {
@@ -553,7 +668,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     async getHandoff(workspaceId: string, handoffId: string): Promise<HandoffRecord> {
       return (await workspace(workspaceId)).getHandoff({
         workspaceId,
-        handoffId
+        handoffId,
       });
     },
 
@@ -569,7 +684,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       return (await workspace(workspaceId)).attachHandoff({
         workspaceId,
         handoffId,
-        reason: "cli.attach"
+        reason: "cli.attach",
       });
     },
 
@@ -578,7 +693,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
         await (await workspace(workspaceId)).pushHandoff({
           workspaceId,
           handoffId,
-          reason: "cli.push"
+          reason: "cli.push",
         });
         return;
       }
@@ -586,7 +701,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
         await (await workspace(workspaceId)).syncHandoff({
           workspaceId,
           handoffId,
-          reason: "cli.sync"
+          reason: "cli.sync",
         });
         return;
       }
@@ -594,7 +709,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
         await (await workspace(workspaceId)).mergeHandoff({
           workspaceId,
           handoffId,
-          reason: "cli.merge"
+          reason: "cli.merge",
         });
         return;
       }
@@ -602,14 +717,14 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
         await (await workspace(workspaceId)).archiveHandoff({
           workspaceId,
           handoffId,
-          reason: "cli.archive"
+          reason: "cli.archive",
         });
         return;
       }
       await (await workspace(workspaceId)).killHandoff({
         workspaceId,
         handoffId,
-        reason: "cli.kill"
+        reason: "cli.kill",
       });
     },
 
@@ -621,23 +736,19 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       cwd?: string;
       agent?: AgentType | "opencode";
     }): Promise<{ id: string; status: "running" | "idle" | "error" }> {
-      const created = await withSandboxHandle(
-        input.workspaceId,
-        input.providerId,
-        input.sandboxId,
-        async (handle) =>
-          handle.createSession({
-            prompt: input.prompt,
-            cwd: input.cwd,
-            agent: input.agent
-          })
+      const created = await withSandboxHandle(input.workspaceId, input.providerId, input.sandboxId, async (handle) =>
+        handle.createSession({
+          prompt: input.prompt,
+          cwd: input.cwd,
+          agent: input.agent,
+        }),
       );
       if (!created.id) {
         throw new Error(created.error ?? "sandbox session creation failed");
       }
       return {
         id: created.id,
-        status: created.status
+        status: created.status,
       };
     },
 
@@ -645,28 +756,113 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       workspaceId: string,
       providerId: ProviderId,
       sandboxId: string,
-      input?: { cursor?: string; limit?: number }
+      input?: { cursor?: string; limit?: number },
     ): Promise<{ items: SandboxSessionRecord[]; nextCursor?: string }> {
-      return await withSandboxHandle(
-        workspaceId,
-        providerId,
-        sandboxId,
-        async (handle) => handle.listSessions(input ?? {})
-      );
+      return await withSandboxHandle(workspaceId, providerId, sandboxId, async (handle) => handle.listSessions(input ?? {}));
     },
 
     async listSandboxSessionEvents(
       workspaceId: string,
       providerId: ProviderId,
       sandboxId: string,
-      input: { sessionId: string; cursor?: string; limit?: number }
+      input: { sessionId: string; cursor?: string; limit?: number },
     ): Promise<{ items: SandboxSessionEventRecord[]; nextCursor?: string }> {
+      return await withSandboxHandle(workspaceId, providerId, sandboxId, async (handle) => handle.listSessionEvents(input));
+    },
+
+    async createSandboxProcess(input: {
+      workspaceId: string;
+      providerId: ProviderId;
+      sandboxId: string;
+      request: ProcessCreateRequest;
+    }): Promise<SandboxProcessRecord> {
+      return await withSandboxHandle(
+        input.workspaceId,
+        input.providerId,
+        input.sandboxId,
+        async (handle) => handle.createProcess(input.request)
+      );
+    },
+
+    async listSandboxProcesses(
+      workspaceId: string,
+      providerId: ProviderId,
+      sandboxId: string
+    ): Promise<{ processes: SandboxProcessRecord[] }> {
       return await withSandboxHandle(
         workspaceId,
         providerId,
         sandboxId,
-        async (handle) => handle.listSessionEvents(input)
+        async (handle) => handle.listProcesses()
       );
+    },
+
+    async getSandboxProcessLogs(
+      workspaceId: string,
+      providerId: ProviderId,
+      sandboxId: string,
+      processId: string,
+      query?: ProcessLogFollowQuery
+    ): Promise<ProcessLogsResponse> {
+      return await withSandboxHandle(
+        workspaceId,
+        providerId,
+        sandboxId,
+        async (handle) => handle.getProcessLogs({ processId, query })
+      );
+    },
+
+    async stopSandboxProcess(
+      workspaceId: string,
+      providerId: ProviderId,
+      sandboxId: string,
+      processId: string,
+      query?: ProcessSignalQuery
+    ): Promise<SandboxProcessRecord> {
+      return await withSandboxHandle(
+        workspaceId,
+        providerId,
+        sandboxId,
+        async (handle) => handle.stopProcess({ processId, query })
+      );
+    },
+
+    async killSandboxProcess(
+      workspaceId: string,
+      providerId: ProviderId,
+      sandboxId: string,
+      processId: string,
+      query?: ProcessSignalQuery
+    ): Promise<SandboxProcessRecord> {
+      return await withSandboxHandle(
+        workspaceId,
+        providerId,
+        sandboxId,
+        async (handle) => handle.killProcess({ processId, query })
+      );
+    },
+
+    async deleteSandboxProcess(
+      workspaceId: string,
+      providerId: ProviderId,
+      sandboxId: string,
+      processId: string
+    ): Promise<void> {
+      await withSandboxHandle(
+        workspaceId,
+        providerId,
+        sandboxId,
+        async (handle) => handle.deleteProcess({ processId })
+      );
+    },
+
+    subscribeSandboxProcesses(
+      workspaceId: string,
+      providerId: ProviderId,
+      sandboxId: string,
+      listener: () => void
+    ): () => void {
+      return subscribeSandboxProcesses(workspaceId, providerId, sandboxId, listener);
     },
 
     async sendSandboxPrompt(input: {
@@ -677,16 +873,12 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       prompt: string;
       notification?: boolean;
     }): Promise<void> {
-      await withSandboxHandle(
-        input.workspaceId,
-        input.providerId,
-        input.sandboxId,
-        async (handle) =>
-          handle.sendPrompt({
-            sessionId: input.sessionId,
-            prompt: input.prompt,
-            notification: input.notification
-          })
+      await withSandboxHandle(input.workspaceId, input.providerId, input.sandboxId, async (handle) =>
+        handle.sendPrompt({
+          sessionId: input.sessionId,
+          prompt: input.prompt,
+          notification: input.notification,
+        }),
       );
     },
 
@@ -694,26 +886,29 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       workspaceId: string,
       providerId: ProviderId,
       sandboxId: string,
-      sessionId: string
+      sessionId: string,
     ): Promise<{ id: string; status: "running" | "idle" | "error" }> {
-      return await withSandboxHandle(
-        workspaceId,
-        providerId,
-        sandboxId,
-        async (handle) => handle.sessionStatus({ sessionId })
-      );
+      return await withSandboxHandle(workspaceId, providerId, sandboxId, async (handle) => handle.sessionStatus({ sessionId }));
     },
 
     async sandboxProviderState(
       workspaceId: string,
       providerId: ProviderId,
-      sandboxId: string
+      sandboxId: string,
     ): Promise<{ providerId: ProviderId; sandboxId: string; state: string; at: number }> {
+      return await withSandboxHandle(workspaceId, providerId, sandboxId, async (handle) => handle.providerState());
+    },
+
+    async getSandboxAgentConnection(
+      workspaceId: string,
+      providerId: ProviderId,
+      sandboxId: string
+    ): Promise<{ endpoint: string; token?: string }> {
       return await withSandboxHandle(
         workspaceId,
         providerId,
         sandboxId,
-        async (handle) => handle.providerState()
+        async (handle) => handle.sandboxAgentConnection()
       );
     },
 
@@ -725,10 +920,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       return subscribeWorkbench(workspaceId, listener);
     },
 
-    async createWorkbenchHandoff(
-      workspaceId: string,
-      input: HandoffWorkbenchCreateHandoffInput
-    ): Promise<HandoffWorkbenchCreateHandoffResponse> {
+    async createWorkbenchHandoff(workspaceId: string, input: HandoffWorkbenchCreateHandoffInput): Promise<HandoffWorkbenchCreateHandoffResponse> {
       return (await workspace(workspaceId)).createWorkbenchHandoff(input);
     },
 
@@ -744,45 +936,27 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       await (await workspace(workspaceId)).renameWorkbenchBranch(input);
     },
 
-    async createWorkbenchSession(
-      workspaceId: string,
-      input: HandoffWorkbenchSelectInput & { model?: string }
-    ): Promise<{ tabId: string }> {
+    async createWorkbenchSession(workspaceId: string, input: HandoffWorkbenchSelectInput & { model?: string }): Promise<{ tabId: string }> {
       return await (await workspace(workspaceId)).createWorkbenchSession(input);
     },
 
-    async renameWorkbenchSession(
-      workspaceId: string,
-      input: HandoffWorkbenchRenameSessionInput
-    ): Promise<void> {
+    async renameWorkbenchSession(workspaceId: string, input: HandoffWorkbenchRenameSessionInput): Promise<void> {
       await (await workspace(workspaceId)).renameWorkbenchSession(input);
     },
 
-    async setWorkbenchSessionUnread(
-      workspaceId: string,
-      input: HandoffWorkbenchSetSessionUnreadInput
-    ): Promise<void> {
+    async setWorkbenchSessionUnread(workspaceId: string, input: HandoffWorkbenchSetSessionUnreadInput): Promise<void> {
       await (await workspace(workspaceId)).setWorkbenchSessionUnread(input);
     },
 
-    async updateWorkbenchDraft(
-      workspaceId: string,
-      input: HandoffWorkbenchUpdateDraftInput
-    ): Promise<void> {
+    async updateWorkbenchDraft(workspaceId: string, input: HandoffWorkbenchUpdateDraftInput): Promise<void> {
       await (await workspace(workspaceId)).updateWorkbenchDraft(input);
     },
 
-    async changeWorkbenchModel(
-      workspaceId: string,
-      input: HandoffWorkbenchChangeModelInput
-    ): Promise<void> {
+    async changeWorkbenchModel(workspaceId: string, input: HandoffWorkbenchChangeModelInput): Promise<void> {
       await (await workspace(workspaceId)).changeWorkbenchModel(input);
     },
 
-    async sendWorkbenchMessage(
-      workspaceId: string,
-      input: HandoffWorkbenchSendMessageInput
-    ): Promise<void> {
+    async sendWorkbenchMessage(workspaceId: string, input: HandoffWorkbenchSendMessageInput): Promise<void> {
       await (await workspace(workspaceId)).sendWorkbenchMessage(input);
     },
 
@@ -809,13 +983,13 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       }
 
       await (await workspace(workspaceId)).useWorkspace({
-        workspaceId
+        workspaceId,
       });
       return { ok: true };
     },
 
     async useWorkspace(workspaceId: string): Promise<{ workspaceId: string }> {
       return (await workspace(workspaceId)).useWorkspace({ workspaceId });
-    }
+    },
   };
 }

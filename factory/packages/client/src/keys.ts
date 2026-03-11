@@ -12,11 +12,7 @@ export function handoffKey(workspaceId: string, repoId: string, handoffId: strin
   return ["ws", workspaceId, "project", repoId, "handoff", handoffId];
 }
 
-export function sandboxInstanceKey(
-  workspaceId: string,
-  providerId: string,
-  sandboxId: string
-): ActorKey {
+export function sandboxInstanceKey(workspaceId: string, providerId: string, sandboxId: string): ActorKey {
   return ["ws", workspaceId, "provider", providerId, "sandbox", sandboxId];
 }
 
@@ -32,13 +28,7 @@ export function projectBranchSyncKey(workspaceId: string, repoId: string): Actor
   return ["ws", workspaceId, "project", repoId, "branch-sync"];
 }
 
-export function handoffStatusSyncKey(
-  workspaceId: string,
-  repoId: string,
-  handoffId: string,
-  sandboxId: string,
-  sessionId: string
-): ActorKey {
+export function handoffStatusSyncKey(workspaceId: string, repoId: string, handoffId: string, sandboxId: string, sessionId: string): ActorKey {
   // Include sandbox + session so multiple sandboxes/sessions can be tracked per handoff.
   return ["ws", workspaceId, "project", repoId, "handoff", handoffId, "status-sync", sandboxId, sessionId];
 }

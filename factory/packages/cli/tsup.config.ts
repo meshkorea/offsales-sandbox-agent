@@ -20,7 +20,7 @@ function sourceId(): string {
   try {
     const raw = execSync("git rev-parse --short HEAD", {
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"]
+      stdio: ["ignore", "pipe", "ignore"],
     }).trim();
     if (raw.length > 0) {
       return raw;
@@ -48,7 +48,6 @@ export default defineConfig({
   format: ["esm"],
   dts: true,
   define: {
-    __HF_BUILD_ID__: JSON.stringify(buildId)
-  }
+    __HF_BUILD_ID__: JSON.stringify(buildId),
+  },
 });
-

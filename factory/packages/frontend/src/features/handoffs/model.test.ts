@@ -24,7 +24,7 @@ const base: HandoffRecord = {
       cwd: null,
       createdAt: 10,
       updatedAt: 10,
-    }
+    },
   ],
   agentType: null,
   prSubmitted: false,

@@ -3,6 +3,11 @@ import type {
   ListEventsRequest,
   ListPage,
   ListPageRequest,
+  ProcessCreateRequest,
+  ProcessInfo,
+  ProcessLogFollowQuery,
+  ProcessLogsResponse,
+  ProcessSignalQuery,
   SessionEvent,
   SessionPersistDriver,
   SessionRecord
@@ -118,18 +123,11 @@ export class SandboxAgentClient {
     const message = err instanceof Error ? err.message : String(err);
     const lowered = message.toLowerCase();
     // sandbox-agent server times out long-running ACP prompts and returns a 504-like error.
-    return (
-      lowered.includes("timeout waiting for agent response") ||
-      lowered.includes("timed out waiting for agent response") ||
-      lowered.includes("504")
-    );
+    return lowered.includes("timeout waiting for agent response") || lowered.includes("timed out waiting for agent response") || lowered.includes("504");
   }
 
   async createSession(request: string | SandboxSessionCreateRequest): Promise<SandboxSession> {
-    const normalized: SandboxSessionCreateRequest =
-      typeof request === "string"
-        ? { prompt: request }
-        : request;
+    const normalized: SandboxSessionCreateRequest = typeof request === "string" ? { prompt: request } : request;
     const sdk = await this.sdk();
     // Do not wrap createSession in a local Promise.race timeout. The underlying SDK
     // call is not abortable, so local timeout races create overlapping ACP requests and
@@ -211,6 +209,39 @@ export class SandboxAgentClient {
   async listEvents(request: ListEventsRequest): Promise<ListPage<SessionEvent>> {
     const sdk = await this.sdk();
     return sdk.getEvents(request);
+  }
+
+  async createProcess(request: ProcessCreateRequest): Promise<ProcessInfo> {
+    const sdk = await this.sdk();
+    return await sdk.createProcess(request);
+  }
+
+  async listProcesses(): Promise<{ processes: ProcessInfo[] }> {
+    const sdk = await this.sdk();
+    return await sdk.listProcesses();
+  }
+
+  async getProcessLogs(
+    processId: string,
+    query: ProcessLogFollowQuery = {}
+  ): Promise<ProcessLogsResponse> {
+    const sdk = await this.sdk();
+    return await sdk.getProcessLogs(processId, query);
+  }
+
+  async stopProcess(processId: string, query?: ProcessSignalQuery): Promise<ProcessInfo> {
+    const sdk = await this.sdk();
+    return await sdk.stopProcess(processId, query);
+  }
+
+  async killProcess(processId: string, query?: ProcessSignalQuery): Promise<ProcessInfo> {
+    const sdk = await this.sdk();
+    return await sdk.killProcess(processId, query);
+  }
+
+  async deleteProcess(processId: string): Promise<void> {
+    const sdk = await this.sdk();
+    await sdk.deleteProcess(processId);
   }
 
   async sendPrompt(request: SandboxSessionPromptRequest): Promise<void> {
@@ -343,18 +374,14 @@ export class SandboxAgentClient {
     } while (cursor);
   }
 
-  async generateCommitMessage(
-    dir: string,
-    spec: string,
-    task: string
-  ): Promise<string> {
+  async generateCommitMessage(dir: string, spec: string, task: string): Promise<string> {
     const prompt = [
       "Generate a conventional commit message for the following changes.",
       "Return ONLY the commit message, no explanation or markdown formatting.",
       "",
       `Task: ${task}`,
       "",
-      `Spec/diff:\n${spec}`
+      `Spec/diff:\n${spec}`,
     ].join("\n");
 
     const sdk = await this.sdk();

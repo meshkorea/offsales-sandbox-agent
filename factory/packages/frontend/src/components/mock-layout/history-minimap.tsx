@@ -4,13 +4,7 @@ import { LabelXSmall } from "baseui/typography";
 
 import { formatMessageTimestamp, type HistoryEvent } from "./view-model";
 
-export const HistoryMinimap = memo(function HistoryMinimap({
-  events,
-  onSelect,
-}: {
-  events: HistoryEvent[];
-  onSelect: (event: HistoryEvent) => void;
-}) {
+export const HistoryMinimap = memo(function HistoryMinimap({ events, onSelect }: { events: HistoryEvent[]; onSelect: (event: HistoryEvent) => void }) {
   const [css, theme] = useStyletron();
   const [open, setOpen] = useState(false);
   const [activeEventId, setActiveEventId] = useState<string | null>(events[events.length - 1]?.id ?? null);
@@ -49,7 +43,7 @@ export const HistoryMinimap = memo(function HistoryMinimap({
         >
           <div className={css({ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" })}>
             <LabelXSmall color={theme.colors.contentTertiary} $style={{ letterSpacing: "0.08em", textTransform: "uppercase" }}>
-              Handoff Events
+              Task Events
             </LabelXSmall>
             <LabelXSmall color={theme.colors.contentTertiary}>{events.length}</LabelXSmall>
           </div>
@@ -64,7 +58,11 @@ export const HistoryMinimap = memo(function HistoryMinimap({
                   onFocus={() => setActiveEventId(event.id)}
                   onClick={() => onSelect(event)}
                   className={css({
-                    all: "unset",
+                    appearance: "none",
+                    WebkitAppearance: "none",
+                    background: "none",
+                    border: "none",
+                    margin: "0",
                     display: "grid",
                     gridTemplateColumns: "1fr auto",
                     gap: "10px",

@@ -26,7 +26,7 @@ const CONTROL = {
   start: "project.pr_sync.control.start",
   stop: "project.pr_sync.control.stop",
   setInterval: "project.pr_sync.control.set_interval",
-  force: "project.pr_sync.control.force"
+  force: "project.pr_sync.control.force",
 } as const;
 
 async function pollPrs(c: { state: ProjectPrSyncState }): Promise<void> {
@@ -45,14 +45,14 @@ export const projectPrSync = actor({
   },
   options: {
     // Polling actors rely on timer-based wakeups; sleeping would pause the timer and stop polling.
-    noSleep: true
+    noSleep: true,
   },
   createState: (_c, input: ProjectPrSyncInput): ProjectPrSyncState => ({
     workspaceId: input.workspaceId,
     repoId: input.repoId,
     repoPath: input.repoPath,
     intervalMs: input.intervalMs,
-    running: true
+    running: true,
   }),
   actions: {
     async start(c): Promise<void> {
@@ -73,7 +73,7 @@ export const projectPrSync = actor({
     async force(c): Promise<void> {
       const self = selfProjectPrSync(c);
       await self.send(CONTROL.force, {}, { wait: true, timeout: 5 * 60_000 });
-    }
+    },
   },
   run: workflow(async (ctx) => {
     await runWorkflowPollingLoop<ProjectPrSyncState>(ctx, {
@@ -85,10 +85,10 @@ export const projectPrSync = actor({
         } catch (error) {
           logActorWarning("project-pr-sync", "poll failed", {
             error: resolveErrorMessage(error),
-            stack: resolveErrorStack(error)
+            stack: resolveErrorStack(error),
           });
         }
-      }
+      },
     });
-  })
+  }),
 });

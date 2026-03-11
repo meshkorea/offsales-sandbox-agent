@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { useStyletron } from "baseui";
 import { LabelSmall } from "baseui/typography";
-import { MailOpen } from "lucide-react";
+import { Clock, MailOpen } from "lucide-react";
 
 import { PanelHeaderBar } from "./ui";
 import { type AgentTab, type Handoff } from "./view-model";
@@ -30,7 +30,7 @@ export const TranscriptHeader = memo(function TranscriptHeader({
   const [css, theme] = useStyletron();
 
   return (
-    <PanelHeaderBar>
+    <PanelHeaderBar $style={{ backgroundColor: "#0f0f11", borderBottom: "none" }}>
       {editingField === "title" ? (
         <input
           autoFocus
@@ -45,8 +45,14 @@ export const TranscriptHeader = memo(function TranscriptHeader({
             }
           }}
           className={css({
-            all: "unset",
-            fontWeight: 600,
+            appearance: "none",
+            WebkitAppearance: "none",
+            background: "none",
+            border: "none",
+            padding: "0",
+            margin: "0",
+            outline: "none",
+            fontWeight: 500,
             fontSize: "14px",
             color: theme.colors.contentPrimary,
             borderBottom: "1px solid rgba(255, 255, 255, 0.3)",
@@ -58,7 +64,7 @@ export const TranscriptHeader = memo(function TranscriptHeader({
         <LabelSmall
           title="Rename"
           color={theme.colors.contentPrimary}
-          $style={{ fontWeight: 600, whiteSpace: "nowrap", cursor: "pointer", ":hover": { textDecoration: "underline" } }}
+          $style={{ fontWeight: 400, whiteSpace: "nowrap", cursor: "pointer", ":hover": { textDecoration: "underline" } }}
           onClick={() => onStartEditingField("title", handoff.title)}
         >
           {handoff.title}
@@ -79,7 +85,11 @@ export const TranscriptHeader = memo(function TranscriptHeader({
               }
             }}
             className={css({
-              all: "unset",
+              appearance: "none",
+              WebkitAppearance: "none",
+              background: "none",
+              margin: "0",
+              outline: "none",
               padding: "2px 8px",
               borderRadius: "999px",
               border: "1px solid rgba(255, 255, 255, 0.3)",
@@ -113,25 +123,50 @@ export const TranscriptHeader = memo(function TranscriptHeader({
         )
       ) : null}
       <div className={css({ flex: 1 })} />
+      <div
+        className={css({
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "5px",
+          padding: "3px 10px",
+          borderRadius: "6px",
+          backgroundColor: "rgba(255, 255, 255, 0.05)",
+          border: "1px solid rgba(255, 255, 255, 0.08)",
+          fontSize: "11px",
+          fontWeight: 500,
+          lineHeight: 1,
+          color: theme.colors.contentSecondary,
+          whiteSpace: "nowrap",
+        })}
+      >
+        <Clock size={11} style={{ flexShrink: 0 }} />
+        <span>847 min used</span>
+      </div>
       {activeTab ? (
         <button
           onClick={() => onSetActiveTabUnread(!activeTab.unread)}
           className={css({
-            all: "unset",
-            display: "flex",
+            appearance: "none",
+            WebkitAppearance: "none",
+            background: "none",
+            border: "none",
+            margin: "0",
+            boxSizing: "border-box",
+            display: "inline-flex",
             alignItems: "center",
             gap: "5px",
             padding: "4px 10px",
             borderRadius: "6px",
             fontSize: "11px",
             fontWeight: 500,
+            lineHeight: 1,
             color: theme.colors.contentSecondary,
             cursor: "pointer",
             transition: "all 200ms ease",
             ":hover": { backgroundColor: "rgba(255, 255, 255, 0.06)", color: theme.colors.contentPrimary },
           })}
         >
-          <MailOpen size={12} /> {activeTab.unread ? "Mark read" : "Mark unread"}
+          <MailOpen size={12} style={{ flexShrink: 0 }} /> {activeTab.unread ? "Mark read" : "Mark unread"}
         </button>
       ) : null}
     </PanelHeaderBar>

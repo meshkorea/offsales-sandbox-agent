@@ -12,11 +12,11 @@ const cfg: AppConfig = ConfigSchema.parse({
     opencode_poll_interval: 2,
     github_poll_interval: 30,
     backup_interval_secs: 3600,
-    backup_retention_days: 7
+    backup_retention_days: 7,
   },
   providers: {
-    daytona: { image: "ubuntu:24.04" }
-  }
+    daytona: { image: "ubuntu:24.04" },
+  },
 });
 
 describe("resolveWorkspaceId", () => {
@@ -31,7 +31,7 @@ describe("resolveWorkspaceId", () => {
   it("falls back to literal default when config value is empty", () => {
     const empty = {
       ...cfg,
-      workspace: { default: "" }
+      workspace: { default: "" },
     } as AppConfig;
 
     expect(resolveWorkspaceId(undefined, empty)).toBe("default");
