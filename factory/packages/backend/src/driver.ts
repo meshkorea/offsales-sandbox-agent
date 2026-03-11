@@ -24,7 +24,7 @@ import {
   gitSpiceSyncRepo,
   gitSpiceTrackBranch,
 } from "./integrations/git-spice/index.js";
-import { listPullRequests, createPr } from "./integrations/github/index.js";
+import { listPullRequests, createPr, starRepository } from "./integrations/github/index.js";
 import { SandboxAgentClient } from "./integrations/sandbox-agent/client.js";
 import { DaytonaClient } from "./integrations/daytona/client.js";
 
@@ -59,6 +59,7 @@ export interface StackDriver {
 export interface GithubDriver {
   listPullRequests(repoPath: string): Promise<PullRequestSnapshot[]>;
   createPr(repoPath: string, headBranch: string, title: string, body?: string): Promise<{ number: number; url: string }>;
+  starRepository(repoFullName: string): Promise<void>;
 }
 
 export interface SandboxAgentClientLike {
@@ -131,6 +132,7 @@ export function createDefaultDriver(): BackendDriver {
     github: {
       listPullRequests,
       createPr,
+      starRepository,
     },
     sandboxAgent: {
       createClient: (opts) => {

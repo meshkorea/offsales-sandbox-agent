@@ -58,6 +58,7 @@ export function createTestGithubDriver(overrides?: Partial<GithubDriver>): Githu
       number: 1,
       url: `https://github.com/test/repo/pull/1`,
     }),
+    starRepository: async () => {},
     ...overrides,
   };
 }

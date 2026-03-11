@@ -201,6 +201,17 @@ export const WorkspaceUseInputSchema = z.object({
 });
 export type WorkspaceUseInput = z.infer<typeof WorkspaceUseInputSchema>;
 
+export const StarSandboxAgentRepoInputSchema = z.object({
+  workspaceId: WorkspaceIdSchema,
+});
+export type StarSandboxAgentRepoInput = z.infer<typeof StarSandboxAgentRepoInputSchema>;
+
+export const StarSandboxAgentRepoResultSchema = z.object({
+  repo: z.string().min(1),
+  starredAt: z.number().int(),
+});
+export type StarSandboxAgentRepoResult = z.infer<typeof StarSandboxAgentRepoResultSchema>;
+
 export const HistoryQueryInputSchema = z.object({
   workspaceId: WorkspaceIdSchema,
   limit: z.number().int().positive().max(500).optional(),

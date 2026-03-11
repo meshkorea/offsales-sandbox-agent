@@ -22,7 +22,10 @@ import {
   type Message,
   type ModelId,
 } from "./mock-layout/view-model";
+import { backendClient } from "../lib/backend";
 import { handoffWorkbenchClient } from "../lib/workbench";
+
+const STAR_SANDBOX_AGENT_REPO_STORAGE_KEY = "hf.onboarding.starSandboxAgentRepo";
 
 function firstAgentTabId(handoff: Handoff): string | null {
   return handoff.tabs[0]?.id ?? null;
@@ -559,8 +562,22 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
   const [activeTabIdByHandoff, setActiveTabIdByHandoff] = useState<Record<string, string | null>>({});
   const [lastAgentTabIdByHandoff, setLastAgentTabIdByHandoff] = useState<Record<string, string | null>>({});
   const [openDiffsByHandoff, setOpenDiffsByHandoff] = useState<Record<string, string[]>>({});
+  const [starRepoPromptOpen, setStarRepoPromptOpen] = useState(false);
+  const [starRepoPending, setStarRepoPending] = useState(false);
+  const [starRepoError, setStarRepoError] = useState<string | null>(null);
 
   const activeHandoff = useMemo(() => handoffs.find((handoff) => handoff.id === selectedHandoffId) ?? handoffs[0] ?? null, [handoffs, selectedHandoffId]);
+
+  useEffect(() => {
+    try {
+      const status = globalThis.localStorage?.getItem(STAR_SANDBOX_AGENT_REPO_STORAGE_KEY);
+      if (status !== "completed" && status !== "dismissed") {
+        setStarRepoPromptOpen(true);
+      }
+    } catch {
+      setStarRepoPromptOpen(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (activeHandoff) {
@@ -798,105 +815,231 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
     [activeHandoff, lastAgentTabIdByHandoff],
   );
 
+  const dismissStarRepoPrompt = useCallback(() => {
+    setStarRepoError(null);
+    try {
+      globalThis.localStorage?.setItem(STAR_SANDBOX_AGENT_REPO_STORAGE_KEY, "dismissed");
+    } catch {
+      // ignore storage failures
+    }
+    setStarRepoPromptOpen(false);
+  }, []);
+
+  const starSandboxAgentRepo = useCallback(() => {
+    setStarRepoPending(true);
+    setStarRepoError(null);
+    void backendClient
+      .starSandboxAgentRepo(workspaceId)
+      .then(() => {
+        try {
+          globalThis.localStorage?.setItem(STAR_SANDBOX_AGENT_REPO_STORAGE_KEY, "completed");
+        } catch {
+          // ignore storage failures
+        }
+        setStarRepoPromptOpen(false);
+      })
+      .catch((error) => {
+        setStarRepoError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        setStarRepoPending(false);
+      });
+  }, [workspaceId]);
+
+  const starRepoPrompt = starRepoPromptOpen ? (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 10000,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px",
+        background: "rgba(0, 0, 0, 0.68)",
+      }}
+      data-testid="onboarding-star-repo-modal"
+    >
+      <div
+        style={{
+          width: "min(520px, 100%)",
+          border: "1px solid rgba(255, 255, 255, 0.14)",
+          borderRadius: "18px",
+          background: "#111113",
+          boxShadow: "0 32px 80px rgba(0, 0, 0, 0.45)",
+          padding: "24px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "16px",
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ fontSize: "12px", letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255, 255, 255, 0.5)" }}>Onboarding</div>
+          <h2 style={{ margin: 0, fontSize: "24px", lineHeight: 1.1 }}>Give us support for sandbox agent</h2>
+          <p style={{ margin: 0, color: "rgba(255, 255, 255, 0.72)", lineHeight: 1.5 }}>
+            Before you keep going, give us support for sandbox agent and star the repo right here in the app.
+          </p>
+        </div>
+
+        {starRepoError ? (
+          <div
+            style={{
+              borderRadius: "12px",
+              border: "1px solid rgba(255, 110, 110, 0.32)",
+              background: "rgba(255, 110, 110, 0.08)",
+              padding: "12px 14px",
+              color: "#ffb4b4",
+              fontSize: "13px",
+            }}
+            data-testid="onboarding-star-repo-error"
+          >
+            {starRepoError}
+          </div>
+        ) : null}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+          <button
+            type="button"
+            onClick={dismissStarRepoPrompt}
+            style={{
+              border: "1px solid rgba(255, 255, 255, 0.14)",
+              borderRadius: "999px",
+              padding: "10px 16px",
+              background: "transparent",
+              color: "#e4e4e7",
+              cursor: "pointer",
+              fontWeight: 600,
+            }}
+          >
+            Maybe later
+          </button>
+          <button
+            type="button"
+            onClick={starSandboxAgentRepo}
+            disabled={starRepoPending}
+            style={{
+              border: 0,
+              borderRadius: "999px",
+              padding: "10px 16px",
+              background: starRepoPending ? "#7f5539" : "#ff4f00",
+              color: "#fff",
+              cursor: starRepoPending ? "progress" : "pointer",
+              fontWeight: 700,
+            }}
+            data-testid="onboarding-star-repo-submit"
+          >
+            {starRepoPending ? "Starring..." : "Star the sandbox agent repo"}
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   if (!activeHandoff) {
     return (
+      <>
+        <Shell>
+          <Sidebar
+            projects={projects}
+            activeId=""
+            onSelect={selectHandoff}
+            onCreate={createHandoff}
+            onMarkUnread={markHandoffUnread}
+            onRenameHandoff={renameHandoff}
+            onRenameBranch={renameBranch}
+          />
+          <SPanel>
+            <ScrollBody>
+              <div
+                style={{
+                  minHeight: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "32px",
+                }}
+              >
+                <div
+                  style={{
+                    maxWidth: "420px",
+                    textAlign: "center",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "12px",
+                  }}
+                >
+                  <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 600 }}>Create your first handoff</h2>
+                  <p style={{ margin: 0, opacity: 0.75 }}>
+                    {viewModel.repos.length > 0
+                      ? "Start from the sidebar to create a handoff on the first available repo."
+                      : "No repos are available in this workspace yet."}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={createHandoff}
+                    disabled={viewModel.repos.length === 0}
+                    style={{
+                      alignSelf: "center",
+                      border: 0,
+                      borderRadius: "999px",
+                      padding: "10px 18px",
+                      background: viewModel.repos.length > 0 ? "#ff4f00" : "#444",
+                      color: "#fff",
+                      cursor: viewModel.repos.length > 0 ? "pointer" : "not-allowed",
+                      fontWeight: 600,
+                    }}
+                  >
+                    New handoff
+                  </button>
+                </div>
+              </div>
+            </ScrollBody>
+          </SPanel>
+          <SPanel />
+        </Shell>
+        {starRepoPrompt}
+      </>
+    );
+  }
+
+  return (
+    <>
       <Shell>
         <Sidebar
           projects={projects}
-          activeId=""
+          activeId={activeHandoff.id}
           onSelect={selectHandoff}
           onCreate={createHandoff}
           onMarkUnread={markHandoffUnread}
           onRenameHandoff={renameHandoff}
           onRenameBranch={renameBranch}
         />
-        <SPanel>
-          <ScrollBody>
-            <div
-              style={{
-                minHeight: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: "32px",
-              }}
-            >
-              <div
-                style={{
-                  maxWidth: "420px",
-                  textAlign: "center",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "12px",
-                }}
-              >
-                <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 600 }}>Create your first handoff</h2>
-                <p style={{ margin: 0, opacity: 0.75 }}>
-                  {viewModel.repos.length > 0
-                    ? "Start from the sidebar to create a handoff on the first available repo."
-                    : "No repos are available in this workspace yet."}
-                </p>
-                <button
-                  type="button"
-                  onClick={createHandoff}
-                  disabled={viewModel.repos.length === 0}
-                  style={{
-                    alignSelf: "center",
-                    border: 0,
-                    borderRadius: "999px",
-                    padding: "10px 18px",
-                    background: viewModel.repos.length > 0 ? "#ff4f00" : "#444",
-                    color: "#fff",
-                    cursor: viewModel.repos.length > 0 ? "pointer" : "not-allowed",
-                    fontWeight: 600,
-                  }}
-                >
-                  New handoff
-                </button>
-              </div>
-            </div>
-          </ScrollBody>
-        </SPanel>
-        <SPanel />
+        <TranscriptPanel
+          handoff={activeHandoff}
+          activeTabId={activeTabId}
+          lastAgentTabId={lastAgentTabId}
+          openDiffs={openDiffs}
+          onSyncRouteSession={syncRouteSession}
+          onSetActiveTabId={(tabId) => {
+            setActiveTabIdByHandoff((current) => ({ ...current, [activeHandoff.id]: tabId }));
+          }}
+          onSetLastAgentTabId={(tabId) => {
+            setLastAgentTabIdByHandoff((current) => ({ ...current, [activeHandoff.id]: tabId }));
+          }}
+          onSetOpenDiffs={(paths) => {
+            setOpenDiffsByHandoff((current) => ({ ...current, [activeHandoff.id]: paths }));
+          }}
+        />
+        <RightSidebar
+          handoff={activeHandoff}
+          activeTabId={activeTabId}
+          onOpenDiff={openDiffTab}
+          onArchive={archiveHandoff}
+          onRevertFile={revertFile}
+          onPublishPr={publishPr}
+        />
       </Shell>
-    );
-  }
-
-  return (
-    <Shell>
-      <Sidebar
-        projects={projects}
-        activeId={activeHandoff.id}
-        onSelect={selectHandoff}
-        onCreate={createHandoff}
-        onMarkUnread={markHandoffUnread}
-        onRenameHandoff={renameHandoff}
-        onRenameBranch={renameBranch}
-      />
-      <TranscriptPanel
-        handoff={activeHandoff}
-        activeTabId={activeTabId}
-        lastAgentTabId={lastAgentTabId}
-        openDiffs={openDiffs}
-        onSyncRouteSession={syncRouteSession}
-        onSetActiveTabId={(tabId) => {
-          setActiveTabIdByHandoff((current) => ({ ...current, [activeHandoff.id]: tabId }));
-        }}
-        onSetLastAgentTabId={(tabId) => {
-          setLastAgentTabIdByHandoff((current) => ({ ...current, [activeHandoff.id]: tabId }));
-        }}
-        onSetOpenDiffs={(paths) => {
-          setOpenDiffsByHandoff((current) => ({ ...current, [activeHandoff.id]: paths }));
-        }}
-      />
-      <RightSidebar
-        handoff={activeHandoff}
-        activeTabId={activeTabId}
-        onOpenDiff={openDiffTab}
-        onArchive={archiveHandoff}
-        onRevertFile={revertFile}
-        onPublishPr={publishPr}
-      />
-    </Shell>
+      {starRepoPrompt}
+    </>
   );
 }
