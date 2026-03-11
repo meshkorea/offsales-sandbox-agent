@@ -56,6 +56,7 @@ const ChatPanel = ({
   isThinking,
   agentId,
   tokenUsage,
+  onPermissionReply,
 }: {
   sessionId: string;
   transcriptEntries: TranscriptEntry[];
@@ -86,6 +87,7 @@ const ChatPanel = ({
   isThinking?: boolean;
   agentId?: string;
   tokenUsage?: { used: number; size: number; cost?: number } | null;
+  onPermissionReply?: (permissionId: string, reply: "once" | "always" | "reject") => void;
 }) => {
   const [showAgentMenu, setShowAgentMenu] = useState(false);
   const [copiedSessionId, setCopiedSessionId] = useState(false);
@@ -265,6 +267,7 @@ const ChatPanel = ({
           onKeyDown={onKeyDown}
           placeholder={sessionEnded ? "Session ended" : "Send a message..."}
           disabled={sessionEnded}
+          onPermissionReply={onPermissionReply}
         />
       )}
     </div>

@@ -3,10 +3,18 @@
 import type { ReactNode, RefObject } from "react";
 import { useMemo, useState } from "react";
 
+export type PermissionReply = "once" | "always" | "reject";
+
+export type PermissionOption = {
+  optionId: string;
+  name: string;
+  kind: string;
+};
+
 export type TranscriptEntry = {
   id: string;
   eventId?: string;
-  kind: "message" | "tool" | "meta" | "reasoning";
+  kind: "message" | "tool" | "meta" | "reasoning" | "permission";
   time: string;
   role?: "user" | "assistant";
   text?: string;
@@ -16,6 +24,14 @@ export type TranscriptEntry = {
   toolStatus?: string;
   reasoning?: { text: string; visibility?: string };
   meta?: { title: string; detail?: string; severity?: "info" | "error" };
+  permission?: {
+    permissionId: string;
+    title: string;
+    description?: string;
+    options: PermissionOption[];
+    resolved?: boolean;
+    selectedOptionId?: string;
+  };
 };
 
 export interface AgentTranscriptClassNames {
@@ -50,6 +66,14 @@ export interface AgentTranscriptClassNames {
   toolSectionTitle: string;
   toolCode: string;
   toolCodeMuted: string;
+  permissionPrompt: string;
+  permissionHeader: string;
+  permissionIcon: string;
+  permissionTitle: string;
+  permissionDescription: string;
+  permissionActions: string;
+  permissionButton: string;
+  permissionAutoResolved: string;
   thinkingRow: string;
   thinkingAvatar: string;
   thinkingAvatarImage: string;
@@ -57,6 +81,16 @@ export interface AgentTranscriptClassNames {
   thinkingIndicator: string;
   thinkingDot: string;
   endAnchor: string;
+}
+
+export interface PermissionOptionRenderContext {
+  entry: TranscriptEntry;
+  option: PermissionOption;
+  label: string;
+  reply: PermissionReply;
+  selected: boolean;
+  dimmed: boolean;
+  resolved: boolean;
 }
 
 export interface AgentTranscriptProps {
@@ -69,6 +103,7 @@ export interface AgentTranscriptProps {
   isThinking?: boolean;
   agentId?: string;
   onEventClick?: (eventId: string) => void;
+  onPermissionReply?: (permissionId: string, reply: PermissionReply) => void;
   isDividerEntry?: (entry: TranscriptEntry) => boolean;
   canOpenEvent?: (entry: TranscriptEntry) => boolean;
   getToolGroupSummary?: (entries: TranscriptEntry[]) => string;
@@ -79,12 +114,15 @@ export interface AgentTranscriptProps {
   renderToolGroupIcon?: (entries: TranscriptEntry[], expanded: boolean) => ReactNode;
   renderChevron?: (expanded: boolean) => ReactNode;
   renderEventLinkContent?: (entry: TranscriptEntry) => ReactNode;
+  renderPermissionIcon?: (entry: TranscriptEntry) => ReactNode;
+  renderPermissionOptionContent?: (context: PermissionOptionRenderContext) => ReactNode;
 }
 
 type GroupedEntries =
   | { type: "message"; entries: TranscriptEntry[] }
   | { type: "tool-group"; entries: TranscriptEntry[] }
-  | { type: "divider"; entries: TranscriptEntry[] };
+  | { type: "divider"; entries: TranscriptEntry[] }
+  | { type: "permission"; entries: TranscriptEntry[] };
 
 const DEFAULT_CLASS_NAMES: AgentTranscriptClassNames = {
   root: "sa-agent-transcript",
@@ -118,6 +156,14 @@ const DEFAULT_CLASS_NAMES: AgentTranscriptClassNames = {
   toolSectionTitle: "sa-agent-transcript-tool-section-title",
   toolCode: "sa-agent-transcript-tool-code",
   toolCodeMuted: "sa-agent-transcript-tool-code-muted",
+  permissionPrompt: "sa-agent-transcript-permission-prompt",
+  permissionHeader: "sa-agent-transcript-permission-header",
+  permissionIcon: "sa-agent-transcript-permission-icon",
+  permissionTitle: "sa-agent-transcript-permission-title",
+  permissionDescription: "sa-agent-transcript-permission-description",
+  permissionActions: "sa-agent-transcript-permission-actions",
+  permissionButton: "sa-agent-transcript-permission-button",
+  permissionAutoResolved: "sa-agent-transcript-permission-auto-resolved",
   thinkingRow: "sa-agent-transcript-thinking-row",
   thinkingAvatar: "sa-agent-transcript-thinking-avatar",
   thinkingAvatarImage: "sa-agent-transcript-thinking-avatar-image",
@@ -128,6 +174,8 @@ const DEFAULT_CLASS_NAMES: AgentTranscriptClassNames = {
 };
 
 const DEFAULT_DIVIDER_TITLES = new Set(["Session Started", "Turn Started", "Turn Ended"]);
+
+const cx = (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(" ");
 
 const mergeClassNames = (
   defaults: AgentTranscriptClassNames,
@@ -164,6 +212,14 @@ const mergeClassNames = (
   toolSectionTitle: cx(defaults.toolSectionTitle, overrides?.toolSectionTitle),
   toolCode: cx(defaults.toolCode, overrides?.toolCode),
   toolCodeMuted: cx(defaults.toolCodeMuted, overrides?.toolCodeMuted),
+  permissionPrompt: cx(defaults.permissionPrompt, overrides?.permissionPrompt),
+  permissionHeader: cx(defaults.permissionHeader, overrides?.permissionHeader),
+  permissionIcon: cx(defaults.permissionIcon, overrides?.permissionIcon),
+  permissionTitle: cx(defaults.permissionTitle, overrides?.permissionTitle),
+  permissionDescription: cx(defaults.permissionDescription, overrides?.permissionDescription),
+  permissionActions: cx(defaults.permissionActions, overrides?.permissionActions),
+  permissionButton: cx(defaults.permissionButton, overrides?.permissionButton),
+  permissionAutoResolved: cx(defaults.permissionAutoResolved, overrides?.permissionAutoResolved),
   thinkingRow: cx(defaults.thinkingRow, overrides?.thinkingRow),
   thinkingAvatar: cx(defaults.thinkingAvatar, overrides?.thinkingAvatar),
   thinkingAvatarImage: cx(defaults.thinkingAvatarImage, overrides?.thinkingAvatarImage),
@@ -173,12 +229,11 @@ const mergeClassNames = (
   endAnchor: cx(defaults.endAnchor, overrides?.endAnchor),
 });
 
-const cx = (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(" ");
-
 const getMessageVariant = (entry: TranscriptEntry) => {
   if (entry.kind === "tool") return "tool";
   if (entry.kind === "meta") return entry.meta?.severity === "error" ? "error" : "system";
   if (entry.kind === "reasoning") return "assistant";
+  if (entry.kind === "permission") return "system";
   if (entry.role === "user") return "user";
   return "assistant";
 };
@@ -210,10 +265,31 @@ const getDefaultToolGroupSummary = (entries: TranscriptEntry[]) => {
   return `${count} Event${count === 1 ? "" : "s"}`;
 };
 
+const getPermissionReplyForOption = (kind: string): PermissionReply => {
+  if (kind === "allow_once") return "once";
+  if (kind === "allow_always") return "always";
+  return "reject";
+};
+
+const getPermissionOptionLabel = (option: PermissionOption) => {
+  if (option.name) return option.name;
+  if (option.kind === "allow_once") return "Allow Once";
+  if (option.kind === "allow_always") return "Always Allow";
+  if (option.kind === "reject_once") return "Reject";
+  if (option.kind === "reject_always") return "Reject Always";
+  return option.kind;
+};
+
+const getPermissionOptionTone = (kind: string) => (kind.startsWith("allow") ? "allow" : "reject");
+
 const defaultRenderMessageText = (entry: TranscriptEntry) => entry.text;
 const defaultRenderPendingIndicator = () => "...";
 const defaultRenderChevron = (expanded: boolean) => (expanded ? "▾" : "▸");
 const defaultRenderEventLinkContent = () => "Open";
+const defaultRenderPermissionIcon = () => "Permission";
+const defaultRenderPermissionOptionContent = ({
+  label,
+}: PermissionOptionRenderContext) => label;
 const defaultIsDividerEntry = (entry: TranscriptEntry) =>
   entry.kind === "meta" && DEFAULT_DIVIDER_TITLES.has(entry.meta?.title ?? "");
 
@@ -238,6 +314,12 @@ const buildGroupedEntries = (
     if (isDividerEntry(entry)) {
       flushToolGroup();
       groupedEntries.push({ type: "divider", entries: [entry] });
+      continue;
+    }
+
+    if (entry.kind === "permission") {
+      flushToolGroup();
+      groupedEntries.push({ type: "permission", entries: [entry] });
       continue;
     }
 
@@ -486,6 +568,89 @@ const ToolGroup = ({
   );
 };
 
+const PermissionPrompt = ({
+  entry,
+  classNames,
+  onPermissionReply,
+  renderPermissionIcon,
+  renderPermissionOptionContent,
+}: {
+  entry: TranscriptEntry;
+  classNames: AgentTranscriptClassNames;
+  onPermissionReply?: (permissionId: string, reply: PermissionReply) => void;
+  renderPermissionIcon: (entry: TranscriptEntry) => ReactNode;
+  renderPermissionOptionContent: (context: PermissionOptionRenderContext) => ReactNode;
+}) => {
+  const permission = entry.permission;
+  if (!permission) {
+    return null;
+  }
+
+  const resolved = Boolean(permission.resolved);
+  const selectedOptionId = permission.selectedOptionId;
+  const canReply = Boolean(onPermissionReply) && !resolved;
+
+  return (
+    <div
+      className={cx(classNames.permissionPrompt, resolved && "resolved")}
+      data-slot="permission-prompt"
+      data-resolved={resolved ? "true" : undefined}
+    >
+      <div className={classNames.permissionHeader} data-slot="permission-header">
+        <span className={classNames.permissionIcon} data-slot="permission-icon">
+          {renderPermissionIcon(entry)}
+        </span>
+        <span className={classNames.permissionTitle} data-slot="permission-title">
+          {permission.title}
+        </span>
+      </div>
+      {permission.description ? (
+        <div className={classNames.permissionDescription} data-slot="permission-description">
+          {permission.description}
+        </div>
+      ) : null}
+      <div className={classNames.permissionActions} data-slot="permission-actions">
+        {permission.options.map((option) => {
+          const reply = getPermissionReplyForOption(option.kind);
+          const label = getPermissionOptionLabel(option);
+          const selected = resolved && selectedOptionId === option.optionId;
+          const dimmed = resolved && !selected && selectedOptionId != null;
+          const tone = getPermissionOptionTone(option.kind);
+
+          return (
+            <button
+              key={option.optionId}
+              type="button"
+              className={cx(classNames.permissionButton, tone, selected && "selected", dimmed && "dimmed")}
+              data-slot="permission-button"
+              data-tone={tone}
+              data-selected={selected ? "true" : undefined}
+              data-dimmed={dimmed ? "true" : undefined}
+              disabled={!canReply}
+              onClick={() => onPermissionReply?.(permission.permissionId, reply)}
+            >
+              {renderPermissionOptionContent({
+                entry,
+                option,
+                label,
+                reply,
+                selected,
+                dimmed,
+                resolved,
+              })}
+            </button>
+          );
+        })}
+        {resolved && !selectedOptionId ? (
+          <span className={classNames.permissionAutoResolved} data-slot="permission-auto-resolved">
+            Auto-resolved
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+};
+
 export const AgentTranscript = ({
   entries,
   className,
@@ -496,6 +661,7 @@ export const AgentTranscript = ({
   isThinking,
   agentId,
   onEventClick,
+  onPermissionReply,
   isDividerEntry = defaultIsDividerEntry,
   canOpenEvent = defaultCanOpenEvent,
   getToolGroupSummary = getDefaultToolGroupSummary,
@@ -506,6 +672,8 @@ export const AgentTranscript = ({
   renderToolGroupIcon = () => null,
   renderChevron = defaultRenderChevron,
   renderEventLinkContent = defaultRenderEventLinkContent,
+  renderPermissionIcon = defaultRenderPermissionIcon,
+  renderPermissionOptionContent = defaultRenderPermissionOptionContent,
 }: AgentTranscriptProps) => {
   const resolvedClassNames = useMemo(
     () => mergeClassNames(DEFAULT_CLASS_NAMES, classNameOverrides),
@@ -547,6 +715,20 @@ export const AgentTranscript = ({
               renderToolGroupIcon={renderToolGroupIcon}
               renderChevron={renderChevron}
               renderEventLinkContent={renderEventLinkContent}
+            />
+          );
+        }
+
+        if (group.type === "permission") {
+          const entry = group.entries[0];
+          return (
+            <PermissionPrompt
+              key={entry.id}
+              entry={entry}
+              classNames={resolvedClassNames}
+              onPermissionReply={onPermissionReply}
+              renderPermissionIcon={renderPermissionIcon}
+              renderPermissionOptionContent={renderPermissionOptionContent}
             />
           );
         }

@@ -11,6 +11,9 @@ export type {
 export type {
   AgentTranscriptClassNames,
   AgentTranscriptProps,
+  PermissionOption,
+  PermissionOptionRenderContext,
+  PermissionReply,
   TranscriptEntry,
 } from "./AgentTranscript.tsx";
 

@@ -71,7 +71,7 @@ export function App() {
           if (event.type === "permission.requested") {
             const data = event.data as PermissionEventData;
             log(`[Auto-approved] ${data.action}`);
-            await client.replyPermission(sessionIdRef.current, data.permission_id, { reply: "once" });
+            await client.respondPermission(sessionIdRef.current, data.permission_id, { reply: "once" });
           }
 
           // Reject questions (don't support interactive input)

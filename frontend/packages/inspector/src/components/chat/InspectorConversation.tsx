@@ -3,9 +3,10 @@ import {
   type AgentConversationClassNames,
   type AgentTranscriptClassNames,
   type ChatComposerClassNames,
+  type PermissionReply,
   type TranscriptEntry,
 } from "@sandbox-agent/react";
-import { AlertTriangle, Brain, ChevronDown, ChevronRight, ExternalLink, Info, PlayCircle, Send, Wrench } from "lucide-react";
+import { AlertTriangle, Brain, Check, ChevronDown, ChevronRight, ExternalLink, Info, PlayCircle, Send, Shield, Wrench, X } from "lucide-react";
 import type { ReactNode } from "react";
 import MarkdownText from "./MarkdownText";
 
@@ -48,6 +49,14 @@ const transcriptClassNames: Partial<AgentTranscriptClassNames> = {
   toolSectionTitle: "tool-section-title",
   toolCode: "tool-code",
   toolCodeMuted: "muted",
+  permissionPrompt: "permission-prompt",
+  permissionHeader: "permission-header",
+  permissionIcon: "permission-icon",
+  permissionTitle: "permission-title",
+  permissionDescription: "permission-description",
+  permissionActions: "permission-actions",
+  permissionButton: "permission-btn",
+  permissionAutoResolved: "permission-auto-resolved",
   thinkingRow: "thinking-row",
   thinkingIndicator: "thinking-indicator",
 };
@@ -86,6 +95,7 @@ export interface InspectorConversationProps {
   onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   placeholder: string;
   disabled: boolean;
+  onPermissionReply?: (permissionId: string, reply: PermissionReply) => void;
 }
 
 const InspectorConversation = ({
@@ -103,6 +113,7 @@ const InspectorConversation = ({
   onKeyDown,
   placeholder,
   disabled,
+  onPermissionReply,
 }: InspectorConversationProps) => {
   return (
     <AgentConversation
@@ -132,6 +143,14 @@ const InspectorConversation = ({
         renderToolGroupIcon: () => <PlayCircle size={14} />,
         renderChevron: (expanded) => (expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />),
         renderEventLinkContent: () => <ExternalLink size={10} />,
+        onPermissionReply,
+        renderPermissionIcon: () => <Shield size={14} />,
+        renderPermissionOptionContent: ({ option, label, selected }) => (
+          <>
+            {selected ? (option.kind.startsWith("allow") ? <Check size={12} /> : <X size={12} />) : null}
+            {label}
+          </>
+        ),
         renderThinkingState: ({ agentId: activeAgentId }) => (
           <div className="thinking-row">
             <div className="thinking-avatar">
