@@ -34,11 +34,8 @@ export interface ActorSqliteDbOptions<TSchema extends Record<string, unknown>> {
   baseDir?: string;
 }
 
-export function actorSqliteDb<TSchema extends Record<string, unknown>>(
-  options: ActorSqliteDbOptions<TSchema>
-): DatabaseProvider<any & RawAccess> {
-  const isBunRuntime =
-    typeof (globalThis as any).Bun !== "undefined" && typeof (process as any)?.versions?.bun === "string";
+export function actorSqliteDb<TSchema extends Record<string, unknown>>(options: ActorSqliteDbOptions<TSchema>): DatabaseProvider<any & RawAccess> {
+  const isBunRuntime = typeof (globalThis as any).Bun !== "undefined" && typeof (process as any)?.versions?.bun === "string";
 
   // Backend tests run in a Node-ish Vitest environment where `bun:sqlite` and
   // Bun's sqlite-backed Drizzle driver are not supported.

@@ -51,13 +51,19 @@ for (const t of targets) {
       const wfStateRow = db.query("SELECT value FROM kv WHERE hex(key)=?").get("0715041501");
       const wfState = wfStateRow?.value ? decodeAscii(new Uint8Array(wfStateRow.value)) : null;
 
-      console.log(JSON.stringify({
-        handoffId: t.handoffId,
-        actorId: t.actorId,
-        wfState,
-        names: wh.nameRegistry,
-        entries: enriched,
-      }, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            handoffId: t.handoffId,
+            actorId: t.actorId,
+            wfState,
+            names: wh.nameRegistry,
+            entries: enriched,
+          },
+          null,
+          2,
+        ),
+      );
 
       clearTimeout(to);
       ws.close();

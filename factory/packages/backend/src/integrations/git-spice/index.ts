@@ -32,18 +32,10 @@ function commandLabel(cmd: SpiceCommand): string {
 
 function looksMissing(error: unknown): boolean {
   const detail = error instanceof Error ? error.message : String(error);
-  return (
-    detail.includes("ENOENT") ||
-    detail.includes("not a git command") ||
-    detail.includes("command not found")
-  );
+  return detail.includes("ENOENT") || detail.includes("not a git command") || detail.includes("command not found");
 }
 
-async function tryRun(
-  repoPath: string,
-  cmd: SpiceCommand,
-  args: string[]
-): Promise<{ stdout: string; stderr: string }> {
+async function tryRun(repoPath: string, cmd: SpiceCommand, args: string[]): Promise<{ stdout: string; stderr: string }> {
   return await execFileAsync(cmd.command, [...cmd.prefix, ...args], {
     cwd: repoPath,
     timeout: DEFAULT_TIMEOUT_MS,
@@ -51,8 +43,8 @@ async function tryRun(
     env: {
       ...process.env,
       NO_COLOR: "1",
-      FORCE_COLOR: "0"
-    }
+      FORCE_COLOR: "0",
+    },
   });
 }
 
@@ -140,14 +132,7 @@ export async function gitSpiceAvailable(repoPath: string): Promise<boolean> {
 
 export async function gitSpiceListStack(repoPath: string): Promise<SpiceStackEntry[]> {
   try {
-    const { stdout } = await runSpice(repoPath, [
-      "log",
-      "short",
-      "--all",
-      "--json",
-      "--no-cr-status",
-      "--no-prompt"
-    ]);
+    const { stdout } = await runSpice(repoPath, ["log", "short", "--all", "--json", "--no-cr-status", "--no-prompt"]);
     return parseLogJson(stdout);
   } catch {
     return [];
@@ -160,9 +145,9 @@ export async function gitSpiceSyncRepo(repoPath: string): Promise<void> {
     [
       ["repo", "sync", "--restack", "--no-prompt"],
       ["repo", "sync", "--restack"],
-      ["repo", "sync"]
+      ["repo", "sync"],
     ],
-    "git-spice repo sync failed"
+    "git-spice repo sync failed",
   );
 }
 
@@ -171,9 +156,9 @@ export async function gitSpiceRestackRepo(repoPath: string): Promise<void> {
     repoPath,
     [
       ["repo", "restack", "--no-prompt"],
-      ["repo", "restack"]
+      ["repo", "restack"],
     ],
-    "git-spice repo restack failed"
+    "git-spice repo restack failed",
   );
 }
 
@@ -184,9 +169,9 @@ export async function gitSpiceRestackSubtree(repoPath: string, branchName: strin
       ["upstack", "restack", "--branch", branchName, "--no-prompt"],
       ["upstack", "restack", "--branch", branchName],
       ["branch", "restack", "--branch", branchName, "--no-prompt"],
-      ["branch", "restack", "--branch", branchName]
+      ["branch", "restack", "--branch", branchName],
     ],
-    `git-spice restack subtree failed for ${branchName}`
+    `git-spice restack subtree failed for ${branchName}`,
   );
 }
 
@@ -195,41 +180,33 @@ export async function gitSpiceRebaseBranch(repoPath: string, branchName: string)
     repoPath,
     [
       ["branch", "restack", "--branch", branchName, "--no-prompt"],
-      ["branch", "restack", "--branch", branchName]
+      ["branch", "restack", "--branch", branchName],
     ],
-    `git-spice branch restack failed for ${branchName}`
+    `git-spice branch restack failed for ${branchName}`,
   );
 }
 
-export async function gitSpiceReparentBranch(
-  repoPath: string,
-  branchName: string,
-  parentBranch: string
-): Promise<void> {
+export async function gitSpiceReparentBranch(repoPath: string, branchName: string, parentBranch: string): Promise<void> {
   await runFallbacks(
     repoPath,
     [
       ["upstack", "onto", "--branch", branchName, parentBranch, "--no-prompt"],
       ["upstack", "onto", "--branch", branchName, parentBranch],
       ["branch", "onto", "--branch", branchName, parentBranch, "--no-prompt"],
-      ["branch", "onto", "--branch", branchName, parentBranch]
+      ["branch", "onto", "--branch", branchName, parentBranch],
     ],
-    `git-spice reparent failed for ${branchName} -> ${parentBranch}`
+    `git-spice reparent failed for ${branchName} -> ${parentBranch}`,
   );
 }
 
-export async function gitSpiceTrackBranch(
-  repoPath: string,
-  branchName: string,
-  parentBranch: string
-): Promise<void> {
+export async function gitSpiceTrackBranch(repoPath: string, branchName: string, parentBranch: string): Promise<void> {
   await runFallbacks(
     repoPath,
     [
       ["branch", "track", branchName, "--base", parentBranch, "--no-prompt"],
-      ["branch", "track", branchName, "--base", parentBranch]
+      ["branch", "track", branchName, "--base", parentBranch],
     ],
-    `git-spice track failed for ${branchName}`
+    `git-spice track failed for ${branchName}`,
   );
 }
 

@@ -24,10 +24,7 @@ export interface ChatComposerProps {
   classNames?: Partial<ChatComposerClassNames>;
   inputRef?: Ref<HTMLTextAreaElement>;
   rows?: number;
-  textareaProps?: Omit<
-    TextareaHTMLAttributes<HTMLTextAreaElement>,
-    "className" | "disabled" | "onChange" | "onKeyDown" | "placeholder" | "rows" | "value"
-  >;
+  textareaProps?: Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "className" | "disabled" | "onChange" | "onKeyDown" | "placeholder" | "rows" | "value">;
   renderSubmitContent?: () => ReactNode;
 }
 
@@ -41,10 +38,7 @@ const DEFAULT_CLASS_NAMES: ChatComposerClassNames = {
 
 const cx = (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(" ");
 
-const mergeClassNames = (
-  defaults: ChatComposerClassNames,
-  overrides?: Partial<ChatComposerClassNames>,
-): ChatComposerClassNames => ({
+const mergeClassNames = (defaults: ChatComposerClassNames, overrides?: Partial<ChatComposerClassNames>): ChatComposerClassNames => ({
   root: cx(defaults.root, overrides?.root),
   form: cx(defaults.form, overrides?.form),
   input: cx(defaults.input, overrides?.input),

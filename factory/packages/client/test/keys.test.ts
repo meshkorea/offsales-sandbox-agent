@@ -7,7 +7,7 @@ import {
   projectKey,
   projectPrSyncKey,
   sandboxInstanceKey,
-  workspaceKey
+  workspaceKey,
 } from "../src/keys.js";
 
 describe("actor keys", () => {
@@ -20,7 +20,7 @@ describe("actor keys", () => {
       historyKey("default", "repo"),
       projectPrSyncKey("default", "repo"),
       projectBranchSyncKey("default", "repo"),
-      handoffStatusSyncKey("default", "repo", "handoff", "sandbox-1", "session-1")
+      handoffStatusSyncKey("default", "repo", "handoff", "sandbox-1", "session-1"),
     ];
 
     for (const key of keys) {

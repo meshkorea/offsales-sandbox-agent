@@ -48,9 +48,7 @@ export function resolveErrorDetail(error: unknown): string {
     return String(error);
   }
 
-  const nonWorkflowWrapper = messages.find(
-    (msg) => !/^Step\s+"[^"]+"\s+failed\b/i.test(msg)
-  );
+  const nonWorkflowWrapper = messages.find((msg) => !/^Step\s+"[^"]+"\s+failed\b/i.test(msg));
   return nonWorkflowWrapper ?? messages[0]!;
 }
 
@@ -58,18 +56,10 @@ export function buildAgentPrompt(task: string): string {
   return task.trim();
 }
 
-export async function setHandoffState(
-  ctx: any,
-  status: HandoffStatus,
-  statusMessage?: string
-): Promise<void> {
+export async function setHandoffState(ctx: any, status: HandoffStatus, statusMessage?: string): Promise<void> {
   const now = Date.now();
   const db = ctx.db;
-  await db
-    .update(handoffTable)
-    .set({ status, updatedAt: now })
-    .where(eq(handoffTable.id, HANDOFF_ROW_ID))
-    .run();
+  await db.update(handoffTable).set({ status, updatedAt: now }).where(eq(handoffTable.id, HANDOFF_ROW_ID)).run();
 
   if (statusMessage != null) {
     await db
@@ -81,14 +71,14 @@ export async function setHandoffState(
         activeSwitchTarget: null,
         activeCwd: null,
         statusMessage,
-        updatedAt: now
+        updatedAt: now,
       })
       .onConflictDoUpdate({
         target: handoffRuntime.id,
         set: {
           statusMessage,
-          updatedAt: now
-        }
+          updatedAt: now,
+        },
       })
       .run();
   }
@@ -112,7 +102,7 @@ export async function getCurrentRecord(ctx: any): Promise<HandoffRecord> {
       agentType: handoffTable.agentType,
       prSubmitted: handoffTable.prSubmitted,
       createdAt: handoffTable.createdAt,
-      updatedAt: handoffTable.updatedAt
+      updatedAt: handoffTable.updatedAt,
     })
     .from(handoffTable)
     .leftJoin(handoffRuntime, eq(handoffTable.id, handoffRuntime.id))
@@ -176,15 +166,14 @@ export async function getCurrentRecord(ctx: any): Promise<HandoffRecord> {
 
 export async function appendHistory(ctx: any, kind: string, payload: Record<string, unknown>): Promise<void> {
   const client = ctx.client();
-  const history = await client.history.getOrCreate(
-    historyKey(ctx.state.workspaceId, ctx.state.repoId),
-    { createWithInput: { workspaceId: ctx.state.workspaceId, repoId: ctx.state.repoId } }
-  );
+  const history = await client.history.getOrCreate(historyKey(ctx.state.workspaceId, ctx.state.repoId), {
+    createWithInput: { workspaceId: ctx.state.workspaceId, repoId: ctx.state.repoId },
+  });
   await history.append({
     kind,
     handoffId: ctx.state.handoffId,
     branchName: ctx.state.branchName,
-    payload
+    payload,
   });
 
   const workspace = await getOrCreateWorkspace(ctx, ctx.state.workspaceId);

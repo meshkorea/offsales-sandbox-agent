@@ -8,9 +8,7 @@ const IMAGE = "node:22-bookworm-slim";
 const PORT = 3000;
 const agent = detectAgent();
 const codexAuthPath = process.env.HOME ? path.join(process.env.HOME, ".codex", "auth.json") : null;
-const bindMounts = codexAuthPath && fs.existsSync(codexAuthPath)
-  ? [`${codexAuthPath}:/root/.codex/auth.json:ro`]
-  : [];
+const bindMounts = codexAuthPath && fs.existsSync(codexAuthPath) ? [`${codexAuthPath}:/root/.codex/auth.json:ro`] : [];
 
 const docker = new Docker({ socketPath: "/var/run/docker.sock" });
 
@@ -22,7 +20,7 @@ try {
   await new Promise<void>((resolve, reject) => {
     docker.pull(IMAGE, (err: Error | null, stream: NodeJS.ReadableStream) => {
       if (err) return reject(err);
-      docker.modem.followProgress(stream, (err: Error | null) => err ? reject(err) : resolve());
+      docker.modem.followProgress(stream, (err: Error | null) => (err ? reject(err) : resolve()));
     });
   });
 }
@@ -30,13 +28,17 @@ try {
 console.log("Starting container...");
 const container = await docker.createContainer({
   Image: IMAGE,
-  Cmd: ["sh", "-c", [
-    "apt-get update",
-    "DEBIAN_FRONTEND=noninteractive apt-get install -y curl ca-certificates bash libstdc++6",
-    "rm -rf /var/lib/apt/lists/*",
-    "curl -fsSL https://releases.rivet.dev/sandbox-agent/0.3.x/install.sh | sh",
-    `sandbox-agent server --no-token --host 0.0.0.0 --port ${PORT}`,
-  ].join(" && ")],
+  Cmd: [
+    "sh",
+    "-c",
+    [
+      "apt-get update",
+      "DEBIAN_FRONTEND=noninteractive apt-get install -y curl ca-certificates bash libstdc++6",
+      "rm -rf /var/lib/apt/lists/*",
+      "curl -fsSL https://releases.rivet.dev/sandbox-agent/0.3.x/install.sh | sh",
+      `sandbox-agent server --no-token --host 0.0.0.0 --port ${PORT}`,
+    ].join(" && "),
+  ],
   Env: [
     process.env.ANTHROPIC_API_KEY ? `ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY}` : "",
     process.env.OPENAI_API_KEY ? `OPENAI_API_KEY=${process.env.OPENAI_API_KEY}` : "",
@@ -63,8 +65,12 @@ console.log("  Press Ctrl+C to stop.");
 const keepAlive = setInterval(() => {}, 60_000);
 const cleanup = async () => {
   clearInterval(keepAlive);
-  try { await container.stop({ t: 5 }); } catch {}
-  try { await container.remove({ force: true }); } catch {}
+  try {
+    await container.stop({ t: 5 });
+  } catch {}
+  try {
+    await container.remove({ force: true });
+  } catch {}
   process.exit(0);
 };
 process.once("SIGINT", cleanup);

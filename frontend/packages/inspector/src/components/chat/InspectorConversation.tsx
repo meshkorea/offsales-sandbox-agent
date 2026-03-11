@@ -147,7 +147,7 @@ const InspectorConversation = ({
         renderPermissionIcon: () => <Shield size={14} />,
         renderPermissionOptionContent: ({ option, label, selected }) => (
           <>
-            {selected ? (option.kind.startsWith("allow") ? <Check size={12} /> : <X size={12} />) : null}
+            {selected ? option.kind.startsWith("allow") ? <Check size={12} /> : <X size={12} /> : null}
             {label}
           </>
         ),

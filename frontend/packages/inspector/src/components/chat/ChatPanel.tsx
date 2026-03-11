@@ -156,9 +156,7 @@ const ChatPanel = ({
               {modelLabel}
             </span>
           )}
-          {sessionId && currentAgentVersion && (
-            <span className="header-meta-pill">v{currentAgentVersion}</span>
-          )}
+          {sessionId && currentAgentVersion && <span className="header-meta-pill">v{currentAgentVersion}</span>}
           {sessionId && (
             <button
               type="button"
@@ -171,11 +169,9 @@ const ChatPanel = ({
           )}
         </div>
         <div className="panel-header-right">
-          {sessionId && tokenUsage && (
-            <span className="token-pill">{tokenUsage.used.toLocaleString()} tokens</span>
-          )}
-          {sessionId && (
-            sessionEnded ? (
+          {sessionId && tokenUsage && <span className="token-pill">{tokenUsage.used.toLocaleString()} tokens</span>}
+          {sessionId &&
+            (sessionEnded ? (
               <>
                 <span className="button ghost small session-ended-status" title="Session ended">
                   <CheckSquare size={12} />
@@ -192,17 +188,11 @@ const ChatPanel = ({
                 </button>
               </>
             ) : (
-              <button
-                type="button"
-                className="button ghost small"
-                onClick={onEndSession}
-                title="End session"
-              >
+              <button type="button" className="button ghost small" onClick={onEndSession} title="End session">
                 <Square size={12} />
                 End
               </button>
-            )
-          )}
+            ))}
         </div>
       </div>
 
@@ -219,10 +209,7 @@ const ChatPanel = ({
             <div className="empty-state-title">No Session Selected</div>
             <p className="empty-state-text no-session-subtext">Create a new session to start chatting with an agent.</p>
             <div className="empty-state-menu-wrapper" ref={menuRef}>
-              <button
-                className="button primary"
-                onClick={() => setShowAgentMenu((value) => !value)}
-              >
+              <button className="button primary" onClick={() => setShowAgentMenu((value) => !value)}>
                 <Plus className="button-icon" />
                 Create Session
               </button>

@@ -7,7 +7,7 @@ import type { ChildProcess } from "node:child_process";
 
 const { spawnMock, execFileSyncMock } = vi.hoisted(() => ({
   spawnMock: vi.fn(),
-  execFileSyncMock: vi.fn()
+  execFileSyncMock: vi.fn(),
 }));
 
 vi.mock("node:child_process", async () => {
@@ -15,7 +15,7 @@ vi.mock("node:child_process", async () => {
   return {
     ...actual,
     spawn: spawnMock,
-    execFileSync: execFileSyncMock
+    execFileSync: execFileSyncMock,
   };
 });
 
@@ -37,16 +37,16 @@ function healthyMetadataResponse(): { ok: boolean; json: () => Promise<unknown> 
     json: async () => ({
       runtime: "rivetkit",
       actorNames: {
-        workspace: {}
-      }
-    })
+        workspace: {},
+      },
+    }),
   };
 }
 
 function unhealthyMetadataResponse(): { ok: boolean; json: () => Promise<unknown> } {
   return {
     ok: false,
-    json: async () => ({})
+    json: async () => ({}),
   };
 }
 
@@ -66,11 +66,11 @@ describe("backend manager", () => {
       opencode_poll_interval: 2,
       github_poll_interval: 30,
       backup_interval_secs: 3600,
-      backup_retention_days: 7
+      backup_retention_days: 7,
     },
     providers: {
-      daytona: { image: "ubuntu:24.04" }
-    }
+      daytona: { image: "ubuntu:24.04" },
+    },
   });
 
   beforeEach(() => {
@@ -116,7 +116,7 @@ describe("backend manager", () => {
 
     const fakeChild = Object.assign(new EventEmitter(), {
       pid: process.pid,
-      unref: vi.fn()
+      unref: vi.fn(),
     }) as unknown as ChildProcess;
     spawnMock.mockReturnValue(fakeChild);
 
@@ -125,14 +125,8 @@ describe("backend manager", () => {
     expect(spawnMock).toHaveBeenCalledTimes(1);
     const launchCommand = spawnMock.mock.calls[0]?.[0];
     const launchArgs = spawnMock.mock.calls[0]?.[1] as string[] | undefined;
-    expect(
-      launchCommand === "pnpm" ||
-        launchCommand === "bun" ||
-        (typeof launchCommand === "string" && launchCommand.endsWith("/bun"))
-    ).toBe(true);
-    expect(launchArgs).toEqual(
-      expect.arrayContaining(["start", "--host", config.backend.host, "--port", String(config.backend.port)])
-    );
+    expect(launchCommand === "pnpm" || launchCommand === "bun" || (typeof launchCommand === "string" && launchCommand.endsWith("/bun"))).toBe(true);
+    expect(launchArgs).toEqual(expect.arrayContaining(["start", "--host", config.backend.host, "--port", String(config.backend.port)]));
     if (launchCommand === "pnpm") {
       expect(launchArgs).toEqual(expect.arrayContaining(["exec", "bun", "src/index.ts"]));
     }
@@ -148,9 +142,7 @@ describe("backend manager", () => {
     mkdirSync(stateDir, { recursive: true });
     writeFileSync(versionPath, "test-build", "utf8");
 
-    const fetchMock = vi
-      .fn<() => Promise<{ ok: boolean; json: () => Promise<unknown> }>>()
-      .mockResolvedValue(healthyMetadataResponse());
+    const fetchMock = vi.fn<() => Promise<{ ok: boolean; json: () => Promise<unknown> }>>().mockResolvedValue(healthyMetadataResponse());
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     await ensureBackendRunning(config);

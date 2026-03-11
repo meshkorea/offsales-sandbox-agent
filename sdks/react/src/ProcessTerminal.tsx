@@ -90,16 +90,7 @@ const getStatusColor = (state: ConnectionState): string => {
   }
 };
 
-export const ProcessTerminal = ({
-  client,
-  processId,
-  className,
-  style,
-  terminalStyle,
-  height = 360,
-  onExit,
-  onError,
-}: ProcessTerminalProps) => {
+export const ProcessTerminal = ({ client, processId, className, style, terminalStyle, height = 360, onExit, onError }: ProcessTerminalProps) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
   const [statusMessage, setStatusMessage] = useState("Connecting to PTY...");
@@ -198,9 +189,7 @@ export const ProcessTerminal = ({
 
           setConnectionState("closed");
           setExitCode(frame.exitCode ?? null);
-          setStatusMessage(
-            frame.exitCode == null ? "Process exited." : `Process exited with code ${frame.exitCode}.`
-          );
+          setStatusMessage(frame.exitCode == null ? "Process exited." : `Process exited with code ${frame.exitCode}.`);
           onExit?.(frame);
         });
 

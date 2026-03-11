@@ -15,9 +15,7 @@ export interface FrontendErrorCollectorVitePluginOptions {
   includeFetchErrors?: boolean;
 }
 
-export function frontendErrorCollectorVitePlugin(
-  options: FrontendErrorCollectorVitePluginOptions = {}
-): Plugin {
+export function frontendErrorCollectorVitePlugin(options: FrontendErrorCollectorVitePluginOptions = {}): Plugin {
   const mountPath = normalizePath(options.mountPath ?? DEFAULT_MOUNT_PATH);
   const logFilePath = options.logFilePath ?? defaultFrontendErrorLogPath(process.cwd());
   const reporter = options.reporter ?? "openhandoff-vite";

@@ -44,12 +44,7 @@ function sanitizeLastAgentTabId(handoff: Handoff, tabId: string | null | undefin
   return firstAgentTabId(handoff);
 }
 
-function sanitizeActiveTabId(
-  handoff: Handoff,
-  tabId: string | null | undefined,
-  openDiffs: string[],
-  lastAgentTabId: string | null,
-): string | null {
+function sanitizeActiveTabId(handoff: Handoff, tabId: string | null | undefined, openDiffs: string[], lastAgentTabId: string | null): string | null {
   if (tabId) {
     if (handoff.tabs.some((tab) => tab.id === tabId)) {
       return tabId;
@@ -336,9 +331,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
       const nextOpenDiffs = openDiffs.filter((candidate) => candidate !== path);
       onSetOpenDiffs(nextOpenDiffs);
       if (activeTabId === diffTabId(path)) {
-        onSetActiveTabId(
-          nextOpenDiffs.length > 0 ? diffTabId(nextOpenDiffs[nextOpenDiffs.length - 1]!) : (lastAgentTabId ?? firstAgentTabId(handoff)),
-        );
+        onSetActiveTabId(nextOpenDiffs.length > 0 ? diffTabId(nextOpenDiffs[nextOpenDiffs.length - 1]!) : (lastAgentTabId ?? firstAgentTabId(handoff)));
       }
     },
     [activeTabId, handoff, lastAgentTabId, onSetActiveTabId, onSetOpenDiffs, openDiffs],
@@ -491,9 +484,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
               }}
             >
               <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 600 }}>Create the first session</h2>
-              <p style={{ margin: 0, opacity: 0.75 }}>
-                Sessions are where you chat with the agent. Start one now to send the first prompt on this handoff.
-              </p>
+              <p style={{ margin: 0, opacity: 0.75 }}>Sessions are where you chat with the agent. Start one now to send the first prompt on this handoff.</p>
               <button
                 type="button"
                 onClick={addTab}
@@ -569,10 +560,7 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
   const [lastAgentTabIdByHandoff, setLastAgentTabIdByHandoff] = useState<Record<string, string | null>>({});
   const [openDiffsByHandoff, setOpenDiffsByHandoff] = useState<Record<string, string[]>>({});
 
-  const activeHandoff = useMemo(
-    () => handoffs.find((handoff) => handoff.id === selectedHandoffId) ?? handoffs[0] ?? null,
-    [handoffs, selectedHandoffId],
-  );
+  const activeHandoff = useMemo(() => handoffs.find((handoff) => handoff.id === selectedHandoffId) ?? handoffs[0] ?? null, [handoffs, selectedHandoffId]);
 
   useEffect(() => {
     if (activeHandoff) {
@@ -599,9 +587,7 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
 
   const openDiffs = activeHandoff ? sanitizeOpenDiffs(activeHandoff, openDiffsByHandoff[activeHandoff.id]) : [];
   const lastAgentTabId = activeHandoff ? sanitizeLastAgentTabId(activeHandoff, lastAgentTabIdByHandoff[activeHandoff.id]) : null;
-  const activeTabId = activeHandoff
-    ? sanitizeActiveTabId(activeHandoff, activeTabIdByHandoff[activeHandoff.id], openDiffs, lastAgentTabId)
-    : null;
+  const activeTabId = activeHandoff ? sanitizeActiveTabId(activeHandoff, activeTabIdByHandoff[activeHandoff.id], openDiffs, lastAgentTabId) : null;
 
   const syncRouteSession = useCallback(
     (handoffId: string, sessionId: string | null, replace = false) => {
@@ -801,7 +787,7 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
         [activeHandoff.id]:
           current[activeHandoff.id] === diffTabId(path)
             ? sanitizeLastAgentTabId(activeHandoff, lastAgentTabIdByHandoff[activeHandoff.id])
-            : current[activeHandoff.id] ?? null,
+            : (current[activeHandoff.id] ?? null),
       }));
 
       void handoffWorkbenchClient.revertFile({

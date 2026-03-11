@@ -128,7 +128,7 @@ export function App() {
         console.error("Event stream error:", err);
       }
     },
-    [log]
+    [log],
   );
 
   const send = useCallback(async () => {
@@ -162,12 +162,7 @@ export function App() {
         <div style={styles.connectForm}>
           <label style={styles.label}>
             Sandbox name:
-            <input
-              style={styles.input}
-              value={sandboxName}
-              onChange={(e) => setSandboxName(e.target.value)}
-              placeholder="demo"
-            />
+            <input style={styles.input} value={sandboxName} onChange={(e) => setSandboxName(e.target.value)} placeholder="demo" />
           </label>
           <button style={styles.button} onClick={connect}>
             Connect

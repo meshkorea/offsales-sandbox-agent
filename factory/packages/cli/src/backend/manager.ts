@@ -1,13 +1,5 @@
 import * as childProcess from "node:child_process";
-import {
-  closeSync,
-  existsSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  rmSync,
-  writeFileSync
-} from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -141,7 +133,7 @@ function removeStateFiles(host: string, port: number): void {
 async function checkHealth(host: string, port: number): Promise<boolean> {
   return await checkBackendHealth({
     endpoint: `http://${host}:${port}/api/rivet`,
-    timeoutMs: HEALTH_TIMEOUT_MS
+    timeoutMs: HEALTH_TIMEOUT_MS,
   });
 }
 
@@ -206,25 +198,14 @@ function resolveLaunchSpec(host: string, port: number): LaunchSpec {
     return {
       command: resolveBunCommand(),
       args: [backendEntry, "start", "--host", host, "--port", String(port)],
-      cwd: repoRoot
+      cwd: repoRoot,
     };
   }
 
   return {
     command: "pnpm",
-    args: [
-      "--filter",
-      "@openhandoff/backend",
-      "exec",
-      "bun",
-      "src/index.ts",
-      "start",
-      "--host",
-      host,
-      "--port",
-      String(port)
-    ],
-    cwd: repoRoot
+    args: ["--filter", "@openhandoff/backend", "exec", "bun", "src/index.ts", "start", "--host", host, "--port", String(port)],
+    cwd: repoRoot,
   };
 }
 
@@ -252,7 +233,7 @@ async function startBackend(host: string, port: number): Promise<void> {
     cwd: launch.cwd,
     detached: true,
     stdio: ["ignore", fd, fd],
-    env: process.env
+    env: process.env,
   });
 
   child.on("error", (error) => {
@@ -298,7 +279,7 @@ function findProcessOnPort(port: number): number | null {
     const out = childProcess
       .execFileSync("lsof", ["-i", `:${port}`, "-t", "-sTCP:LISTEN"], {
         encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"]
+        stdio: ["ignore", "pipe", "ignore"],
       })
       .trim();
 
@@ -372,7 +353,7 @@ export async function getBackendStatus(host: string, port: number): Promise<Back
         pid,
         version: readBackendVersion(host, port),
         versionCurrent: isVersionCurrent(host, port),
-        logPath
+        logPath,
       };
     }
     removeStateFiles(host, port);
@@ -384,7 +365,7 @@ export async function getBackendStatus(host: string, port: number): Promise<Back
       pid: null,
       version: readBackendVersion(host, port),
       versionCurrent: isVersionCurrent(host, port),
-      logPath
+      logPath,
     };
   }
 
@@ -393,7 +374,7 @@ export async function getBackendStatus(host: string, port: number): Promise<Back
     pid: null,
     version: readBackendVersion(host, port),
     versionCurrent: false,
-    logPath
+    logPath,
   };
 }
 

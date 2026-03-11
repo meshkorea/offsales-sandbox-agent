@@ -11,8 +11,7 @@ type FrontendImportMetaEnv = ImportMetaEnv & {
 
 const frontendEnv = import.meta.env as FrontendImportMetaEnv;
 
-export const backendEndpoint =
-  import.meta.env.VITE_HF_BACKEND_ENDPOINT?.trim() || resolveDefaultBackendEndpoint();
+export const backendEndpoint = import.meta.env.VITE_HF_BACKEND_ENDPOINT?.trim() || resolveDefaultBackendEndpoint();
 
 export const defaultWorkspaceId = import.meta.env.VITE_HF_WORKSPACE?.trim() || "default";
 
@@ -24,9 +23,7 @@ function resolveFrontendClientMode(): "mock" | "remote" {
   if (raw === "remote" || raw === "" || raw === undefined) {
     return "remote";
   }
-  throw new Error(
-    `Unsupported OPENHANDOFF_FRONTEND_CLIENT_MODE value "${frontendEnv.OPENHANDOFF_FRONTEND_CLIENT_MODE}". Expected "mock" or "remote".`,
-  );
+  throw new Error(`Unsupported OPENHANDOFF_FRONTEND_CLIENT_MODE value "${frontendEnv.OPENHANDOFF_FRONTEND_CLIENT_MODE}". Expected "mock" or "remote".`);
 }
 
 export const frontendClientMode = resolveFrontendClientMode();

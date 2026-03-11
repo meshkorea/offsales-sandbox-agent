@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { motion } from 'framer-motion';
+import { motion } from "framer-motion";
 
 export function Inspector() {
   return (
@@ -34,11 +34,7 @@ export function Inspector() {
           transition={{ duration: 0.5, delay: 0.2 }}
           className="overflow-hidden rounded-2xl border border-white/10"
         >
-          <img
-            src="/images/inspector.png"
-            alt="Sandbox Agent Inspector"
-            className="w-full"
-          />
+          <img src="/images/inspector.png" alt="Sandbox Agent Inspector" className="w-full" />
         </motion.div>
       </div>
     </section>

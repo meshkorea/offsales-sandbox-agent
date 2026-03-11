@@ -1,18 +1,6 @@
-'use client';
+"use client";
 
-const integrations = [
-  'Daytona',
-  'E2B',
-  'AI SDK',
-  'Anthropic',
-  'OpenAI',
-  'Docker',
-  'Fly.io',
-  'AWS Nitro',
-  'Postgres',
-  'ClickHouse',
-  'Rivet',
-];
+const integrations = ["Daytona", "E2B", "AI SDK", "Anthropic", "OpenAI", "Docker", "Fly.io", "AWS Nitro", "Postgres", "ClickHouse", "Rivet"];
 
 export function Integrations() {
   return (

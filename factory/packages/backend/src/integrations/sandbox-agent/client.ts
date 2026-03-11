@@ -1,12 +1,5 @@
 import type { AgentType } from "@openhandoff/shared";
-import type {
-  ListEventsRequest,
-  ListPage,
-  ListPageRequest,
-  SessionEvent,
-  SessionPersistDriver,
-  SessionRecord
-} from "sandbox-agent";
+import type { ListEventsRequest, ListPage, ListPageRequest, SessionEvent, SessionPersistDriver, SessionRecord } from "sandbox-agent";
 import { SandboxAgent } from "sandbox-agent";
 
 export type AgentId = AgentType | "opencode";
@@ -118,18 +111,11 @@ export class SandboxAgentClient {
     const message = err instanceof Error ? err.message : String(err);
     const lowered = message.toLowerCase();
     // sandbox-agent server times out long-running ACP prompts and returns a 504-like error.
-    return (
-      lowered.includes("timeout waiting for agent response") ||
-      lowered.includes("timed out waiting for agent response") ||
-      lowered.includes("504")
-    );
+    return lowered.includes("timeout waiting for agent response") || lowered.includes("timed out waiting for agent response") || lowered.includes("504");
   }
 
   async createSession(request: string | SandboxSessionCreateRequest): Promise<SandboxSession> {
-    const normalized: SandboxSessionCreateRequest =
-      typeof request === "string"
-        ? { prompt: request }
-        : request;
+    const normalized: SandboxSessionCreateRequest = typeof request === "string" ? { prompt: request } : request;
     const sdk = await this.sdk();
     // Do not wrap createSession in a local Promise.race timeout. The underlying SDK
     // call is not abortable, so local timeout races create overlapping ACP requests and
@@ -343,18 +329,14 @@ export class SandboxAgentClient {
     } while (cursor);
   }
 
-  async generateCommitMessage(
-    dir: string,
-    spec: string,
-    task: string
-  ): Promise<string> {
+  async generateCommitMessage(dir: string, spec: string, task: string): Promise<string> {
     const prompt = [
       "Generate a conventional commit message for the following changes.",
       "Return ONLY the commit message, no explanation or markdown formatting.",
       "",
       `Task: ${task}`,
       "",
-      `Spec/diff:\n${spec}`
+      `Spec/diff:\n${spec}`,
     ].join("\n");
 
     const sdk = await this.sdk();

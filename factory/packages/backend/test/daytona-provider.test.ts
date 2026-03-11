@@ -55,7 +55,7 @@ function createProviderWithClient(client: DaytonaClientLike): DaytonaProvider {
       apiKey: "test-key",
       image: "ubuntu:24.04",
     },
-    daytonaDriver
+    daytonaDriver,
   );
 }
 
@@ -112,7 +112,7 @@ describe("daytona provider snapshot image behavior", () => {
       });
 
       const startCommand = client.executedCommands.find((command) =>
-        command.includes("nohup env SANDBOX_AGENT_ACP_REQUEST_TIMEOUT_MS=240000 sandbox-agent server")
+        command.includes("nohup env SANDBOX_AGENT_ACP_REQUEST_TIMEOUT_MS=240000 sandbox-agent server"),
       );
 
       const joined = client.executedCommands.join("\n");
@@ -149,13 +149,15 @@ describe("daytona provider snapshot image behavior", () => {
 
     try {
       const provider = createProviderWithClient(hangingClient);
-      await expect(provider.createSandbox({
-        workspaceId: "default",
-        repoId: "repo-1",
-        repoRemote: "https://github.com/acme/repo.git",
-        branchName: "feature/test",
-        handoffId: "handoff-timeout",
-      })).rejects.toThrow("daytona create sandbox timed out after 120ms");
+      await expect(
+        provider.createSandbox({
+          workspaceId: "default",
+          repoId: "repo-1",
+          repoRemote: "https://github.com/acme/repo.git",
+          branchName: "feature/test",
+          handoffId: "handoff-timeout",
+        }),
+      ).rejects.toThrow("daytona create sandbox timed out after 120ms");
     } finally {
       if (previous === undefined) {
         delete process.env.HF_DAYTONA_REQUEST_TIMEOUT_MS;
@@ -173,7 +175,7 @@ describe("daytona provider snapshot image behavior", () => {
       workspaceId: "default",
       sandboxId: "sandbox-1",
       command: "echo backend-push",
-      label: "manual push"
+      label: "manual push",
     });
 
     expect(result.exitCode).toBe(0);

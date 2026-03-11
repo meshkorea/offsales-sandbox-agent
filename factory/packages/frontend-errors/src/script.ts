@@ -2,9 +2,7 @@ import type { FrontendErrorCollectorScriptOptions } from "./types.js";
 
 const DEFAULT_REPORTER = "openhandoff-frontend";
 
-export function createFrontendErrorCollectorScript(
-  options: FrontendErrorCollectorScriptOptions
-): string {
+export function createFrontendErrorCollectorScript(options: FrontendErrorCollectorScriptOptions): string {
   const config = {
     endpoint: options.endpoint,
     reporter: options.reporter ?? DEFAULT_REPORTER,

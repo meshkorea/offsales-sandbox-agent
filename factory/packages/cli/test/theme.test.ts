@@ -29,11 +29,11 @@ describe("resolveTuiTheme", () => {
       opencode_poll_interval: 2,
       github_poll_interval: 30,
       backup_interval_secs: 3600,
-      backup_retention_days: 7
+      backup_retention_days: 7,
     },
     providers: {
-      daytona: { image: "ubuntu:24.04" }
-    }
+      daytona: { image: "ubuntu:24.04" },
+    },
   });
 
   afterEach(() => {
@@ -64,11 +64,7 @@ describe("resolveTuiTheme", () => {
     withEnv("XDG_STATE_HOME", stateHome);
     withEnv("XDG_CONFIG_HOME", configHome);
     mkdirSync(join(stateHome, "opencode"), { recursive: true });
-    writeFileSync(
-      join(stateHome, "opencode", "kv.json"),
-      JSON.stringify({ theme: "gruvbox", theme_mode: "dark" }),
-      "utf8"
-    );
+    writeFileSync(join(stateHome, "opencode", "kv.json"), JSON.stringify({ theme: "gruvbox", theme_mode: "dark" }), "utf8");
 
     const resolution = resolveTuiTheme(baseConfig, tempDir);
 
@@ -85,11 +81,7 @@ describe("resolveTuiTheme", () => {
     withEnv("XDG_STATE_HOME", stateHome);
     withEnv("XDG_CONFIG_HOME", configHome);
     mkdirSync(join(stateHome, "opencode"), { recursive: true });
-    writeFileSync(
-      join(stateHome, "opencode", "kv.json"),
-      JSON.stringify({ theme: "orng", theme_mode: "dark" }),
-      "utf8"
-    );
+    writeFileSync(join(stateHome, "opencode", "kv.json"), JSON.stringify({ theme: "orng", theme_mode: "dark" }), "utf8");
 
     const resolution = resolveTuiTheme(baseConfig, tempDir);
 

@@ -39,13 +39,14 @@ export function deriveFallbackTitle(task: string, explicitTitle?: string): strin
 
   const lowered = source.toLowerCase();
 
-  const typePrefix = lowered.includes("fix") || lowered.includes("bug")
-    ? "fix"
-    : lowered.includes("doc") || lowered.includes("readme")
-      ? "docs"
-      : lowered.includes("refactor")
-        ? "refactor"
-        : "feat";
+  const typePrefix =
+    lowered.includes("fix") || lowered.includes("bug")
+      ? "fix"
+      : lowered.includes("doc") || lowered.includes("readme")
+        ? "docs"
+        : lowered.includes("refactor")
+          ? "refactor"
+          : "feat";
 
   const cleaned = source
     .split("")
@@ -88,9 +89,7 @@ export function sanitizeBranchName(input: string): string {
   return trimmed.slice(0, 50).replace(/-+$/g, "");
 }
 
-export function resolveCreateFlowDecision(
-  input: ResolveCreateFlowDecisionInput
-): ResolveCreateFlowDecisionResult {
+export function resolveCreateFlowDecision(input: ResolveCreateFlowDecisionInput): ResolveCreateFlowDecisionResult {
   const explicitBranch = input.explicitBranchName?.trim();
   const title = deriveFallbackTitle(input.task, input.explicitTitle);
   const generatedBase = sanitizeBranchName(title) || "handoff";
@@ -98,16 +97,11 @@ export function resolveCreateFlowDecision(
   const branchBase = explicitBranch && explicitBranch.length > 0 ? explicitBranch : generatedBase;
 
   const existingBranches = new Set(input.localBranches.map((value) => value.trim()).filter((value) => value.length > 0));
-  const existingHandoffBranches = new Set(
-    input.handoffBranches.map((value) => value.trim()).filter((value) => value.length > 0)
-  );
-  const conflicts = (name: string): boolean =>
-    existingBranches.has(name) || existingHandoffBranches.has(name);
+  const existingHandoffBranches = new Set(input.handoffBranches.map((value) => value.trim()).filter((value) => value.length > 0));
+  const conflicts = (name: string): boolean => existingBranches.has(name) || existingHandoffBranches.has(name);
 
   if (explicitBranch && conflicts(branchBase)) {
-    throw new Error(
-      `Branch '${branchBase}' already exists. Choose a different --name/--branch value.`
-    );
+    throw new Error(`Branch '${branchBase}' already exists. Choose a different --name/--branch value.`);
   }
 
   if (explicitBranch) {
@@ -123,6 +117,6 @@ export function resolveCreateFlowDecision(
 
   return {
     title,
-    branchName: candidate
+    branchName: candidate,
   };
 }

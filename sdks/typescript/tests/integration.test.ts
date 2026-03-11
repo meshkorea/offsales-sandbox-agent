@@ -5,11 +5,7 @@ import { dirname, resolve } from "node:path";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
-import {
-  InMemorySessionPersistDriver,
-  SandboxAgent,
-  type SessionEvent,
-} from "../src/index.ts";
+import { InMemorySessionPersistDriver, SandboxAgent, type SessionEvent } from "../src/index.ts";
 import { spawnSandboxAgent, isNodeRuntime, type SandboxAgentSpawnHandle } from "../src/spawn.ts";
 import { prepareMockAgentDataHome } from "./helpers/mock-agent.ts";
 import WebSocket from "ws";
@@ -21,10 +17,7 @@ function findBinary(): string | null {
     return process.env.SANDBOX_AGENT_BIN;
   }
 
-  const cargoPaths = [
-    resolve(__dirname, "../../../target/debug/sandbox-agent"),
-    resolve(__dirname, "../../../target/release/sandbox-agent"),
-  ];
+  const cargoPaths = [resolve(__dirname, "../../../target/debug/sandbox-agent"), resolve(__dirname, "../../../target/release/sandbox-agent")];
 
   for (const p of cargoPaths) {
     if (existsSync(p)) {
@@ -37,9 +30,7 @@ function findBinary(): string | null {
 
 const BINARY_PATH = findBinary();
 if (!BINARY_PATH) {
-  throw new Error(
-    "sandbox-agent binary not found. Build it (cargo build -p sandbox-agent) or set SANDBOX_AGENT_BIN.",
-  );
+  throw new Error("sandbox-agent binary not found. Build it (cargo build -p sandbox-agent) or set SANDBOX_AGENT_BIN.");
 }
 if (!process.env.SANDBOX_AGENT_BIN) {
   process.env.SANDBOX_AGENT_BIN = BINARY_PATH;
@@ -49,11 +40,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitFor<T>(
-  fn: () => T | undefined | null,
-  timeoutMs = 6000,
-  stepMs = 30,
-): Promise<T> {
+async function waitFor<T>(fn: () => T | undefined | null, timeoutMs = 6000, stepMs = 30): Promise<T> {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     const value = fn();
@@ -65,11 +52,7 @@ async function waitFor<T>(
   throw new Error("timed out waiting for condition");
 }
 
-async function waitForAsync<T>(
-  fn: () => Promise<T | undefined | null>,
-  timeoutMs = 6000,
-  stepMs = 30,
-): Promise<T> {
+async function waitForAsync<T>(fn: () => Promise<T | undefined | null>, timeoutMs = 6000, stepMs = 30): Promise<T> {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     const value = await fn();
@@ -265,10 +248,7 @@ describe("Integration: TypeScript SDK flat session API", () => {
       });
       expect(moved.to).toBe(movedPath);
 
-      const uploadResult = await sdk.uploadFsBatch(
-        buildTarArchive([{ name: "batch.txt", content: "batch upload works" }]),
-        { path: uploadDir },
-      );
+      const uploadResult = await sdk.uploadFsBatch(buildTarArchive([{ name: "batch.txt", content: "batch upload works" }]), { path: uploadDir });
       expect(uploadResult.paths.some((path) => path.endsWith("batch.txt"))).toBe(true);
 
       const uploaded = await sdk.readFsFile({ path: join(uploadDir, "batch.txt") });
@@ -316,9 +296,7 @@ describe("Integration: TypeScript SDK flat session API", () => {
   }, 60_000);
 
   it("requires baseUrl when fetch is not provided", async () => {
-    await expect(SandboxAgent.connect({ token } as any)).rejects.toThrow(
-      "baseUrl is required unless fetch is provided.",
-    );
+    await expect(SandboxAgent.connect({ token } as any)).rejects.toThrow("baseUrl is required unless fetch is provided.");
   });
 
   it("waits for health before non-ACP HTTP helpers", async () => {
@@ -357,11 +335,7 @@ describe("Integration: TypeScript SDK flat session API", () => {
 
     const firstAgentsRequest = seenPaths.indexOf("/v1/agents");
     expect(firstAgentsRequest).toBeGreaterThanOrEqual(0);
-    expect(seenPaths.slice(0, firstAgentsRequest)).toEqual([
-      "/v1/health",
-      "/v1/health",
-      "/v1/health",
-    ]);
+    expect(seenPaths.slice(0, firstAgentsRequest)).toEqual(["/v1/health", "/v1/health", "/v1/health"]);
 
     await sdk.dispose();
   });
@@ -469,11 +443,7 @@ describe("Integration: TypeScript SDK flat session API", () => {
       const params = payload.params as Record<string, unknown> | undefined;
       const prompt = Array.isArray(params?.prompt) ? params?.prompt : [];
       const firstBlock = prompt[0] as Record<string, unknown> | undefined;
-      return (
-        method === "session/prompt" &&
-        typeof firstBlock?.text === "string" &&
-        firstBlock.text.includes("Previous session history is replayed below")
-      );
+      return method === "session/prompt" && typeof firstBlock?.text === "string" && firstBlock.text.includes("Previous session history is replayed below");
     });
 
     expect(replayInjected).toBeTruthy();
@@ -512,12 +482,8 @@ describe("Integration: TypeScript SDK flat session API", () => {
 
     const session = await sdk.createSession({ agent: "mock" });
 
-    await expect(session.rawSend("session/cancel")).rejects.toThrow(
-      "Use destroySession(sessionId) instead.",
-    );
-    await expect(sdk.rawSendSessionMethod(session.id, "session/cancel", {})).rejects.toThrow(
-      "Use destroySession(sessionId) instead.",
-    );
+    await expect(session.rawSend("session/cancel")).rejects.toThrow("Use destroySession(sessionId) instead.");
+    await expect(sdk.rawSendSessionMethod(session.id, "session/cancel", {})).rejects.toThrow("Use destroySession(sessionId) instead.");
 
     const destroyed = await sdk.destroySession(session.id);
     expect(destroyed.destroyedAt).toBeDefined();
@@ -572,8 +538,17 @@ describe("Integration: TypeScript SDK flat session API", () => {
     const session = await sdk.createSession({ agent: "mock" });
     await session.setMode("plan");
 
-    const modes = await session.getModes();
-    expect(modes?.currentModeId).toBe("plan");
+    const modes = await waitForAsync(async () => {
+      const current = await session.getModes();
+      return current?.currentModeId === "plan" ? current : null;
+    });
+    expect(modes.currentModeId).toBe("plan");
+
+    const modeOption = await waitForAsync(async () => {
+      const option = (await session.getConfigOptions()).find((o) => o.category === "mode");
+      return option?.currentValue === "plan" ? option : null;
+    });
+    expect(modeOption.currentValue).toBe("plan");
 
     await sdk.dispose();
   });
@@ -775,13 +750,9 @@ describe("Integration: TypeScript SDK flat session API", () => {
 
       const initialLogs = await waitForAsync(async () => {
         const logs = await sdk.getProcessLogs(interactiveProcess.id, { tail: 10 });
-        return logs.entries.some((entry) => decodeProcessLogData(entry.data, entry.encoding).includes("ready"))
-          ? logs
-          : undefined;
+        return logs.entries.some((entry) => decodeProcessLogData(entry.data, entry.encoding).includes("ready")) ? logs : undefined;
       });
-      expect(
-        initialLogs.entries.some((entry) => decodeProcessLogData(entry.data, entry.encoding).includes("ready")),
-      ).toBe(true);
+      expect(initialLogs.entries.some((entry) => decodeProcessLogData(entry.data, entry.encoding).includes("ready"))).toBe(true);
 
       const followedLogs: string[] = [];
       const subscription = await sdk.followProcessLogs(

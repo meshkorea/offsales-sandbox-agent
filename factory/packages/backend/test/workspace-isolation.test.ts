@@ -24,11 +24,7 @@ function createRepo(): { repoPath: string } {
   return { repoPath };
 }
 
-async function waitForWorkspaceRows(
-  ws: any,
-  workspaceId: string,
-  expectedCount: number
-) {
+async function waitForWorkspaceRows(ws: any, workspaceId: string, expectedCount: number) {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const rows = await ws.listHandoffs({ workspaceId });
     if (rows.length >= expectedCount) {
@@ -40,18 +36,16 @@ async function waitForWorkspaceRows(
 }
 
 describe("workspace isolation", () => {
-  it.skipIf(!runActorIntegration)(
-    "keeps handoff lists isolated by workspace",
-    async (t) => {
+  it.skipIf(!runActorIntegration)("keeps handoff lists isolated by workspace", async (t) => {
     const testDriver = createTestDriver();
     createTestRuntimeContext(testDriver);
 
     const { client } = await setupTest(t, registry);
     const wsA = await client.workspace.getOrCreate(workspaceKey("alpha"), {
-      createWithInput: "alpha"
+      createWithInput: "alpha",
     });
     const wsB = await client.workspace.getOrCreate(workspaceKey("beta"), {
-      createWithInput: "beta"
+      createWithInput: "beta",
     });
 
     const { repoPath } = createRepo();
@@ -64,7 +58,7 @@ describe("workspace isolation", () => {
       task: "task A",
       providerId: "daytona",
       explicitBranchName: "feature/a",
-      explicitTitle: "A"
+      explicitTitle: "A",
     });
 
     await wsB.createHandoff({
@@ -73,7 +67,7 @@ describe("workspace isolation", () => {
       task: "task B",
       providerId: "daytona",
       explicitBranchName: "feature/b",
-      explicitTitle: "B"
+      explicitTitle: "B",
     });
 
     const aRows = await waitForWorkspaceRows(wsA, "alpha", 1);
@@ -84,6 +78,5 @@ describe("workspace isolation", () => {
     expect(aRows[0]?.workspaceId).toBe("alpha");
     expect(bRows[0]?.workspaceId).toBe("beta");
     expect(aRows[0]?.handoffId).not.toBe(bRows[0]?.handoffId);
-    }
-  );
+  });
 });

@@ -80,7 +80,11 @@ export function providerAgent(provider: string): AgentKind {
 }
 
 export function slugify(text: string): string {
-  return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
 }
 
 export function randomReply(): string {
@@ -707,13 +711,13 @@ export function buildInitialHandoffs(): Handoff[] {
           "+  const [isDark, setIsDark] = useState(theme === 'dark');",
           " ",
           "   return (",
-          "     <div className=\"settings-page\">",
+          '     <div className="settings-page">',
           "+      <Card>",
           "+        <h3>Appearance</h3>",
-          "+        <div className=\"setting-row\">",
-          "+          <Label htmlFor=\"dark-mode\">Dark Mode</Label>",
+          '+        <div className="setting-row">',
+          '+          <Label htmlFor="dark-mode">Dark Mode</Label>',
           "+          <Toggle",
-          "+            id=\"dark-mode\"",
+          '+            id="dark-mode"',
           "+            checked={isDark}",
           "+            onCheckedChange={(checked) => {",
           "+              setIsDark(checked);",
@@ -725,7 +729,7 @@ export function buildInitialHandoffs(): Handoff[] {
           "+            }}",
           "+          />",
           "+        </div>",
-          "+        <p className=\"setting-description\">",
+          '+        <p className="setting-description">',
           "+          Toggle between light and dark color schemes.",
           "+          Your preference is saved to localStorage.",
           "+        </p>",
@@ -733,11 +737,11 @@ export function buildInitialHandoffs(): Handoff[] {
           "+",
           "       <Card>",
           "         <h3>Notifications</h3>",
-          "         <div className=\"setting-row\">",
+          '         <div className="setting-row">',
           "-          <Label>Email notifications</Label>",
           "-          <Toggle checked={notifications} onCheckedChange={setNotifications} />",
-          "+          <Label htmlFor=\"notifs\">Email notifications</Label>",
-          "+          <Toggle id=\"notifs\" checked={notifications} onCheckedChange={setNotifications} />",
+          '+          <Label htmlFor="notifs">Email notifications</Label>',
+          '+          <Toggle id="notifs" checked={notifications} onCheckedChange={setNotifications} />',
           "         </div>",
           "       </Card>",
         ].join("\n"),
@@ -957,8 +961,7 @@ export function groupWorkbenchProjects(repos: WorkbenchRepo[], handoffs: Handoff
     .map((project) => ({
       ...project,
       handoffs: [...project.handoffs].sort((a, b) => b.updatedAtMs - a.updatedAtMs),
-      updatedAtMs:
-        project.handoffs.length > 0 ? Math.max(...project.handoffs.map((handoff) => handoff.updatedAtMs)) : project.updatedAtMs,
+      updatedAtMs: project.handoffs.length > 0 ? Math.max(...project.handoffs.map((handoff) => handoff.updatedAtMs)) : project.updatedAtMs,
     }))
     .filter((project) => project.handoffs.length > 0)
     .sort((a, b) => b.updatedAtMs - a.updatedAtMs);

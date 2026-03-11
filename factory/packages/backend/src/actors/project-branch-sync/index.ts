@@ -39,15 +39,10 @@ const CONTROL = {
   start: "project.branch_sync.control.start",
   stop: "project.branch_sync.control.stop",
   setInterval: "project.branch_sync.control.set_interval",
-  force: "project.branch_sync.control.force"
+  force: "project.branch_sync.control.force",
 } as const;
 
-async function enrichBranches(
-  workspaceId: string,
-  repoId: string,
-  repoPath: string,
-  git: GitDriver
-): Promise<EnrichedBranchSnapshot[]> {
+async function enrichBranches(workspaceId: string, repoId: string, repoPath: string, git: GitDriver): Promise<EnrichedBranchSnapshot[]> {
   return await withRepoGitLock(repoPath, async () => {
     await git.fetch(repoPath);
     const branches = await git.listRemoteBranches(repoPath);
@@ -71,7 +66,7 @@ async function enrichBranches(
           workspaceId,
           repoId,
           branchName: branch.branchName,
-          error: resolveErrorMessage(error)
+          error: resolveErrorMessage(error),
         });
         branchDiffStat = null;
       }
@@ -84,7 +79,7 @@ async function enrichBranches(
           workspaceId,
           repoId,
           branchName: branch.branchName,
-          error: resolveErrorMessage(error)
+          error: resolveErrorMessage(error),
         });
         branchHasUnpushed = false;
       }
@@ -96,7 +91,7 @@ async function enrichBranches(
           workspaceId,
           repoId,
           branchName: branch.branchName,
-          error: resolveErrorMessage(error)
+          error: resolveErrorMessage(error),
         });
         branchConflicts = false;
       }
@@ -108,7 +103,7 @@ async function enrichBranches(
         trackedInStack: parentByBranch.has(branch.branchName),
         diffStat: branchDiffStat,
         hasUnpushed: branchHasUnpushed,
-        conflictsWithMain: branchConflicts
+        conflictsWithMain: branchConflicts,
       });
     }
 
@@ -132,14 +127,14 @@ export const projectBranchSync = actor({
   },
   options: {
     // Polling actors rely on timer-based wakeups; sleeping would pause the timer and stop polling.
-    noSleep: true
+    noSleep: true,
   },
   createState: (_c, input: ProjectBranchSyncInput): ProjectBranchSyncState => ({
     workspaceId: input.workspaceId,
     repoId: input.repoId,
     repoPath: input.repoPath,
     intervalMs: input.intervalMs,
-    running: true
+    running: true,
   }),
   actions: {
     async start(c): Promise<void> {
@@ -160,7 +155,7 @@ export const projectBranchSync = actor({
     async force(c): Promise<void> {
       const self = selfProjectBranchSync(c);
       await self.send(CONTROL.force, {}, { wait: true, timeout: 5 * 60_000 });
-    }
+    },
   },
   run: workflow(async (ctx) => {
     await runWorkflowPollingLoop<ProjectBranchSyncState>(ctx, {
@@ -172,10 +167,10 @@ export const projectBranchSync = actor({
         } catch (error) {
           logActorWarning("project-branch-sync", "poll failed", {
             error: resolveErrorMessage(error),
-            stack: resolveErrorStack(error)
+            stack: resolveErrorStack(error),
           });
         }
-      }
+      },
     });
-  })
+  }),
 });

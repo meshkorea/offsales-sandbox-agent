@@ -20,12 +20,7 @@ export interface SpawnCreateTmuxWindowInput {
 
 export interface SpawnCreateTmuxWindowResult {
   created: boolean;
-  reason:
-    | "created"
-    | "not-in-tmux"
-    | "not-local-path"
-    | "window-exists"
-    | "tmux-new-window-failed";
+  reason: "created" | "not-in-tmux" | "not-local-path" | "window-exists" | "tmux-new-window-failed";
 }
 
 function isTmuxSession(): boolean {
@@ -63,10 +58,7 @@ function resolveOpencodeBinary(): string {
     return "opencode";
   }
 
-  const bundledCandidates = [
-    `${homedir()}/.local/share/sandbox-agent/bin/opencode`,
-    `${homedir()}/.opencode/bin/opencode`
-  ];
+  const bundledCandidates = [`${homedir()}/.local/share/sandbox-agent/bin/opencode`, `${homedir()}/.opencode/bin/opencode`];
 
   for (const candidate of bundledCandidates) {
     if (existsSync(candidate)) {
@@ -79,15 +71,7 @@ function resolveOpencodeBinary(): string {
 
 function attachCommand(sessionId: string, targetPath: string, endpoint: string): string {
   const opencode = resolveOpencodeBinary();
-  return [
-    shellEscape(opencode),
-    "attach",
-    shellEscape(endpoint),
-    "--session",
-    shellEscape(sessionId),
-    "--dir",
-    shellEscape(targetPath)
-  ].join(" ");
+  return [shellEscape(opencode), "attach", shellEscape(endpoint), "--session", shellEscape(sessionId), "--dir", shellEscape(targetPath)].join(" ");
 }
 
 export function stripStatusPrefix(windowName: string): string {
@@ -99,11 +83,7 @@ export function stripStatusPrefix(windowName: string): string {
 }
 
 export function findTmuxWindowsByBranch(branchName: string): TmuxWindowMatch[] {
-  const output = spawnSync(
-    "tmux",
-    ["list-windows", "-a", "-F", "#{session_name}:#{window_id}:#{window_name}"],
-    { encoding: "utf8" }
-  );
+  const output = spawnSync("tmux", ["list-windows", "-a", "-F", "#{session_name}:#{window_id}:#{window_name}"], { encoding: "utf8" });
 
   if (output.error || output.status !== 0 || !output.stdout) {
     return [];
@@ -128,16 +108,14 @@ export function findTmuxWindowsByBranch(branchName: string): TmuxWindowMatch[] {
 
     matches.push({
       target: `${sessionName}:${windowId}`,
-      windowName
+      windowName,
     });
   }
 
   return matches;
 }
 
-export function spawnCreateTmuxWindow(
-  input: SpawnCreateTmuxWindowInput
-): SpawnCreateTmuxWindowResult {
+export function spawnCreateTmuxWindow(input: SpawnCreateTmuxWindowInput): SpawnCreateTmuxWindowResult {
   if (!isTmuxSession()) {
     return { created: false, reason: "not-in-tmux" };
   }
@@ -154,21 +132,10 @@ export function spawnCreateTmuxWindow(
   const endpoint = input.opencodeEndpoint ?? DEFAULT_OPENCODE_ENDPOINT;
   let output = "";
   try {
-    output = execFileSync(
-      "tmux",
-      [
-        "new-window",
-        "-d",
-        "-P",
-        "-F",
-        "#{window_id}",
-        "-n",
-        windowName,
-        "-c",
-        input.targetPath
-      ],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
-    );
+    output = execFileSync("tmux", ["new-window", "-d", "-P", "-F", "#{window_id}", "-n", windowName, "-c", input.targetPath], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
   } catch {
     return { created: false, reason: "tmux-new-window-failed" };
   }
@@ -184,11 +151,10 @@ export function spawnCreateTmuxWindow(
     // Split left pane horizontally → creates right pane; capture its pane ID
     let rightPane: string;
     try {
-      rightPane = execFileSync(
-        "tmux",
-        ["split-window", "-h", "-P", "-F", "#{pane_id}", "-t", leftPane, "-c", input.targetPath],
-        { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
-      ).trim();
+      rightPane = execFileSync("tmux", ["split-window", "-h", "-P", "-F", "#{pane_id}", "-t", leftPane, "-c", input.targetPath], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim();
     } catch {
       return { created: true, reason: "created" };
     }
@@ -206,13 +172,7 @@ export function spawnCreateTmuxWindow(
 
     // Editor in left pane, agent attach in top-right pane
     runTmux(["send-keys", "-t", leftPane, "nvim .", "Enter"]);
-    runTmux([
-      "send-keys",
-      "-t",
-      rightPane,
-      attachCommand(input.sessionId, input.targetPath, endpoint),
-      "Enter"
-    ]);
+    runTmux(["send-keys", "-t", rightPane, attachCommand(input.sessionId, input.targetPath, endpoint), "Enter"]);
     runTmux(["select-pane", "-t", rightPane]);
   }
 

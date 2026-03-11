@@ -1,17 +1,8 @@
 import type { BranchSnapshot } from "./integrations/git/index.js";
 import type { PullRequestSnapshot } from "./integrations/github/index.js";
-import type {
-  SandboxSession,
-  SandboxAgentClientOptions,
-  SandboxSessionCreateRequest
-} from "./integrations/sandbox-agent/client.js";
+import type { SandboxSession, SandboxAgentClientOptions, SandboxSessionCreateRequest } from "./integrations/sandbox-agent/client.js";
 import type { ListEventsRequest, ListPage, ListPageRequest, SessionEvent, SessionRecord } from "sandbox-agent";
-import type {
-  DaytonaClientOptions,
-  DaytonaCreateSandboxOptions,
-  DaytonaPreviewEndpoint,
-  DaytonaSandbox,
-} from "./integrations/daytona/client.js";
+import type { DaytonaClientOptions, DaytonaCreateSandboxOptions, DaytonaPreviewEndpoint, DaytonaSandbox } from "./integrations/daytona/client.js";
 import {
   validateRemote,
   ensureCloned,
@@ -67,12 +58,7 @@ export interface StackDriver {
 
 export interface GithubDriver {
   listPullRequests(repoPath: string): Promise<PullRequestSnapshot[]>;
-  createPr(
-    repoPath: string,
-    headBranch: string,
-    title: string,
-    body?: string
-  ): Promise<{ number: number; url: string }>;
+  createPr(repoPath: string, headBranch: string, title: string, body?: string): Promise<{ number: number; url: string }>;
 }
 
 export interface SandboxAgentClientLike {

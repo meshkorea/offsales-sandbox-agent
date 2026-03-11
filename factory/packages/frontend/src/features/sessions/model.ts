@@ -105,11 +105,7 @@ export function buildTranscript(events: SandboxSessionEventRecord[]): Array<{
   }));
 }
 
-export function resolveSessionSelection(input: {
-  explicitSessionId: string | null;
-  handoffSessionId: string | null;
-  sessions: SandboxSessionRecord[];
-}): {
+export function resolveSessionSelection(input: { explicitSessionId: string | null; handoffSessionId: string | null; sessions: SandboxSessionRecord[] }): {
   sessionId: string | null;
   staleSessionId: string | null;
 } {

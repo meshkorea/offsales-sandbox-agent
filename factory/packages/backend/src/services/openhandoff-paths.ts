@@ -15,11 +15,6 @@ export function openhandoffDataDir(config: AppConfig): string {
   return resolve(dirname(dbPath));
 }
 
-export function openhandoffRepoClonePath(
-  config: AppConfig,
-  workspaceId: string,
-  repoId: string
-): string {
+export function openhandoffRepoClonePath(config: AppConfig, workspaceId: string, repoId: string): string {
   return resolve(join(openhandoffDataDir(config), "repos", workspaceId, repoId));
 }
-

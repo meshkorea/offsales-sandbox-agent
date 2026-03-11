@@ -13,10 +13,7 @@ export function createTestConfig(overrides?: Partial<AppConfig>): AppConfig {
     backend: {
       host: "127.0.0.1",
       port: 7741,
-      dbPath: join(
-        tmpdir(),
-        `hf-test-${Date.now()}-${Math.random().toString(16).slice(2)}.db`
-      ),
+      dbPath: join(tmpdir(), `hf-test-${Date.now()}-${Math.random().toString(16).slice(2)}.db`),
       opencode_poll_interval: 2,
       github_poll_interval: 30,
       backup_interval_secs: 3600,
@@ -29,10 +26,7 @@ export function createTestConfig(overrides?: Partial<AppConfig>): AppConfig {
   });
 }
 
-export function createTestRuntimeContext(
-  driver: BackendDriver,
-  configOverrides?: Partial<AppConfig>
-): { config: AppConfig } {
+export function createTestRuntimeContext(driver: BackendDriver, configOverrides?: Partial<AppConfig>): { config: AppConfig } {
   const config = createTestConfig(configOverrides);
   const providers = createProviderRegistry(config, driver);
   initActorRuntimeContext(config, providers, undefined, driver);

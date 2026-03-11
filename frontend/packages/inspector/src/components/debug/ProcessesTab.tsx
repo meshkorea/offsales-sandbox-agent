@@ -26,7 +26,11 @@ const formatDateTime = (value: number | null | undefined): string => {
   return new Date(value).toLocaleString();
 };
 
-const parseArgs = (value: string): string[] => value.split("\n").map((part) => part.trim()).filter(Boolean);
+const parseArgs = (value: string): string[] =>
+  value
+    .split("\n")
+    .map((part) => part.trim())
+    .filter(Boolean);
 
 const formatCommandSummary = (process: Pick<ProcessInfo, "command" | "args">): string => {
   return [process.command, ...process.args].join(" ").trim();
@@ -36,11 +40,7 @@ const canOpenTerminal = (process: ProcessInfo | null | undefined): boolean => {
   return Boolean(process && process.status === "running" && process.interactive && process.tty);
 };
 
-const ProcessesTab = ({
-  getClient,
-}: {
-  getClient: () => SandboxAgent;
-}) => {
+const ProcessesTab = ({ getClient }: { getClient: () => SandboxAgent }) => {
   const [processes, setProcesses] = useState<ProcessInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -62,63 +62,64 @@ const ProcessesTab = ({
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [actingProcessId, setActingProcessId] = useState<string | null>(null);
 
-  const loadProcesses = useCallback(async (mode: "initial" | "refresh" = "initial") => {
-    if (mode === "initial") {
-      setLoading(true);
-    } else {
-      setRefreshing(true);
-    }
-    setError(null);
-    try {
-      const response = await getClient().listProcesses();
-      setProcesses(response.processes);
-      setSelectedProcessId((current) => {
-        if (!current) {
-          return response.processes[0]?.id ?? null;
-        }
-        return response.processes.some((listedProcess) => listedProcess.id === current)
-          ? current
-          : response.processes[0]?.id ?? null;
-      });
-    } catch (loadError) {
-      setError(extractErrorMessage(loadError, "Unable to load processes."));
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [getClient]);
+  const loadProcesses = useCallback(
+    async (mode: "initial" | "refresh" = "initial") => {
+      if (mode === "initial") {
+        setLoading(true);
+      } else {
+        setRefreshing(true);
+      }
+      setError(null);
+      try {
+        const response = await getClient().listProcesses();
+        setProcesses(response.processes);
+        setSelectedProcessId((current) => {
+          if (!current) {
+            return response.processes[0]?.id ?? null;
+          }
+          return response.processes.some((listedProcess) => listedProcess.id === current) ? current : (response.processes[0]?.id ?? null);
+        });
+      } catch (loadError) {
+        setError(extractErrorMessage(loadError, "Unable to load processes."));
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [getClient],
+  );
 
-  const loadSelectedLogs = useCallback(async (process: ProcessInfo | null) => {
-    if (!process) {
-      setLogsText("");
+  const loadSelectedLogs = useCallback(
+    async (process: ProcessInfo | null) => {
+      if (!process) {
+        setLogsText("");
+        setLogsError(null);
+        return;
+      }
+      setLogsLoading(true);
       setLogsError(null);
-      return;
-    }
-    setLogsLoading(true);
-    setLogsError(null);
-    try {
-      const response = await getClient().getProcessLogs(process.id, {
-        stream: process.tty ? "pty" : "combined",
-        tail: 200,
-      });
-      const text = response.entries.map((logEntry) => decodeBase64Utf8(logEntry.data)).join("");
-      setLogsText(text);
-    } catch (loadError) {
-      setLogsError(extractErrorMessage(loadError, "Unable to load process logs."));
-      setLogsText("");
-    } finally {
-      setLogsLoading(false);
-    }
-  }, [getClient]);
+      try {
+        const response = await getClient().getProcessLogs(process.id, {
+          stream: process.tty ? "pty" : "combined",
+          tail: 200,
+        });
+        const text = response.entries.map((logEntry) => decodeBase64Utf8(logEntry.data)).join("");
+        setLogsText(text);
+      } catch (loadError) {
+        setLogsError(extractErrorMessage(loadError, "Unable to load process logs."));
+        setLogsText("");
+      } finally {
+        setLogsLoading(false);
+      }
+    },
+    [getClient],
+  );
 
   useEffect(() => {
     void loadProcesses();
   }, [loadProcesses]);
 
-  const selectedProcess = useMemo(
-    () => processes.find((process) => process.id === selectedProcessId) ?? null,
-    [processes, selectedProcessId]
-  );
+  const selectedProcess = useMemo(() => processes.find((process) => process.id === selectedProcessId) ?? null, [processes, selectedProcessId]);
 
   useEffect(() => {
     void loadSelectedLogs(selectedProcess);
@@ -187,11 +188,7 @@ const ProcessesTab = ({
     <div className="processes-container">
       {/* Create form */}
       <div className="processes-section">
-        <button
-          className="processes-section-toggle"
-          onClick={() => setShowCreateForm((prev) => !prev)}
-          type="button"
-        >
+        <button className="processes-section-toggle" onClick={() => setShowCreateForm((prev) => !prev)} type="button">
           {showCreateForm ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
           <span>Create Process</span>
         </button>
@@ -311,7 +308,9 @@ const ProcessesTab = ({
                   <span className={`process-status-dot ${process.status}`} />
                   <span className="process-list-item-cmd mono">{formatCommandSummary(process)}</span>
                   {process.interactive && process.tty && (
-                    <span className="pill neutral" style={{ fontSize: 9 }}>tty</span>
+                    <span className="pill neutral" style={{ fontSize: 9 }}>
+                      tty
+                    </span>
                   )}
                 </div>
                 <div className="process-list-item-meta">
@@ -336,7 +335,10 @@ const ProcessesTab = ({
                     <>
                       <button
                         className="button secondary small"
-                        onClick={(e) => { e.stopPropagation(); void handleAction(process.id, "stop"); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void handleAction(process.id, "stop");
+                        }}
                         disabled={Boolean(actingProcessId)}
                       >
                         {isStopping ? <Loader2 className="button-icon spinner-icon" size={12} /> : null}
@@ -344,7 +346,10 @@ const ProcessesTab = ({
                       </button>
                       <button
                         className="button secondary small"
-                        onClick={(e) => { e.stopPropagation(); void handleAction(process.id, "kill"); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void handleAction(process.id, "kill");
+                        }}
                         disabled={Boolean(actingProcessId)}
                       >
                         {isKilling ? <Loader2 className="button-icon spinner-icon" size={12} /> : <Skull className="button-icon" size={12} />}
@@ -355,7 +360,10 @@ const ProcessesTab = ({
                   {process.status === "exited" ? (
                     <button
                       className="button secondary small"
-                      onClick={(e) => { e.stopPropagation(); void handleAction(process.id, "delete"); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleAction(process.id, "delete");
+                      }}
                       disabled={Boolean(actingProcessId)}
                     >
                       {isDeleting ? <Loader2 className="button-icon spinner-icon" size={12} /> : <Trash2 className="button-icon" size={12} />}
@@ -385,30 +393,21 @@ const ProcessesTab = ({
               <span>Created: {formatDateTime(selectedProcess.createdAtMs)}</span>
               {selectedProcess.exitedAtMs ? <span>Exited: {formatDateTime(selectedProcess.exitedAtMs)}</span> : null}
               {selectedProcess.exitCode != null ? <span>Exit code: {selectedProcess.exitCode}</span> : null}
-              <span className="mono" style={{ opacity: 0.6 }}>{selectedProcess.id}</span>
+              <span className="mono" style={{ opacity: 0.6 }}>
+                {selectedProcess.id}
+              </span>
             </div>
 
             {/* Terminal */}
             {terminalOpen && canOpenTerminal(selectedProcess) ? (
-              <ProcessTerminal
-                client={getClient()}
-                processId={selectedProcess.id}
-                style={{ marginTop: 4 }}
-                onExit={handleTerminalExit}
-              />
+              <ProcessTerminal client={getClient()} processId={selectedProcess.id} style={{ marginTop: 4 }} onExit={handleTerminalExit} />
             ) : canOpenTerminal(selectedProcess) ? (
-              <button
-                className="button secondary small"
-                onClick={() => setTerminalOpen(true)}
-                style={{ marginTop: 8 }}
-              >
+              <button className="button secondary small" onClick={() => setTerminalOpen(true)} style={{ marginTop: 8 }}>
                 <SquareTerminal className="button-icon" size={12} />
                 Open Terminal
               </button>
             ) : selectedProcess.interactive && selectedProcess.tty ? (
-              <div className="process-terminal-empty">
-                Terminal available while process is running.
-              </div>
+              <div className="process-terminal-empty">Terminal available while process is running.</div>
             ) : null}
 
             {/* Logs */}

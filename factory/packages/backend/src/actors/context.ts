@@ -8,12 +8,7 @@ let providerRegistry: ProviderRegistry | null = null;
 let notificationService: NotificationService | null = null;
 let runtimeDriver: BackendDriver | null = null;
 
-export function initActorRuntimeContext(
-  config: AppConfig,
-  providers: ProviderRegistry,
-  notifications?: NotificationService,
-  driver?: BackendDriver
-): void {
+export function initActorRuntimeContext(config: AppConfig, providers: ProviderRegistry, notifications?: NotificationService, driver?: BackendDriver): void {
   runtimeConfig = config;
   providerRegistry = providers;
   notificationService = notifications ?? null;

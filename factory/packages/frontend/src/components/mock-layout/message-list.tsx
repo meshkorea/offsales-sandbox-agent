@@ -23,11 +23,7 @@ const TranscriptMessageBody = memo(function TranscriptMessageBody({
   const isUser = message.sender === "client";
   const isCopied = copiedMessageId === message.id;
   const messageTimestamp = formatMessageTimestamp(message.createdAtMs);
-  const displayFooter = isUser
-    ? messageTimestamp
-    : message.durationMs
-      ? `${messageTimestamp} • Took ${formatMessageDuration(message.durationMs)}`
-      : null;
+  const displayFooter = isUser ? messageTimestamp : message.durationMs ? `${messageTimestamp} • Took ${formatMessageDuration(message.durationMs)}` : null;
 
   return (
     <div
@@ -90,10 +86,7 @@ const TranscriptMessageBody = memo(function TranscriptMessageBody({
         })}
       >
         {displayFooter ? (
-          <LabelXSmall
-            color={theme.colors.contentTertiary}
-            $style={{ fontFamily: '"IBM Plex Mono", monospace', letterSpacing: "0.01em" }}
-          >
+          <LabelXSmall color={theme.colors.contentTertiary} $style={{ fontFamily: '"IBM Plex Mono", monospace', letterSpacing: "0.01em" }}>
             {displayFooter}
           </LabelXSmall>
         ) : null}
@@ -238,14 +231,7 @@ export const MessageList = memo(function MessageList({
                 return null;
               }
 
-              return (
-                <TranscriptMessageBody
-                  message={message}
-                  messageRefs={messageRefs}
-                  copiedMessageId={copiedMessageId}
-                  onCopyMessage={onCopyMessage}
-                />
-              );
+              return <TranscriptMessageBody message={message} messageRefs={messageRefs} copiedMessageId={copiedMessageId} onCopyMessage={onCopyMessage} />;
             }}
             isThinking={Boolean(tab && tab.status === "running" && transcriptEntries.length > 0)}
             renderThinkingState={() => (

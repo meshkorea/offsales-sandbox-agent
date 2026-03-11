@@ -83,8 +83,7 @@ const DEFAULT_REPLAY_MAX_EVENTS = 50;
 const DEFAULT_REPLAY_MAX_CHARS = 12_000;
 const EVENT_INDEX_SCAN_EVENTS_LIMIT = 500;
 const SESSION_CANCEL_METHOD = "session/cancel";
-const MANUAL_CANCEL_ERROR =
-  "Manual session/cancel calls are not allowed. Use destroySession(sessionId) instead.";
+const MANUAL_CANCEL_ERROR = "Manual session/cancel calls are not allowed. Use destroySession(sessionId) instead.";
 const HEALTH_WAIT_MIN_DELAY_MS = 500;
 const HEALTH_WAIT_MAX_DELAY_MS = 15_000;
 const HEALTH_WAIT_LOG_AFTER_MS = 5_000;
@@ -209,9 +208,7 @@ export class UnsupportedSessionCategoryError extends Error {
   readonly availableCategories: string[];
 
   constructor(sessionId: string, category: string, availableCategories: string[]) {
-    super(
-      `Session '${sessionId}' does not support category '${category}'. Available categories: ${availableCategories.join(", ") || "(none)"}`,
-    );
+    super(`Session '${sessionId}' does not support category '${category}'. Available categories: ${availableCategories.join(", ") || "(none)"}`);
     this.name = "UnsupportedSessionCategoryError";
     this.sessionId = sessionId;
     this.category = category;
@@ -226,13 +223,7 @@ export class UnsupportedSessionValueError extends Error {
   readonly requestedValue: string;
   readonly allowedValues: string[];
 
-  constructor(
-    sessionId: string,
-    category: string,
-    configId: string,
-    requestedValue: string,
-    allowedValues: string[],
-  ) {
+  constructor(sessionId: string, category: string, configId: string, requestedValue: string, allowedValues: string[]) {
     super(
       `Session '${sessionId}' does not support value '${requestedValue}' for category '${category}' (configId='${configId}'). Allowed values: ${allowedValues.join(", ") || "(none)"}`,
     );
@@ -251,9 +242,7 @@ export class UnsupportedSessionConfigOptionError extends Error {
   readonly availableConfigIds: string[];
 
   constructor(sessionId: string, configId: string, availableConfigIds: string[]) {
-    super(
-      `Session '${sessionId}' does not expose config option '${configId}'. Available configIds: ${availableConfigIds.join(", ") || "(none)"}`,
-    );
+    super(`Session '${sessionId}' does not expose config option '${configId}'. Available configIds: ${availableConfigIds.join(", ") || "(none)"}`);
     this.name = "UnsupportedSessionConfigOptionError";
     this.sessionId = sessionId;
     this.configId = configId;
@@ -267,9 +256,7 @@ export class UnsupportedPermissionReplyError extends Error {
   readonly availableReplies: PermissionReply[];
 
   constructor(permissionId: string, requestedReply: PermissionReply, availableReplies: PermissionReply[]) {
-    super(
-      `Permission '${permissionId}' does not support reply '${requestedReply}'. Available replies: ${availableReplies.join(", ") || "(none)"}`,
-    );
+    super(`Permission '${permissionId}' does not support reply '${requestedReply}'. Available replies: ${availableReplies.join(", ") || "(none)"}`);
     this.name = "UnsupportedPermissionReplyError";
     this.permissionId = permissionId;
     this.requestedReply = requestedReply;
@@ -417,12 +404,7 @@ export class LiveAcpConnection {
     agent: string,
     connectionId: string,
     acp: AcpHttpClient,
-    onObservedEnvelope: (
-      connection: LiveAcpConnection,
-      envelope: AnyMessage,
-      direction: AcpEnvelopeDirection,
-      localSessionId: string | null,
-    ) => void,
+    onObservedEnvelope: (connection: LiveAcpConnection, envelope: AnyMessage, direction: AcpEnvelopeDirection, localSessionId: string | null) => void,
     onPermissionRequest: (
       connection: LiveAcpConnection,
       localSessionId: string,
@@ -444,12 +426,7 @@ export class LiveAcpConnection {
     headers?: HeadersInit;
     agent: string;
     serverId: string;
-    onObservedEnvelope: (
-      connection: LiveAcpConnection,
-      envelope: AnyMessage,
-      direction: AcpEnvelopeDirection,
-      localSessionId: string | null,
-    ) => void;
+    onObservedEnvelope: (connection: LiveAcpConnection, envelope: AnyMessage, direction: AcpEnvelopeDirection, localSessionId: string | null) => void;
     onPermissionRequest: (
       connection: LiveAcpConnection,
       localSessionId: string,
@@ -492,13 +469,7 @@ export class LiveAcpConnection {
       },
     });
 
-    live = new LiveAcpConnection(
-      options.agent,
-      connectionId,
-      acp,
-      options.onObservedEnvelope,
-      options.onPermissionRequest,
-    );
+    live = new LiveAcpConnection(options.agent, connectionId, acp, options.onObservedEnvelope, options.onPermissionRequest);
 
     const initResult = await acp.initialize({
       protocolVersion: PROTOCOL_VERSION,
@@ -541,10 +512,7 @@ export class LiveAcpConnection {
     this.pendingReplayByLocalSessionId.set(localSessionId, replayText);
   }
 
-  async createRemoteSession(
-    localSessionId: string,
-    sessionInit: Omit<NewSessionRequest, "_meta">,
-  ): Promise<NewSessionResponse> {
+  async createRemoteSession(localSessionId: string, sessionInit: Omit<NewSessionRequest, "_meta">): Promise<NewSessionResponse> {
     const createStartedAt = Date.now();
     this.pendingNewSessionLocals.push(localSessionId);
 
@@ -566,12 +534,7 @@ export class LiveAcpConnection {
     }
   }
 
-  async sendSessionMethod(
-    localSessionId: string,
-    method: string,
-    params: Record<string, unknown>,
-    options: SessionSendOptions,
-  ): Promise<unknown> {
+  async sendSessionMethod(localSessionId: string, method: string, params: Record<string, unknown>, options: SessionSendOptions): Promise<unknown> {
     const agentSessionId = this.sessionByLocalId.get(localSessionId);
     if (!agentSessionId) {
       throw new Error(`session '${localSessionId}' is not bound to live ACP connection '${this.connectionId}'`);
@@ -632,21 +595,14 @@ export class LiveAcpConnection {
     this.lastAdapterExitAt = Date.now();
   }
 
-  private async handlePermissionRequest(
-    request: RequestPermissionRequest,
-  ): Promise<RequestPermissionResponse> {
+  private async handlePermissionRequest(request: RequestPermissionRequest): Promise<RequestPermissionResponse> {
     const agentSessionId = request.sessionId;
     const localSessionId = this.localByAgentSessionId.get(agentSessionId);
     if (!localSessionId) {
       return cancelledPermissionResponse();
     }
 
-    return this.onPermissionRequest(
-      this,
-      localSessionId,
-      agentSessionId,
-      clonePermissionRequest(request),
-    );
+    return this.onPermissionRequest(this, localSessionId, agentSessionId, clonePermissionRequest(request));
   }
 
   private resolveSessionId(envelope: AnyMessage, direction: AcpEnvelopeDirection): string | null {
@@ -1108,10 +1064,7 @@ export class SandboxAgent {
     return this.upsertSessionHandle(updated);
   }
 
-  async setSessionMode(
-    sessionId: string,
-    modeId: string,
-  ): Promise<{ session: Session; response: SetSessionModeResponse | void }> {
+  async setSessionMode(sessionId: string, modeId: string): Promise<{ session: Session; response: SetSessionModeResponse | void }> {
     const mode = modeId.trim();
     if (!mode) {
       throw new Error("setSessionMode requires a non-empty modeId");
@@ -1124,13 +1077,10 @@ export class SandboxAgent {
     }
 
     try {
-      return (await this.sendSessionMethodInternal(
-        sessionId,
-        "session/set_mode",
-        { modeId: mode },
-        {},
-        false,
-      )) as { session: Session; response: SetSessionModeResponse | void };
+      return (await this.sendSessionMethodInternal(sessionId, "session/set_mode", { modeId: mode }, {}, false)) as {
+        session: Session;
+        response: SetSessionModeResponse | void;
+      };
     } catch (error) {
       if (!(error instanceof AcpRpcError) || error.code !== -32601) {
         throw error;
@@ -1139,11 +1089,7 @@ export class SandboxAgent {
     }
   }
 
-  async setSessionConfigOption(
-    sessionId: string,
-    configId: string,
-    value: string,
-  ): Promise<{ session: Session; response: SetSessionConfigOptionResponse }> {
+  async setSessionConfigOption(sessionId: string, configId: string, value: string): Promise<{ session: Session; response: SetSessionConfigOptionResponse }> {
     const resolvedConfigId = configId.trim();
     if (!resolvedConfigId) {
       throw new Error("setSessionConfigOption requires a non-empty configId");
@@ -1165,13 +1111,7 @@ export class SandboxAgent {
 
     const allowedValues = extractConfigValues(option);
     if (allowedValues.length > 0 && !allowedValues.includes(resolvedValue)) {
-      throw new UnsupportedSessionValueError(
-        sessionId,
-        option.category ?? "uncategorized",
-        option.id,
-        resolvedValue,
-        allowedValues,
-      );
+      throw new UnsupportedSessionValueError(sessionId, option.category ?? "uncategorized", option.id, resolvedValue, allowedValues);
     }
 
     return (await this.sendSessionMethodInternal(
@@ -1186,17 +1126,11 @@ export class SandboxAgent {
     )) as { session: Session; response: SetSessionConfigOptionResponse };
   }
 
-  async setSessionModel(
-    sessionId: string,
-    model: string,
-  ): Promise<{ session: Session; response: SetSessionConfigOptionResponse }> {
+  async setSessionModel(sessionId: string, model: string): Promise<{ session: Session; response: SetSessionConfigOptionResponse }> {
     return this.setSessionCategoryValue(sessionId, "model", model);
   }
 
-  async setSessionThoughtLevel(
-    sessionId: string,
-    thoughtLevel: string,
-  ): Promise<{ session: Session; response: SetSessionConfigOptionResponse }> {
+  async setSessionThoughtLevel(sessionId: string, thoughtLevel: string): Promise<{ session: Session; response: SetSessionConfigOptionResponse }> {
     return this.setSessionCategoryValue(sessionId, "thought_level", thoughtLevel);
   }
 
@@ -1249,13 +1183,7 @@ export class SandboxAgent {
 
     const allowedValues = extractConfigValues(option);
     if (allowedValues.length > 0 && !allowedValues.includes(resolvedValue)) {
-      throw new UnsupportedSessionValueError(
-        sessionId,
-        category,
-        option.id,
-        resolvedValue,
-        allowedValues,
-      );
+      throw new UnsupportedSessionValueError(sessionId, category, option.id, resolvedValue, allowedValues);
     }
 
     return this.setSessionConfigOption(sessionId, option.id, resolvedValue);
@@ -1267,16 +1195,26 @@ export class SandboxAgent {
     }
 
     const info = await this.getAgent(snapshot.agent, { config: true });
-    const configOptions = normalizeSessionConfigOptions(info.configOptions) ?? [];
+    let configOptions = normalizeSessionConfigOptions(info.configOptions) ?? [];
     // Re-read the record from persistence so we merge against the latest
     // state, not a stale snapshot captured before the network await.
     const record = await this.persist.getSession(sessionId);
     if (!record) {
       return { ...snapshot, configOptions };
     }
+
+    const currentModeId = record.modes?.currentModeId;
+    if (currentModeId) {
+      const modeOption = findConfigOptionByCategory(configOptions, "mode");
+      if (modeOption) {
+        configOptions = applyConfigOptionValue(configOptions, modeOption.id, currentModeId) ?? configOptions;
+      }
+    }
+
     const updated: SessionRecord = {
       ...record,
       configOptions,
+      modes: deriveModesFromConfigOptions(configOptions) ?? record.modes,
     };
     await this.persist.updateSession(updated);
     return updated;
@@ -1323,12 +1261,7 @@ export class SandboxAgent {
     };
   }
 
-  private async persistSessionStateFromMethod(
-    sessionId: string,
-    method: string,
-    params: Record<string, unknown>,
-    response: unknown,
-  ): Promise<void> {
+  private async persistSessionStateFromMethod(sessionId: string, method: string, params: Record<string, unknown>, response: unknown): Promise<void> {
     // Re-read the record from persistence so we merge against the latest
     // state, not a stale snapshot captured before the RPC await.
     const record = await this.persist.getSession(sessionId);
@@ -1624,21 +1557,13 @@ export class SandboxAgent {
     });
   }
 
-  async followProcessLogs(
-    id: string,
-    listener: ProcessLogListener,
-    query: ProcessLogFollowQuery = {},
-  ): Promise<ProcessLogSubscription> {
+  async followProcessLogs(id: string, listener: ProcessLogListener, query: ProcessLogFollowQuery = {}): Promise<ProcessLogSubscription> {
     const abortController = new AbortController();
-    const response = await this.requestRaw(
-      "GET",
-      `${API_PREFIX}/processes/${encodeURIComponent(id)}/logs`,
-      {
-        query: { ...query, follow: true },
-        accept: "text/event-stream",
-        signal: abortController.signal,
-      },
-    );
+    const response = await this.requestRaw("GET", `${API_PREFIX}/processes/${encodeURIComponent(id)}/logs`, {
+      query: { ...query, follow: true },
+      accept: "text/event-stream",
+      signal: abortController.signal,
+    });
 
     if (!response.body) {
       abortController.abort();
@@ -1659,23 +1584,13 @@ export class SandboxAgent {
     });
   }
 
-  async resizeProcessTerminal(
-    id: string,
-    request: ProcessTerminalResizeRequest,
-  ): Promise<ProcessTerminalResizeResponse> {
-    return this.requestJson(
-      "POST",
-      `${API_PREFIX}/processes/${encodeURIComponent(id)}/terminal/resize`,
-      {
-        body: request,
-      },
-    );
+  async resizeProcessTerminal(id: string, request: ProcessTerminalResizeRequest): Promise<ProcessTerminalResizeResponse> {
+    return this.requestJson("POST", `${API_PREFIX}/processes/${encodeURIComponent(id)}/terminal/resize`, {
+      body: request,
+    });
   }
 
-  buildProcessTerminalWebSocketUrl(
-    id: string,
-    options: ProcessTerminalWebSocketUrlOptions = {},
-  ): string {
+  buildProcessTerminalWebSocketUrl(id: string, options: ProcessTerminalWebSocketUrlOptions = {}): string {
     return toWebSocketUrl(
       this.buildUrl(`${API_PREFIX}/processes/${encodeURIComponent(id)}/terminal/ws`, {
         access_token: options.accessToken ?? this.token,
@@ -1683,10 +1598,7 @@ export class SandboxAgent {
     );
   }
 
-  connectProcessTerminalWebSocket(
-    id: string,
-    options: ProcessTerminalConnectOptions = {},
-  ): WebSocket {
+  connectProcessTerminalWebSocket(id: string, options: ProcessTerminalConnectOptions = {}): WebSocket {
     const WebSocketCtor = options.WebSocket ?? globalThis.WebSocket;
     if (!WebSocketCtor) {
       throw new Error("WebSocket API is not available; provide a WebSocket implementation.");
@@ -1700,10 +1612,7 @@ export class SandboxAgent {
     );
   }
 
-  connectProcessTerminal(
-    id: string,
-    options: ProcessTerminalSessionOptions = {},
-  ): ProcessTerminalSession {
+  connectProcessTerminal(id: string, options: ProcessTerminalSessionOptions = {}): ProcessTerminalSession {
     return new ProcessTerminalSession(this.connectProcessTerminalWebSocket(id, options));
   }
 
@@ -1789,11 +1698,7 @@ export class SandboxAgent {
     }
   }
 
-  private async persistSessionStateFromEvent(
-    sessionId: string,
-    envelope: AnyMessage,
-    direction: AcpEnvelopeDirection,
-  ): Promise<void> {
+  private async persistSessionStateFromEvent(sessionId: string, envelope: AnyMessage, direction: AcpEnvelopeDirection): Promise<void> {
     if (direction !== "inbound") {
       return;
     }
@@ -2081,12 +1986,9 @@ export class SandboxAgent {
   }
 
   private async runHealthWait(): Promise<void> {
-    const signal = this.healthWait.enabled
-      ? anyAbortSignal([this.healthWait.signal, this.healthWaitAbortController.signal])
-      : undefined;
+    const signal = this.healthWait.enabled ? anyAbortSignal([this.healthWait.signal, this.healthWaitAbortController.signal]) : undefined;
     const startedAt = Date.now();
-    const deadline =
-      typeof this.healthWait.timeoutMs === "number" ? startedAt + this.healthWait.timeoutMs : undefined;
+    const deadline = typeof this.healthWait.timeoutMs === "number" ? startedAt + this.healthWait.timeoutMs : undefined;
 
     let delayMs = HEALTH_WAIT_MIN_DELAY_MS;
     let nextLogAt = startedAt + HEALTH_WAIT_LOG_AFTER_MS;
@@ -2111,9 +2013,7 @@ export class SandboxAgent {
       const now = Date.now();
       if (now >= nextLogAt) {
         const details = formatHealthWaitError(lastError);
-        console.warn(
-          `sandbox-agent at ${this.baseUrl} is not healthy after ${now - startedAt}ms; still waiting (${details})`,
-        );
+        console.warn(`sandbox-agent at ${this.baseUrl} is not healthy after ${now - startedAt}ms; still waiting (${details})`);
         nextLogAt = now + HEALTH_WAIT_LOG_EVERY_MS;
       }
 
@@ -2125,9 +2025,7 @@ export class SandboxAgent {
       return;
     }
 
-    throw new Error(
-      `Timed out waiting for sandbox-agent health after ${this.healthWait.timeoutMs}ms (${formatHealthWaitError(lastError)})`,
-    );
+    throw new Error(`Timed out waiting for sandbox-agent health after ${this.healthWait.timeoutMs}ms (${formatHealthWaitError(lastError)})`);
   }
 
   private buildHeaders(extra?: HeadersInit): Headers {
@@ -2189,9 +2087,7 @@ type RequestOptions = {
   skipReadyWait?: boolean;
 };
 
-type NormalizedHealthWaitOptions =
-  | { enabled: false; timeoutMs?: undefined; signal?: undefined }
-  | { enabled: true; timeoutMs?: number; signal?: AbortSignal };
+type NormalizedHealthWaitOptions = { enabled: false; timeoutMs?: undefined; signal?: undefined } | { enabled: true; timeoutMs?: number; signal?: AbortSignal };
 
 function parseProcessTerminalServerFrame(payload: string): ProcessTerminalServerFrame | null {
   try {
@@ -2204,12 +2100,7 @@ function parseProcessTerminalServerFrame(payload: string): ProcessTerminalServer
       return parsed as ProcessTerminalServerFrame;
     }
 
-    if (
-      parsed.type === "exit" &&
-      (parsed.exitCode === undefined ||
-        parsed.exitCode === null ||
-        typeof parsed.exitCode === "number")
-    ) {
+    if (parsed.type === "exit" && (parsed.exitCode === undefined || parsed.exitCode === null || typeof parsed.exitCode === "number")) {
       return parsed as ProcessTerminalServerFrame;
     }
 
@@ -2223,9 +2114,7 @@ function parseProcessTerminalServerFrame(payload: string): ProcessTerminalServer
   return null;
 }
 
-function encodeTerminalInput(
-  data: string | ArrayBuffer | ArrayBufferView,
-): { data: string; encoding?: "base64" } {
+function encodeTerminalInput(data: string | ArrayBuffer | ArrayBufferView): { data: string; encoding?: "base64" } {
   if (typeof data === "string") {
     return { data };
   }
@@ -2286,12 +2175,7 @@ async function autoAuthenticate(acp: AcpHttpClient, methods: AuthMethod[]): Prom
   // Only attempt env-var-based methods that the server process can satisfy
   // automatically.  Interactive methods (e.g. "claude-login") cannot be
   // fulfilled programmatically and must be skipped.
-  const envBased = methods.find(
-    (m) =>
-      m.id === "codex-api-key" ||
-      m.id === "openai-api-key" ||
-      m.id === "anthropic-api-key",
-  );
+  const envBased = methods.find((m) => m.id === "codex-api-key" || m.id === "openai-api-key" || m.id === "anthropic-api-key");
 
   if (!envBased) {
     return;
@@ -2316,9 +2200,7 @@ function toAgentQuery(options: AgentQueryOptions | undefined): Record<string, Qu
   };
 }
 
-function normalizeSessionInit(
-  value: Omit<NewSessionRequest, "_meta"> | undefined,
-): Omit<NewSessionRequest, "_meta"> {
+function normalizeSessionInit(value: Omit<NewSessionRequest, "_meta"> | undefined): Omit<NewSessionRequest, "_meta"> {
   if (!value) {
     return {
       cwd: defaultCwd(),
@@ -2354,8 +2236,7 @@ function buildReplayText(events: SessionEvent[], maxChars: number): string | nul
     return null;
   }
 
-  const prefix =
-    "Previous session history is replayed below as JSON-RPC envelopes. Use it as context before responding to the latest user prompt.\n";
+  const prefix = "Previous session history is replayed below as JSON-RPC envelopes. Use it as context before responding to the latest user prompt.\n";
   let text = prefix;
 
   for (const event of events) {
@@ -2469,10 +2350,7 @@ function normalizePositiveInt(value: number | undefined, fallback: number): numb
   return Math.floor(value as number);
 }
 
-function normalizeHealthWaitOptions(
-  value: boolean | SandboxAgentHealthWaitOptions | undefined,
-  signal: AbortSignal | undefined,
-): NormalizedHealthWaitOptions {
+function normalizeHealthWaitOptions(value: boolean | SandboxAgentHealthWaitOptions | undefined, signal: AbortSignal | undefined): NormalizedHealthWaitOptions {
   if (value === false) {
     return { enabled: false };
   }
@@ -2481,10 +2359,7 @@ function normalizeHealthWaitOptions(
     return { enabled: true, signal };
   }
 
-  const timeoutMs =
-    typeof value.timeoutMs === "number" && Number.isFinite(value.timeoutMs) && value.timeoutMs > 0
-      ? Math.floor(value.timeoutMs)
-      : undefined;
+  const timeoutMs = typeof value.timeoutMs === "number" && Number.isFinite(value.timeoutMs) && value.timeoutMs > 0 ? Math.floor(value.timeoutMs) : undefined;
 
   return {
     enabled: true,
@@ -2538,17 +2413,11 @@ function extractConfigOptionsFromSetResponse(response: unknown): SessionConfigOp
   return normalizeSessionConfigOptions(response.configOptions);
 }
 
-function findConfigOptionByCategory(
-  options: SessionConfigOption[],
-  category: string,
-): SessionConfigOption | undefined {
+function findConfigOptionByCategory(options: SessionConfigOption[], category: string): SessionConfigOption | undefined {
   return options.find((option) => option.category === category);
 }
 
-function findConfigOptionById(
-  options: SessionConfigOption[],
-  configId: string,
-): SessionConfigOption | undefined {
+function findConfigOptionById(options: SessionConfigOption[], configId: string): SessionConfigOption | undefined {
   return options.find((option) => option.id === configId);
 }
 
@@ -2583,14 +2452,10 @@ function extractKnownModeIds(modes: SessionModeState | null | undefined): string
   if (!modes || !Array.isArray(modes.availableModes)) {
     return [];
   }
-  return modes.availableModes
-    .map((mode) => (typeof mode.id === "string" ? mode.id : null))
-    .filter((value): value is string => !!value);
+  return modes.availableModes.map((mode) => (typeof mode.id === "string" ? mode.id : null)).filter((value): value is string => !!value);
 }
 
-function deriveModesFromConfigOptions(
-  configOptions: SessionConfigOption[] | undefined,
-): SessionModeState | null {
+function deriveModesFromConfigOptions(configOptions: SessionConfigOption[] | undefined): SessionModeState | null {
   if (!configOptions || configOptions.length === 0) {
     return null;
   }
@@ -2609,18 +2474,12 @@ function deriveModesFromConfigOptions(
     }));
 
   return {
-    currentModeId:
-      typeof modeOption.currentValue === "string" && modeOption.currentValue.length > 0
-        ? modeOption.currentValue
-        : availableModes[0]?.id ?? "",
+    currentModeId: typeof modeOption.currentValue === "string" && modeOption.currentValue.length > 0 ? modeOption.currentValue : (availableModes[0]?.id ?? ""),
     availableModes,
   };
 }
 
-function applyCurrentMode(
-  modes: SessionModeState | null | undefined,
-  currentModeId: string,
-): SessionModeState | null {
+function applyCurrentMode(modes: SessionModeState | null | undefined, currentModeId: string): SessionModeState | null {
   if (modes && Array.isArray(modes.availableModes)) {
     return {
       ...modes,
@@ -2633,11 +2492,7 @@ function applyCurrentMode(
   };
 }
 
-function applyConfigOptionValue(
-  configOptions: SessionConfigOption[],
-  configId: string,
-  value: string,
-): SessionConfigOption[] | null {
+function applyConfigOptionValue(configOptions: SessionConfigOption[], configId: string, value: string): SessionConfigOption[] | null {
   const idx = configOptions.findIndex((o) => o.id === configId);
   if (idx === -1) {
     return null;
@@ -2704,28 +2559,16 @@ function availablePermissionReplies(options: PermissionOption[]): PermissionRepl
   return [...replies];
 }
 
-function permissionReplyToResponse(
-  permissionId: string,
-  request: RequestPermissionRequest,
-  reply: PermissionReply,
-): RequestPermissionResponse {
+function permissionReplyToResponse(permissionId: string, request: RequestPermissionRequest, reply: PermissionReply): RequestPermissionResponse {
   const preferredKinds: PermissionOptionKind[] =
-    reply === "once"
-      ? ["allow_once"]
-      : reply === "always"
-        ? ["allow_always", "allow_once"]
-        : ["reject_once", "reject_always"];
+    reply === "once" ? ["allow_once"] : reply === "always" ? ["allow_always", "allow_once"] : ["reject_once", "reject_always"];
 
   const selected = preferredKinds
     .map((kind) => request.options.find((option) => option.kind === kind))
     .find((option): option is PermissionOption => Boolean(option));
 
   if (!selected) {
-    throw new UnsupportedPermissionReplyError(
-      permissionId,
-      reply,
-      availablePermissionReplies(request.options),
-    );
+    throw new UnsupportedPermissionReplyError(permissionId, reply, availablePermissionReplies(request.options));
   }
 
   return {
@@ -2745,12 +2588,7 @@ function cancelledPermissionResponse(): RequestPermissionResponse {
 }
 
 function isSessionConfigOption(value: unknown): value is SessionConfigOption {
-  return (
-    isRecord(value) &&
-    typeof value.id === "string" &&
-    typeof value.name === "string" &&
-    typeof value.type === "string"
-  );
+  return isRecord(value) && typeof value.id === "string" && typeof value.name === "string" && typeof value.type === "string";
 }
 
 function toTitleCase(input: string): string {
@@ -2850,11 +2688,7 @@ async function waitForAbortable<T>(promise: Promise<T>, signal: AbortSignal | un
   });
 }
 
-async function consumeProcessLogSse(
-  body: ReadableStream<Uint8Array>,
-  listener: ProcessLogListener,
-  signal: AbortSignal,
-): Promise<void> {
+async function consumeProcessLogSse(body: ReadableStream<Uint8Array>, listener: ProcessLogListener, signal: AbortSignal): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";

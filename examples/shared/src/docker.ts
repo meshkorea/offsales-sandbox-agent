@@ -40,7 +40,7 @@ const DIRECT_CREDENTIAL_KEYS = [
 
 function stripShellQuotes(value: string): string {
   const trimmed = value.trim();
-  if (trimmed.length >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
+  if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
     return trimmed.slice(1, -1);
   }
   if (trimmed.length >= 2 && trimmed.startsWith("'") && trimmed.endsWith("'")) {
@@ -107,11 +107,7 @@ function collectCredentialEnv(): Record<string, string> {
   const merged: Record<string, string> = {};
   let extracted: Record<string, string> = {};
   try {
-    const output = execFileSync(
-      "sandbox-agent",
-      ["credentials", "extract-env"],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-    );
+    const output = execFileSync("sandbox-agent", ["credentials", "extract-env"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     extracted = parseExtractedCredentials(output);
   } catch {
     // Fall back to direct env vars if extraction is unavailable.
@@ -132,10 +128,7 @@ function shellSingleQuotedLiteral(value: string): string {
 }
 
 function stripAnsi(value: string): string {
-  return value.replace(
-    /[\u001B\u009B][[\]()#;?]*(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007|(?:\d{1,4}(?:;\d{0,4})*)?[0-9A-ORZcf-nqry=><])/g,
-    "",
-  );
+  return value.replace(/[\u001B\u009B][[\]()#;?]*(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007|(?:\d{1,4}(?:;\d{0,4})*)?[0-9A-ORZcf-nqry=><])/g, "");
 }
 
 async function ensureExampleImage(_docker: Docker): Promise<string> {
@@ -145,11 +138,7 @@ async function ensureExampleImage(_docker: Docker): Promise<string> {
   if (dev) {
     console.log("  Building sandbox image from source (may take a while, only runs once)...");
     try {
-      execFileSync("docker", [
-        "build", "-t", imageName,
-        "-f", path.join(DOCKERFILE_DIR, "Dockerfile.dev"),
-        REPO_ROOT,
-      ], {
+      execFileSync("docker", ["build", "-t", imageName, "-f", path.join(DOCKERFILE_DIR, "Dockerfile.dev"), REPO_ROOT], {
         stdio: ["ignore", "ignore", "pipe"],
       });
     } catch (err: unknown) {
@@ -224,19 +213,13 @@ export async function startDockerSandbox(opts: DockerSandboxOptions): Promise<Do
     image = await ensureExampleImage(docker);
   }
 
-  const bootCommands = [
-    ...setupCommands,
-    `sandbox-agent server --no-token --host 0.0.0.0 --port ${port}`,
-  ];
+  const bootCommands = [...setupCommands, `sandbox-agent server --no-token --host 0.0.0.0 --port ${port}`];
 
   const container = await docker.createContainer({
     Image: image,
     WorkingDir: "/root",
     Cmd: ["sh", "-c", bootCommands.join(" && ")],
-    Env: [
-      ...Object.entries(credentialEnv).map(([key, value]) => `${key}=${value}`),
-      ...Object.entries(bootstrapEnv).map(([key, value]) => `${key}=${value}`),
-    ],
+    Env: [...Object.entries(credentialEnv).map(([key, value]) => `${key}=${value}`), ...Object.entries(bootstrapEnv).map(([key, value]) => `${key}=${value}`)],
     ExposedPorts: { [`${port}/tcp`]: {} },
     HostConfig: {
       AutoRemove: true,
@@ -246,12 +229,12 @@ export async function startDockerSandbox(opts: DockerSandboxOptions): Promise<Do
   await container.start();
 
   const logChunks: string[] = [];
-  const startupLogs = await container.logs({
+  const startupLogs = (await container.logs({
     follow: true,
     stdout: true,
     stderr: true,
     since: 0,
-  }) as NodeJS.ReadableStream;
+  })) as NodeJS.ReadableStream;
   const stdoutStream = new PassThrough();
   const stderrStream = new PassThrough();
   stdoutStream.on("data", (chunk) => {
@@ -263,7 +246,9 @@ export async function startDockerSandbox(opts: DockerSandboxOptions): Promise<Do
   docker.modem.demuxStream(startupLogs, stdoutStream, stderrStream);
   const stopStartupLogs = () => {
     const stream = startupLogs as NodeJS.ReadableStream & { destroy?: () => void };
-    try { stream.destroy?.(); } catch {}
+    try {
+      stream.destroy?.();
+    } catch {}
   };
 
   const inspect = await container.inspect();
@@ -279,8 +264,12 @@ export async function startDockerSandbox(opts: DockerSandboxOptions): Promise<Do
 
   const cleanup = async () => {
     stopStartupLogs();
-    try { await container.stop({ t: 5 }); } catch {}
-    try { await container.remove({ force: true }); } catch {}
+    try {
+      await container.stop({ t: 5 });
+    } catch {}
+    try {
+      await container.remove({ force: true });
+    } catch {}
     process.exit(0);
   };
   process.once("SIGINT", cleanup);

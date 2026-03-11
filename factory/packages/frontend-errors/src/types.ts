@@ -1,10 +1,4 @@
-export type FrontendErrorKind =
-  | "window-error"
-  | "resource-error"
-  | "unhandled-rejection"
-  | "console-error"
-  | "fetch-error"
-  | "fetch-response-error";
+export type FrontendErrorKind = "window-error" | "resource-error" | "unhandled-rejection" | "console-error" | "fetch-error" | "fetch-response-error";
 
 export interface FrontendErrorContext {
   route?: string;

@@ -35,11 +35,17 @@ for (const actorId of actorIds) {
 
   const hasCreateSandboxStepName = names.includes("init-create-sandbox") || names.includes("init_create_sandbox");
 
-  console.log(JSON.stringify({
-    actorId,
-    wfState,
-    hasCreateSandboxStepName,
-    names,
-    queue: queueRows,
-  }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        actorId,
+        wfState,
+        hasCreateSandboxStepName,
+        names,
+        queue: queueRows,
+      },
+      null,
+      2,
+    ),
+  );
 }

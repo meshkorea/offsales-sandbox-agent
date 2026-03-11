@@ -42,19 +42,25 @@ export function createProviderRegistry(config: AppConfig, driver?: BackendDriver
     },
   };
 
-  const local = new LocalProvider({
-    rootDir: config.providers.local.rootDir,
-    sandboxAgentPort: config.providers.local.sandboxAgentPort,
-  }, gitDriver);
-  const daytona = new DaytonaProvider({
-    endpoint: config.providers.daytona.endpoint,
-    apiKey: config.providers.daytona.apiKey,
-    image: config.providers.daytona.image
-  }, driver?.daytona);
+  const local = new LocalProvider(
+    {
+      rootDir: config.providers.local.rootDir,
+      sandboxAgentPort: config.providers.local.sandboxAgentPort,
+    },
+    gitDriver,
+  );
+  const daytona = new DaytonaProvider(
+    {
+      endpoint: config.providers.daytona.endpoint,
+      apiKey: config.providers.daytona.apiKey,
+      image: config.providers.daytona.image,
+    },
+    driver?.daytona,
+  );
 
   const map: Record<ProviderId, SandboxProvider> = {
     local,
-    daytona
+    daytona,
   };
 
   return {
@@ -66,6 +72,6 @@ export function createProviderRegistry(config: AppConfig, driver?: BackendDriver
     },
     defaultProviderId(): ProviderId {
       return config.providers.daytona.apiKey ? "daytona" : "local";
-    }
+    },
   };
 }

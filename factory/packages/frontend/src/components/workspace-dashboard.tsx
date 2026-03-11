@@ -137,7 +137,7 @@ function branchTestIdToken(value: string): string {
 
 function useSessionEvents(
   handoff: HandoffRecord | null,
-  sessionId: string | null
+  sessionId: string | null,
 ): ReturnType<typeof useQuery<{ items: SandboxSessionEventRecord[]; nextCursor?: string }, Error>> {
   return useQuery({
     queryKey: ["workspace", handoff?.workspaceId ?? "", "session", handoff?.handoffId ?? "", sessionId ?? ""],
@@ -147,15 +147,10 @@ function useSessionEvents(
       if (!handoff?.activeSandboxId || !sessionId) {
         return { items: [] };
       }
-      return backendClient.listSandboxSessionEvents(
-        handoff.workspaceId,
-        handoff.providerId,
-        handoff.activeSandboxId,
-        {
-          sessionId,
-          limit: 120,
-        }
-      );
+      return backendClient.listSandboxSessionEvents(handoff.workspaceId, handoff.providerId, handoff.activeSandboxId, {
+        sessionId,
+        limit: 120,
+      });
     },
   });
 }
@@ -343,19 +338,11 @@ function MetaRow({ label, value, mono = false }: { label: string; value: string;
     >
       <LabelXSmall color="contentSecondary">{label}</LabelXSmall>
       {mono ? (
-        <MonoLabelSmall
-          marginTop="0"
-          marginBottom="0"
-          overrides={{ Block: { style: { textAlign: "right", wordBreak: "break-word" } } }}
-        >
+        <MonoLabelSmall marginTop="0" marginBottom="0" overrides={{ Block: { style: { textAlign: "right", wordBreak: "break-word" } } }}>
           {value}
         </MonoLabelSmall>
       ) : (
-        <LabelSmall
-          marginTop="0"
-          marginBottom="0"
-          overrides={{ Block: { style: { textAlign: "right", wordBreak: "break-word" } } }}
-        >
+        <LabelSmall marginTop="0" marginBottom="0" overrides={{ Block: { style: { textAlign: "right", wordBreak: "break-word" } } }}>
           {value}
         </LabelSmall>
       )}
@@ -483,17 +470,14 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
       });
   }, [repos, rows]);
 
-  const selectedSummary = useMemo(
-    () => rows.find((row) => row.handoffId === selectedHandoffId) ?? rows[0] ?? null,
-    [rows, selectedHandoffId]
-  );
+  const selectedSummary = useMemo(() => rows.find((row) => row.handoffId === selectedHandoffId) ?? rows[0] ?? null, [rows, selectedHandoffId]);
 
   const selectedForSession = repoOverviewMode ? null : (handoffDetailQuery.data ?? null);
 
   const activeSandbox = useMemo(() => {
     if (!selectedForSession) return null;
     const byActive = selectedForSession.activeSandboxId
-      ? selectedForSession.sandboxes.find((sandbox) => sandbox.sandboxId === selectedForSession.activeSandboxId) ?? null
+      ? (selectedForSession.sandboxes.find((sandbox) => sandbox.sandboxId === selectedForSession.activeSandboxId) ?? null)
       : null;
     return byActive ?? selectedForSession.sandboxes[0] ?? null;
   }, [selectedForSession]);
@@ -539,7 +523,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
         handoffSessionId: selectedForSession?.activeSessionId ?? null,
         sessions: sessionRows,
       }),
-    [activeSessionId, selectedForSession?.activeSessionId, sessionRows]
+    [activeSessionId, selectedForSession?.activeSessionId, sessionRows],
   );
   const resolvedSessionId = sessionSelection.sessionId;
   const staleSessionId = sessionSelection.staleSessionId;
@@ -716,17 +700,14 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
 
   const repoOptions = useMemo(() => repos.map((repo) => createOption({ id: repo.repoId, label: repo.remoteUrl })), [repos]);
   const selectedRepoOption = repoOptions.find((option) => option.id === createRepoId) ?? null;
-  const selectedAgentOption = useMemo(
-    () => createOption(AGENT_OPTIONS.find((option) => option.id === newAgentType) ?? AGENT_OPTIONS[0]!),
-    [newAgentType]
-  );
+  const selectedAgentOption = useMemo(() => createOption(AGENT_OPTIONS.find((option) => option.id === newAgentType) ?? AGENT_OPTIONS[0]!), [newAgentType]);
   const selectedFilterOption = useMemo(
     () => createOption(FILTER_OPTIONS.find((option) => option.id === overviewFilter) ?? FILTER_OPTIONS[0]!),
-    [overviewFilter]
+    [overviewFilter],
   );
   const sessionOptions = useMemo(
     () => sessionRows.map((session) => createOption({ id: session.id, label: `${session.id} (${session.status ?? "running"})` })),
-    [sessionRows]
+    [sessionRows],
   );
   const selectedSessionOption = sessionOptions.find((option) => option.id === resolvedSessionId) ?? null;
 
@@ -746,11 +727,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
     if (!selectedOverviewBranch) {
       return filteredOverviewBranches[0] ?? null;
     }
-    return (
-      filteredOverviewBranches.find((row) => row.branchName === selectedOverviewBranch) ??
-      filteredOverviewBranches[0] ??
-      null
-    );
+    return filteredOverviewBranches.find((row) => row.branchName === selectedOverviewBranch) ?? filteredOverviewBranches[0] ?? null;
   }, [filteredOverviewBranches, selectedOverviewBranch]);
 
   useEffect(() => {
@@ -799,7 +776,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
         },
       },
     }),
-    [theme.colors.backgroundSecondary, theme.colors.borderOpaque]
+    [theme.colors.backgroundSecondary, theme.colors.borderOpaque],
   );
 
   return (
@@ -815,14 +792,14 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                 gap: theme.sizing.scale400,
               })}
             >
-                <div
-                  className={css({
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "flex-start",
-                    gap: "2px",
-                  })}
-                >
+              <div
+                className={css({
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                  gap: "2px",
+                })}
+              >
                 <LabelXSmall color="contentTertiary">Workspace</LabelXSmall>
                 <div
                   className={css({
@@ -868,9 +845,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
               </>
             ) : null}
 
-            {!handoffsQuery.isLoading && repoGroups.length === 0 ? (
-              <EmptyState>No repos or handoffs yet. Add a repo to start a workspace.</EmptyState>
-            ) : null}
+            {!handoffsQuery.isLoading && repoGroups.length === 0 ? <EmptyState>No repos or handoffs yet. Add a repo to start a workspace.</EmptyState> : null}
 
             {repoGroups.map((group) => (
               <section
@@ -1197,9 +1172,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                                   <ParagraphSmall marginTop="0" marginBottom="0" color="contentSecondary">
                                     {formatRelativeAge(branch.updatedAt)}
                                   </ParagraphSmall>
-                                  <StatusPill kind={branch.handoffId ? "positive" : "warning"}>
-                                    {branch.handoffId ? "handoff" : "unmapped"}
-                                  </StatusPill>
+                                  <StatusPill kind={branch.handoffId ? "positive" : "warning"}>{branch.handoffId ? "handoff" : "unmapped"}</StatusPill>
                                   {branch.trackedInStack ? <StatusPill kind="neutral">stack</StatusPill> : null}
                                 </div>
                               </div>
@@ -1295,9 +1268,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                                     </Button>
                                   ) : null}
 
-                                  <StatusPill kind={branchKind(branch)}>
-                                    {branch.conflictsWithMain ? "conflict" : "ok"}
-                                  </StatusPill>
+                                  <StatusPill kind={branchKind(branch)}>{branch.conflictsWithMain ? "conflict" : "ok"}</StatusPill>
                                 </div>
                               </div>
                             </div>
@@ -1331,11 +1302,9 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                   >
                     <Bot size={16} />
                     <HeadingXSmall marginTop="0" marginBottom="0">
-                      {selectedForSession ? selectedForSession.title ?? "Determining title..." : "No handoff selected"}
+                      {selectedForSession ? (selectedForSession.title ?? "Determining title...") : "No handoff selected"}
                     </HeadingXSmall>
-                    {selectedForSession ? (
-                      <StatusPill kind={statusKind(selectedForSession.status)}>{selectedForSession.status}</StatusPill>
-                    ) : null}
+                    {selectedForSession ? <StatusPill kind={statusKind(selectedForSession.status)}>{selectedForSession.status}</StatusPill> : null}
                   </div>
 
                   {selectedForSession && !resolvedSessionId ? (
@@ -1441,11 +1410,11 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                                 ? selectedForSession.statusMessage
                                   ? `Sandbox unavailable: ${selectedForSession.statusMessage}`
                                   : "This handoff is still provisioning its sandbox."
-                              : staleSessionId
-                                ? `Session ${staleSessionId} is unavailable. Start a new session to continue.`
-                                : resolvedSessionId
-                                  ? "No transcript events yet. Send a prompt to start this session."
-                                  : "No active session for this handoff."}
+                                : staleSessionId
+                                  ? `Session ${staleSessionId} is unavailable. Start a new session to continue.`
+                                  : resolvedSessionId
+                                    ? "No transcript events yet. Send a prompt to start this session."
+                                    : "No active session for this handoff."}
                           </EmptyState>
                         ) : null}
 
@@ -1462,14 +1431,9 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                               key={entry.id}
                               data-testid="session-transcript-entry"
                               className={css({
-                                borderLeft: `2px solid ${
-                                  entry.sender === "agent" ? "rgba(29, 111, 95, 0.45)" : "rgba(32, 108, 176, 0.45)"
-                                }`,
-                                border: `1px solid ${
-                                  entry.sender === "agent" ? "rgba(29, 111, 95, 0.22)" : "rgba(32, 108, 176, 0.22)"
-                                }`,
-                                backgroundColor:
-                                  entry.sender === "agent" ? "rgba(29, 111, 95, 0.07)" : "rgba(32, 108, 176, 0.07)",
+                                borderLeft: `2px solid ${entry.sender === "agent" ? "rgba(29, 111, 95, 0.45)" : "rgba(32, 108, 176, 0.45)"}`,
+                                border: `1px solid ${entry.sender === "agent" ? "rgba(29, 111, 95, 0.22)" : "rgba(32, 108, 176, 0.22)"}`,
+                                backgroundColor: entry.sender === "agent" ? "rgba(29, 111, 95, 0.07)" : "rgba(32, 108, 176, 0.07)",
                                 padding: `12px ${theme.sizing.scale400}`,
                               })}
                             >
@@ -1535,11 +1499,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                             void sendPrompt.mutateAsync(prompt);
                           }}
                           disabled={
-                            sendPrompt.isPending ||
-                            createSession.isPending ||
-                            !selectedForSession ||
-                            !activeSandbox?.sandboxId ||
-                            draft.trim().length === 0
+                            sendPrompt.isPending || createSession.isPending || !selectedForSession || !activeSandbox?.sandboxId || draft.trim().length === 0
                           }
                         >
                           <span
@@ -1617,10 +1577,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                         <MetaRow label="Parent" value={selectedBranchOverview.parentBranch ?? "-"} mono />
                         <MetaRow label="Commit" value={selectedBranchOverview.commitSha.slice(0, 10)} mono />
                         <MetaRow label="Diff" value={formatDiffStat(selectedBranchOverview.diffStat)} />
-                        <MetaRow
-                          label="Handoff"
-                          value={selectedBranchOverview.handoffTitle ?? selectedBranchOverview.handoffId ?? "-"}
-                        />
+                        <MetaRow label="Handoff" value={selectedBranchOverview.handoffTitle ?? selectedBranchOverview.handoffId ?? "-"} />
                       </div>
                     )}
                   </section>
@@ -1711,9 +1668,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                       </LabelSmall>
                     </div>
                     <ParagraphSmall marginTop="0" marginBottom="0" color="contentSecondary">
-                      {selectedForSession.statusMessage
-                        ? selectedForSession.statusMessage
-                        : "Open transcript in the center panel for details."}
+                      {selectedForSession.statusMessage ? selectedForSession.statusMessage : "Open transcript in the center panel for details."}
                     </ParagraphSmall>
                   </div>
                 ) : null}

@@ -29,5 +29,5 @@ createRoot(document.getElementById("root")!).render(
         </QueryClientProvider>
       </BaseProvider>
     </StyletronProvider>
-  </StrictMode>
+  </StrictMode>,
 );

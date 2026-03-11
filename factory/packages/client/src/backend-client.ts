@@ -25,7 +25,7 @@ import type {
   RepoStackActionInput,
   RepoStackActionResult,
   RepoRecord,
-  SwitchResult
+  SwitchResult,
 } from "@openhandoff/shared";
 import { sandboxInstanceKey, workspaceKey } from "./keys.js";
 
@@ -94,7 +94,11 @@ interface WorkspaceHandle {
 }
 
 interface SandboxInstanceHandle {
-  createSession(input: { prompt: string; cwd?: string; agent?: AgentType | "opencode" }): Promise<{ id: string | null; status: "running" | "idle" | "error"; error?: string }>;
+  createSession(input: {
+    prompt: string;
+    cwd?: string;
+    agent?: AgentType | "opencode";
+  }): Promise<{ id: string | null; status: "running" | "idle" | "error"; error?: string }>;
   listSessions(input?: { cursor?: string; limit?: number }): Promise<{ items: SandboxSessionRecord[]; nextCursor?: string }>;
   listSessionEvents(input: { sessionId: string; cursor?: string; limit?: number }): Promise<{ items: SandboxSessionEventRecord[]; nextCursor?: string }>;
   sendPrompt(input: { sessionId: string; prompt: string; notification?: boolean }): Promise<void>;
@@ -148,13 +152,13 @@ export interface BackendClient {
     workspaceId: string,
     providerId: ProviderId,
     sandboxId: string,
-    input?: { cursor?: string; limit?: number }
+    input?: { cursor?: string; limit?: number },
   ): Promise<{ items: SandboxSessionRecord[]; nextCursor?: string }>;
   listSandboxSessionEvents(
     workspaceId: string,
     providerId: ProviderId,
     sandboxId: string,
-    input: { sessionId: string; cursor?: string; limit?: number }
+    input: { sessionId: string; cursor?: string; limit?: number },
   ): Promise<{ items: SandboxSessionEventRecord[]; nextCursor?: string }>;
   sendSandboxPrompt(input: {
     workspaceId: string;
@@ -168,31 +172,22 @@ export interface BackendClient {
     workspaceId: string,
     providerId: ProviderId,
     sandboxId: string,
-    sessionId: string
+    sessionId: string,
   ): Promise<{ id: string; status: "running" | "idle" | "error" }>;
   sandboxProviderState(
     workspaceId: string,
     providerId: ProviderId,
-    sandboxId: string
+    sandboxId: string,
   ): Promise<{ providerId: ProviderId; sandboxId: string; state: string; at: number }>;
   getWorkbench(workspaceId: string): Promise<HandoffWorkbenchSnapshot>;
   subscribeWorkbench(workspaceId: string, listener: () => void): () => void;
-  createWorkbenchHandoff(
-    workspaceId: string,
-    input: HandoffWorkbenchCreateHandoffInput
-  ): Promise<HandoffWorkbenchCreateHandoffResponse>;
+  createWorkbenchHandoff(workspaceId: string, input: HandoffWorkbenchCreateHandoffInput): Promise<HandoffWorkbenchCreateHandoffResponse>;
   markWorkbenchUnread(workspaceId: string, input: HandoffWorkbenchSelectInput): Promise<void>;
   renameWorkbenchHandoff(workspaceId: string, input: HandoffWorkbenchRenameInput): Promise<void>;
   renameWorkbenchBranch(workspaceId: string, input: HandoffWorkbenchRenameInput): Promise<void>;
-  createWorkbenchSession(
-    workspaceId: string,
-    input: HandoffWorkbenchSelectInput & { model?: string }
-  ): Promise<{ tabId: string }>;
+  createWorkbenchSession(workspaceId: string, input: HandoffWorkbenchSelectInput & { model?: string }): Promise<{ tabId: string }>;
   renameWorkbenchSession(workspaceId: string, input: HandoffWorkbenchRenameSessionInput): Promise<void>;
-  setWorkbenchSessionUnread(
-    workspaceId: string,
-    input: HandoffWorkbenchSetSessionUnreadInput
-  ): Promise<void>;
+  setWorkbenchSessionUnread(workspaceId: string, input: HandoffWorkbenchSetSessionUnreadInput): Promise<void>;
   updateWorkbenchDraft(workspaceId: string, input: HandoffWorkbenchUpdateDraftInput): Promise<void>;
   changeWorkbenchModel(workspaceId: string, input: HandoffWorkbenchChangeModelInput): Promise<void>;
   sendWorkbenchMessage(workspaceId: string, input: HandoffWorkbenchSendMessageInput): Promise<void>;
@@ -211,7 +206,7 @@ export function rivetEndpoint(config: AppConfig): string {
 export function createBackendClientFromConfig(config: AppConfig): BackendClient {
   return createBackendClient({
     endpoint: rivetEndpoint(config),
-    defaultWorkspaceId: config.workspace.default
+    defaultWorkspaceId: config.workspace.default,
   });
 }
 
@@ -250,7 +245,7 @@ async function fetchJsonWithTimeout(url: string, timeoutMs: number): Promise<unk
 async function fetchMetadataWithRetry(
   endpoint: string,
   namespace: string | undefined,
-  opts: { timeoutMs: number; requestTimeoutMs: number }
+  opts: { timeoutMs: number; requestTimeoutMs: number },
 ): Promise<RivetMetadataResponse> {
   const base = new URL(endpoint);
   base.pathname = base.pathname.replace(/\/$/, "") + "/metadata";
@@ -268,10 +263,7 @@ async function fetchMetadataWithRetry(
       const data = json as Record<string, unknown>;
       return {
         runtime: typeof data.runtime === "string" ? data.runtime : undefined,
-        actorNames:
-          data.actorNames && typeof data.actorNames === "object"
-            ? (data.actorNames as Record<string, unknown>)
-            : undefined,
+        actorNames: data.actorNames && typeof data.actorNames === "object" ? (data.actorNames as Record<string, unknown>) : undefined,
         clientEndpoint: typeof data.clientEndpoint === "string" ? data.clientEndpoint : undefined,
         clientNamespace: typeof data.clientNamespace === "string" ? data.clientNamespace : undefined,
         clientToken: typeof data.clientToken === "string" ? data.clientToken : undefined,
@@ -286,11 +278,7 @@ async function fetchMetadataWithRetry(
   }
 }
 
-export async function readBackendMetadata(input: {
-  endpoint: string;
-  namespace?: string;
-  timeoutMs?: number;
-}): Promise<BackendMetadata> {
+export async function readBackendMetadata(input: { endpoint: string; namespace?: string; timeoutMs?: number }): Promise<BackendMetadata> {
   const base = new URL(input.endpoint);
   base.pathname = base.pathname.replace(/\/$/, "") + "/metadata";
   if (input.namespace) {
@@ -304,21 +292,14 @@ export async function readBackendMetadata(input: {
   const data = json as Record<string, unknown>;
   return {
     runtime: typeof data.runtime === "string" ? data.runtime : undefined,
-    actorNames:
-      data.actorNames && typeof data.actorNames === "object"
-        ? (data.actorNames as Record<string, unknown>)
-        : undefined,
+    actorNames: data.actorNames && typeof data.actorNames === "object" ? (data.actorNames as Record<string, unknown>) : undefined,
     clientEndpoint: typeof data.clientEndpoint === "string" ? data.clientEndpoint : undefined,
     clientNamespace: typeof data.clientNamespace === "string" ? data.clientNamespace : undefined,
     clientToken: typeof data.clientToken === "string" ? data.clientToken : undefined,
   };
 }
 
-export async function checkBackendHealth(input: {
-  endpoint: string;
-  namespace?: string;
-  timeoutMs?: number;
-}): Promise<boolean> {
+export async function checkBackendHealth(input: { endpoint: string; namespace?: string; timeoutMs?: number }): Promise<boolean> {
   try {
     const metadata = await readBackendMetadata(input);
     return metadata.runtime === "rivetkit" && Boolean(metadata.actorNames);
@@ -327,11 +308,7 @@ export async function checkBackendHealth(input: {
   }
 }
 
-async function probeMetadataEndpoint(
-  endpoint: string,
-  namespace: string | undefined,
-  timeoutMs: number
-): Promise<boolean> {
+async function probeMetadataEndpoint(endpoint: string, namespace: string | undefined, timeoutMs: number): Promise<boolean> {
   try {
     const base = new URL(endpoint);
     base.pathname = base.pathname.replace(/\/$/, "") + "/metadata";
@@ -370,19 +347,15 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       const initialNamespace = undefined;
       const metadata = await fetchMetadataWithRetry(options.endpoint, initialNamespace, {
         timeoutMs: 30_000,
-        requestTimeoutMs: 8_000
+        requestTimeoutMs: 8_000,
       });
 
       // Candidate endpoint: manager endpoint if provided, otherwise stick to the configured endpoint.
-      const candidateEndpoint = metadata.clientEndpoint
-        ? rewriteLoopbackClientEndpoint(metadata.clientEndpoint, configuredOrigin)
-        : options.endpoint;
+      const candidateEndpoint = metadata.clientEndpoint ? rewriteLoopbackClientEndpoint(metadata.clientEndpoint, configuredOrigin) : options.endpoint;
 
       // If the manager port isn't reachable from this client (common behind reverse proxies),
       // fall back to the configured serverless endpoint to avoid hanging requests.
-      const shouldUseCandidate = metadata.clientEndpoint
-        ? await probeMetadataEndpoint(candidateEndpoint, metadata.clientNamespace, 1_500)
-        : true;
+      const shouldUseCandidate = metadata.clientEndpoint ? await probeMetadataEndpoint(candidateEndpoint, metadata.clientNamespace, 1_500) : true;
       const resolvedEndpoint = shouldUseCandidate ? candidateEndpoint : options.endpoint;
 
       return createClient({
@@ -399,14 +372,10 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 
   const workspace = async (workspaceId: string): Promise<WorkspaceHandle> =>
     (await getClient()).workspace.getOrCreate(workspaceKey(workspaceId), {
-      createWithInput: workspaceId
+      createWithInput: workspaceId,
     });
 
-  const sandboxByKey = async (
-    workspaceId: string,
-    providerId: ProviderId,
-    sandboxId: string
-  ): Promise<SandboxInstanceHandle> => {
+  const sandboxByKey = async (workspaceId: string, providerId: ProviderId, sandboxId: string): Promise<SandboxInstanceHandle> => {
     const client = await getClient();
     return (client as any).sandboxInstance.get(sandboxInstanceKey(workspaceId, providerId, sandboxId));
   };
@@ -416,11 +385,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     return message.includes("Actor not found");
   }
 
-  const sandboxByActorIdFromHandoff = async (
-    workspaceId: string,
-    providerId: ProviderId,
-    sandboxId: string
-  ): Promise<SandboxInstanceHandle | null> => {
+  const sandboxByActorIdFromHandoff = async (workspaceId: string, providerId: ProviderId, sandboxId: string): Promise<SandboxInstanceHandle | null> => {
     const ws = await workspace(workspaceId);
     const rows = await ws.listHandoffs({ workspaceId });
     const candidates = [...rows].sort((a, b) => b.updatedAt - a.updatedAt);
@@ -431,12 +396,13 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
         if (detail.providerId !== providerId) {
           continue;
         }
-        const sandbox = detail.sandboxes.find((sb) =>
-          sb.sandboxId === sandboxId &&
-          sb.providerId === providerId &&
-          typeof (sb as any).sandboxActorId === "string" &&
-          (sb as any).sandboxActorId.length > 0
-        ) as ({ sandboxActorId?: string } | undefined);
+        const sandbox = detail.sandboxes.find(
+          (sb) =>
+            sb.sandboxId === sandboxId &&
+            sb.providerId === providerId &&
+            typeof (sb as any).sandboxActorId === "string" &&
+            (sb as any).sandboxActorId.length > 0,
+        ) as { sandboxActorId?: string } | undefined;
         if (sandbox?.sandboxActorId) {
           const client = await getClient();
           return (client as any).sandboxInstance.getForId(sandbox.sandboxActorId);
@@ -457,7 +423,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     workspaceId: string,
     providerId: ProviderId,
     sandboxId: string,
-    run: (handle: SandboxInstanceHandle) => Promise<T>
+    run: (handle: SandboxInstanceHandle) => Promise<T>,
   ): Promise<T> => {
     const handle = await sandboxByKey(workspaceId, providerId, sandboxId);
     try {
@@ -553,7 +519,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     async getHandoff(workspaceId: string, handoffId: string): Promise<HandoffRecord> {
       return (await workspace(workspaceId)).getHandoff({
         workspaceId,
-        handoffId
+        handoffId,
       });
     },
 
@@ -569,7 +535,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       return (await workspace(workspaceId)).attachHandoff({
         workspaceId,
         handoffId,
-        reason: "cli.attach"
+        reason: "cli.attach",
       });
     },
 
@@ -578,7 +544,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
         await (await workspace(workspaceId)).pushHandoff({
           workspaceId,
           handoffId,
-          reason: "cli.push"
+          reason: "cli.push",
         });
         return;
       }
@@ -586,7 +552,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
         await (await workspace(workspaceId)).syncHandoff({
           workspaceId,
           handoffId,
-          reason: "cli.sync"
+          reason: "cli.sync",
         });
         return;
       }
@@ -594,7 +560,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
         await (await workspace(workspaceId)).mergeHandoff({
           workspaceId,
           handoffId,
-          reason: "cli.merge"
+          reason: "cli.merge",
         });
         return;
       }
@@ -602,14 +568,14 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
         await (await workspace(workspaceId)).archiveHandoff({
           workspaceId,
           handoffId,
-          reason: "cli.archive"
+          reason: "cli.archive",
         });
         return;
       }
       await (await workspace(workspaceId)).killHandoff({
         workspaceId,
         handoffId,
-        reason: "cli.kill"
+        reason: "cli.kill",
       });
     },
 
@@ -621,23 +587,19 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       cwd?: string;
       agent?: AgentType | "opencode";
     }): Promise<{ id: string; status: "running" | "idle" | "error" }> {
-      const created = await withSandboxHandle(
-        input.workspaceId,
-        input.providerId,
-        input.sandboxId,
-        async (handle) =>
-          handle.createSession({
-            prompt: input.prompt,
-            cwd: input.cwd,
-            agent: input.agent
-          })
+      const created = await withSandboxHandle(input.workspaceId, input.providerId, input.sandboxId, async (handle) =>
+        handle.createSession({
+          prompt: input.prompt,
+          cwd: input.cwd,
+          agent: input.agent,
+        }),
       );
       if (!created.id) {
         throw new Error(created.error ?? "sandbox session creation failed");
       }
       return {
         id: created.id,
-        status: created.status
+        status: created.status,
       };
     },
 
@@ -645,28 +607,18 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       workspaceId: string,
       providerId: ProviderId,
       sandboxId: string,
-      input?: { cursor?: string; limit?: number }
+      input?: { cursor?: string; limit?: number },
     ): Promise<{ items: SandboxSessionRecord[]; nextCursor?: string }> {
-      return await withSandboxHandle(
-        workspaceId,
-        providerId,
-        sandboxId,
-        async (handle) => handle.listSessions(input ?? {})
-      );
+      return await withSandboxHandle(workspaceId, providerId, sandboxId, async (handle) => handle.listSessions(input ?? {}));
     },
 
     async listSandboxSessionEvents(
       workspaceId: string,
       providerId: ProviderId,
       sandboxId: string,
-      input: { sessionId: string; cursor?: string; limit?: number }
+      input: { sessionId: string; cursor?: string; limit?: number },
     ): Promise<{ items: SandboxSessionEventRecord[]; nextCursor?: string }> {
-      return await withSandboxHandle(
-        workspaceId,
-        providerId,
-        sandboxId,
-        async (handle) => handle.listSessionEvents(input)
-      );
+      return await withSandboxHandle(workspaceId, providerId, sandboxId, async (handle) => handle.listSessionEvents(input));
     },
 
     async sendSandboxPrompt(input: {
@@ -677,16 +629,12 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       prompt: string;
       notification?: boolean;
     }): Promise<void> {
-      await withSandboxHandle(
-        input.workspaceId,
-        input.providerId,
-        input.sandboxId,
-        async (handle) =>
-          handle.sendPrompt({
-            sessionId: input.sessionId,
-            prompt: input.prompt,
-            notification: input.notification
-          })
+      await withSandboxHandle(input.workspaceId, input.providerId, input.sandboxId, async (handle) =>
+        handle.sendPrompt({
+          sessionId: input.sessionId,
+          prompt: input.prompt,
+          notification: input.notification,
+        }),
       );
     },
 
@@ -694,27 +642,17 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       workspaceId: string,
       providerId: ProviderId,
       sandboxId: string,
-      sessionId: string
+      sessionId: string,
     ): Promise<{ id: string; status: "running" | "idle" | "error" }> {
-      return await withSandboxHandle(
-        workspaceId,
-        providerId,
-        sandboxId,
-        async (handle) => handle.sessionStatus({ sessionId })
-      );
+      return await withSandboxHandle(workspaceId, providerId, sandboxId, async (handle) => handle.sessionStatus({ sessionId }));
     },
 
     async sandboxProviderState(
       workspaceId: string,
       providerId: ProviderId,
-      sandboxId: string
+      sandboxId: string,
     ): Promise<{ providerId: ProviderId; sandboxId: string; state: string; at: number }> {
-      return await withSandboxHandle(
-        workspaceId,
-        providerId,
-        sandboxId,
-        async (handle) => handle.providerState()
-      );
+      return await withSandboxHandle(workspaceId, providerId, sandboxId, async (handle) => handle.providerState());
     },
 
     async getWorkbench(workspaceId: string): Promise<HandoffWorkbenchSnapshot> {
@@ -725,10 +663,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       return subscribeWorkbench(workspaceId, listener);
     },
 
-    async createWorkbenchHandoff(
-      workspaceId: string,
-      input: HandoffWorkbenchCreateHandoffInput
-    ): Promise<HandoffWorkbenchCreateHandoffResponse> {
+    async createWorkbenchHandoff(workspaceId: string, input: HandoffWorkbenchCreateHandoffInput): Promise<HandoffWorkbenchCreateHandoffResponse> {
       return (await workspace(workspaceId)).createWorkbenchHandoff(input);
     },
 
@@ -744,45 +679,27 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       await (await workspace(workspaceId)).renameWorkbenchBranch(input);
     },
 
-    async createWorkbenchSession(
-      workspaceId: string,
-      input: HandoffWorkbenchSelectInput & { model?: string }
-    ): Promise<{ tabId: string }> {
+    async createWorkbenchSession(workspaceId: string, input: HandoffWorkbenchSelectInput & { model?: string }): Promise<{ tabId: string }> {
       return await (await workspace(workspaceId)).createWorkbenchSession(input);
     },
 
-    async renameWorkbenchSession(
-      workspaceId: string,
-      input: HandoffWorkbenchRenameSessionInput
-    ): Promise<void> {
+    async renameWorkbenchSession(workspaceId: string, input: HandoffWorkbenchRenameSessionInput): Promise<void> {
       await (await workspace(workspaceId)).renameWorkbenchSession(input);
     },
 
-    async setWorkbenchSessionUnread(
-      workspaceId: string,
-      input: HandoffWorkbenchSetSessionUnreadInput
-    ): Promise<void> {
+    async setWorkbenchSessionUnread(workspaceId: string, input: HandoffWorkbenchSetSessionUnreadInput): Promise<void> {
       await (await workspace(workspaceId)).setWorkbenchSessionUnread(input);
     },
 
-    async updateWorkbenchDraft(
-      workspaceId: string,
-      input: HandoffWorkbenchUpdateDraftInput
-    ): Promise<void> {
+    async updateWorkbenchDraft(workspaceId: string, input: HandoffWorkbenchUpdateDraftInput): Promise<void> {
       await (await workspace(workspaceId)).updateWorkbenchDraft(input);
     },
 
-    async changeWorkbenchModel(
-      workspaceId: string,
-      input: HandoffWorkbenchChangeModelInput
-    ): Promise<void> {
+    async changeWorkbenchModel(workspaceId: string, input: HandoffWorkbenchChangeModelInput): Promise<void> {
       await (await workspace(workspaceId)).changeWorkbenchModel(input);
     },
 
-    async sendWorkbenchMessage(
-      workspaceId: string,
-      input: HandoffWorkbenchSendMessageInput
-    ): Promise<void> {
+    async sendWorkbenchMessage(workspaceId: string, input: HandoffWorkbenchSendMessageInput): Promise<void> {
       await (await workspace(workspaceId)).sendWorkbenchMessage(input);
     },
 
@@ -809,13 +726,13 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       }
 
       await (await workspace(workspaceId)).useWorkspace({
-        workspaceId
+        workspaceId,
       });
       return { ok: true };
     },
 
     async useWorkspace(workspaceId: string): Promise<{ workspaceId: string }> {
       return (await workspace(workspaceId)).useWorkspace({ workspaceId });
-    }
+    },
   };
 }

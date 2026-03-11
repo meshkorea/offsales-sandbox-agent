@@ -37,9 +37,7 @@ export type {
 
 export type { InspectorUrlOptions } from "./inspector.ts";
 
-export {
-  InMemorySessionPersistDriver,
-} from "./types.ts";
+export { InMemorySessionPersistDriver } from "./types.ts";
 
 export type {
   AcpEnvelope,
