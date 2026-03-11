@@ -86,7 +86,7 @@ const DetailRail = styled("aside", ({ $theme }) => ({
 
 const FILTER_OPTIONS: SelectItem[] = [
   { id: "active", label: "Active + Unmapped" },
-  { id: "archived", label: "Archived Handoffs" },
+  { id: "archived", label: "Archived Tasks" },
   { id: "unmapped", label: "Unmapped Only" },
   { id: "all", label: "All Branches" },
 ];
@@ -137,7 +137,7 @@ function branchTestIdToken(value: string): string {
 
 function useSessionEvents(
   handoff: HandoffRecord | null,
-  sessionId: string | null
+  sessionId: string | null,
 ): ReturnType<typeof useQuery<{ items: SandboxSessionEventRecord[]; nextCursor?: string }, Error>> {
   return useQuery({
     queryKey: ["workspace", handoff?.workspaceId ?? "", "session", handoff?.handoffId ?? "", sessionId ?? ""],
@@ -147,15 +147,10 @@ function useSessionEvents(
       if (!handoff?.activeSandboxId || !sessionId) {
         return { items: [] };
       }
-      return backendClient.listSandboxSessionEvents(
-        handoff.workspaceId,
-        handoff.providerId,
-        handoff.activeSandboxId,
-        {
-          sessionId,
-          limit: 120,
-        }
-      );
+      return backendClient.listSandboxSessionEvents(handoff.workspaceId, handoff.providerId, handoff.activeSandboxId, {
+        sessionId,
+        limit: 120,
+      });
     },
   });
 }
@@ -343,19 +338,11 @@ function MetaRow({ label, value, mono = false }: { label: string; value: string;
     >
       <LabelXSmall color="contentSecondary">{label}</LabelXSmall>
       {mono ? (
-        <MonoLabelSmall
-          marginTop="0"
-          marginBottom="0"
-          overrides={{ Block: { style: { textAlign: "right", wordBreak: "break-word" } } }}
-        >
+        <MonoLabelSmall marginTop="0" marginBottom="0" overrides={{ Block: { style: { textAlign: "right", wordBreak: "break-word" } } }}>
           {value}
         </MonoLabelSmall>
       ) : (
-        <LabelSmall
-          marginTop="0"
-          marginBottom="0"
-          overrides={{ Block: { style: { textAlign: "right", wordBreak: "break-word" } } }}
-        >
+        <LabelSmall marginTop="0" marginBottom="0" overrides={{ Block: { style: { textAlign: "right", wordBreak: "break-word" } } }}>
           {value}
         </LabelSmall>
       )}
@@ -407,7 +394,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
     refetchInterval: 2_500,
     queryFn: async () => {
       if (!selectedHandoffId) {
-        throw new Error("No handoff");
+        throw new Error("No task selected");
       }
       return backendClient.getHandoff(workspaceId, selectedHandoffId);
     },
@@ -483,17 +470,14 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
       });
   }, [repos, rows]);
 
-  const selectedSummary = useMemo(
-    () => rows.find((row) => row.handoffId === selectedHandoffId) ?? rows[0] ?? null,
-    [rows, selectedHandoffId]
-  );
+  const selectedSummary = useMemo(() => rows.find((row) => row.handoffId === selectedHandoffId) ?? rows[0] ?? null, [rows, selectedHandoffId]);
 
   const selectedForSession = repoOverviewMode ? null : (handoffDetailQuery.data ?? null);
 
   const activeSandbox = useMemo(() => {
     if (!selectedForSession) return null;
     const byActive = selectedForSession.activeSandboxId
-      ? selectedForSession.sandboxes.find((sandbox) => sandbox.sandboxId === selectedForSession.activeSandboxId) ?? null
+      ? (selectedForSession.sandboxes.find((sandbox) => sandbox.sandboxId === selectedForSession.activeSandboxId) ?? null)
       : null;
     return byActive ?? selectedForSession.sandboxes[0] ?? null;
   }, [selectedForSession]);
@@ -539,7 +523,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
         handoffSessionId: selectedForSession?.activeSessionId ?? null,
         sessions: sessionRows,
       }),
-    [activeSessionId, selectedForSession?.activeSessionId, sessionRows]
+    [activeSessionId, selectedForSession?.activeSessionId, sessionRows],
   );
   const resolvedSessionId = sessionSelection.sessionId;
   const staleSessionId = sessionSelection.staleSessionId;
@@ -548,7 +532,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
 
   const startSessionFromHandoff = async (): Promise<{ id: string; status: "running" | "idle" | "error" }> => {
     if (!selectedForSession || !activeSandbox?.sandboxId) {
-      throw new Error("No sandbox is available for this handoff");
+      throw new Error("No sandbox is available for this task");
     }
     return backendClient.createSandboxSession({
       workspaceId,
@@ -581,7 +565,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
   const sendPrompt = useMutation({
     mutationFn: async (prompt: string) => {
       if (!selectedForSession || !activeSandbox?.sandboxId) {
-        throw new Error("No sandbox is available for this handoff");
+        throw new Error("No sandbox is available for this task");
       }
       const sessionId = await ensureSessionForPrompt();
       await backendClient.sendSandboxPrompt({
@@ -716,17 +700,14 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
 
   const repoOptions = useMemo(() => repos.map((repo) => createOption({ id: repo.repoId, label: repo.remoteUrl })), [repos]);
   const selectedRepoOption = repoOptions.find((option) => option.id === createRepoId) ?? null;
-  const selectedAgentOption = useMemo(
-    () => createOption(AGENT_OPTIONS.find((option) => option.id === newAgentType) ?? AGENT_OPTIONS[0]!),
-    [newAgentType]
-  );
+  const selectedAgentOption = useMemo(() => createOption(AGENT_OPTIONS.find((option) => option.id === newAgentType) ?? AGENT_OPTIONS[0]!), [newAgentType]);
   const selectedFilterOption = useMemo(
     () => createOption(FILTER_OPTIONS.find((option) => option.id === overviewFilter) ?? FILTER_OPTIONS[0]!),
-    [overviewFilter]
+    [overviewFilter],
   );
   const sessionOptions = useMemo(
     () => sessionRows.map((session) => createOption({ id: session.id, label: `${session.id} (${session.status ?? "running"})` })),
-    [sessionRows]
+    [sessionRows],
   );
   const selectedSessionOption = sessionOptions.find((option) => option.id === resolvedSessionId) ?? null;
 
@@ -746,11 +727,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
     if (!selectedOverviewBranch) {
       return filteredOverviewBranches[0] ?? null;
     }
-    return (
-      filteredOverviewBranches.find((row) => row.branchName === selectedOverviewBranch) ??
-      filteredOverviewBranches[0] ??
-      null
-    );
+    return filteredOverviewBranches.find((row) => row.branchName === selectedOverviewBranch) ?? filteredOverviewBranches[0] ?? null;
   }, [filteredOverviewBranches, selectedOverviewBranch]);
 
   useEffect(() => {
@@ -799,7 +776,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
         },
       },
     }),
-    [theme.colors.backgroundSecondary, theme.colors.borderOpaque]
+    [theme.colors.backgroundSecondary, theme.colors.borderOpaque],
   );
 
   return (
@@ -815,14 +792,14 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                 gap: theme.sizing.scale400,
               })}
             >
-                <div
-                  className={css({
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "flex-start",
-                    gap: "2px",
-                  })}
-                >
+              <div
+                className={css({
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                  gap: "2px",
+                })}
+              >
                 <LabelXSmall color="contentTertiary">Workspace</LabelXSmall>
                 <div
                   className={css({
@@ -857,7 +834,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                 borderTop: `1px solid ${theme.colors.borderOpaque}`,
               })}
             >
-              <LabelXSmall color="contentSecondary">Handoffs</LabelXSmall>
+              <LabelXSmall color="contentSecondary">Tasks</LabelXSmall>
             </div>
           </PanelHeader>
 
@@ -869,7 +846,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
             ) : null}
 
             {!handoffsQuery.isLoading && repoGroups.length === 0 ? (
-              <EmptyState>No repos or handoffs yet. Add a repo to start a workspace.</EmptyState>
+              <EmptyState>No repos or tasks yet. Add a repo to start a workspace.</EmptyState>
             ) : null}
 
             {repoGroups.map((group) => (
@@ -985,7 +962,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                     }}
                     data-testid={group.repoId === createRepoId ? "handoff-create-open" : `handoff-create-open-${group.repoId}`}
                   >
-                    Create Handoff
+                    Create Task
                   </Button>
                 </div>
               </section>
@@ -1198,7 +1175,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                                     {formatRelativeAge(branch.updatedAt)}
                                   </ParagraphSmall>
                                   <StatusPill kind={branch.handoffId ? "positive" : "warning"}>
-                                    {branch.handoffId ? "handoff" : "unmapped"}
+                                    {branch.handoffId ? "task" : "unmapped"}
                                   </StatusPill>
                                   {branch.trackedInStack ? <StatusPill kind="neutral">stack</StatusPill> : null}
                                 </div>
@@ -1291,13 +1268,11 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                                       }}
                                       data-testid={`repo-overview-create-${branchToken}`}
                                     >
-                                      Create Handoff
+                                      Create Task
                                     </Button>
                                   ) : null}
 
-                                  <StatusPill kind={branchKind(branch)}>
-                                    {branch.conflictsWithMain ? "conflict" : "ok"}
-                                  </StatusPill>
+                                  <StatusPill kind={branchKind(branch)}>{branch.conflictsWithMain ? "conflict" : "ok"}</StatusPill>
                                 </div>
                               </div>
                             </div>
@@ -1331,11 +1306,9 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                   >
                     <Bot size={16} />
                     <HeadingXSmall marginTop="0" marginBottom="0">
-                      {selectedForSession ? selectedForSession.title ?? "Determining title..." : "No handoff selected"}
+                      {selectedForSession ? selectedForSession.title ?? "Determining title..." : "No task selected"}
                     </HeadingXSmall>
-                    {selectedForSession ? (
-                      <StatusPill kind={statusKind(selectedForSession.status)}>{selectedForSession.status}</StatusPill>
-                    ) : null}
+                    {selectedForSession ? <StatusPill kind={statusKind(selectedForSession.status)}>{selectedForSession.status}</StatusPill> : null}
                   </div>
 
                   {selectedForSession && !resolvedSessionId ? (
@@ -1364,7 +1337,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                 })}
               >
                 {!selectedForSession ? (
-                  <EmptyState>Select a handoff from the left sidebar.</EmptyState>
+                  <EmptyState>Select a task from the left sidebar.</EmptyState>
                 ) : (
                   <>
                     <div
@@ -1440,12 +1413,12 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                               : !activeSandbox?.sandboxId
                                 ? selectedForSession.statusMessage
                                   ? `Sandbox unavailable: ${selectedForSession.statusMessage}`
-                                  : "This handoff is still provisioning its sandbox."
-                              : staleSessionId
-                                ? `Session ${staleSessionId} is unavailable. Start a new session to continue.`
-                                : resolvedSessionId
-                                  ? "No transcript events yet. Send a prompt to start this session."
-                                  : "No active session for this handoff."}
+                                  : "This task is still provisioning its sandbox."
+                                : staleSessionId
+                                  ? `Session ${staleSessionId} is unavailable. Start a new session to continue.`
+                                  : resolvedSessionId
+                                    ? "No transcript events yet. Send a prompt to start this session."
+                                    : "No active session for this task."}
                           </EmptyState>
                         ) : null}
 
@@ -1462,14 +1435,9 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                               key={entry.id}
                               data-testid="session-transcript-entry"
                               className={css({
-                                borderLeft: `2px solid ${
-                                  entry.sender === "agent" ? "rgba(29, 111, 95, 0.45)" : "rgba(32, 108, 176, 0.45)"
-                                }`,
-                                border: `1px solid ${
-                                  entry.sender === "agent" ? "rgba(29, 111, 95, 0.22)" : "rgba(32, 108, 176, 0.22)"
-                                }`,
-                                backgroundColor:
-                                  entry.sender === "agent" ? "rgba(29, 111, 95, 0.07)" : "rgba(32, 108, 176, 0.07)",
+                                borderLeft: `2px solid ${entry.sender === "agent" ? "rgba(29, 111, 95, 0.45)" : "rgba(32, 108, 176, 0.45)"}`,
+                                border: `1px solid ${entry.sender === "agent" ? "rgba(29, 111, 95, 0.22)" : "rgba(32, 108, 176, 0.22)"}`,
+                                backgroundColor: entry.sender === "agent" ? "rgba(29, 111, 95, 0.07)" : "rgba(32, 108, 176, 0.07)",
                                 padding: `12px ${theme.sizing.scale400}`,
                               })}
                             >
@@ -1535,11 +1503,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                             void sendPrompt.mutateAsync(prompt);
                           }}
                           disabled={
-                            sendPrompt.isPending ||
-                            createSession.isPending ||
-                            !selectedForSession ||
-                            !activeSandbox?.sandboxId ||
-                            draft.trim().length === 0
+                            sendPrompt.isPending || createSession.isPending || !selectedForSession || !activeSandbox?.sandboxId || draft.trim().length === 0
                           }
                         >
                           <span
@@ -1565,7 +1529,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
         <DetailRail>
           <PanelHeader>
             <HeadingSmall marginTop="0" marginBottom="0">
-              {repoOverviewMode ? "Repo Details" : "Handoff Details"}
+              {repoOverviewMode ? "Repo Details" : "Task Details"}
             </HeadingSmall>
           </PanelHeader>
 
@@ -1618,7 +1582,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                         <MetaRow label="Commit" value={selectedBranchOverview.commitSha.slice(0, 10)} mono />
                         <MetaRow label="Diff" value={formatDiffStat(selectedBranchOverview.diffStat)} />
                         <MetaRow
-                          label="Handoff"
+                          label="Task"
                           value={selectedBranchOverview.handoffTitle ?? selectedBranchOverview.handoffId ?? "-"}
                         />
                       </div>
@@ -1628,7 +1592,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
               )
             ) : !selectedForSession ? (
               <ParagraphSmall marginTop="0" marginBottom="0" color="contentSecondary">
-                No handoff selected.
+                No task selected.
               </ParagraphSmall>
             ) : (
               <>
@@ -1644,7 +1608,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                       gap: theme.sizing.scale300,
                     })}
                   >
-                    <MetaRow label="Handoff" value={selectedForSession.handoffId} mono />
+                    <MetaRow label="Task" value={selectedForSession.handoffId} mono />
                     <MetaRow label="Sandbox" value={selectedForSession.activeSandboxId ?? "-"} mono />
                     <MetaRow label="Session" value={resolvedSessionId ?? "-"} mono />
                   </div>
@@ -1711,9 +1675,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
                       </LabelSmall>
                     </div>
                     <ParagraphSmall marginTop="0" marginBottom="0" color="contentSecondary">
-                      {selectedForSession.statusMessage
-                        ? selectedForSession.statusMessage
-                        : "Open transcript in the center panel for details."}
+                      {selectedForSession.statusMessage ? selectedForSession.statusMessage : "Open transcript in the center panel for details."}
                     </ParagraphSmall>
                   </div>
                 ) : null}
@@ -1773,7 +1735,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
           }}
           overrides={modalOverrides}
         >
-          <ModalHeader>Create Handoff</ModalHeader>
+          <ModalHeader>Create Task</ModalHeader>
           <ModalBody>
             <div
               className={css({
@@ -1783,7 +1745,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
               })}
             >
               <ParagraphSmall marginTop="0" marginBottom="0" color="contentSecondary">
-                Pick a repo, describe the task, and the backend will create a handoff.
+                Pick a repo, describe the task, and the backend will create a task.
               </ParagraphSmall>
 
               <div>
@@ -1921,7 +1883,7 @@ export function WorkspaceDashboard({ workspaceId, selectedHandoffId, selectedRep
               }}
               data-testid="handoff-create-submit"
             >
-              Create Handoff
+              Create Task
             </Button>
           </ModalFooter>
         </Modal>

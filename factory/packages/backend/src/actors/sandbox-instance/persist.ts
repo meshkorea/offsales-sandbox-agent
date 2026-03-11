@@ -1,12 +1,5 @@
 import { and, asc, count, eq } from "drizzle-orm";
-import type {
-  ListEventsRequest,
-  ListPage,
-  ListPageRequest,
-  SessionEvent,
-  SessionPersistDriver,
-  SessionRecord
-} from "sandbox-agent";
+import type { ListEventsRequest, ListPage, ListPageRequest, SessionEvent, SessionPersistDriver, SessionRecord } from "sandbox-agent";
 import { sandboxSessionEvents, sandboxSessions } from "./db/schema.js";
 
 const DEFAULT_MAX_SESSIONS = 1024;
@@ -27,11 +20,7 @@ function parseCursor(cursor: string | undefined): number {
   return parsed;
 }
 
-export function resolveEventListOffset(params: {
-  cursor?: string;
-  total: number;
-  limit: number;
-}): number {
+export function resolveEventListOffset(params: { cursor?: string; total: number; limit: number }): number {
   if (params.cursor != null) {
     return parseCursor(params.cursor);
   }
@@ -65,13 +54,10 @@ export class SandboxInstancePersistDriver implements SessionPersistDriver {
 
   constructor(
     private readonly db: any,
-    options: SandboxInstancePersistDriverOptions = {}
+    options: SandboxInstancePersistDriverOptions = {},
   ) {
     this.maxSessions = normalizeCap(options.maxSessions, DEFAULT_MAX_SESSIONS);
-    this.maxEventsPerSession = normalizeCap(
-      options.maxEventsPerSession,
-      DEFAULT_MAX_EVENTS_PER_SESSION
-    );
+    this.maxEventsPerSession = normalizeCap(options.maxEventsPerSession, DEFAULT_MAX_EVENTS_PER_SESSION);
   }
 
   async getSession(id: string): Promise<SessionRecord | null> {
@@ -132,10 +118,7 @@ export class SandboxInstancePersistDriver implements SessionPersistDriver {
       sessionInit: safeParseJson(row.sessionInitJson, undefined),
     }));
 
-    const totalRow = await this.db
-      .select({ c: count() })
-      .from(sandboxSessions)
-      .get();
+    const totalRow = await this.db.select({ c: count() }).from(sandboxSessions).get();
     const total = Number(totalRow?.c ?? 0);
 
     const nextOffset = offset + items.length;
@@ -172,10 +155,7 @@ export class SandboxInstancePersistDriver implements SessionPersistDriver {
       .run();
 
     // Evict oldest sessions beyond cap.
-    const totalRow = await this.db
-      .select({ c: count() })
-      .from(sandboxSessions)
-      .get();
+    const totalRow = await this.db.select({ c: count() }).from(sandboxSessions).get();
     const total = Number(totalRow?.c ?? 0);
     const overflow = total - this.maxSessions;
     if (overflow <= 0) return;
@@ -195,11 +175,7 @@ export class SandboxInstancePersistDriver implements SessionPersistDriver {
 
   async listEvents(request: ListEventsRequest): Promise<ListPage<SessionEvent>> {
     const limit = normalizeCap(request.limit, DEFAULT_LIST_LIMIT);
-    const totalRow = await this.db
-      .select({ c: count() })
-      .from(sandboxSessionEvents)
-      .where(eq(sandboxSessionEvents.sessionId, request.sessionId))
-      .get();
+    const totalRow = await this.db.select({ c: count() }).from(sandboxSessionEvents).where(eq(sandboxSessionEvents.sessionId, request.sessionId)).get();
     const total = Number(totalRow?.c ?? 0);
     const offset = resolveEventListOffset({
       cursor: request.cursor,
@@ -267,11 +243,7 @@ export class SandboxInstancePersistDriver implements SessionPersistDriver {
       .run();
 
     // Trim oldest events beyond cap.
-    const totalRow = await this.db
-      .select({ c: count() })
-      .from(sandboxSessionEvents)
-      .where(eq(sandboxSessionEvents.sessionId, event.sessionId))
-      .get();
+    const totalRow = await this.db.select({ c: count() }).from(sandboxSessionEvents).where(eq(sandboxSessionEvents.sessionId, event.sessionId)).get();
     const total = Number(totalRow?.c ?? 0);
     const overflow = total - this.maxEventsPerSession;
     if (overflow <= 0) return;

@@ -99,10 +99,10 @@ export class TerminalBellBackend implements NotifyBackend {
 }
 
 const backendFactories: Record<string, () => NotifyBackend> = {
-  "openclaw": () => new OpenclawBackend(),
+  openclaw: () => new OpenclawBackend(),
   "macos-osascript": () => new MacOsNotifyBackend(),
   "linux-notify-send": () => new LinuxNotifySendBackend(),
-  "terminal": () => new TerminalBellBackend(),
+  terminal: () => new TerminalBellBackend(),
 };
 
 export async function createBackends(configOrder: string[]): Promise<NotifyBackend[]> {

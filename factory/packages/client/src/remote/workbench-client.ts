@@ -192,8 +192,6 @@ class RemoteWorkbenchStore implements HandoffWorkbenchClient {
   }
 }
 
-export function createRemoteWorkbenchClient(
-  options: RemoteWorkbenchClientOptions,
-): HandoffWorkbenchClient {
+export function createRemoteWorkbenchClient(options: RemoteWorkbenchClientOptions): HandoffWorkbenchClient {
   return new RemoteWorkbenchStore(options);
 }

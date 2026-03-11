@@ -85,7 +85,7 @@ const DEFAULT_THEME: TuiTheme = {
   reviewApproved: "#22c55e",
   reviewChanges: "#ef4444",
   reviewPending: "#eab308",
-  reviewNone: "#6b7280"
+  reviewNone: "#6b7280",
 };
 
 const OPENCODE_THEME_PACK = opencodeThemePackJson as Record<string, unknown>;
@@ -102,7 +102,7 @@ export function resolveTuiTheme(config: AppConfig, baseDir = cwd()): TuiThemeRes
         theme: candidate.theme,
         name: candidate.name,
         source: "openhandoff config",
-        mode
+        mode,
       };
     }
   }
@@ -121,7 +121,7 @@ export function resolveTuiTheme(config: AppConfig, baseDir = cwd()): TuiThemeRes
     theme: DEFAULT_THEME,
     name: "opencode-default",
     source: "default",
-    mode
+    mode,
   };
 }
 
@@ -150,7 +150,7 @@ function loadOpencodeThemeFromConfig(mode: ThemeMode, baseDir: string): TuiTheme
       theme: candidate.theme,
       name: candidate.name,
       source: `opencode config (${path})`,
-      mode
+      mode,
     };
   }
 
@@ -182,20 +182,15 @@ function loadOpencodeThemeFromState(mode: ThemeMode, baseDir: string): TuiThemeR
     theme: candidate.theme,
     name: candidate.name,
     source: `opencode state (${path})`,
-    mode
+    mode,
   };
 }
 
-function loadFromSpec(
-  spec: string,
-  searchDirs: string[],
-  mode: ThemeMode,
-  baseDir: string
-): ThemeCandidate | null {
+function loadFromSpec(spec: string, searchDirs: string[], mode: ThemeMode, baseDir: string): ThemeCandidate | null {
   if (isDefaultThemeName(spec)) {
     return {
       theme: DEFAULT_THEME,
-      name: "opencode-default"
+      name: "opencode-default",
     };
   }
 
@@ -229,7 +224,7 @@ function loadFromSpec(
     if (theme) {
       return {
         theme,
-        name: spec
+        name: spec,
       };
     }
   }
@@ -253,7 +248,7 @@ function loadThemeFromPath(path: string, mode: ThemeMode): ThemeCandidate | null
       }
       return {
         theme,
-        name: themeNameFromPath(path)
+        name: themeNameFromPath(path),
       };
     } catch {
       return null;
@@ -269,7 +264,7 @@ function loadThemeFromPath(path: string, mode: ThemeMode): ThemeCandidate | null
   if (opencodeTheme) {
     return {
       theme: opencodeTheme,
-      name: themeNameFromPath(path)
+      name: themeNameFromPath(path),
     };
   }
 
@@ -280,7 +275,7 @@ function loadThemeFromPath(path: string, mode: ThemeMode): ThemeCandidate | null
 
   return {
     theme: paletteTheme,
-    name: themeNameFromPath(path)
+    name: themeNameFromPath(path),
   };
 }
 
@@ -292,12 +287,7 @@ function themeNameFromPath(path: string): string {
   return base;
 }
 
-function themeFromOpencodeValue(
-  value: unknown,
-  searchDirs: string[],
-  mode: ThemeMode,
-  baseDir: string
-): ThemeCandidate | null {
+function themeFromOpencodeValue(value: unknown, searchDirs: string[], mode: ThemeMode, baseDir: string): ThemeCandidate | null {
   if (typeof value === "string") {
     return loadFromSpec(value, searchDirs, mode, baseDir);
   }
@@ -311,7 +301,7 @@ function themeFromOpencodeValue(
     if (theme) {
       return {
         theme,
-        name: typeof value.name === "string" ? value.name : "inline"
+        name: typeof value.name === "string" ? value.name : "inline",
       };
     }
   }
@@ -320,7 +310,7 @@ function themeFromOpencodeValue(
   if (paletteTheme) {
     return {
       theme: paletteTheme,
-      name: typeof value.name === "string" ? value.name : "inline"
+      name: typeof value.name === "string" ? value.name : "inline",
     };
   }
 
@@ -382,10 +372,7 @@ function themeFromOpencodeJson(value: unknown, mode: ThemeMode): TuiTheme | null
   const info = opencodeColor(themeMap, defs, mode, "info") ?? DEFAULT_THEME.info;
   const diffAdd = opencodeColor(themeMap, defs, mode, "diffAdded") ?? success;
   const diffDel = opencodeColor(themeMap, defs, mode, "diffRemoved") ?? error;
-  const diffSep =
-    opencodeColor(themeMap, defs, mode, "diffContext") ??
-    opencodeColor(themeMap, defs, mode, "diffHunkHeader") ??
-    muted;
+  const diffSep = opencodeColor(themeMap, defs, mode, "diffContext") ?? opencodeColor(themeMap, defs, mode, "diffHunkHeader") ?? muted;
 
   return {
     background,
@@ -416,7 +403,7 @@ function themeFromOpencodeJson(value: unknown, mode: ThemeMode): TuiTheme | null
     reviewApproved: success,
     reviewChanges: error,
     reviewPending: warning,
-    reviewNone: muted
+    reviewNone: muted,
   };
 }
 
@@ -428,13 +415,7 @@ function opencodeColor(themeMap: JsonObject, defs: JsonObject, mode: ThemeMode, 
   return resolveOpencodeColor(raw, themeMap, defs, mode, 0);
 }
 
-function resolveOpencodeColor(
-  value: unknown,
-  themeMap: JsonObject,
-  defs: JsonObject,
-  mode: ThemeMode,
-  depth: number
-): string | null {
+function resolveOpencodeColor(value: unknown, themeMap: JsonObject, defs: JsonObject, mode: ThemeMode, depth: number): string | null {
   if (depth > 12) {
     return null;
   }
@@ -533,7 +514,7 @@ function themeFromAny(value: unknown): TuiTheme | null {
     reviewApproved: pick(["review_approved", "approved"], success),
     reviewChanges: pick(["review_changes", "changes"], error),
     reviewPending: pick(["review_pending", "pending"], warning),
-    reviewNone: pick(["review_none", "review_unknown"], muted)
+    reviewNone: pick(["review_none", "review_unknown"], muted),
   };
 }
 

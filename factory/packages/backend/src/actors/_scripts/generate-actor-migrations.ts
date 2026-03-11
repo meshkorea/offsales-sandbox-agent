@@ -94,7 +94,7 @@ async function generateOne(drizzleDir: string): Promise<void> {
       })),
     },
     null,
-    2
+    2,
   );
 
   const outPath = resolve(drizzleDir, "..", "migrations.ts");
@@ -128,9 +128,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.stack ?? error.message : String(error);
+  const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
   // eslint-disable-next-line no-console
   console.error(message);
   process.exitCode = 1;
 });
-

@@ -84,7 +84,9 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
           id: tabId,
           sessionId: tabId,
           sessionName: "Session 1",
-          agent: providerAgent(MODEL_GROUPS.find((group) => group.models.some((model) => model.id === (input.model ?? "claude-sonnet-4")))?.provider ?? "Claude"),
+          agent: providerAgent(
+            MODEL_GROUPS.find((group) => group.models.some((model) => model.id === (input.model ?? "claude-sonnet-4")))?.provider ?? "Claude",
+          ),
           model: input.model ?? "claude-sonnet-4",
           status: "idle",
           thinkingSinceMs: null,
@@ -311,9 +313,7 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
   async setSessionUnread(input: HandoffWorkbenchSetSessionUnreadInput): Promise<void> {
     this.updateHandoff(input.handoffId, (currentHandoff) => ({
       ...currentHandoff,
-      tabs: currentHandoff.tabs.map((candidate) =>
-        candidate.id === input.tabId ? { ...candidate, unread: input.unread } : candidate,
-      ),
+      tabs: currentHandoff.tabs.map((candidate) => (candidate.id === input.tabId ? { ...candidate, unread: input.unread } : candidate)),
     }));
   }
 
@@ -324,9 +324,7 @@ class MockWorkbenchStore implements HandoffWorkbenchClient {
     }
     this.updateHandoff(input.handoffId, (currentHandoff) => ({
       ...currentHandoff,
-      tabs: currentHandoff.tabs.map((candidate) =>
-        candidate.id === input.tabId ? { ...candidate, sessionName: title } : candidate,
-      ),
+      tabs: currentHandoff.tabs.map((candidate) => (candidate.id === input.tabId ? { ...candidate, sessionName: title } : candidate)),
     }));
   }
 

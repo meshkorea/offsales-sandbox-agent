@@ -2,11 +2,7 @@ import { chmodSync, mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  gitSpiceAvailable,
-  gitSpiceListStack,
-  gitSpiceRestackSubtree
-} from "../src/integrations/git-spice/index.js";
+import { gitSpiceAvailable, gitSpiceListStack, gitSpiceRestackSubtree } from "../src/integrations/git-spice/index.js";
 
 function makeTempDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix));
@@ -17,10 +13,7 @@ function writeScript(path: string, body: string): void {
   chmodSync(path, 0o755);
 }
 
-async function withEnv<T>(
-  updates: Record<string, string | undefined>,
-  fn: () => Promise<T>
-): Promise<T> {
+async function withEnv<T>(updates: Record<string, string | undefined>, fn: () => Promise<T>): Promise<T> {
   const previous = new Map<string, string | undefined>();
   for (const [key, value] of Object.entries(updates)) {
     previous.set(key, process.env[key]);
@@ -57,21 +50,21 @@ describe("git-spice integration", () => {
         "fi",
         'if [ \"$1\" = \"log\" ]; then',
         "  echo 'noise line'",
-        "  echo '{\"branch\":\"feature/a\",\"parent\":\"main\"}'",
+        '  echo \'{"branch":"feature/a","parent":"main"}\'',
         "  echo '{bad json'",
-        "  echo '{\"name\":\"feature/b\",\"parentBranch\":\"feature/a\"}'",
-        "  echo '{\"name\":\"feature/a\",\"parent\":\"main\"}'",
+        '  echo \'{"name":"feature/b","parentBranch":"feature/a"}\'',
+        '  echo \'{"name":"feature/a","parent":"main"}\'',
         "  exit 0",
         "fi",
-        "exit 1"
-      ].join("\n")
+        "exit 1",
+      ].join("\n"),
     );
 
     await withEnv({ HF_GIT_SPICE_BIN: scriptPath }, async () => {
       const rows = await gitSpiceListStack(repoPath);
       expect(rows).toEqual([
         { branchName: "feature/a", parentBranch: "main" },
-        { branchName: "feature/b", parentBranch: "feature/a" }
+        { branchName: "feature/b", parentBranch: "feature/a" },
       ]);
     });
   });
@@ -94,18 +87,18 @@ describe("git-spice integration", () => {
         'if [ \"$1\" = \"branch\" ] && [ \"$2\" = \"restack\" ] && [ \"$5\" = \"--no-prompt\" ]; then',
         "  exit 0",
         "fi",
-        "exit 1"
-      ].join("\n")
+        "exit 1",
+      ].join("\n"),
     );
 
     await withEnv(
       {
         HF_GIT_SPICE_BIN: scriptPath,
-        SPICE_LOG_PATH: logPath
+        SPICE_LOG_PATH: logPath,
       },
       async () => {
         await gitSpiceRestackSubtree(repoPath, "feature/a");
-      }
+      },
     );
 
     const lines = readFileSync(logPath, "utf8")
@@ -125,12 +118,12 @@ describe("git-spice integration", () => {
     await withEnv(
       {
         HF_GIT_SPICE_BIN: "/non-existent/hf-git-spice-binary",
-        PATH: "/non-existent/bin"
+        PATH: "/non-existent/bin",
       },
       async () => {
         const available = await gitSpiceAvailable(repoPath);
         expect(available).toBe(false);
-      }
+      },
     );
   });
 });

@@ -7,7 +7,7 @@ describe("malformed URI handling", () => {
       fetch: async (_req: Request): Promise<Response> => {
         // Simulate what happens when rivetkit's router encounters a malformed URI
         throw new URIError("URI malformed");
-      }
+      },
     };
 
     const safeFetch = async (req: Request): Promise<Response> => {
@@ -30,7 +30,7 @@ describe("malformed URI handling", () => {
     const mockApp = {
       fetch: async (_req: Request): Promise<Response> => {
         throw new TypeError("some other error");
-      }
+      },
     };
 
     const safeFetch = async (req: Request): Promise<Response> => {
@@ -51,7 +51,7 @@ describe("malformed URI handling", () => {
     const mockApp = {
       fetch: async (_req: Request): Promise<Response> => {
         return new Response("OK", { status: 200 });
-      }
+      },
     };
 
     const safeFetch = async (req: Request): Promise<Response> => {

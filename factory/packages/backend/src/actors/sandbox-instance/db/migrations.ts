@@ -3,20 +3,20 @@
 // Do not hand-edit this file.
 
 const journal = {
-  "entries": [
+  entries: [
     {
-      "idx": 0,
-      "when": 1770924375604,
-      "tag": "0000_broad_tyrannus",
-      "breakpoints": true
+      idx: 0,
+      when: 1770924375604,
+      tag: "0000_broad_tyrannus",
+      breakpoints: true,
     },
     {
-      "idx": 1,
-      "when": 1776482400000,
-      "tag": "0001_sandbox_sessions",
-      "breakpoints": true
-    }
-  ]
+      idx: 1,
+      when: 1776482400000,
+      tag: "0001_sandbox_sessions",
+      breakpoints: true,
+    },
+  ],
 } as const;
 
 export default {
@@ -57,5 +57,5 @@ CREATE INDEX \`sandbox_session_events_session_id_event_index_idx\` ON \`sandbox_
 --> statement-breakpoint
 CREATE INDEX \`sandbox_session_events_session_id_created_at_idx\` ON \`sandbox_session_events\` (\`session_id\`,\`created_at\`);
 `,
-  } as const
+  } as const,
 };

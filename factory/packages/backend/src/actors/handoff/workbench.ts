@@ -2,12 +2,7 @@
 import { basename } from "node:path";
 import { asc, eq } from "drizzle-orm";
 import { getActorRuntimeContext } from "../context.js";
-import {
-  getOrCreateHandoffStatusSync,
-  getOrCreateProject,
-  getOrCreateWorkspace,
-  getSandboxInstance,
-} from "../handles.js";
+import { getOrCreateHandoffStatusSync, getOrCreateProject, getOrCreateWorkspace, getSandboxInstance } from "../handles.js";
 import { handoff as handoffTable, handoffRuntime, handoffWorkbenchSessions } from "./db/schema.js";
 import { getCurrentRecord } from "./workflow/common.js";
 
@@ -90,11 +85,7 @@ export function shouldMarkSessionUnreadForStatus(meta: { thinkingSinceMs?: numbe
 
 async function listSessionMetaRows(c: any, options?: { includeClosed?: boolean }): Promise<Array<any>> {
   await ensureWorkbenchSessionTable(c);
-  const rows = await c.db
-    .select()
-    .from(handoffWorkbenchSessions)
-    .orderBy(asc(handoffWorkbenchSessions.createdAt))
-    .all();
+  const rows = await c.db.select().from(handoffWorkbenchSessions).orderBy(asc(handoffWorkbenchSessions.createdAt)).all();
   const mapped = rows.map((row: any) => ({
     ...row,
     id: row.sessionId,
@@ -120,11 +111,7 @@ async function nextSessionName(c: any): Promise<string> {
 
 async function readSessionMeta(c: any, sessionId: string): Promise<any | null> {
   await ensureWorkbenchSessionTable(c);
-  const row = await c.db
-    .select()
-    .from(handoffWorkbenchSessions)
-    .where(eq(handoffWorkbenchSessions.sessionId, sessionId))
-    .get();
+  const row = await c.db.select().from(handoffWorkbenchSessions).where(eq(handoffWorkbenchSessions.sessionId, sessionId)).get();
 
   if (!row) {
     return null;
@@ -142,12 +129,15 @@ async function readSessionMeta(c: any, sessionId: string): Promise<any | null> {
   };
 }
 
-async function ensureSessionMeta(c: any, params: {
-  sessionId: string;
-  model?: string;
-  sessionName?: string;
-  unread?: boolean;
-}): Promise<any> {
+async function ensureSessionMeta(
+  c: any,
+  params: {
+    sessionId: string;
+    model?: string;
+    sessionName?: string;
+    unread?: boolean;
+  },
+): Promise<any> {
   await ensureWorkbenchSessionTable(c);
   const existing = await readSessionMeta(c, params.sessionId);
   if (existing) {
@@ -202,12 +192,15 @@ function shellFragment(parts: string[]): string {
   return parts.join(" && ");
 }
 
-async function executeInSandbox(c: any, params: {
-  sandboxId: string;
-  cwd: string;
-  command: string;
-  label: string;
-}): Promise<{ exitCode: number; result: string }> {
+async function executeInSandbox(
+  c: any,
+  params: {
+    sandboxId: string;
+    cwd: string;
+    command: string;
+    label: string;
+  },
+): Promise<{ exitCode: number; result: string }> {
   const { providers } = getActorRuntimeContext();
   const provider = providers.get(c.state.providerId);
   return await provider.executeCommand({
@@ -226,13 +219,8 @@ function parseGitStatus(output: string): Array<{ path: string; type: "M" | "A" |
     .map((line) => {
       const status = line.slice(0, 2).trim();
       const rawPath = line.slice(3).trim();
-      const path = rawPath.includes(" -> ") ? rawPath.split(" -> ").pop() ?? rawPath : rawPath;
-      const type =
-        status.includes("D")
-          ? "D"
-          : status.includes("A") || status === "??"
-            ? "A"
-            : "M";
+      const path = rawPath.includes(" -> ") ? (rawPath.split(" -> ").pop() ?? rawPath) : rawPath;
+      const type = status.includes("D") ? "D" : status.includes("A") || status === "??" ? "A" : "M";
       return { path, type };
     });
 }
@@ -312,10 +300,7 @@ function buildFileTree(paths: string[]): Array<any> {
 
 async function collectWorkbenchGitState(c: any, record: any) {
   const activeSandboxId = record.activeSandboxId;
-  const activeSandbox =
-    activeSandboxId != null
-      ? (record.sandboxes ?? []).find((candidate: any) => candidate.sandboxId === activeSandboxId) ?? null
-      : null;
+  const activeSandbox = activeSandboxId != null ? ((record.sandboxes ?? []).find((candidate: any) => candidate.sandboxId === activeSandboxId) ?? null) : null;
   const cwd = activeSandbox?.cwd ?? record.sandboxes?.[0]?.cwd ?? null;
   if (!activeSandboxId || !cwd) {
     return {
@@ -423,12 +408,7 @@ async function readPullRequestSummary(c: any, branchName: string | null) {
   }
 
   try {
-    const project = await getOrCreateProject(
-      c,
-      c.state.workspaceId,
-      c.state.repoId,
-      c.state.repoRemote,
-    );
+    const project = await getOrCreateProject(c, c.state.workspaceId, c.state.repoId, c.state.repoRemote);
     return await project.getPullRequestForBranch({ branchName });
   } catch {
     return null;
@@ -528,8 +508,7 @@ export async function renameWorkbenchBranch(c: any, value: string): Promise<void
   if (!record.activeSandboxId) {
     throw new Error("cannot rename branch without an active sandbox");
   }
-  const activeSandbox =
-    (record.sandboxes ?? []).find((candidate: any) => candidate.sandboxId === record.activeSandboxId) ?? null;
+  const activeSandbox = (record.sandboxes ?? []).find((candidate: any) => candidate.sandboxId === record.activeSandboxId) ?? null;
   if (!activeSandbox?.cwd) {
     throw new Error("cannot rename branch without a sandbox cwd");
   }
@@ -572,8 +551,7 @@ export async function createWorkbenchSession(c: any, model?: string): Promise<{ 
   if (!record.activeSandboxId) {
     throw new Error("cannot create session without an active sandbox");
   }
-  const activeSandbox =
-    (record.sandboxes ?? []).find((candidate: any) => candidate.sandboxId === record.activeSandboxId) ?? null;
+  const activeSandbox = (record.sandboxes ?? []).find((candidate: any) => candidate.sandboxId === record.activeSandboxId) ?? null;
   const cwd = activeSandbox?.cwd ?? record.sandboxes?.[0]?.cwd ?? null;
   if (!cwd) {
     throw new Error("cannot create session without a sandbox cwd");
@@ -639,10 +617,7 @@ export async function sendWorkbenchMessage(c: any, sessionId: string, text: stri
 
   await ensureSessionMeta(c, { sessionId });
   const sandbox = getSandboxInstance(c, c.state.workspaceId, c.state.providerId, record.activeSandboxId);
-  const prompt = [
-    text.trim(),
-    ...attachments.map((attachment: any) => `@ ${attachment.filePath}:${attachment.lineNumber}\n${attachment.lineContent}`),
-  ]
+  const prompt = [text.trim(), ...attachments.map((attachment: any) => `@ ${attachment.filePath}:${attachment.lineNumber}\n${attachment.lineContent}`)]
     .filter(Boolean)
     .join("\n\n");
   if (!prompt) {
@@ -673,23 +648,15 @@ export async function sendWorkbenchMessage(c: any, sessionId: string, text: stri
     .where(eq(handoffRuntime.id, 1))
     .run();
 
-  const sync = await getOrCreateHandoffStatusSync(
-    c,
-    c.state.workspaceId,
-    c.state.repoId,
-    c.state.handoffId,
-    record.activeSandboxId,
+  const sync = await getOrCreateHandoffStatusSync(c, c.state.workspaceId, c.state.repoId, c.state.handoffId, record.activeSandboxId, sessionId, {
+    workspaceId: c.state.workspaceId,
+    repoId: c.state.repoId,
+    handoffId: c.state.handoffId,
+    providerId: c.state.providerId,
+    sandboxId: record.activeSandboxId,
     sessionId,
-    {
-      workspaceId: c.state.workspaceId,
-      repoId: c.state.repoId,
-      handoffId: c.state.handoffId,
-      providerId: c.state.providerId,
-      sandboxId: record.activeSandboxId,
-      sessionId,
-      intervalMs: STATUS_SYNC_INTERVAL_MS,
-    },
-  );
+    intervalMs: STATUS_SYNC_INTERVAL_MS,
+  });
   await sync.setIntervalMs({ intervalMs: STATUS_SYNC_INTERVAL_MS });
   await sync.start();
   await sync.force();
@@ -709,12 +676,7 @@ export async function stopWorkbenchSession(c: any, sessionId: string): Promise<v
   await notifyWorkbenchUpdated(c);
 }
 
-export async function syncWorkbenchSessionStatus(
-  c: any,
-  sessionId: string,
-  status: "running" | "idle" | "error",
-  at: number,
-): Promise<void> {
+export async function syncWorkbenchSessionStatus(c: any, sessionId: string, status: "running" | "idle" | "error", at: number): Promise<void> {
   const record = await ensureWorkbenchSeeded(c);
   const meta = await ensureSessionMeta(c, { sessionId });
   let changed = false;
@@ -821,11 +783,7 @@ export async function publishWorkbenchPr(c: any): Promise<void> {
     throw new Error("cannot publish PR without a branch");
   }
   const { driver } = getActorRuntimeContext();
-  const created = await driver.github.createPr(
-    c.state.repoLocalPath,
-    record.branchName,
-    record.title ?? c.state.task,
-  );
+  const created = await driver.github.createPr(c.state.repoLocalPath, record.branchName, record.title ?? c.state.task);
   await c.db
     .update(handoffTable)
     .set({
@@ -842,8 +800,7 @@ export async function revertWorkbenchFile(c: any, path: string): Promise<void> {
   if (!record.activeSandboxId) {
     throw new Error("cannot revert file without an active sandbox");
   }
-  const activeSandbox =
-    (record.sandboxes ?? []).find((candidate: any) => candidate.sandboxId === record.activeSandboxId) ?? null;
+  const activeSandbox = (record.sandboxes ?? []).find((candidate: any) => candidate.sandboxId === record.activeSandboxId) ?? null;
   if (!activeSandbox?.cwd) {
     throw new Error("cannot revert file without a sandbox cwd");
   }

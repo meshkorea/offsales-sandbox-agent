@@ -3,26 +3,26 @@
 // Do not hand-edit this file.
 
 const journal = {
-  "entries": [
+  entries: [
     {
-      "idx": 0,
-      "when": 1770924376525,
-      "tag": "0000_rare_iron_man",
-      "breakpoints": true
+      idx: 0,
+      when: 1770924376525,
+      tag: "0000_rare_iron_man",
+      breakpoints: true,
     },
     {
-      "idx": 1,
-      "when": 1770947252912,
-      "tag": "0001_sleepy_lady_deathstrike",
-      "breakpoints": true
+      idx: 1,
+      when: 1770947252912,
+      tag: "0001_sleepy_lady_deathstrike",
+      breakpoints: true,
     },
     {
-      "idx": 2,
-      "when": 1772668800000,
-      "tag": "0002_tiny_silver_surfer",
-      "breakpoints": true
-    }
-  ]
+      idx: 2,
+      when: 1772668800000,
+      tag: "0002_tiny_silver_surfer",
+      breakpoints: true,
+    },
+  ],
 } as const;
 
 export default {
@@ -46,5 +46,5 @@ export default {
 	\`repo_id\` text NOT NULL
 );
 `,
-  } as const
+  } as const,
 };

@@ -43,25 +43,27 @@ export const PromptComposer = memo(function PromptComposer({
       backgroundColor: "rgba(255, 255, 255, 0.06)",
       border: `1px solid ${theme.colors.borderOpaque}`,
       borderRadius: "16px",
-      minHeight: `${PROMPT_TEXTAREA_MIN_HEIGHT}px`,
+      minHeight: `${PROMPT_TEXTAREA_MIN_HEIGHT + 36}px`,
       transition: "border-color 200ms ease",
       ":focus-within": { borderColor: "rgba(255, 255, 255, 0.3)" },
+      display: "flex",
+      flexDirection: "column",
     }),
     input: css({
       display: "block",
       width: "100%",
-      minHeight: `${PROMPT_TEXTAREA_MIN_HEIGHT}px`,
-      padding: "12px 58px 12px 14px",
+      minHeight: `${PROMPT_TEXTAREA_MIN_HEIGHT + 20}px`,
+      padding: "14px 58px 8px 14px",
       background: "transparent",
       border: "none",
-      borderRadius: "16px",
+      borderRadius: "16px 16px 0 0",
       color: theme.colors.contentPrimary,
       fontSize: "13px",
       fontFamily: "inherit",
       resize: "none",
       outline: "none",
       lineHeight: "1.4",
-      maxHeight: `${PROMPT_TEXTAREA_MAX_HEIGHT}px`,
+      maxHeight: `${PROMPT_TEXTAREA_MAX_HEIGHT + 40}px`,
       boxSizing: "border-box",
       overflowY: "hidden",
       "::placeholder": { color: theme.colors.contentSecondary },
@@ -101,7 +103,7 @@ export const PromptComposer = memo(function PromptComposer({
     <div
       className={css({
         padding: "12px 16px",
-        borderTop: `1px solid ${theme.colors.borderOpaque}`,
+        borderTop: "none",
         flexShrink: 0,
         display: "flex",
         flexDirection: "column",
@@ -130,11 +132,7 @@ export const PromptComposer = memo(function PromptComposer({
               <span>
                 {fileName(attachment.filePath)}:{attachment.lineNumber}
               </span>
-              <X
-                size={10}
-                className={css({ cursor: "pointer", opacity: 0.6, ":hover": { opacity: 1 } })}
-                onClick={() => onRemoveAttachment(attachment.id)}
-              />
+              <X size={10} className={css({ cursor: "pointer", opacity: 0.6, ":hover": { opacity: 1 } })} onClick={() => onRemoveAttachment(attachment.id)} />
             </div>
           ))}
         </div>
@@ -155,17 +153,21 @@ export const PromptComposer = memo(function PromptComposer({
         }}
         placeholder={placeholder}
         inputRef={textareaRef}
-        rows={1}
+        rows={2}
         allowEmptySubmit={isRunning}
         submitLabel={isRunning ? "Stop" : "Send"}
         classNames={composerClassNames}
         renderSubmitContent={() => (isRunning ? <Square size={16} /> : <ArrowUpFromLine size={16} />)}
-      />
-      <ModelPicker
-        value={model}
-        defaultModel={defaultModel}
-        onChange={onChangeModel}
-        onSetDefault={onSetDefaultModel}
+        renderFooter={() => (
+          <div className={css({ padding: "0 10px 8px" })}>
+            <ModelPicker
+              value={model}
+              defaultModel={defaultModel}
+              onChange={onChangeModel}
+              onSetDefault={onSetDefaultModel}
+            />
+          </div>
+        )}
       />
     </div>
   );

@@ -177,10 +177,7 @@ const DEFAULT_DIVIDER_TITLES = new Set(["Session Started", "Turn Started", "Turn
 
 const cx = (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(" ");
 
-const mergeClassNames = (
-  defaults: AgentTranscriptClassNames,
-  overrides?: Partial<AgentTranscriptClassNames>,
-): AgentTranscriptClassNames => ({
+const mergeClassNames = (defaults: AgentTranscriptClassNames, overrides?: Partial<AgentTranscriptClassNames>): AgentTranscriptClassNames => ({
   root: cx(defaults.root, overrides?.root),
   divider: cx(defaults.divider, overrides?.divider),
   dividerLine: cx(defaults.dividerLine, overrides?.dividerLine),
@@ -240,10 +237,7 @@ const getMessageVariant = (entry: TranscriptEntry) => {
 
 const getToolItemLabel = (entry: TranscriptEntry) => {
   if (entry.kind === "tool") {
-    const statusLabel =
-      entry.toolStatus && entry.toolStatus !== "completed"
-        ? ` (${entry.toolStatus.replaceAll("_", " ")})`
-        : "";
+    const statusLabel = entry.toolStatus && entry.toolStatus !== "completed" ? ` (${entry.toolStatus.replaceAll("_", " ")})` : "";
     return `${entry.toolName ?? "tool"}${statusLabel}`;
   }
 
@@ -287,18 +281,12 @@ const defaultRenderPendingIndicator = () => "...";
 const defaultRenderChevron = (expanded: boolean) => (expanded ? "▾" : "▸");
 const defaultRenderEventLinkContent = () => "Open";
 const defaultRenderPermissionIcon = () => "Permission";
-const defaultRenderPermissionOptionContent = ({
-  label,
-}: PermissionOptionRenderContext) => label;
-const defaultIsDividerEntry = (entry: TranscriptEntry) =>
-  entry.kind === "meta" && DEFAULT_DIVIDER_TITLES.has(entry.meta?.title ?? "");
+const defaultRenderPermissionOptionContent = ({ label }: PermissionOptionRenderContext) => label;
+const defaultIsDividerEntry = (entry: TranscriptEntry) => entry.kind === "meta" && DEFAULT_DIVIDER_TITLES.has(entry.meta?.title ?? "");
 
 const defaultCanOpenEvent = (entry: TranscriptEntry) => Boolean(entry.eventId);
 
-const buildGroupedEntries = (
-  entries: TranscriptEntry[],
-  isDividerEntry: (entry: TranscriptEntry) => boolean,
-): GroupedEntries[] => {
+const buildGroupedEntries = (entries: TranscriptEntry[], isDividerEntry: (entry: TranscriptEntry) => boolean): GroupedEntries[] => {
   const groupedEntries: GroupedEntries[] = [];
   let currentToolGroup: TranscriptEntry[] = [];
 
@@ -524,11 +512,7 @@ const ToolGroup = ({
   }
 
   return (
-    <div
-      className={cx(classNames.toolGroupContainer, hasFailed && "failed")}
-      data-slot="tool-group"
-      data-failed={hasFailed ? "true" : undefined}
-    >
+    <div className={cx(classNames.toolGroupContainer, hasFailed && "failed")} data-slot="tool-group" data-failed={hasFailed ? "true" : undefined}>
       <button
         type="button"
         className={cx(classNames.toolGroupHeader, expanded && "expanded")}
@@ -591,11 +575,7 @@ const PermissionPrompt = ({
   const canReply = Boolean(onPermissionReply) && !resolved;
 
   return (
-    <div
-      className={cx(classNames.permissionPrompt, resolved && "resolved")}
-      data-slot="permission-prompt"
-      data-resolved={resolved ? "true" : undefined}
-    >
+    <div className={cx(classNames.permissionPrompt, resolved && "resolved")} data-slot="permission-prompt" data-resolved={resolved ? "true" : undefined}>
       <div className={classNames.permissionHeader} data-slot="permission-header">
         <span className={classNames.permissionIcon} data-slot="permission-icon">
           {renderPermissionIcon(entry)}
@@ -675,14 +655,8 @@ export const AgentTranscript = ({
   renderPermissionIcon = defaultRenderPermissionIcon,
   renderPermissionOptionContent = defaultRenderPermissionOptionContent,
 }: AgentTranscriptProps) => {
-  const resolvedClassNames = useMemo(
-    () => mergeClassNames(DEFAULT_CLASS_NAMES, classNameOverrides),
-    [classNameOverrides],
-  );
-  const groupedEntries = useMemo(
-    () => buildGroupedEntries(entries, isDividerEntry),
-    [entries, isDividerEntry],
-  );
+  const resolvedClassNames = useMemo(() => mergeClassNames(DEFAULT_CLASS_NAMES, classNameOverrides), [classNameOverrides]);
+  const groupedEntries = useMemo(() => buildGroupedEntries(entries, isDividerEntry), [entries, isDividerEntry]);
 
   return (
     <div className={cx(resolvedClassNames.root, className)} data-slot="root">
@@ -771,13 +745,13 @@ export const AgentTranscript = ({
         </div>
       ) : null}
       {isThinking
-        ? renderThinkingState?.({ agentId }) ?? (
+        ? (renderThinkingState?.({ agentId }) ?? (
             <div className={resolvedClassNames.thinkingRow} data-slot="thinking-row">
               <span className={resolvedClassNames.thinkingIndicator} data-slot="thinking-indicator">
                 Thinking...
               </span>
             </div>
-          )
+          ))
         : null}
       <div ref={endRef} className={resolvedClassNames.endAnchor} data-slot="end-anchor" />
     </div>

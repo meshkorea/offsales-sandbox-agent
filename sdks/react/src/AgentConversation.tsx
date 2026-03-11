@@ -33,10 +33,7 @@ const DEFAULT_CLASS_NAMES: AgentConversationClassNames = {
 
 const cx = (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(" ");
 
-const mergeClassNames = (
-  defaults: AgentConversationClassNames,
-  overrides?: Partial<AgentConversationClassNames>,
-): AgentConversationClassNames => ({
+const mergeClassNames = (defaults: AgentConversationClassNames, overrides?: Partial<AgentConversationClassNames>): AgentConversationClassNames => ({
   root: cx(defaults.root, overrides?.root),
   transcript: cx(defaults.transcript, overrides?.transcript),
   emptyState: cx(defaults.emptyState, overrides?.emptyState),
@@ -56,8 +53,7 @@ export const AgentConversation = ({
   composerProps,
 }: AgentConversationProps) => {
   const resolvedClassNames = mergeClassNames(DEFAULT_CLASS_NAMES, classNameOverrides);
-  const hasTranscriptContent =
-    entries.length > 0 || Boolean(transcriptProps?.sessionError) || Boolean(transcriptProps?.eventError);
+  const hasTranscriptContent = entries.length > 0 || Boolean(transcriptProps?.sessionError) || Boolean(transcriptProps?.eventError);
 
   return (
     <div className={cx(resolvedClassNames.root, className)} data-slot="root">
@@ -74,11 +70,7 @@ export const AgentConversation = ({
         </div>
       ) : null}
       {composerProps ? (
-        <ChatComposer
-          className={cx(resolvedClassNames.composer, composerClassName)}
-          classNames={composerClassNames}
-          {...composerProps}
-        />
+        <ChatComposer className={cx(resolvedClassNames.composer, composerClassName)} classNames={composerClassNames} {...composerProps} />
       ) : null}
     </div>
   );

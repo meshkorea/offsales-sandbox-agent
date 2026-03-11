@@ -25,8 +25,10 @@ import type {
   RepoStackActionInput,
   RepoStackActionResult,
   RepoRecord,
+  StarSandboxAgentRepoInput,
+  StarSandboxAgentRepoResult,
   SwitchResult,
-  WorkspaceUseInput
+  WorkspaceUseInput,
 } from "@openhandoff/shared";
 import { getActorRuntimeContext } from "../context.js";
 import { getHandoff, getOrCreateHistory, getOrCreateProject, selfWorkspace } from "../handles.js";
@@ -58,11 +60,8 @@ interface RepoOverviewInput {
   repoId: string;
 }
 
-const WORKSPACE_QUEUE_NAMES = [
-  "workspace.command.addRepo",
-  "workspace.command.createHandoff",
-  "workspace.command.refreshProviderProfiles",
-] as const;
+const WORKSPACE_QUEUE_NAMES = ["workspace.command.addRepo", "workspace.command.createHandoff", "workspace.command.refreshProviderProfiles"] as const;
+const SANDBOX_AGENT_REPO = "rivet-dev/sandbox-agent";
 
 type WorkspaceQueueName = (typeof WORKSPACE_QUEUE_NAMES)[number];
 
@@ -79,11 +78,7 @@ function assertWorkspace(c: { state: WorkspaceState }, workspaceId: string): voi
 }
 
 async function resolveRepoId(c: any, handoffId: string): Promise<string> {
-  const row = await c.db
-    .select({ repoId: handoffLookup.repoId })
-    .from(handoffLookup)
-    .where(eq(handoffLookup.handoffId, handoffId))
-    .get();
+  const row = await c.db.select({ repoId: handoffLookup.repoId }).from(handoffLookup).where(eq(handoffLookup.handoffId, handoffId)).get();
 
   if (!row) {
     throw new Error(`Unknown handoff: ${handoffId} (not in lookup)`);
@@ -107,11 +102,7 @@ async function upsertHandoffLookupRow(c: any, handoffId: string, repoId: string)
 }
 
 async function collectAllHandoffSummaries(c: any): Promise<HandoffSummary[]> {
-  const repoRows = await c.db
-    .select({ repoId: repos.repoId, remoteUrl: repos.remoteUrl })
-    .from(repos)
-    .orderBy(desc(repos.updatedAt))
-    .all();
+  const repoRows = await c.db.select({ repoId: repos.repoId, remoteUrl: repos.remoteUrl }).from(repos).orderBy(desc(repos.updatedAt)).all();
 
   const all: HandoffSummary[] = [];
   for (const row of repoRows) {
@@ -123,7 +114,7 @@ async function collectAllHandoffSummaries(c: any): Promise<HandoffSummary[]> {
       logActorWarning("workspace", "failed collecting handoffs for repo", {
         workspaceId: c.state.workspaceId,
         repoId: row.repoId,
-        error: resolveErrorMessage(error)
+        error: resolveErrorMessage(error),
       });
     }
   }
@@ -172,7 +163,7 @@ async function buildWorkbenchSnapshot(c: any): Promise<HandoffWorkbenchSnapshot>
             workspaceId: c.state.workspaceId,
             repoId: row.repoId,
             handoffId: summary.handoffId,
-            error: resolveErrorMessage(error)
+            error: resolveErrorMessage(error),
           });
         }
       }
@@ -189,7 +180,7 @@ async function buildWorkbenchSnapshot(c: any): Promise<HandoffWorkbenchSnapshot>
       logActorWarning("workspace", "failed collecting workbench repo snapshot", {
         workspaceId: c.state.workspaceId,
         repoId: row.repoId,
-        error: resolveErrorMessage(error)
+        error: resolveErrorMessage(error),
       });
     }
   }
@@ -200,7 +191,7 @@ async function buildWorkbenchSnapshot(c: any): Promise<HandoffWorkbenchSnapshot>
     workspaceId: c.state.workspaceId,
     repos: repoRows.map((row) => ({
       id: row.repoId,
-      label: repoLabelFromRemote(row.remoteUrl)
+      label: repoLabelFromRemote(row.remoteUrl),
     })),
     projects,
     handoffs,
@@ -232,14 +223,14 @@ async function addRepoMutation(c: any, input: AddRepoInput): Promise<RepoRecord>
       repoId,
       remoteUrl,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
     })
     .onConflictDoUpdate({
       target: repos.repoId,
       set: {
         remoteUrl,
-        updatedAt: now
-      }
+        updatedAt: now,
+      },
     })
     .run();
 
@@ -249,7 +240,7 @@ async function addRepoMutation(c: any, input: AddRepoInput): Promise<RepoRecord>
     repoId,
     remoteUrl,
     createdAt: now,
-    updatedAt: now
+    updatedAt: now,
   };
 }
 
@@ -260,11 +251,7 @@ async function createHandoffMutation(c: any, input: CreateHandoffInput): Promise
   const providerId = input.providerId ?? providers.defaultProviderId();
 
   const repoId = input.repoId;
-  const repoRow = await c.db
-    .select({ remoteUrl: repos.remoteUrl })
-    .from(repos)
-    .where(eq(repos.repoId, repoId))
-    .get();
+  const repoRow = await c.db.select({ remoteUrl: repos.remoteUrl }).from(repos).where(eq(repos.repoId, repoId)).get();
   if (!repoRow) {
     throw new Error(`Unknown repo: ${repoId}`);
   }
@@ -275,14 +262,14 @@ async function createHandoffMutation(c: any, input: CreateHandoffInput): Promise
     .values({
       providerId,
       profileJson: JSON.stringify({ providerId }),
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
     })
     .onConflictDoUpdate({
       target: providerProfiles.providerId,
       set: {
         profileJson: JSON.stringify({ providerId }),
-        updatedAt: Date.now()
-      }
+        updatedAt: Date.now(),
+      },
     })
     .run();
 
@@ -295,18 +282,18 @@ async function createHandoffMutation(c: any, input: CreateHandoffInput): Promise
     agentType: input.agentType ?? null,
     explicitTitle: input.explicitTitle ?? null,
     explicitBranchName: input.explicitBranchName ?? null,
-    onBranch: input.onBranch ?? null
+    onBranch: input.onBranch ?? null,
   });
 
   await c.db
     .insert(handoffLookup)
     .values({
       handoffId: created.handoffId,
-      repoId
+      repoId,
     })
     .onConflictDoUpdate({
       target: handoffLookup.handoffId,
-      set: { repoId }
+      set: { repoId },
     })
     .run();
 
@@ -328,14 +315,14 @@ async function refreshProviderProfilesMutation(c: any, command?: RefreshProvider
       .values({
         providerId,
         profileJson: JSON.stringify({ providerId }),
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
       })
       .onConflictDoUpdate({
         target: providerProfiles.providerId,
         set: {
           profileJson: JSON.stringify({ providerId }),
-          updatedAt: Date.now()
-        }
+          updatedAt: Date.now(),
+        },
       })
       .run();
   }
@@ -406,7 +393,7 @@ export const workspaceActions = {
         repoId: repos.repoId,
         remoteUrl: repos.remoteUrl,
         createdAt: repos.createdAt,
-        updatedAt: repos.updatedAt
+        updatedAt: repos.updatedAt,
       })
       .from(repos)
       .orderBy(desc(repos.updatedAt))
@@ -417,7 +404,7 @@ export const workspaceActions = {
       repoId: row.repoId,
       remoteUrl: row.remoteUrl,
       createdAt: row.createdAt,
-      updatedAt: row.updatedAt
+      updatedAt: row.updatedAt,
     }));
   },
 
@@ -429,6 +416,16 @@ export const workspaceActions = {
         timeout: 12 * 60_000,
       }),
     );
+  },
+
+  async starSandboxAgentRepo(c: any, input: StarSandboxAgentRepoInput): Promise<StarSandboxAgentRepoResult> {
+    assertWorkspace(c, input.workspaceId);
+    const { driver } = getActorRuntimeContext();
+    await driver.github.starRepository(SANDBOX_AGENT_REPO);
+    return {
+      repo: SANDBOX_AGENT_REPO,
+      starredAt: Date.now(),
+    };
   },
 
   async getWorkbench(c: any, input: WorkspaceUseInput): Promise<HandoffWorkbenchSnapshot> {
@@ -447,7 +444,7 @@ export const workspaceActions = {
       task: input.task,
       ...(input.title ? { explicitTitle: input.title } : {}),
       ...(input.branch ? { explicitBranchName: input.branch } : {}),
-      ...(input.model ? { agentType: agentTypeForModel(input.model) } : {})
+      ...(input.model ? { agentType: agentTypeForModel(input.model) } : {}),
     });
     return { handoffId: created.handoffId };
   },
@@ -521,11 +518,7 @@ export const workspaceActions = {
     assertWorkspace(c, input.workspaceId);
 
     if (input.repoId) {
-      const repoRow = await c.db
-        .select({ remoteUrl: repos.remoteUrl })
-        .from(repos)
-        .where(eq(repos.repoId, input.repoId))
-        .get();
+      const repoRow = await c.db.select({ remoteUrl: repos.remoteUrl }).from(repos).where(eq(repos.repoId, input.repoId)).get();
       if (!repoRow) {
         throw new Error(`Unknown repo: ${input.repoId}`);
       }
@@ -540,11 +533,7 @@ export const workspaceActions = {
   async getRepoOverview(c: any, input: RepoOverviewInput): Promise<RepoOverview> {
     assertWorkspace(c, input.workspaceId);
 
-    const repoRow = await c.db
-      .select({ remoteUrl: repos.remoteUrl })
-      .from(repos)
-      .where(eq(repos.repoId, input.repoId))
-      .get();
+    const repoRow = await c.db.select({ remoteUrl: repos.remoteUrl }).from(repos).where(eq(repos.repoId, input.repoId)).get();
     if (!repoRow) {
       throw new Error(`Unknown repo: ${input.repoId}`);
     }
@@ -557,11 +546,7 @@ export const workspaceActions = {
   async runRepoStackAction(c: any, input: RepoStackActionInput): Promise<RepoStackActionResult> {
     assertWorkspace(c, input.workspaceId);
 
-    const repoRow = await c.db
-      .select({ remoteUrl: repos.remoteUrl })
-      .from(repos)
-      .where(eq(repos.repoId, input.repoId))
-      .get();
+    const repoRow = await c.db.select({ remoteUrl: repos.remoteUrl }).from(repos).where(eq(repos.repoId, input.repoId)).get();
     if (!repoRow) {
       throw new Error(`Unknown repo: ${input.repoId}`);
     }
@@ -571,7 +556,7 @@ export const workspaceActions = {
     return await project.runRepoStackAction({
       action: input.action,
       branchName: input.branchName,
-      parentBranch: input.parentBranch
+      parentBranch: input.parentBranch,
     });
   },
 
@@ -585,7 +570,7 @@ export const workspaceActions = {
       workspaceId: c.state.workspaceId,
       handoffId,
       providerId: record.providerId,
-      switchTarget: switched.switchTarget
+      switchTarget: switched.switchTarget,
     };
   },
 
@@ -611,14 +596,14 @@ export const workspaceActions = {
         const items = await hist.list({
           branch: input.branch,
           handoffId: input.handoffId,
-          limit
+          limit,
         });
         allEvents.push(...items);
       } catch (error) {
         logActorWarning("workspace", "history lookup failed for repo", {
           workspaceId: c.state.workspaceId,
           repoId: row.repoId,
-          error: resolveErrorMessage(error)
+          error: resolveErrorMessage(error),
         });
       }
     }
@@ -632,11 +617,7 @@ export const workspaceActions = {
 
     const repoId = await resolveRepoId(c, input.handoffId);
 
-    const repoRow = await c.db
-      .select({ remoteUrl: repos.remoteUrl })
-      .from(repos)
-      .where(eq(repos.repoId, repoId))
-      .get();
+    const repoRow = await c.db.select({ remoteUrl: repos.remoteUrl }).from(repos).where(eq(repos.repoId, repoId)).get();
     if (!repoRow) {
       throw new Error(`Unknown repo: ${repoId}`);
     }
@@ -685,5 +666,5 @@ export const workspaceActions = {
     const repoId = await resolveRepoId(c, input.handoffId);
     const h = getHandoff(c, c.state.workspaceId, repoId, input.handoffId);
     await h.kill({ reason: input.reason });
-  }
+  },
 };

@@ -23,8 +23,8 @@ const sample: HandoffRecord = {
       switchTarget: "daytona://sandbox-1",
       cwd: null,
       createdAt: 1,
-      updatedAt: 1
-    }
+      updatedAt: 1,
+    },
   ],
   agentType: null,
   prSubmitted: false,
@@ -38,7 +38,7 @@ const sample: HandoffRecord = {
   hasUnpushed: null,
   parentBranch: null,
   createdAt: 1,
-  updatedAt: 1
+  updatedAt: 1,
 };
 
 describe("formatRows", () => {
@@ -60,7 +60,7 @@ describe("formatRows", () => {
   it("pins footer to the last terminal row", () => {
     const output = formatRows([sample], 0, "default", "ready", "", false, {
       width: 80,
-      height: 12
+      height: 12,
     });
     const lines = output.split("\n");
     expect(lines).toHaveLength(12);
@@ -83,8 +83,8 @@ describe("search", () => {
         handoffId: "handoff-2",
         branchName: "docs/update-intro",
         title: "Docs Intro Refresh",
-        status: "idle"
-      }
+        status: "idle",
+      },
     ];
     expect(filterHandoffs(rows, "doc")).toHaveLength(1);
     expect(filterHandoffs(rows, "h2")).toHaveLength(1);

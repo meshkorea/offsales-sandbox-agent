@@ -1,10 +1,5 @@
 import { Database } from "bun:sqlite";
-import {
-  TO_CLIENT_VERSIONED,
-  TO_SERVER_VERSIONED,
-  CURRENT_VERSION,
-  decodeWorkflowHistoryTransport,
-} from "rivetkit/inspector";
+import { TO_CLIENT_VERSIONED, TO_SERVER_VERSIONED, CURRENT_VERSION, decodeWorkflowHistoryTransport } from "rivetkit/inspector";
 import { decodeReadRangeWire } from "/rivet-handoff-fixes/rivetkit-typescript/packages/traces/src/encoding.ts";
 import { readRangeWireToOtlp } from "/rivet-handoff-fixes/rivetkit-typescript/packages/traces/src/read-range.ts";
 
@@ -46,13 +41,30 @@ ws.onmessage = (ev) => {
 
   if (msg.body.tag === "QueueResponse") {
     const status = msg.body.val.status;
-    console.log(JSON.stringify({ tag: "QueueResponse", size: Number(status.size), truncated: status.truncated, messages: status.messages.map((m) => ({ id: Number(m.id), name: m.name, createdAtMs: Number(m.createdAtMs) })) }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          tag: "QueueResponse",
+          size: Number(status.size),
+          truncated: status.truncated,
+          messages: status.messages.map((m) => ({ id: Number(m.id), name: m.name, createdAtMs: Number(m.createdAtMs) })),
+        },
+        null,
+        2,
+      ),
+    );
     return;
   }
 
   if (msg.body.tag === "WorkflowHistoryResponse") {
     const wh = decodeWorkflowHistoryTransport(msg.body.val.history);
-    console.log(JSON.stringify({ tag: "WorkflowHistoryResponse", isWorkflowEnabled: msg.body.val.isWorkflowEnabled, entryCount: wh.entries.length, names: wh.nameRegistry }, null, 2));
+    console.log(
+      JSON.stringify(
+        { tag: "WorkflowHistoryResponse", isWorkflowEnabled: msg.body.val.isWorkflowEnabled, entryCount: wh.entries.length, names: wh.nameRegistry },
+        null,
+        2,
+      ),
+    );
     return;
   }
 

@@ -207,9 +207,7 @@ export const ProcessTerminal = ({
 
           setConnectionState("closed");
           setExitCode(frame.exitCode ?? null);
-          setStatusMessage(
-            frame.exitCode == null ? "Process exited." : `Process exited with code ${frame.exitCode}.`
-          );
+          setStatusMessage(frame.exitCode == null ? "Process exited." : `Process exited with code ${frame.exitCode}.`);
           onExit?.(frame);
         });
 

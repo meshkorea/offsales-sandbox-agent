@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { motion } from 'framer-motion';
-import { Code, Server, GitBranch } from 'lucide-react';
-import { CopyButton } from './ui/CopyButton';
+import { motion } from "framer-motion";
+import { Code, Server, GitBranch } from "lucide-react";
+import { CopyButton } from "./ui/CopyButton";
 
 const sdkCodeRaw = `import { SandboxAgent } from "sandbox-agent";
 

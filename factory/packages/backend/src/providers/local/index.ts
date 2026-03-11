@@ -44,13 +44,7 @@ function expandHome(value: string): string {
 
 async function branchExists(repoPath: string, branchName: string): Promise<boolean> {
   try {
-    await execFileAsync("git", [
-      "-C",
-      repoPath,
-      "show-ref",
-      "--verify",
-      `refs/remotes/origin/${branchName}`,
-    ]);
+    await execFileAsync("git", ["-C", repoPath, "show-ref", "--verify", `refs/remotes/origin/${branchName}`]);
     return true;
   } catch {
     return false;
@@ -59,9 +53,7 @@ async function branchExists(repoPath: string, branchName: string): Promise<boole
 
 async function checkoutBranch(repoPath: string, branchName: string, git: GitDriver): Promise<void> {
   await git.fetch(repoPath);
-  const targetRef = (await branchExists(repoPath, branchName))
-    ? `origin/${branchName}`
-    : await git.remoteDefaultBaseRef(repoPath);
+  const targetRef = (await branchExists(repoPath, branchName)) ? `origin/${branchName}` : await git.remoteDefaultBaseRef(repoPath);
   await execFileAsync("git", ["-C", repoPath, "checkout", "-B", branchName, targetRef], {
     env: process.env as Record<string, string>,
   });
@@ -76,9 +68,7 @@ export class LocalProvider implements SandboxProvider {
   ) {}
 
   private rootDir(): string {
-    return expandHome(
-      this.config.rootDir?.trim() || "~/.local/share/openhandoff/local-sandboxes",
-    );
+    return expandHome(this.config.rootDir?.trim() || "~/.local/share/openhandoff/local-sandboxes");
   }
 
   private sandboxRoot(workspaceId: string, sandboxId: string): string {
@@ -89,11 +79,7 @@ export class LocalProvider implements SandboxProvider {
     return resolve(this.sandboxRoot(workspaceId, sandboxId), "repo");
   }
 
-  private sandboxHandle(
-    workspaceId: string,
-    sandboxId: string,
-    repoDir: string,
-  ): SandboxHandle {
+  private sandboxHandle(workspaceId: string, sandboxId: string, repoDir: string): SandboxHandle {
     return {
       sandboxId,
       switchTarget: `local://${repoDir}`,
@@ -242,9 +228,7 @@ export class LocalProvider implements SandboxProvider {
       const detail = error as { stdout?: string; stderr?: string; code?: number };
       return {
         exitCode: typeof detail.code === "number" ? detail.code : 1,
-        result: [detail.stdout, detail.stderr, error instanceof Error ? error.message : String(error)]
-          .filter(Boolean)
-          .join(""),
+        result: [detail.stdout, detail.stderr, error instanceof Error ? error.message : String(error)].filter(Boolean).join(""),
       };
     }
   }

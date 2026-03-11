@@ -34,7 +34,10 @@ import {
   type Message,
   type ModelId,
 } from "./mock-layout/view-model";
+import { backendClient } from "../lib/backend";
 import { handoffWorkbenchClient } from "../lib/workbench";
+
+const STAR_SANDBOX_AGENT_REPO_STORAGE_KEY = "hf.onboarding.starSandboxAgentRepo";
 
 function firstAgentTabId(handoff: Handoff): string | null {
   return handoff.tabs[0]?.id ?? null;
@@ -56,12 +59,7 @@ function sanitizeLastAgentTabId(handoff: Handoff, tabId: string | null | undefin
   return firstAgentTabId(handoff);
 }
 
-function sanitizeActiveTabId(
-  handoff: Handoff,
-  tabId: string | null | undefined,
-  openDiffs: string[],
-  lastAgentTabId: string | null,
-): string | null {
+function sanitizeActiveTabId(handoff: Handoff, tabId: string | null | undefined, openDiffs: string[], lastAgentTabId: string | null): string | null {
   if (tabId) {
     if (handoff.tabs.some((tab) => tab.id === tabId)) {
       return tabId;
@@ -348,9 +346,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
       const nextOpenDiffs = openDiffs.filter((candidate) => candidate !== path);
       onSetOpenDiffs(nextOpenDiffs);
       if (activeTabId === diffTabId(path)) {
-        onSetActiveTabId(
-          nextOpenDiffs.length > 0 ? diffTabId(nextOpenDiffs[nextOpenDiffs.length - 1]!) : (lastAgentTabId ?? firstAgentTabId(handoff)),
-        );
+        onSetActiveTabId(nextOpenDiffs.length > 0 ? diffTabId(nextOpenDiffs[nextOpenDiffs.length - 1]!) : (lastAgentTabId ?? firstAgentTabId(handoff)));
       }
     },
     [activeTabId, handoff, lastAgentTabId, onSetActiveTabId, onSetOpenDiffs, openDiffs],
@@ -368,7 +364,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
   const changeModel = useCallback(
     (model: ModelId) => {
       if (!promptTab) {
-        throw new Error(`Unable to change model for handoff ${handoff.id} without an active prompt tab`);
+        throw new Error(`Unable to change model for task ${handoff.id} without an active prompt tab`);
       }
 
       void handoffWorkbenchClient.changeModel({
@@ -504,7 +500,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
             >
               <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 600 }}>Create the first session</h2>
               <p style={{ margin: 0, opacity: 0.75 }}>
-                Sessions are where you chat with the agent. Start one now to send the first prompt on this handoff.
+                Sessions are where you chat with the agent. Start one now to send the first prompt on this task.
               </p>
               <button
                 type="button"
@@ -731,11 +727,22 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
   const [activeTabIdByHandoff, setActiveTabIdByHandoff] = useState<Record<string, string | null>>({});
   const [lastAgentTabIdByHandoff, setLastAgentTabIdByHandoff] = useState<Record<string, string | null>>({});
   const [openDiffsByHandoff, setOpenDiffsByHandoff] = useState<Record<string, string[]>>({});
+  const [starRepoPromptOpen, setStarRepoPromptOpen] = useState(false);
+  const [starRepoPending, setStarRepoPending] = useState(false);
+  const [starRepoError, setStarRepoError] = useState<string | null>(null);
 
-  const activeHandoff = useMemo(
-    () => handoffs.find((handoff) => handoff.id === selectedHandoffId) ?? handoffs[0] ?? null,
-    [handoffs, selectedHandoffId],
-  );
+  const activeHandoff = useMemo(() => handoffs.find((handoff) => handoff.id === selectedHandoffId) ?? handoffs[0] ?? null, [handoffs, selectedHandoffId]);
+
+  useEffect(() => {
+    try {
+      const status = globalThis.localStorage?.getItem(STAR_SANDBOX_AGENT_REPO_STORAGE_KEY);
+      if (status !== "completed" && status !== "dismissed") {
+        setStarRepoPromptOpen(true);
+      }
+    } catch {
+      setStarRepoPromptOpen(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (activeHandoff) {
@@ -762,9 +769,7 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
 
   const openDiffs = activeHandoff ? sanitizeOpenDiffs(activeHandoff, openDiffsByHandoff[activeHandoff.id]) : [];
   const lastAgentTabId = activeHandoff ? sanitizeLastAgentTabId(activeHandoff, lastAgentTabIdByHandoff[activeHandoff.id]) : null;
-  const activeTabId = activeHandoff
-    ? sanitizeActiveTabId(activeHandoff, activeTabIdByHandoff[activeHandoff.id], openDiffs, lastAgentTabId)
-    : null;
+  const activeTabId = activeHandoff ? sanitizeActiveTabId(activeHandoff, activeTabIdByHandoff[activeHandoff.id], openDiffs, lastAgentTabId) : null;
 
   const syncRouteSession = useCallback(
     (handoffId: string, sessionId: string | null, replace = false) => {
@@ -821,15 +826,15 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
     void (async () => {
       const repoId = activeHandoff?.repoId ?? viewModel.repos[0]?.id ?? "";
       if (!repoId) {
-        throw new Error("Cannot create a handoff without an available repo");
+        throw new Error("Cannot create a task without an available repo");
       }
 
-      const task = window.prompt("Describe the handoff task", "Investigate and implement the requested change");
+      const task = window.prompt("Describe the task", "Investigate and implement the requested change");
       if (!task) {
         return;
       }
 
-      const title = window.prompt("Optional handoff title", "")?.trim() || undefined;
+      const title = window.prompt("Optional task title", "")?.trim() || undefined;
       const branch = window.prompt("Optional branch name", "")?.trim() || undefined;
       const { handoffId, tabId } = await handoffWorkbenchClient.createHandoff({
         repoId,
@@ -852,7 +857,7 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
   const openDiffTab = useCallback(
     (path: string) => {
       if (!activeHandoff) {
-        throw new Error("Cannot open a diff tab without an active handoff");
+        throw new Error("Cannot open a diff tab without an active task");
       }
       setOpenDiffsByHandoff((current) => {
         const existing = sanitizeOpenDiffs(activeHandoff, current[activeHandoff.id]);
@@ -896,10 +901,10 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
     (id: string) => {
       const currentHandoff = handoffs.find((handoff) => handoff.id === id);
       if (!currentHandoff) {
-        throw new Error(`Unable to rename missing handoff ${id}`);
+        throw new Error(`Unable to rename missing task ${id}`);
       }
 
-      const nextTitle = window.prompt("Rename handoff", currentHandoff.title);
+      const nextTitle = window.prompt("Rename task", currentHandoff.title);
       if (nextTitle === null) {
         return;
       }
@@ -918,7 +923,7 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
     (id: string) => {
       const currentHandoff = handoffs.find((handoff) => handoff.id === id);
       if (!currentHandoff) {
-        throw new Error(`Unable to rename missing handoff ${id}`);
+        throw new Error(`Unable to rename missing task ${id}`);
       }
 
       const nextBranch = window.prompt("Rename branch", currentHandoff.branch ?? "");
@@ -938,14 +943,14 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
 
   const archiveHandoff = useCallback(() => {
     if (!activeHandoff) {
-      throw new Error("Cannot archive without an active handoff");
+      throw new Error("Cannot archive without an active task");
     }
     void handoffWorkbenchClient.archiveHandoff({ handoffId: activeHandoff.id });
   }, [activeHandoff]);
 
   const publishPr = useCallback(() => {
     if (!activeHandoff) {
-      throw new Error("Cannot publish PR without an active handoff");
+      throw new Error("Cannot publish PR without an active task");
     }
     void handoffWorkbenchClient.publishPr({ handoffId: activeHandoff.id });
   }, [activeHandoff]);
@@ -953,7 +958,7 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
   const revertFile = useCallback(
     (path: string) => {
       if (!activeHandoff) {
-        throw new Error("Cannot revert a file without an active handoff");
+        throw new Error("Cannot revert a file without an active task");
       }
       setOpenDiffsByHandoff((current) => ({
         ...current,
@@ -964,7 +969,7 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
         [activeHandoff.id]:
           current[activeHandoff.id] === diffTabId(path)
             ? sanitizeLastAgentTabId(activeHandoff, lastAgentTabIdByHandoff[activeHandoff.id])
-            : current[activeHandoff.id] ?? null,
+            : (current[activeHandoff.id] ?? null),
       }));
 
       void handoffWorkbenchClient.revertFile({
@@ -975,106 +980,232 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
     [activeHandoff, lastAgentTabIdByHandoff],
   );
 
+  const dismissStarRepoPrompt = useCallback(() => {
+    setStarRepoError(null);
+    try {
+      globalThis.localStorage?.setItem(STAR_SANDBOX_AGENT_REPO_STORAGE_KEY, "dismissed");
+    } catch {
+      // ignore storage failures
+    }
+    setStarRepoPromptOpen(false);
+  }, []);
+
+  const starSandboxAgentRepo = useCallback(() => {
+    setStarRepoPending(true);
+    setStarRepoError(null);
+    void backendClient
+      .starSandboxAgentRepo(workspaceId)
+      .then(() => {
+        try {
+          globalThis.localStorage?.setItem(STAR_SANDBOX_AGENT_REPO_STORAGE_KEY, "completed");
+        } catch {
+          // ignore storage failures
+        }
+        setStarRepoPromptOpen(false);
+      })
+      .catch((error) => {
+        setStarRepoError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        setStarRepoPending(false);
+      });
+  }, [workspaceId]);
+
+  const starRepoPrompt = starRepoPromptOpen ? (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 10000,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px",
+        background: "rgba(0, 0, 0, 0.68)",
+      }}
+      data-testid="onboarding-star-repo-modal"
+    >
+      <div
+        style={{
+          width: "min(520px, 100%)",
+          border: "1px solid rgba(255, 255, 255, 0.14)",
+          borderRadius: "18px",
+          background: "#111113",
+          boxShadow: "0 32px 80px rgba(0, 0, 0, 0.45)",
+          padding: "24px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "16px",
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ fontSize: "12px", letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255, 255, 255, 0.5)" }}>Onboarding</div>
+          <h2 style={{ margin: 0, fontSize: "24px", lineHeight: 1.1 }}>Give us support for sandbox agent</h2>
+          <p style={{ margin: 0, color: "rgba(255, 255, 255, 0.72)", lineHeight: 1.5 }}>
+            Before you keep going, give us support for sandbox agent and star the repo right here in the app.
+          </p>
+        </div>
+
+        {starRepoError ? (
+          <div
+            style={{
+              borderRadius: "12px",
+              border: "1px solid rgba(255, 110, 110, 0.32)",
+              background: "rgba(255, 110, 110, 0.08)",
+              padding: "12px 14px",
+              color: "#ffb4b4",
+              fontSize: "13px",
+            }}
+            data-testid="onboarding-star-repo-error"
+          >
+            {starRepoError}
+          </div>
+        ) : null}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+          <button
+            type="button"
+            onClick={dismissStarRepoPrompt}
+            style={{
+              border: "1px solid rgba(255, 255, 255, 0.14)",
+              borderRadius: "999px",
+              padding: "10px 16px",
+              background: "transparent",
+              color: "#e4e4e7",
+              cursor: "pointer",
+              fontWeight: 600,
+            }}
+          >
+            Maybe later
+          </button>
+          <button
+            type="button"
+            onClick={starSandboxAgentRepo}
+            disabled={starRepoPending}
+            style={{
+              border: 0,
+              borderRadius: "999px",
+              padding: "10px 16px",
+              background: starRepoPending ? "#7f5539" : "#ff4f00",
+              color: "#fff",
+              cursor: starRepoPending ? "progress" : "pointer",
+              fontWeight: 700,
+            }}
+            data-testid="onboarding-star-repo-submit"
+          >
+            {starRepoPending ? "Starring..." : "Star the sandbox agent repo"}
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   if (!activeHandoff) {
     return (
+      <>
+        <Shell>
+          <Sidebar
+            projects={projects}
+            activeId=""
+            onSelect={selectHandoff}
+            onCreate={createHandoff}
+            onMarkUnread={markHandoffUnread}
+            onRenameHandoff={renameHandoff}
+            onRenameBranch={renameBranch}
+          />
+          <SPanel>
+            <ScrollBody>
+              <div
+                style={{
+                  minHeight: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "32px",
+                }}
+              >
+                <div
+                  style={{
+                    maxWidth: "420px",
+                    textAlign: "center",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "12px",
+                  }}
+                >
+                  <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 600 }}>Create your first task</h2>
+                  <p style={{ margin: 0, opacity: 0.75 }}>
+                    {viewModel.repos.length > 0
+                      ? "Start from the sidebar to create a task on the first available repo."
+                      : "No repos are available in this workspace yet."}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={createHandoff}
+                    disabled={viewModel.repos.length === 0}
+                    style={{
+                      alignSelf: "center",
+                      border: 0,
+                      borderRadius: "999px",
+                      padding: "10px 18px",
+                      background: viewModel.repos.length > 0 ? "#ff4f00" : "#444",
+                      color: "#fff",
+                      cursor: viewModel.repos.length > 0 ? "pointer" : "not-allowed",
+                      fontWeight: 600,
+                    }}
+                  >
+                    New task
+                  </button>
+                </div>
+              </div>
+            </ScrollBody>
+          </SPanel>
+          <SPanel />
+        </Shell>
+        {starRepoPrompt}
+      </>
+    );
+  }
+
+  return (
+    <>
       <Shell>
         <Sidebar
           projects={projects}
-          activeId=""
+          activeId={activeHandoff.id}
           onSelect={selectHandoff}
           onCreate={createHandoff}
           onMarkUnread={markHandoffUnread}
           onRenameHandoff={renameHandoff}
           onRenameBranch={renameBranch}
         />
-        <SPanel>
-          <ScrollBody>
-            <div
-              style={{
-                minHeight: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: "32px",
-              }}
-            >
-              <div
-                style={{
-                  maxWidth: "420px",
-                  textAlign: "center",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "12px",
-                }}
-              >
-                <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 600 }}>Create your first handoff</h2>
-                <p style={{ margin: 0, opacity: 0.75 }}>
-                  {viewModel.repos.length > 0
-                    ? "Start from the sidebar to create a handoff on the first available repo."
-                    : "No repos are available in this workspace yet."}
-                </p>
-                <button
-                  type="button"
-                  onClick={createHandoff}
-                  disabled={viewModel.repos.length === 0}
-                  style={{
-                    alignSelf: "center",
-                    border: 0,
-                    borderRadius: "999px",
-                    padding: "10px 18px",
-                    background: viewModel.repos.length > 0 ? "#ff4f00" : "#444",
-                    color: "#fff",
-                    cursor: viewModel.repos.length > 0 ? "pointer" : "not-allowed",
-                    fontWeight: 600,
-                  }}
-                >
-                  New handoff
-                </button>
-              </div>
-            </div>
-          </ScrollBody>
-        </SPanel>
-        <SPanel />
+        <TranscriptPanel
+          handoff={activeHandoff}
+          activeTabId={activeTabId}
+          lastAgentTabId={lastAgentTabId}
+          openDiffs={openDiffs}
+          onSyncRouteSession={syncRouteSession}
+          onSetActiveTabId={(tabId) => {
+            setActiveTabIdByHandoff((current) => ({ ...current, [activeHandoff.id]: tabId }));
+          }}
+          onSetLastAgentTabId={(tabId) => {
+            setLastAgentTabIdByHandoff((current) => ({ ...current, [activeHandoff.id]: tabId }));
+          }}
+          onSetOpenDiffs={(paths) => {
+            setOpenDiffsByHandoff((current) => ({ ...current, [activeHandoff.id]: paths }));
+          }}
+        />
+        <RightRail
+          workspaceId={workspaceId}
+          handoff={activeHandoff}
+          activeTabId={activeTabId}
+          onOpenDiff={openDiffTab}
+          onArchive={archiveHandoff}
+          onRevertFile={revertFile}
+          onPublishPr={publishPr}
+        />
       </Shell>
-    );
-  }
-
-  return (
-    <Shell>
-      <Sidebar
-        projects={projects}
-        activeId={activeHandoff.id}
-        onSelect={selectHandoff}
-        onCreate={createHandoff}
-        onMarkUnread={markHandoffUnread}
-        onRenameHandoff={renameHandoff}
-        onRenameBranch={renameBranch}
-      />
-      <TranscriptPanel
-        handoff={activeHandoff}
-        activeTabId={activeTabId}
-        lastAgentTabId={lastAgentTabId}
-        openDiffs={openDiffs}
-        onSyncRouteSession={syncRouteSession}
-        onSetActiveTabId={(tabId) => {
-          setActiveTabIdByHandoff((current) => ({ ...current, [activeHandoff.id]: tabId }));
-        }}
-        onSetLastAgentTabId={(tabId) => {
-          setLastAgentTabIdByHandoff((current) => ({ ...current, [activeHandoff.id]: tabId }));
-        }}
-        onSetOpenDiffs={(paths) => {
-          setOpenDiffsByHandoff((current) => ({ ...current, [activeHandoff.id]: paths }));
-        }}
-      />
-      <RightRail
-        workspaceId={workspaceId}
-        handoff={activeHandoff}
-        activeTabId={activeTabId}
-        onOpenDiff={openDiffTab}
-        onArchive={archiveHandoff}
-        onRevertFile={revertFile}
-        onPublishPr={publishPr}
-      />
-    </Shell>
+      {starRepoPrompt}
+    </>
   );
 }

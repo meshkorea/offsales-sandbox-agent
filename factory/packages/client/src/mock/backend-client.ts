@@ -22,6 +22,7 @@ import type {
   RepoRecord,
   RepoStackActionInput,
   RepoStackActionResult,
+  StarSandboxAgentRepoResult,
   SwitchResult,
 } from "@openhandoff/shared";
 import type {
@@ -492,6 +493,13 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
 
     async useWorkspace(workspaceId: string): Promise<{ workspaceId: string }> {
       return { workspaceId };
+    },
+
+    async starSandboxAgentRepo(): Promise<StarSandboxAgentRepoResult> {
+      return {
+        repo: "rivet-dev/sandbox-agent",
+        starredAt: nowMs(),
+      };
     },
   };
 }

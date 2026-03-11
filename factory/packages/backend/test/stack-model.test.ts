@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  normalizeParentBranch,
-  parentLookupFromStack,
-  sortBranchesForOverview,
-} from "../src/actors/project/stack-model.js";
+import { normalizeParentBranch, parentLookupFromStack, sortBranchesForOverview } from "../src/actors/project/stack-model.js";
 
 describe("stack-model", () => {
   it("normalizes self-parent references to null", () => {
@@ -33,12 +29,6 @@ describe("stack-model", () => {
       { branchName: "cycle-b", parentBranch: "cycle-a", updatedAt: 250 },
     ]);
 
-    expect(rows.map((row) => row.branchName)).toEqual([
-      "main",
-      "feature/a",
-      "feature/b",
-      "cycle-a",
-      "cycle-b",
-    ]);
+    expect(rows.map((row) => row.branchName)).toEqual(["main", "feature/a", "feature/b", "cycle-a", "cycle-b"]);
   });
 });

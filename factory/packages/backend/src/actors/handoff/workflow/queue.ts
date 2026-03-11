@@ -23,7 +23,7 @@ export const HANDOFF_QUEUE_NAMES = [
   "handoff.command.workbench.close_session",
   "handoff.command.workbench.publish_pr",
   "handoff.command.workbench.revert_file",
-  "handoff.status_sync.result"
+  "handoff.status_sync.result",
 ] as const;
 
 export function handoffWorkflowQueueName(name: string): string {

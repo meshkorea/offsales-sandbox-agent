@@ -66,13 +66,12 @@ export function createTestGithubDriver(overrides?: Partial<GithubDriver>): Githu
       number: 1,
       url: `https://github.com/test/repo/pull/1`,
     }),
+    starRepository: async () => {},
     ...overrides,
   };
 }
 
-export function createTestSandboxAgentDriver(
-  overrides?: Partial<SandboxAgentDriver>
-): SandboxAgentDriver {
+export function createTestSandboxAgentDriver(overrides?: Partial<SandboxAgentDriver>): SandboxAgentDriver {
   return {
     createClient: (_opts) => createTestSandboxAgentClient(),
     ...overrides,
@@ -100,7 +99,6 @@ export function createTestSandboxAgentClient(
     stream: "combined",
     entries: [],
   };
-
   return {
     createSession: async (_prompt) => ({ id: "test-session-1", status: "running" }),
     sessionStatus: async (sessionId) => ({ id: sessionId, status: "running" }),
@@ -125,18 +123,14 @@ export function createTestSandboxAgentClient(
   };
 }
 
-export function createTestDaytonaDriver(
-  overrides?: Partial<DaytonaDriver>
-): DaytonaDriver {
+export function createTestDaytonaDriver(overrides?: Partial<DaytonaDriver>): DaytonaDriver {
   return {
     createClient: (_opts) => createTestDaytonaClient(),
     ...overrides,
   };
 }
 
-export function createTestDaytonaClient(
-  overrides?: Partial<DaytonaClientLike>
-): DaytonaClientLike {
+export function createTestDaytonaClient(overrides?: Partial<DaytonaClientLike>): DaytonaClientLike {
   return {
     createSandbox: async () => ({ id: "sandbox-test-1", state: "started" }),
     getSandbox: async (sandboxId) => ({ id: sandboxId, state: "started" }),

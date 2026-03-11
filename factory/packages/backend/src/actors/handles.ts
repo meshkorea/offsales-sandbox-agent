@@ -1,13 +1,4 @@
-import {
-  handoffKey,
-  handoffStatusSyncKey,
-  historyKey,
-  projectBranchSyncKey,
-  projectKey,
-  projectPrSyncKey,
-  sandboxInstanceKey,
-  workspaceKey
-} from "./keys.js";
+import { handoffKey, handoffStatusSyncKey, historyKey, projectBranchSyncKey, projectKey, projectPrSyncKey, sandboxInstanceKey, workspaceKey } from "./keys.js";
 import type { ProviderId } from "@openhandoff/shared";
 
 export function actorClient(c: any) {
@@ -16,7 +7,7 @@ export function actorClient(c: any) {
 
 export async function getOrCreateWorkspace(c: any, workspaceId: string) {
   return await actorClient(c).workspace.getOrCreate(workspaceKey(workspaceId), {
-    createWithInput: workspaceId
+    createWithInput: workspaceId,
   });
 }
 
@@ -25,8 +16,8 @@ export async function getOrCreateProject(c: any, workspaceId: string, repoId: st
     createWithInput: {
       workspaceId,
       repoId,
-      remoteUrl
-    }
+      remoteUrl,
+    },
   });
 }
 
@@ -38,15 +29,9 @@ export function getHandoff(c: any, workspaceId: string, repoId: string, handoffI
   return actorClient(c).handoff.get(handoffKey(workspaceId, repoId, handoffId));
 }
 
-export async function getOrCreateHandoff(
-  c: any,
-  workspaceId: string,
-  repoId: string,
-  handoffId: string,
-  createWithInput: Record<string, unknown>
-) {
+export async function getOrCreateHandoff(c: any, workspaceId: string, repoId: string, handoffId: string, createWithInput: Record<string, unknown>) {
   return await actorClient(c).handoff.getOrCreate(handoffKey(workspaceId, repoId, handoffId), {
-    createWithInput
+    createWithInput,
   });
 }
 
@@ -54,42 +39,30 @@ export async function getOrCreateHistory(c: any, workspaceId: string, repoId: st
   return await actorClient(c).history.getOrCreate(historyKey(workspaceId, repoId), {
     createWithInput: {
       workspaceId,
-      repoId
-    }
+      repoId,
+    },
   });
 }
 
-export async function getOrCreateProjectPrSync(
-  c: any,
-  workspaceId: string,
-  repoId: string,
-  repoPath: string,
-  intervalMs: number
-) {
+export async function getOrCreateProjectPrSync(c: any, workspaceId: string, repoId: string, repoPath: string, intervalMs: number) {
   return await actorClient(c).projectPrSync.getOrCreate(projectPrSyncKey(workspaceId, repoId), {
     createWithInput: {
       workspaceId,
       repoId,
       repoPath,
-      intervalMs
-    }
+      intervalMs,
+    },
   });
 }
 
-export async function getOrCreateProjectBranchSync(
-  c: any,
-  workspaceId: string,
-  repoId: string,
-  repoPath: string,
-  intervalMs: number
-) {
+export async function getOrCreateProjectBranchSync(c: any, workspaceId: string, repoId: string, repoPath: string, intervalMs: number) {
   return await actorClient(c).projectBranchSync.getOrCreate(projectBranchSyncKey(workspaceId, repoId), {
     createWithInput: {
       workspaceId,
       repoId,
       repoPath,
-      intervalMs
-    }
+      intervalMs,
+    },
   });
 }
 
@@ -102,12 +75,9 @@ export async function getOrCreateSandboxInstance(
   workspaceId: string,
   providerId: ProviderId,
   sandboxId: string,
-  createWithInput: Record<string, unknown>
+  createWithInput: Record<string, unknown>,
 ) {
-  return await actorClient(c).sandboxInstance.getOrCreate(
-    sandboxInstanceKey(workspaceId, providerId, sandboxId),
-    { createWithInput }
-  );
+  return await actorClient(c).sandboxInstance.getOrCreate(sandboxInstanceKey(workspaceId, providerId, sandboxId), { createWithInput });
 }
 
 export async function getOrCreateHandoffStatusSync(
@@ -117,14 +87,11 @@ export async function getOrCreateHandoffStatusSync(
   handoffId: string,
   sandboxId: string,
   sessionId: string,
-  createWithInput: Record<string, unknown>
+  createWithInput: Record<string, unknown>,
 ) {
-  return await actorClient(c).handoffStatusSync.getOrCreate(
-    handoffStatusSyncKey(workspaceId, repoId, handoffId, sandboxId, sessionId),
-    {
-      createWithInput
-    }
-  );
+  return await actorClient(c).handoffStatusSync.getOrCreate(handoffStatusSyncKey(workspaceId, repoId, handoffId, sandboxId, sessionId), {
+    createWithInput,
+  });
 }
 
 export function selfProjectPrSync(c: any) {

@@ -15,11 +15,11 @@ describe("cli workspace resolution", () => {
         opencode_poll_interval: 2,
         github_poll_interval: 30,
         backup_interval_secs: 3600,
-        backup_retention_days: 7
+        backup_retention_days: 7,
       },
       providers: {
-        daytona: { image: "ubuntu:24.04" }
-      }
+        daytona: { image: "ubuntu:24.04" },
+      },
     });
 
     expect(resolveWorkspace(undefined, config)).toBe("team");

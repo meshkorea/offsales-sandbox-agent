@@ -1,16 +1,7 @@
 import { memo, useCallback, useMemo, useState, type MouseEvent } from "react";
 import { useStyletron } from "baseui";
 import { LabelSmall } from "baseui/typography";
-import {
-  Archive,
-  ArrowUpFromLine,
-  ChevronRight,
-  FileCode,
-  FilePlus,
-  FileX,
-  FolderOpen,
-  GitPullRequest,
-} from "lucide-react";
+import { Archive, ArrowUpFromLine, ChevronRight, FileCode, FilePlus, FileX, FolderOpen, GitPullRequest } from "lucide-react";
 
 import { type ContextMenuItem, ContextMenuOverlay, PanelHeaderBar, SPanel, ScrollBody, useContextMenu } from "./ui";
 import { type FileTreeNode, type Handoff, diffTabId } from "./view-model";
@@ -86,13 +77,7 @@ const FileTree = memo(function FileTree({
               <span>{node.name}</span>
             </div>
             {node.isDir && !isCollapsed && node.children ? (
-              <FileTree
-                nodes={node.children}
-                depth={depth + 1}
-                onSelectFile={onSelectFile}
-                onFileContextMenu={onFileContextMenu}
-                changedPaths={changedPaths}
-              />
+              <FileTree nodes={node.children} depth={depth + 1} onSelectFile={onSelectFile} onFileContextMenu={onFileContextMenu} changedPaths={changedPaths} />
             ) : null}
           </div>
         );
@@ -366,13 +351,7 @@ export const RightSidebar = memo(function RightSidebar({
         ) : (
           <div className={css({ padding: "6px 0" })}>
             {handoff.fileTree.length > 0 ? (
-              <FileTree
-                nodes={handoff.fileTree}
-                depth={0}
-                onSelectFile={onOpenDiff}
-                onFileContextMenu={openFileMenu}
-                changedPaths={changedPaths}
-              />
+              <FileTree nodes={handoff.fileTree} depth={0} onSelectFile={onOpenDiff} onFileContextMenu={openFileMenu} changedPaths={changedPaths} />
             ) : (
               <div className={css({ padding: "20px 0", textAlign: "center" })}>
                 <LabelSmall color={theme.colors.contentTertiary}>No files yet</LabelSmall>

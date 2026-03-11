@@ -23,11 +23,7 @@ const TranscriptMessageBody = memo(function TranscriptMessageBody({
   const isUser = message.sender === "client";
   const isCopied = copiedMessageId === message.id;
   const messageTimestamp = formatMessageTimestamp(message.createdAtMs);
-  const displayFooter = isUser
-    ? messageTimestamp
-    : message.durationMs
-      ? `${messageTimestamp} • Took ${formatMessageDuration(message.durationMs)}`
-      : null;
+  const displayFooter = isUser ? messageTimestamp : message.durationMs ? `${messageTimestamp} • Took ${formatMessageDuration(message.durationMs)}` : null;
 
   return (
     <div
@@ -59,11 +55,11 @@ const TranscriptMessageBody = memo(function TranscriptMessageBody({
                 borderBottomRightRadius: "4px",
               }
             : {
-                backgroundColor: "rgba(255, 255, 255, 0.06)",
-                border: `1px solid ${theme.colors.borderOpaque}`,
+                backgroundColor: "transparent",
+                border: "none",
                 color: "#e4e4e7",
-                borderBottomLeftRadius: "4px",
-                borderBottomRightRadius: "16px",
+                borderRadius: "0",
+                padding: "0",
               }),
         })}
       >
@@ -90,10 +86,7 @@ const TranscriptMessageBody = memo(function TranscriptMessageBody({
         })}
       >
         {displayFooter ? (
-          <LabelXSmall
-            color={theme.colors.contentTertiary}
-            $style={{ fontFamily: '"IBM Plex Mono", monospace', letterSpacing: "0.01em" }}
-          >
+          <LabelXSmall color={theme.colors.contentTertiary} $style={{ fontFamily: '"IBM Plex Mono", monospace', letterSpacing: "0.01em" }}>
             {displayFooter}
           </LabelXSmall>
         ) : null}
@@ -170,12 +163,6 @@ export const MessageList = memo(function MessageList({
     }),
     message: css({
       display: "flex",
-      '&[data-variant="user"]': {
-        justifyContent: "flex-end",
-      },
-      '&[data-variant="assistant"]': {
-        justifyContent: "flex-start",
-      },
     }),
     messageContent: messageContentClass,
     messageText: css({
@@ -200,6 +187,11 @@ export const MessageList = memo(function MessageList({
 
   return (
     <>
+      <style>{`
+        [data-variant="user"] > [data-slot="message-content"] {
+          margin-left: auto;
+        }
+      `}</style>
       {historyEvents.length > 0 ? <HistoryMinimap events={historyEvents} onSelect={onSelectHistoryEvent} /> : null}
       <div
         ref={scrollRef}
@@ -238,14 +230,7 @@ export const MessageList = memo(function MessageList({
                 return null;
               }
 
-              return (
-                <TranscriptMessageBody
-                  message={message}
-                  messageRefs={messageRefs}
-                  copiedMessageId={copiedMessageId}
-                  onCopyMessage={onCopyMessage}
-                />
-              );
+              return <TranscriptMessageBody message={message} messageRefs={messageRefs} copiedMessageId={copiedMessageId} onCopyMessage={onCopyMessage} />;
             }}
             isThinking={Boolean(tab && tab.status === "running" && transcriptEntries.length > 0)}
             renderThinkingState={() => (

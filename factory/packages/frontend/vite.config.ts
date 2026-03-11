@@ -6,9 +6,7 @@ const backendProxyTarget = process.env.HF_BACKEND_HTTP?.trim() || "http://127.0.
 const cacheDir = process.env.HF_VITE_CACHE_DIR?.trim() || undefined;
 export default defineConfig({
   define: {
-    "import.meta.env.OPENHANDOFF_FRONTEND_CLIENT_MODE": JSON.stringify(
-      process.env.OPENHANDOFF_FRONTEND_CLIENT_MODE?.trim() || "remote",
-    ),
+    "import.meta.env.OPENHANDOFF_FRONTEND_CLIENT_MODE": JSON.stringify(process.env.OPENHANDOFF_FRONTEND_CLIENT_MODE?.trim() || "remote"),
   },
   plugins: [react(), frontendErrorCollectorVitePlugin()],
   cacheDir,

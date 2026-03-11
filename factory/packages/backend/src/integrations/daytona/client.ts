@@ -52,9 +52,7 @@ export class DaytonaClient {
       image: options.image,
       envVars: options.envVars,
       labels: options.labels,
-      ...(options.autoStopInterval !== undefined
-        ? { autoStopInterval: options.autoStopInterval }
-        : {}),
+      ...(options.autoStopInterval !== undefined ? { autoStopInterval: options.autoStopInterval } : {}),
     });
 
     return {

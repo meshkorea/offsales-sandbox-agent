@@ -45,9 +45,7 @@ export interface HandoffWorkbenchClient {
   changeModel(input: HandoffWorkbenchChangeModelInput): Promise<void>;
 }
 
-export function createHandoffWorkbenchClient(
-  options: CreateHandoffWorkbenchClientOptions,
-): HandoffWorkbenchClient {
+export function createHandoffWorkbenchClient(options: CreateHandoffWorkbenchClientOptions): HandoffWorkbenchClient {
   if (options.mode === "mock") {
     return getSharedMockWorkbenchClient();
   }

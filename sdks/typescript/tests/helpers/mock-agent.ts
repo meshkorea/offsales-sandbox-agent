@@ -25,7 +25,7 @@ export function prepareMockAgentDataHome(dataHome: string): Record<string, strin
     runtimeEnv.XDG_DATA_HOME = dataHome;
   }
 
-const nodeScript = String.raw`#!/usr/bin/env node
+  const nodeScript = String.raw`#!/usr/bin/env node
 const { createInterface } = require("node:readline");
 
 let nextSession = 0;
@@ -225,13 +225,9 @@ rl.on("line", (line) => {
     const processDir = join(installDir, "agent_processes");
     mkdirSync(processDir, { recursive: true });
 
-    const runner = process.platform === "win32"
-      ? join(processDir, "mock-acp.cmd")
-      : join(processDir, "mock-acp");
+    const runner = process.platform === "win32" ? join(processDir, "mock-acp.cmd") : join(processDir, "mock-acp");
 
-    const scriptFile = process.platform === "win32"
-      ? join(processDir, "mock-acp.js")
-      : runner;
+    const scriptFile = process.platform === "win32" ? join(processDir, "mock-acp.js") : runner;
 
     writeFileSync(scriptFile, nodeScript);
 

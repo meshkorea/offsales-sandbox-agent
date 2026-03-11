@@ -49,11 +49,7 @@ export function createNotificationService(backends: NotifyBackend[]): Notificati
     },
 
     async changesRequested(branchName: string, prNumber: number, reviewer: string): Promise<void> {
-      await notify(
-        "Changes Requested",
-        `Changes requested on PR #${prNumber} (${branchName}) by ${reviewer}`,
-        "high",
-      );
+      await notify("Changes Requested", `Changes requested on PR #${prNumber} (${branchName}) by ${reviewer}`, "high");
     },
 
     async prMerged(branchName: string, prNumber: number): Promise<void> {

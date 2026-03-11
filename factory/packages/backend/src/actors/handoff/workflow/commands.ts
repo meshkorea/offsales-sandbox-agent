@@ -14,7 +14,7 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: str
       promise,
       new Promise<T>((_resolve, reject) => {
         timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
-      })
+      }),
     ]);
   } finally {
     if (timer) {
@@ -26,34 +26,27 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: str
 export async function handleAttachActivity(loopCtx: any, msg: any): Promise<void> {
   const record = await getCurrentRecord(loopCtx);
   const { providers } = getActorRuntimeContext();
-  const activeSandbox =
-    record.activeSandboxId
-      ? record.sandboxes.find((sb: any) => sb.sandboxId === record.activeSandboxId) ?? null
-      : null;
+  const activeSandbox = record.activeSandboxId ? (record.sandboxes.find((sb: any) => sb.sandboxId === record.activeSandboxId) ?? null) : null;
   const provider = providers.get(activeSandbox?.providerId ?? record.providerId);
   const target = await provider.attachTarget({
     workspaceId: loopCtx.state.workspaceId,
-    sandboxId: record.activeSandboxId ?? ""
+    sandboxId: record.activeSandboxId ?? "",
   });
 
   await appendHistory(loopCtx, "handoff.attach", {
     target: target.target,
-    sessionId: record.activeSessionId
+    sessionId: record.activeSessionId,
   });
 
   await msg.complete({
     target: target.target,
-    sessionId: record.activeSessionId
+    sessionId: record.activeSessionId,
   });
 }
 
 export async function handleSwitchActivity(loopCtx: any, msg: any): Promise<void> {
   const db = loopCtx.db;
-  const runtime = await db
-    .select({ switchTarget: handoffRuntime.activeSwitchTarget })
-    .from(handoffRuntime)
-    .where(eq(handoffRuntime.id, HANDOFF_ROW_ID))
-    .get();
+  const runtime = await db.select({ switchTarget: handoffRuntime.activeSwitchTarget }).from(handoffRuntime).where(eq(handoffRuntime.id, HANDOFF_ROW_ID)).get();
 
   await msg.complete({ switchTarget: runtime?.switchTarget ?? "" });
 }
@@ -61,23 +54,14 @@ export async function handleSwitchActivity(loopCtx: any, msg: any): Promise<void
 export async function handlePushActivity(loopCtx: any, msg: any): Promise<void> {
   await pushActiveBranchActivity(loopCtx, {
     reason: msg.body?.reason ?? null,
-    historyKind: "handoff.push"
+    historyKind: "handoff.push",
   });
   await msg.complete({ ok: true });
 }
 
-export async function handleSimpleCommandActivity(
-  loopCtx: any,
-  msg: any,
-  statusMessage: string,
-  historyKind: string
-): Promise<void> {
+export async function handleSimpleCommandActivity(loopCtx: any, msg: any, statusMessage: string, historyKind: string): Promise<void> {
   const db = loopCtx.db;
-  await db
-    .update(handoffRuntime)
-    .set({ statusMessage, updatedAt: Date.now() })
-    .where(eq(handoffRuntime.id, HANDOFF_ROW_ID))
-    .run();
+  await db.update(handoffRuntime).set({ statusMessage, updatedAt: Date.now() }).where(eq(handoffRuntime.id, HANDOFF_ROW_ID)).run();
 
   await appendHistory(loopCtx, historyKind, { reason: msg.body?.reason ?? null });
   await msg.complete({ ok: true });
@@ -103,8 +87,8 @@ export async function handleArchiveActivity(loopCtx: any, msg: any): Promise<voi
           providerId: record.providerId,
           sandboxId: record.activeSandboxId,
           sessionId: record.activeSessionId,
-          intervalMs: 2_000
-        }
+          intervalMs: 2_000,
+        },
       );
       await withTimeout(sync.stop(), 15_000, "handoff status sync stop");
     } catch (error) {
@@ -114,7 +98,7 @@ export async function handleArchiveActivity(loopCtx: any, msg: any): Promise<voi
         handoffId: loopCtx.state.handoffId,
         sandboxId: record.activeSandboxId,
         sessionId: record.activeSessionId,
-        error: resolveErrorMessage(error)
+        error: resolveErrorMessage(error),
       });
     }
   }
@@ -122,8 +106,7 @@ export async function handleArchiveActivity(loopCtx: any, msg: any): Promise<voi
   if (record.activeSandboxId) {
     await setHandoffState(loopCtx, "archive_release_sandbox", "releasing sandbox");
     const { providers } = getActorRuntimeContext();
-    const activeSandbox =
-      record.sandboxes.find((sb: any) => sb.sandboxId === record.activeSandboxId) ?? null;
+    const activeSandbox = record.sandboxes.find((sb: any) => sb.sandboxId === record.activeSandboxId) ?? null;
     const provider = providers.get(activeSandbox?.providerId ?? record.providerId);
     const workspaceId = loopCtx.state.workspaceId;
     const repoId = loopCtx.state.repoId;
@@ -135,28 +118,24 @@ export async function handleArchiveActivity(loopCtx: any, msg: any): Promise<voi
     void withTimeout(
       provider.releaseSandbox({
         workspaceId,
-        sandboxId
+        sandboxId,
       }),
       45_000,
-      "provider releaseSandbox"
+      "provider releaseSandbox",
     ).catch((error) => {
       logActorWarning("handoff.commands", "failed to release sandbox during archive", {
         workspaceId,
         repoId,
         handoffId,
         sandboxId,
-        error: resolveErrorMessage(error)
+        error: resolveErrorMessage(error),
       });
     });
   }
 
   const db = loopCtx.db;
   await setHandoffState(loopCtx, "archive_finalize", "finalizing archive");
-  await db
-    .update(handoffTable)
-    .set({ status: "archived", updatedAt: Date.now() })
-    .where(eq(handoffTable.id, HANDOFF_ROW_ID))
-    .run();
+  await db.update(handoffTable).set({ status: "archived", updatedAt: Date.now() }).where(eq(handoffTable.id, HANDOFF_ROW_ID)).run();
 
   await db
     .update(handoffRuntime)
@@ -176,29 +155,20 @@ export async function killDestroySandboxActivity(loopCtx: any): Promise<void> {
   }
 
   const { providers } = getActorRuntimeContext();
-  const activeSandbox =
-    record.sandboxes.find((sb: any) => sb.sandboxId === record.activeSandboxId) ?? null;
+  const activeSandbox = record.sandboxes.find((sb: any) => sb.sandboxId === record.activeSandboxId) ?? null;
   const provider = providers.get(activeSandbox?.providerId ?? record.providerId);
   await provider.destroySandbox({
     workspaceId: loopCtx.state.workspaceId,
-    sandboxId: record.activeSandboxId
+    sandboxId: record.activeSandboxId,
   });
 }
 
 export async function killWriteDbActivity(loopCtx: any, msg: any): Promise<void> {
   await setHandoffState(loopCtx, "kill_finalize", "finalizing kill");
   const db = loopCtx.db;
-  await db
-    .update(handoffTable)
-    .set({ status: "killed", updatedAt: Date.now() })
-    .where(eq(handoffTable.id, HANDOFF_ROW_ID))
-    .run();
+  await db.update(handoffTable).set({ status: "killed", updatedAt: Date.now() }).where(eq(handoffTable.id, HANDOFF_ROW_ID)).run();
 
-  await db
-    .update(handoffRuntime)
-    .set({ statusMessage: "killed", updatedAt: Date.now() })
-    .where(eq(handoffRuntime.id, HANDOFF_ROW_ID))
-    .run();
+  await db.update(handoffRuntime).set({ statusMessage: "killed", updatedAt: Date.now() }).where(eq(handoffRuntime.id, HANDOFF_ROW_ID)).run();
 
   await appendHistory(loopCtx, "handoff.kill", { reason: msg.body?.reason ?? null });
   await msg.complete({ ok: true });

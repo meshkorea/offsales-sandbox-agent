@@ -36,9 +36,7 @@ interface GhPrListItem {
   }>;
 }
 
-function parseCiStatus(
-  checks: GhPrListItem["statusCheckRollup"]
-): string | null {
+function parseCiStatus(checks: GhPrListItem["statusCheckRollup"]): string | null {
   if (!checks || checks.length === 0) return null;
 
   let total = 0;
@@ -53,12 +51,7 @@ function parseCiStatus(
 
     if (conclusion === "SUCCESS" || state === "SUCCESS") {
       successes++;
-    } else if (
-      status === "IN_PROGRESS" ||
-      status === "QUEUED" ||
-      status === "PENDING" ||
-      state === "PENDING"
-    ) {
+    } else if (status === "IN_PROGRESS" || status === "QUEUED" || status === "PENDING" || state === "PENDING") {
       hasRunning = true;
     }
   }
@@ -70,9 +63,7 @@ function parseCiStatus(
   return `${successes}/${total}`;
 }
 
-function parseReviewStatus(
-  reviews: GhPrListItem["reviews"]
-): { status: string | null; reviewer: string | null } {
+function parseReviewStatus(reviews: GhPrListItem["reviews"]): { status: string | null; reviewer: string | null } {
   if (!reviews || reviews.length === 0) {
     return { status: null, reviewer: null };
   }
@@ -120,35 +111,21 @@ function snapshotFromGhItem(item: GhPrListItem): PullRequestSnapshot {
     isDraft: item.isDraft ?? false,
     ciStatus: parseCiStatus(item.statusCheckRollup),
     reviewStatus,
-    reviewer
+    reviewer,
   };
 }
 
-const PR_JSON_FIELDS =
-  "number,headRefName,state,title,url,author,isDraft,statusCheckRollup,reviews";
+const PR_JSON_FIELDS = "number,headRefName,state,title,url,author,isDraft,statusCheckRollup,reviews";
 
 export async function listPullRequests(repoPath: string): Promise<PullRequestSnapshot[]> {
   try {
-    const { stdout } = await execFileAsync(
-      "gh",
-      [
-        "pr",
-        "list",
-        "--json",
-        PR_JSON_FIELDS,
-        "--limit",
-        "200"
-      ],
-      { maxBuffer: 1024 * 1024 * 4, cwd: repoPath }
-    );
+    const { stdout } = await execFileAsync("gh", ["pr", "list", "--json", PR_JSON_FIELDS, "--limit", "200"], { maxBuffer: 1024 * 1024 * 4, cwd: repoPath });
 
     const parsed = JSON.parse(stdout) as GhPrListItem[];
 
     return parsed.map((item) => {
       // Handle fork PRs where headRefName may contain "owner:branch"
-      const headRefName = item.headRefName.includes(":")
-        ? item.headRefName.split(":").pop() ?? item.headRefName
-        : item.headRefName;
+      const headRefName = item.headRefName.includes(":") ? (item.headRefName.split(":").pop() ?? item.headRefName) : item.headRefName;
 
       return snapshotFromGhItem({ ...item, headRefName });
     });
@@ -157,22 +134,9 @@ export async function listPullRequests(repoPath: string): Promise<PullRequestSna
   }
 }
 
-export async function getPrInfo(
-  repoPath: string,
-  branchName: string
-): Promise<PullRequestSnapshot | null> {
+export async function getPrInfo(repoPath: string, branchName: string): Promise<PullRequestSnapshot | null> {
   try {
-    const { stdout } = await execFileAsync(
-      "gh",
-      [
-        "pr",
-        "view",
-        branchName,
-        "--json",
-        PR_JSON_FIELDS
-      ],
-      { maxBuffer: 1024 * 1024 * 4, cwd: repoPath }
-    );
+    const { stdout } = await execFileAsync("gh", ["pr", "view", branchName, "--json", PR_JSON_FIELDS], { maxBuffer: 1024 * 1024 * 4, cwd: repoPath });
 
     const item = JSON.parse(stdout) as GhPrListItem;
     return snapshotFromGhItem(item);
@@ -181,12 +145,7 @@ export async function getPrInfo(
   }
 }
 
-export async function createPr(
-  repoPath: string,
-  headBranch: string,
-  title: string,
-  body?: string
-): Promise<{ number: number; url: string }> {
+export async function createPr(repoPath: string, headBranch: string, title: string, body?: string): Promise<{ number: number; url: string }> {
   const args = ["pr", "create", "--title", title, "--head", headBranch];
   if (body) {
     args.push("--body", body);
@@ -196,7 +155,7 @@ export async function createPr(
 
   const { stdout } = await execFileAsync("gh", args, {
     maxBuffer: 1024 * 1024,
-    cwd: repoPath
+    cwd: repoPath,
   });
 
   // gh pr create outputs the PR URL on success
@@ -208,29 +167,29 @@ export async function createPr(
   return { number, url };
 }
 
-export async function getAllowedMergeMethod(
-  repoPath: string
-): Promise<"squash" | "rebase" | "merge"> {
+export async function starRepository(repoFullName: string): Promise<void> {
+  try {
+    await execFileAsync("gh", ["api", "--method", "PUT", `user/starred/${repoFullName}`], {
+      maxBuffer: 1024 * 1024,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : `Failed to star GitHub repository ${repoFullName}. Ensure GitHub auth is configured for the backend.`;
+    throw new Error(message);
+  }
+}
+
+export async function getAllowedMergeMethod(repoPath: string): Promise<"squash" | "rebase" | "merge"> {
   try {
     // Get the repo owner/name from gh
-    const { stdout: repoJson } = await execFileAsync(
-      "gh",
-      ["repo", "view", "--json", "owner,name"],
-      { cwd: repoPath }
-    );
+    const { stdout: repoJson } = await execFileAsync("gh", ["repo", "view", "--json", "owner,name"], { cwd: repoPath });
     const repo = JSON.parse(repoJson) as { owner: { login: string }; name: string };
     const repoFullName = `${repo.owner.login}/${repo.name}`;
 
-    const { stdout } = await execFileAsync(
-      "gh",
-      [
-        "api",
-        `repos/${repoFullName}`,
-        "--jq",
-        ".allow_squash_merge, .allow_rebase_merge, .allow_merge_commit"
-      ],
-      { maxBuffer: 1024 * 1024, cwd: repoPath }
-    );
+    const { stdout } = await execFileAsync("gh", ["api", `repos/${repoFullName}`, "--jq", ".allow_squash_merge, .allow_rebase_merge, .allow_merge_commit"], {
+      maxBuffer: 1024 * 1024,
+      cwd: repoPath,
+    });
 
     const lines = stdout.trim().split("\n");
     const allowSquash = lines[0]?.trim() === "true";
@@ -248,23 +207,12 @@ export async function getAllowedMergeMethod(
 
 export async function mergePr(repoPath: string, prNumber: number): Promise<void> {
   const method = await getAllowedMergeMethod(repoPath);
-  await execFileAsync(
-    "gh",
-    ["pr", "merge", String(prNumber), `--${method}`, "--delete-branch"],
-    { cwd: repoPath }
-  );
+  await execFileAsync("gh", ["pr", "merge", String(prNumber), `--${method}`, "--delete-branch"], { cwd: repoPath });
 }
 
-export async function isPrMerged(
-  repoPath: string,
-  branchName: string
-): Promise<boolean> {
+export async function isPrMerged(repoPath: string, branchName: string): Promise<boolean> {
   try {
-    const { stdout } = await execFileAsync(
-      "gh",
-      ["pr", "view", branchName, "--json", "state"],
-      { cwd: repoPath }
-    );
+    const { stdout } = await execFileAsync("gh", ["pr", "view", branchName, "--json", "state"], { cwd: repoPath });
     const parsed = JSON.parse(stdout) as { state: string };
     return parsed.state.toUpperCase() === "MERGED";
   } catch {
@@ -272,16 +220,9 @@ export async function isPrMerged(
   }
 }
 
-export async function getPrTitle(
-  repoPath: string,
-  branchName: string
-): Promise<string | null> {
+export async function getPrTitle(repoPath: string, branchName: string): Promise<string | null> {
   try {
-    const { stdout } = await execFileAsync(
-      "gh",
-      ["pr", "view", branchName, "--json", "title"],
-      { cwd: repoPath }
-    );
+    const { stdout } = await execFileAsync("gh", ["pr", "view", branchName, "--json", "title"], { cwd: repoPath });
     const parsed = JSON.parse(stdout) as { title: string };
     return parsed.title;
   } catch {

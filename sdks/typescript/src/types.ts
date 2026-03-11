@@ -1,9 +1,4 @@
-import type {
-  AnyMessage,
-  NewSessionRequest,
-  SessionConfigOption,
-  SessionModeState,
-} from "acp-http-client";
+import type { AnyMessage, NewSessionRequest, SessionConfigOption, SessionModeState } from "acp-http-client";
 import type { components, operations } from "./generated/openapi.ts";
 
 export type ProblemDetails = components["schemas"]["ProblemDetails"];
@@ -84,10 +79,7 @@ export interface ProcessTerminalErrorFrame {
   message: string;
 }
 
-export type ProcessTerminalServerFrame =
-  | ProcessTerminalReadyFrame
-  | ProcessTerminalExitFrame
-  | ProcessTerminalErrorFrame;
+export type ProcessTerminalServerFrame = ProcessTerminalReadyFrame | ProcessTerminalExitFrame | ProcessTerminalErrorFrame;
 
 export type TerminalReadyStatus = ProcessTerminalReadyFrame;
 export type TerminalExitStatus = ProcessTerminalExitFrame;
@@ -163,10 +155,7 @@ export class InMemorySessionPersistDriver implements SessionPersistDriver {
 
   constructor(options: InMemorySessionPersistDriverOptions = {}) {
     this.maxSessions = normalizeCap(options.maxSessions, DEFAULT_MAX_SESSIONS);
-    this.maxEventsPerSession = normalizeCap(
-      options.maxEventsPerSession,
-      DEFAULT_MAX_EVENTS_PER_SESSION,
-    );
+    this.maxEventsPerSession = normalizeCap(options.maxEventsPerSession, DEFAULT_MAX_EVENTS_PER_SESSION);
   }
 
   async getSession(id: string): Promise<SessionRecord | null> {
@@ -245,15 +234,9 @@ export class InMemorySessionPersistDriver implements SessionPersistDriver {
 function cloneSessionRecord(session: SessionRecord): SessionRecord {
   return {
     ...session,
-    sessionInit: session.sessionInit
-      ? (JSON.parse(JSON.stringify(session.sessionInit)) as SessionRecord["sessionInit"])
-      : undefined,
-    configOptions: session.configOptions
-      ? (JSON.parse(JSON.stringify(session.configOptions)) as SessionRecord["configOptions"])
-      : undefined,
-    modes: session.modes
-      ? (JSON.parse(JSON.stringify(session.modes)) as SessionRecord["modes"])
-      : session.modes,
+    sessionInit: session.sessionInit ? (JSON.parse(JSON.stringify(session.sessionInit)) as SessionRecord["sessionInit"]) : undefined,
+    configOptions: session.configOptions ? (JSON.parse(JSON.stringify(session.configOptions)) as SessionRecord["configOptions"]) : undefined,
+    modes: session.modes ? (JSON.parse(JSON.stringify(session.modes)) as SessionRecord["modes"]) : session.modes,
   };
 }
 
@@ -277,11 +260,7 @@ type JsonRequestBody<T> = T extends {
   ? B
   : never;
 
-type QueryParams<T> = T extends { parameters: { query: infer Q } }
-  ? Q
-  : T extends { parameters: { query?: infer Q } }
-    ? Q
-    : never;
+type QueryParams<T> = T extends { parameters: { query: infer Q } } ? Q : T extends { parameters: { query?: infer Q } } ? Q : never;
 
 function normalizeCap(value: number | undefined, fallback: number): number {
   if (!Number.isFinite(value) || (value ?? 0) < 1) {

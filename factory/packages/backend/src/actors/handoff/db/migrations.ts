@@ -3,50 +3,50 @@
 // Do not hand-edit this file.
 
 const journal = {
-  "entries": [
+  entries: [
     {
-      "idx": 0,
-      "when": 1770924374665,
-      "tag": "0000_condemned_maria_hill",
-      "breakpoints": true
+      idx: 0,
+      when: 1770924374665,
+      tag: "0000_condemned_maria_hill",
+      breakpoints: true,
     },
     {
-      "idx": 1,
-      "when": 1770947251055,
-      "tag": "0001_rapid_eddie_brock",
-      "breakpoints": true
+      idx: 1,
+      when: 1770947251055,
+      tag: "0001_rapid_eddie_brock",
+      breakpoints: true,
     },
     {
-      "idx": 2,
-      "when": 1770948428907,
-      "tag": "0002_lazy_moira_mactaggert",
-      "breakpoints": true
+      idx: 2,
+      when: 1770948428907,
+      tag: "0002_lazy_moira_mactaggert",
+      breakpoints: true,
     },
     {
-      "idx": 3,
-      "when": 1771027535276,
-      "tag": "0003_plucky_bran",
-      "breakpoints": true
+      idx: 3,
+      when: 1771027535276,
+      tag: "0003_plucky_bran",
+      breakpoints: true,
     },
     {
-      "idx": 4,
-      "when": 1771097651912,
-      "tag": "0004_focused_shuri",
-      "breakpoints": true
+      idx: 4,
+      when: 1771097651912,
+      tag: "0004_focused_shuri",
+      breakpoints: true,
     },
     {
-      "idx": 5,
-      "when": 1771370000000,
-      "tag": "0005_sandbox_actor_id",
-      "breakpoints": true
+      idx: 5,
+      when: 1771370000000,
+      tag: "0005_sandbox_actor_id",
+      breakpoints: true,
     },
     {
-      "idx": 6,
-      "when": 1773020000000,
-      "tag": "0006_workbench_sessions",
-      "breakpoints": true
-    }
-  ]
+      idx: 6,
+      when: 1773020000000,
+      tag: "0006_workbench_sessions",
+      breakpoints: true,
+    },
+  ],
 } as const;
 
 export default {
@@ -241,5 +241,5 @@ PRAGMA foreign_keys=on;
 	\`created_at\` integer NOT NULL,
 	\`updated_at\` integer NOT NULL
 );`,
-  } as const
+  } as const,
 };
