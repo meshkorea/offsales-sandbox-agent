@@ -870,7 +870,7 @@ export default function App() {
       // Apply mode if selected
       if (!skipPostCreateConfig && config.agentMode) {
         try {
-          await session.send("session/set_mode", { modeId: config.agentMode });
+          await session.rawSend("session/set_mode", { modeId: config.agentMode });
         } catch {
           // Mode application is best-effort
         }
@@ -886,7 +886,7 @@ export default function App() {
               (opt) => opt.category === "model" && opt.type === "select" && typeof opt.id === "string"
             );
             if (modelOption && config.model !== modelOption.currentValue) {
-              await session.send("session/set_config_option", {
+              await session.rawSend("session/set_config_option", {
                 optionId: modelOption.id,
                 value: config.model,
               });
@@ -1241,7 +1241,6 @@ export default function App() {
         }));
         const title = params?.toolCall?.title ?? params?.toolCall?.toolCallId ?? "Permission request";
         const resolved = resolvedPermissions.get(permissionId);
-        const isPending = pendingPermissionIds.has(permissionId);
         entries.push({
           id: event.id,
           eventId: event.id,
@@ -1252,7 +1251,7 @@ export default function App() {
             title,
             description: params?.toolCall?.description,
             options,
-            resolved: resolved != null || !isPending,
+            resolved: resolved != null || sdkPermissionId == null,
             selectedOptionId: resolved,
           },
         });
@@ -1288,7 +1287,7 @@ export default function App() {
     }
 
     return entries;
-  }, [events, pendingPermissionIds, resolvedPermissions]);
+  }, [events, resolvedPermissions]);
 
   useEffect(() => {
     return () => {

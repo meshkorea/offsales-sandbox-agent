@@ -512,7 +512,7 @@ describe("Integration: TypeScript SDK flat session API", () => {
 
     const session = await sdk.createSession({ agent: "mock" });
 
-    await expect(session.send("session/cancel")).rejects.toThrow(
+    await expect(session.rawSend("session/cancel")).rejects.toThrow(
       "Use destroySession(sessionId) instead.",
     );
     await expect(sdk.rawSendSessionMethod(session.id, "session/cancel", {})).rejects.toThrow(

@@ -1262,7 +1262,7 @@ export class SandboxAgent {
   }
 
   private async hydrateSessionConfigOptions(sessionId: string, snapshot: SessionRecord): Promise<SessionRecord> {
-    if (snapshot.configOptions !== undefined && snapshot.configOptions.length > 0) {
+    if (snapshot.configOptions !== undefined) {
       return snapshot;
     }
 
@@ -1440,7 +1440,14 @@ export class SandboxAgent {
       throw new Error(`permission '${permissionId}' not found`);
     }
 
-    const response = permissionReplyToResponse(permissionId, pending.request, reply);
+    let response: RequestPermissionResponse;
+    try {
+      response = permissionReplyToResponse(permissionId, pending.request, reply);
+    } catch (error) {
+      pending.reject(error instanceof Error ? error : new Error(String(error)));
+      this.pendingPermissionRequests.delete(permissionId);
+      throw error;
+    }
     this.resolvePendingPermission(permissionId, response);
   }
 
@@ -2704,7 +2711,7 @@ function permissionReplyToResponse(
 ): RequestPermissionResponse {
   const preferredKinds: PermissionOptionKind[] =
     reply === "once"
-      ? ["allow_once", "allow_always"]
+      ? ["allow_once"]
       : reply === "always"
         ? ["allow_always", "allow_once"]
         : ["reject_once", "reject_always"];
