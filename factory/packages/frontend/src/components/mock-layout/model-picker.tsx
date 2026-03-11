@@ -23,7 +23,7 @@ const ModelPickerContent = memo(function ModelPickerContent({
   const [hoveredId, setHoveredId] = useState<ModelId | null>(null);
 
   return (
-    <div className={css({ minWidth: "200px", padding: "4px 0" })}>
+    <div className={css({ minWidth: "220px", padding: "6px 0" })}>
       {MODEL_GROUPS.map((group) => (
         <div key={group.provider}>
           <div
@@ -62,7 +62,10 @@ const ModelPickerContent = memo(function ModelPickerContent({
                   fontSize: "12px",
                   fontWeight: isActive ? 600 : 400,
                   color: isActive ? theme.colors.contentPrimary : theme.colors.contentSecondary,
-                  ":hover": { backgroundColor: "rgba(255, 255, 255, 0.06)" },
+                  borderRadius: "6px",
+                  marginLeft: "4px",
+                  marginRight: "4px",
+                  ":hover": { backgroundColor: "rgba(255, 255, 255, 0.08)" },
                 })}
               >
                 <AgentIcon agent={agent} size={12} />
@@ -112,13 +115,14 @@ export const ModelPicker = memo(function ModelPicker({
       overrides={{
         Body: {
           style: {
-            backgroundColor: "#000000",
-            borderTopLeftRadius: "8px",
-            borderTopRightRadius: "8px",
-            borderBottomLeftRadius: "8px",
-            borderBottomRightRadius: "8px",
-            border: `1px solid ${theme.colors.borderOpaque}`,
-            boxShadow: "0 8px 24px rgba(0, 0, 0, 0.6)",
+            backgroundColor: "rgba(32, 32, 32, 0.98)",
+            backdropFilter: "blur(12px)",
+            borderTopLeftRadius: "10px",
+            borderTopRightRadius: "10px",
+            borderBottomLeftRadius: "10px",
+            borderBottomRightRadius: "10px",
+            border: "1px solid rgba(255, 255, 255, 0.10)",
+            boxShadow: "0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04)",
             zIndex: 100,
           },
         },

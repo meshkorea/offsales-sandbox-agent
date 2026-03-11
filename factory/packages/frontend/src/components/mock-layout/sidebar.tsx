@@ -6,6 +6,22 @@ import { ChevronDown, ChevronUp, CloudUpload, GitPullRequestDraft, ListChecks, P
 import { formatRelativeAge, type Handoff, type ProjectSection } from "./view-model";
 import { ContextMenuOverlay, HandoffIndicator, PanelHeaderBar, SPanel, ScrollBody, useContextMenu } from "./ui";
 
+const PROJECT_COLORS = ["#6366f1", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316"];
+
+function projectInitial(label: string): string {
+  const parts = label.split("/");
+  const name = parts[parts.length - 1] ?? label;
+  return name.charAt(0).toUpperCase();
+}
+
+function projectIconColor(label: string): string {
+  let hash = 0;
+  for (let i = 0; i < label.length; i++) {
+    hash = (hash * 31 + label.charCodeAt(i)) | 0;
+  }
+  return PROJECT_COLORS[Math.abs(hash) % PROJECT_COLORS.length]!;
+}
+
 export const Sidebar = memo(function Sidebar({
   projects,
   activeId,
@@ -32,6 +48,9 @@ export const Sidebar = memo(function Sidebar({
       <style>{`
         [data-project-header]:hover [data-chevron] {
           display: inline-flex !important;
+        }
+        [data-project-header]:hover [data-project-icon] {
+          display: none !important;
         }
       `}</style>
       <PanelHeaderBar>
@@ -89,13 +108,33 @@ export const Sidebar = memo(function Sidebar({
                   })}
                 >
                   <div className={css({ display: "flex", alignItems: "center", gap: "4px", overflow: "hidden" })}>
-                    <span className={css({ display: "none", flexShrink: 0 })} data-chevron>
-                      {isCollapsed ? (
-                        <ChevronDown size={12} color={theme.colors.contentTertiary} />
-                      ) : (
-                        <ChevronUp size={12} color={theme.colors.contentTertiary} />
-                      )}
-                    </span>
+                    <div className={css({ position: "relative", width: "14px", height: "14px", flexShrink: 0 })}>
+                      <span
+                        className={css({
+                          position: "absolute",
+                          inset: 0,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          borderRadius: "3px",
+                          fontSize: "9px",
+                          fontWeight: 700,
+                          lineHeight: 1,
+                          color: "#fff",
+                          backgroundColor: projectIconColor(project.label),
+                        })}
+                        data-project-icon
+                      >
+                        {projectInitial(project.label)}
+                      </span>
+                      <span className={css({ position: "absolute", inset: 0, display: "none", alignItems: "center", justifyContent: "center" })} data-chevron>
+                        {isCollapsed ? (
+                          <ChevronDown size={12} color={theme.colors.contentTertiary} />
+                        ) : (
+                          <ChevronUp size={12} color={theme.colors.contentTertiary} />
+                        )}
+                      </span>
+                    </div>
                     <LabelSmall
                       color={theme.colors.contentSecondary}
                       $style={{
@@ -146,7 +185,6 @@ export const Sidebar = memo(function Sidebar({
                         transition: "all 200ms ease",
                         ":hover": {
                           backgroundColor: "rgba(255, 255, 255, 0.06)",
-                          borderColor: theme.colors.borderOpaque,
                         },
                       })}
                     >
