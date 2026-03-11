@@ -30,7 +30,7 @@ export const TranscriptHeader = memo(function TranscriptHeader({
   const [css, theme] = useStyletron();
 
   return (
-    <PanelHeaderBar>
+    <PanelHeaderBar $style={{ backgroundColor: "#0f0f11", borderBottom: "none" }}>
       {editingField === "title" ? (
         <input
           autoFocus
@@ -58,7 +58,7 @@ export const TranscriptHeader = memo(function TranscriptHeader({
         <LabelSmall
           title="Rename"
           color={theme.colors.contentPrimary}
-          $style={{ fontWeight: 500, whiteSpace: "nowrap", cursor: "pointer", ":hover": { textDecoration: "underline" } }}
+          $style={{ fontWeight: 400, whiteSpace: "nowrap", cursor: "pointer", ":hover": { textDecoration: "underline" } }}
           onClick={() => onStartEditingField("title", handoff.title)}
         >
           {handoff.title}

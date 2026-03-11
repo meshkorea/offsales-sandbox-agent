@@ -443,6 +443,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
           }
         }}
       />
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", backgroundColor: "#09090b", borderTopLeftRadius: "12px", borderLeft: "1px solid rgba(255, 255, 255, 0.10)", borderTop: "1px solid rgba(255, 255, 255, 0.10)", overflow: "hidden" }}>
       <TabStrip
         handoff={handoff}
         activeTabId={activeTabId}
@@ -498,8 +499,8 @@ const TranscriptPanel = memo(function TranscriptPanel({
                   border: 0,
                   borderRadius: "999px",
                   padding: "10px 18px",
-                  background: "#ff4f00",
-                  color: "#fff",
+                  background: "rgba(255, 255, 255, 0.12)",
+                  color: "#e4e4e7",
                   cursor: "pointer",
                   fontWeight: 600,
                 }}
@@ -542,6 +543,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
           onSetDefaultModel={setDefaultModel}
         />
       ) : null}
+      </div>
     </SPanel>
   );
 });
@@ -560,7 +562,23 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
     handoffWorkbenchClient.getSnapshot.bind(handoffWorkbenchClient),
   );
   const handoffs = viewModel.handoffs ?? [];
-  const projects = viewModel.projects ?? [];
+  const rawProjects = viewModel.projects ?? [];
+  const [projectOrder, setProjectOrder] = useState<string[] | null>(null);
+  const projects = useMemo(() => {
+    if (!projectOrder) return rawProjects;
+    const byId = new Map(rawProjects.map((p) => [p.id, p]));
+    const ordered = projectOrder.map((id) => byId.get(id)).filter(Boolean) as typeof rawProjects;
+    for (const p of rawProjects) {
+      if (!projectOrder.includes(p.id)) ordered.push(p);
+    }
+    return ordered;
+  }, [rawProjects, projectOrder]);
+  const reorderProjects = useCallback((fromIndex: number, toIndex: number) => {
+    const ids = projects.map((p) => p.id);
+    const [moved] = ids.splice(fromIndex, 1);
+    ids.splice(toIndex, 0, moved!);
+    setProjectOrder(ids);
+  }, [projects]);
   const [activeTabIdByHandoff, setActiveTabIdByHandoff] = useState<Record<string, string | null>>({});
   const [lastAgentTabIdByHandoff, setLastAgentTabIdByHandoff] = useState<Record<string, string | null>>({});
   const [openDiffsByHandoff, setOpenDiffsByHandoff] = useState<Record<string, string[]>>({});
@@ -864,34 +882,35 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
     >
       <div
         style={{
-          width: "min(520px, 100%)",
-          border: "1px solid rgba(255, 255, 255, 0.14)",
-          borderRadius: "18px",
-          background: "#111113",
-          boxShadow: "0 32px 80px rgba(0, 0, 0, 0.45)",
-          padding: "24px",
+          width: "min(440px, 100%)",
+          border: "1px solid rgba(255, 255, 255, 0.10)",
+          borderRadius: "12px",
+          background: "rgba(24, 24, 27, 0.98)",
+          backdropFilter: "blur(16px)",
+          boxShadow: "0 24px 64px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04)",
+          padding: "28px",
           display: "flex",
           flexDirection: "column",
-          gap: "16px",
+          gap: "20px",
         }}
       >
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          <div style={{ fontSize: "12px", letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255, 255, 255, 0.5)" }}>Onboarding</div>
-          <h2 style={{ margin: 0, fontSize: "24px", lineHeight: 1.1 }}>Give us support for sandbox agent</h2>
-          <p style={{ margin: 0, color: "rgba(255, 255, 255, 0.72)", lineHeight: 1.5 }}>
-            Before you keep going, give us support for sandbox agent and star the repo right here in the app.
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+          <div style={{ fontSize: "11px", letterSpacing: "0.06em", textTransform: "uppercase", fontWeight: 600, color: "rgba(255, 255, 255, 0.4)" }}>Welcome to Foundry</div>
+          <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 500, lineHeight: 1.3 }}>Support Sandbox Agent</h2>
+          <p style={{ margin: 0, color: "rgba(255, 255, 255, 0.55)", fontSize: "13px", lineHeight: 1.6 }}>
+            Star the repo to help us grow and stay up to date with new releases.
           </p>
         </div>
 
         {starRepoError ? (
           <div
             style={{
-              borderRadius: "12px",
-              border: "1px solid rgba(255, 110, 110, 0.32)",
-              background: "rgba(255, 110, 110, 0.08)",
-              padding: "12px 14px",
-              color: "#ffb4b4",
-              fontSize: "13px",
+              borderRadius: "8px",
+              border: "1px solid rgba(255, 110, 110, 0.24)",
+              background: "rgba(255, 110, 110, 0.06)",
+              padding: "10px 12px",
+              color: "#ff9b9b",
+              fontSize: "12px",
             }}
             data-testid="onboarding-star-repo-error"
           >
@@ -899,18 +918,20 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
           </div>
         ) : null}
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
           <button
             type="button"
             onClick={dismissStarRepoPrompt}
             style={{
-              border: "1px solid rgba(255, 255, 255, 0.14)",
-              borderRadius: "999px",
-              padding: "10px 16px",
-              background: "transparent",
-              color: "#e4e4e7",
+              border: "1px solid rgba(255, 255, 255, 0.10)",
+              borderRadius: "6px",
+              padding: "8px 14px",
+              background: "rgba(255, 255, 255, 0.05)",
+              color: "rgba(255, 255, 255, 0.7)",
               cursor: "pointer",
-              fontWeight: 600,
+              fontSize: "12px",
+              fontWeight: 500,
+              transition: "all 160ms ease",
             }}
           >
             Maybe later
@@ -921,16 +942,18 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
             disabled={starRepoPending}
             style={{
               border: 0,
-              borderRadius: "999px",
-              padding: "10px 16px",
-              background: starRepoPending ? "#7f5539" : "#ff4f00",
-              color: "#fff",
+              borderRadius: "6px",
+              padding: "8px 14px",
+              background: starRepoPending ? "rgba(255, 255, 255, 0.06)" : "rgba(255, 255, 255, 0.12)",
+              color: "#e4e4e7",
               cursor: starRepoPending ? "progress" : "pointer",
-              fontWeight: 700,
+              fontSize: "12px",
+              fontWeight: 600,
+              transition: "all 160ms ease",
             }}
             data-testid="onboarding-star-repo-submit"
           >
-            {starRepoPending ? "Starring..." : "Star the sandbox agent repo"}
+            {starRepoPending ? "Starring..." : "Star the repo"}
           </button>
         </div>
       </div>
@@ -949,8 +972,9 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
             onMarkUnread={markHandoffUnread}
             onRenameHandoff={renameHandoff}
             onRenameBranch={renameBranch}
+            onReorderProjects={reorderProjects}
           />
-          <SPanel>
+          <SPanel $style={{ backgroundColor: "#09090b" }}>
             <ScrollBody>
               <div
                 style={{
@@ -985,8 +1009,8 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
                       border: 0,
                       borderRadius: "999px",
                       padding: "10px 18px",
-                      background: viewModel.repos.length > 0 ? "#ff4f00" : "#444",
-                      color: "#fff",
+                      background: viewModel.repos.length > 0 ? "rgba(255, 255, 255, 0.12)" : "#444",
+                      color: "#e4e4e7",
                       cursor: viewModel.repos.length > 0 ? "pointer" : "not-allowed",
                       fontWeight: 600,
                     }}
@@ -1015,6 +1039,7 @@ export function MockLayout({ workspaceId, selectedHandoffId, selectedSessionId }
           onMarkUnread={markHandoffUnread}
           onRenameHandoff={renameHandoff}
           onRenameBranch={renameBranch}
+          onReorderProjects={reorderProjects}
         />
         <TranscriptPanel
           handoff={activeHandoff}

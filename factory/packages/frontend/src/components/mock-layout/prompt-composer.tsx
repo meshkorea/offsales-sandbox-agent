@@ -1,7 +1,7 @@
 import { memo, type Ref } from "react";
 import { useStyletron } from "baseui";
 import { ChatComposer, type ChatComposerClassNames } from "@sandbox-agent/react";
-import { ArrowUpFromLine, FileCode, Square, X } from "lucide-react";
+import { FileCode, SendHorizonal, Square, X } from "lucide-react";
 
 import { ModelPicker } from "./model-picker";
 import { PROMPT_TEXTAREA_MAX_HEIGHT, PROMPT_TEXTAREA_MIN_HEIGHT } from "./ui";
@@ -45,7 +45,7 @@ export const PromptComposer = memo(function PromptComposer({
       borderRadius: "16px",
       minHeight: `${PROMPT_TEXTAREA_MIN_HEIGHT + 36}px`,
       transition: "border-color 200ms ease",
-      ":focus-within": { borderColor: "rgba(255, 255, 255, 0.3)" },
+      ":focus-within": { borderColor: "rgba(255, 255, 255, 0.15)" },
       display: "flex",
       flexDirection: "column",
     }),
@@ -82,9 +82,9 @@ export const PromptComposer = memo(function PromptComposer({
       justifyContent: "center",
       color: theme.colors.contentPrimary,
       transition: "background 200ms ease",
-      backgroundColor: isRunning ? "rgba(255, 255, 255, 0.06)" : "#ff4f00",
+      backgroundColor: isRunning ? "rgba(255, 255, 255, 0.06)" : "rgba(255, 255, 255, 0.12)",
       ":hover": {
-        backgroundColor: isRunning ? "rgba(255, 255, 255, 0.12)" : "#ff6a00",
+        backgroundColor: isRunning ? "rgba(255, 255, 255, 0.12)" : "rgba(255, 255, 255, 0.20)",
       },
       ":disabled": {
         cursor: "not-allowed",
@@ -157,7 +157,7 @@ export const PromptComposer = memo(function PromptComposer({
         allowEmptySubmit={isRunning}
         submitLabel={isRunning ? "Stop" : "Send"}
         classNames={composerClassNames}
-        renderSubmitContent={() => (isRunning ? <Square size={16} /> : <ArrowUpFromLine size={16} />)}
+        renderSubmitContent={() => (isRunning ? <Square size={16} /> : <SendHorizonal size={16} />)}
         renderFooter={() => (
           <div className={css({ padding: "0 10px 8px" })}>
             <ModelPicker
