@@ -4,23 +4,26 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Primary accent (OrangeRed)
-        accent: "#FF4500",
+        // Primary accent (Foundry orange)
+        accent: "#ff4f00",
         // Extended color palette
-        background: "#000000",
-        "text-primary": "#FAFAFA",
-        "text-secondary": "#A0A0A0",
-        border: "#252525",
+        background: "#09090b",
+        "bg-secondary": "#0f0f11",
+        "bg-tertiary": "#0c0c0e",
+        "text-primary": "#ffffff",
+        "text-secondary": "#a1a1aa",
+        "text-tertiary": "#71717a",
+        border: "rgba(255, 255, 255, 0.10)",
         // Code syntax highlighting
         "code-keyword": "#c084fc",
         "code-function": "#60a5fa",
         "code-string": "#4ade80",
-        "code-comment": "#737373",
+        "code-comment": "#71717a",
       },
       fontFamily: {
-        sans: ["Manrope", "system-ui", "sans-serif"],
-        heading: ["Manrope", "system-ui", "sans-serif"],
-        mono: ["JetBrains Mono", "monospace"],
+        sans: ["IBM Plex Sans", "Segoe UI", "system-ui", "sans-serif"],
+        heading: ["IBM Plex Sans", "Segoe UI", "system-ui", "sans-serif"],
+        mono: ["IBM Plex Mono", "SFMono-Regular", "monospace"],
       },
       animation: {
         "fade-in-up": "fade-in-up 0.8s ease-out forwards",

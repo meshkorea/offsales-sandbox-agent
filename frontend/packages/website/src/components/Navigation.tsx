@@ -6,7 +6,7 @@ import { GitHubStars } from "./GitHubStars";
 
 function NavItem({ href, children }: { href: string; children: React.ReactNode }) {
   return (
-    <a href={href} className="px-3 py-2 text-sm font-medium text-zinc-400 transition-colors duration-200 hover:text-white">
+    <a href={href} className="px-3 py-2 text-sm font-normal text-zinc-400 transition-colors duration-200 hover:text-white">
       {children}
     </a>
   );
@@ -28,19 +28,19 @@ export function Navigation() {
   return (
     <div className="fixed top-0 z-50 w-full max-w-[1200px] md:left-1/2 md:top-4 md:-translate-x-1/2 md:px-8">
       <div
-        className={`relative before:pointer-events-none before:absolute before:inset-[-1px] before:z-20 before:hidden before:rounded-2xl before:border before:content-[''] before:transition-colors before:duration-300 before:ease-in-out md:before:block ${
+        className={`relative before:pointer-events-none before:absolute before:inset-[-1px] before:z-20 before:hidden before:rounded-xl before:border before:content-[''] before:transition-colors before:duration-300 before:ease-in-out md:before:block ${
           isScrolled ? "before:border-white/10" : "before:border-transparent"
         }`}
       >
         {/* Background with blur */}
         <div
-          className={`absolute inset-0 -z-[1] hidden overflow-hidden rounded-2xl transition-all duration-300 ease-in-out md:block ${
-            isScrolled ? "bg-black/80 backdrop-blur-lg" : "bg-transparent backdrop-blur-none"
+          className={`absolute inset-0 -z-[1] hidden overflow-hidden rounded-xl transition-all duration-300 ease-in-out md:block ${
+            isScrolled ? "bg-[#09090b]/80 backdrop-blur-lg" : "bg-transparent backdrop-blur-none"
           }`}
         />
 
         <header
-          className={`bg-black/60 border-b-transparent sticky top-0 z-10 flex flex-col items-center border-b backdrop-blur-md pt-2 pb-2 md:static md:bg-transparent md:rounded-2xl md:max-w-[1200px] md:border-transparent md:backdrop-blur-none transition-all hover:opacity-100 ${
+          className={`bg-[#09090b]/60 border-b-transparent sticky top-0 z-10 flex flex-col items-center border-b backdrop-blur-md pt-2 pb-2 md:static md:bg-transparent md:rounded-xl md:max-w-[1200px] md:border-transparent md:backdrop-blur-none transition-all hover:opacity-100 ${
             isScrolled ? "opacity-100" : "opacity-80"
           }`}
         >
@@ -91,7 +91,7 @@ export function Navigation() {
 
       {/* Mobile menu */}
       {mobileMenuOpen && (
-        <div className="md:hidden border border-white/10 bg-black/95 backdrop-blur-lg rounded-2xl mt-2 mx-2 shadow-xl">
+        <div className="md:hidden border border-white/10 bg-[#09090b]/95 backdrop-blur-lg rounded-xl mt-2 mx-2 shadow-xl">
           <div className="px-4 py-4 space-y-1">
             <a
               href="/docs"

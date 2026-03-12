@@ -4,6 +4,7 @@ import type { FoundryBillingPlanId } from "@sandbox-agent/foundry-shared";
 import { Navigate, Outlet, createRootRoute, createRoute, createRouter, useRouterState } from "@tanstack/react-router";
 import { MockLayout } from "../components/mock-layout";
 import {
+  MockAccountSettingsPage,
   MockHostedCheckoutPage,
   MockOrganizationBillingPage,
   MockOrganizationSelectorPage,
@@ -28,6 +29,12 @@ const signInRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/signin",
   component: SignInRoute,
+});
+
+const accountRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/account",
+  component: AccountRoute,
 });
 
 const organizationsRoute = createRoute({
@@ -84,6 +91,7 @@ const repoRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   signInRoute,
+  accountRoute,
   organizationsRoute,
   organizationSettingsRoute,
   organizationBillingRoute,
@@ -150,6 +158,18 @@ function SignInRoute() {
   }
 
   return <MockSignInPage />;
+}
+
+function AccountRoute() {
+  const snapshot = useMockAppSnapshot();
+  if (!isMockFrontendClient && isAppSnapshotBootstrapping(snapshot)) {
+    return <AppLoadingScreen label="Loading account..." />;
+  }
+  if (snapshot.auth.status === "signed_out") {
+    return <Navigate to="/signin" replace />;
+  }
+
+  return <MockAccountSettingsPage />;
 }
 
 function OrganizationsRoute() {

@@ -4,24 +4,12 @@
   "version": "0.1.0",
   "identifier": "dev.sandboxagent.foundry",
   "build": {
-    "beforeDevCommand": "VITE_DESKTOP=1 pnpm --filter @sandbox-agent/foundry-frontend dev",
+    "beforeDevCommand": "FOUNDRY_FRONTEND_CLIENT_MODE=mock VITE_DESKTOP=1 pnpm --filter @sandbox-agent/foundry-frontend dev",
     "devUrl": "http://localhost:4173",
     "frontendDist": "../frontend-dist"
   },
   "app": {
-    "windows": [
-      {
-        "title": "Foundry",
-        "width": 1280,
-        "height": 800,
-        "minWidth": 900,
-        "minHeight": 600,
-        "resizable": true,
-        "theme": "Dark",
-        "titleBarStyle": "Overlay",
-        "hiddenTitle": true
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }

@@ -50,7 +50,7 @@ const footer = {
 
 export function Footer() {
   return (
-    <footer className="border-t border-white/10 bg-black">
+    <footer className="border-t border-white/10 bg-[#09090b]">
       <div className="mx-auto max-w-6xl px-6 py-16 lg:py-20">
         <div className="xl:grid xl:grid-cols-12 xl:gap-16">
           {/* Logo & Social */}

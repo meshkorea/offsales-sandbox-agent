@@ -72,6 +72,12 @@ const TranscriptPanel = memo(function TranscriptPanel({
   onSetActiveTabId,
   onSetLastAgentTabId,
   onSetOpenDiffs,
+  sidebarCollapsed,
+  onToggleSidebar,
+  onSidebarPeekStart,
+  onSidebarPeekEnd,
+  rightSidebarCollapsed,
+  onToggleRightSidebar,
 }: {
   taskWorkbenchClient: ReturnType<typeof getTaskWorkbenchClient>;
   task: Task;
@@ -82,6 +88,12 @@ const TranscriptPanel = memo(function TranscriptPanel({
   onSetActiveTabId: (tabId: string | null) => void;
   onSetLastAgentTabId: (tabId: string | null) => void;
   onSetOpenDiffs: (paths: string[]) => void;
+  sidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
+  onSidebarPeekStart?: () => void;
+  onSidebarPeekEnd?: () => void;
+  rightSidebarCollapsed?: boolean;
+  onToggleRightSidebar?: () => void;
 }) {
   const [defaultModel, setDefaultModel] = useState<ModelId>("claude-sonnet-4");
   const [editingField, setEditingField] = useState<"title" | "branch" | null>(null);
@@ -446,6 +458,12 @@ const TranscriptPanel = memo(function TranscriptPanel({
             setTabUnread(activeAgentTab.id, unread);
           }
         }}
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleSidebar={onToggleSidebar}
+        onSidebarPeekStart={onSidebarPeekStart}
+        onSidebarPeekEnd={onSidebarPeekEnd}
+        rightSidebarCollapsed={rightSidebarCollapsed}
+        onToggleRightSidebar={onToggleRightSidebar}
       />
       <div
         style={{
@@ -456,11 +474,10 @@ const TranscriptPanel = memo(function TranscriptPanel({
           backgroundColor: "#09090b",
           overflow: "hidden",
           borderTopLeftRadius: "12px",
+          borderTopRightRadius: rightSidebarCollapsed ? "12px" : 0,
           borderBottomLeftRadius: "24px",
-          borderLeft: "1px solid rgba(255, 255, 255, 0.10)",
-          borderRight: "1px solid rgba(255, 255, 255, 0.10)",
-          borderTop: "1px solid rgba(255, 255, 255, 0.10)",
-          borderBottom: "1px solid rgba(255, 255, 255, 0.10)",
+          borderBottomRightRadius: rightSidebarCollapsed ? "24px" : 0,
+          border: "1px solid rgba(255, 255, 255, 0.10)",
         }}
       >
         <TabStrip
@@ -478,6 +495,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
           onCloseTab={closeTab}
           onCloseDiffTab={closeDiffTab}
           onAddTab={addTab}
+          sidebarCollapsed={sidebarCollapsed}
         />
         {activeDiff ? (
           <DiffContent
@@ -873,6 +891,7 @@ function MockWorkspaceOrgBar() {
 }
 
 export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: MockLayoutProps) {
+  const [css] = useStyletron();
   const navigate = useNavigate();
   const taskWorkbenchClient = useMemo(() => getTaskWorkbenchClient(workspaceId), [workspaceId]);
   const viewModel = useSyncExternalStore(
@@ -912,6 +931,17 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
   const autoCreatingSessionForTaskRef = useRef<Set<string>>(new Set());
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
+  const [leftSidebarPeeking, setLeftSidebarPeeking] = useState(false);
+  const peekTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const startPeek = useCallback(() => {
+    if (peekTimeoutRef.current) clearTimeout(peekTimeoutRef.current);
+    setLeftSidebarPeeking(true);
+  }, []);
+
+  const endPeek = useCallback(() => {
+    peekTimeoutRef.current = setTimeout(() => setLeftSidebarPeeking(false), 200);
+  }, []);
 
   useEffect(() => {
     leftWidthRef.current = leftWidth;
@@ -1212,154 +1242,6 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
     [activeTask, lastAgentTabIdByTask],
   );
 
-  const dismissStarRepoPrompt = useCallback(() => {
-    setStarRepoError(null);
-    try {
-      globalThis.localStorage?.setItem(STAR_SANDBOX_AGENT_REPO_STORAGE_KEY, "dismissed");
-    } catch {
-      // ignore storage failures
-    }
-    setStarRepoPromptOpen(false);
-  }, []);
-
-  const starSandboxAgentRepo = useCallback(() => {
-    setStarRepoPending(true);
-    setStarRepoError(null);
-    void backendClient
-      .starSandboxAgentRepo(workspaceId)
-      .then(() => {
-        try {
-          globalThis.localStorage?.setItem(STAR_SANDBOX_AGENT_REPO_STORAGE_KEY, "completed");
-        } catch {
-          // ignore storage failures
-        }
-        setStarRepoPromptOpen(false);
-      })
-      .catch((error) => {
-        setStarRepoError(error instanceof Error ? error.message : String(error));
-      })
-      .finally(() => {
-        setStarRepoPending(false);
-      });
-  }, [workspaceId]);
-
-  const starRepoPrompt = starRepoPromptOpen ? (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 10000,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "24px",
-        background: "rgba(0, 0, 0, 0.68)",
-      }}
-      data-testid="onboarding-star-repo-modal"
-    >
-      <div
-        style={{
-          width: "min(440px, 100%)",
-          border: "1px solid rgba(255, 255, 255, 0.10)",
-          borderRadius: "12px",
-          background: "rgba(24, 24, 27, 0.98)",
-          backdropFilter: "blur(16px)",
-          boxShadow: "0 24px 64px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04)",
-          padding: "28px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "20px",
-        }}
-      >
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              fontSize: "11px",
-              letterSpacing: "0.06em",
-              textTransform: "uppercase",
-              fontWeight: 600,
-              color: "rgba(255, 255, 255, 0.4)",
-            }}
-          >
-            <svg width="14" height="14" viewBox="0 0 130 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="2" y="1" width="126" height="126" rx="44" fill="#0F0F0F" />
-              <path
-                fillRule="evenodd"
-                clipRule="evenodd"
-                d="M88.0429 44.2658C89.3803 43.625 90.8907 44.1955 91.5731 45.3776C92.2556 46.5596 91.9945 48.1529 90.7709 48.9907L72.3923 62.885C71.8013 63.2262 71.4248 63.7062 71.1029 64.2861C70.781 64.8659 70.5554 65.3922 70.5443 66.0553L67.7403 88.9495C67.521 90.3894 66.4114 91.423 64.9867 91.4576C63.5619 91.4922 62.3731 90.3429 62.24 88.9751L59.3859 66.0642C59.3971 65.4011 59.2126 64.8489 58.8714 64.2579C58.5302 63.6669 58.1442 63.231 57.5643 62.9091L39.15 48.9819C38.032 48.1828 37.6311 46.5786 38.3734 45.362C39.1157 44.1454 40.5656 43.7013 41.9223 44.2314L63.1512 53.2502C63.731 53.5721 64.2996 53.6398 64.9627 53.651C65.6259 53.6622 66.2298 53.5761 66.8208 53.2349L88.0429 44.2658Z"
-                fill="white"
-              />
-              <rect x="19.25" y="18.25" width="91.5" height="91.5" rx="25.75" stroke="#F0F0F0" strokeWidth="8.5" />
-            </svg>
-            Welcome to Foundry
-          </div>
-          <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 500, lineHeight: 1.3 }}>Support Sandbox Agent</h2>
-          <p style={{ margin: 0, color: "rgba(255, 255, 255, 0.55)", fontSize: "13px", lineHeight: 1.6 }}>
-            Star the repo to help us grow and stay up to date with new releases.
-          </p>
-        </div>
-
-        {starRepoError ? (
-          <div
-            style={{
-              borderRadius: "8px",
-              border: "1px solid rgba(255, 110, 110, 0.24)",
-              background: "rgba(255, 110, 110, 0.06)",
-              padding: "10px 12px",
-              color: "#ff9b9b",
-              fontSize: "12px",
-            }}
-            data-testid="onboarding-star-repo-error"
-          >
-            {starRepoError}
-          </div>
-        ) : null}
-
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
-          <button
-            type="button"
-            onClick={dismissStarRepoPrompt}
-            style={{
-              border: "1px solid rgba(255, 255, 255, 0.10)",
-              borderRadius: "6px",
-              padding: "8px 14px",
-              background: "rgba(255, 255, 255, 0.05)",
-              color: "rgba(255, 255, 255, 0.7)",
-              cursor: "pointer",
-              fontSize: "12px",
-              fontWeight: 500,
-              transition: "all 160ms ease",
-            }}
-          >
-            Maybe later
-          </button>
-          <button
-            type="button"
-            onClick={starSandboxAgentRepo}
-            disabled={starRepoPending}
-            style={{
-              border: 0,
-              borderRadius: "6px",
-              padding: "8px 14px",
-              background: starRepoPending ? "rgba(255, 255, 255, 0.06)" : "rgba(255, 255, 255, 0.12)",
-              color: "#ffffff",
-              cursor: starRepoPending ? "progress" : "pointer",
-              fontSize: "12px",
-              fontWeight: 600,
-              transition: "all 160ms ease",
-            }}
-            data-testid="onboarding-star-repo-submit"
-          >
-            {starRepoPending ? "Starring..." : "Star the repo"}
-          </button>
-        </div>
-      </div>
-    </div>
-  ) : null;
-
   const isDesktop = !!import.meta.env.VITE_DESKTOP;
   const onDragMouseDown = useCallback((event: ReactPointerEvent) => {
     if (event.button !== 0) return;
@@ -1397,7 +1279,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
     </div>
   ) : null;
 
-  const collapsedToggleStyle: React.CSSProperties = {
+  const collapsedToggleClass = css({
     width: "26px",
     height: "26px",
     borderRadius: "6px",
@@ -1409,7 +1291,8 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
     position: "relative",
     zIndex: 9999,
     flexShrink: 0,
-  };
+    ":hover": { color: "#a1a1aa", backgroundColor: "rgba(255, 255, 255, 0.06)" },
+  });
 
   const sidebarTransition = "width 200ms ease";
   const contentFrameStyle: React.CSSProperties = {
@@ -1420,6 +1303,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
     overflow: "hidden",
     marginBottom: "8px",
     marginRight: "8px",
+    marginLeft: leftSidebarOpen ? 0 : "8px",
   };
 
   if (!activeTask) {
@@ -1455,16 +1339,24 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
               />
             </div>
           </div>
-          {leftSidebarOpen ? null : (
-            <div style={{ flexShrink: 0, padding: "6px 4px 0 6px", paddingTop: isDesktop ? "38px" : "6px" }}>
-              <div style={collapsedToggleStyle} onClick={() => setLeftSidebarOpen(true)}>
-                <PanelLeft size={16} />
-              </div>
-            </div>
-          )}
           <div style={contentFrameStyle}>
             {leftSidebarOpen ? <PanelResizeHandle onResizeStart={onLeftResizeStart} onResize={onLeftResize} /> : null}
             <SPanel $style={{ backgroundColor: "#09090b", flex: 1, minWidth: 0 }}>
+              {!leftSidebarOpen || !rightSidebarOpen ? (
+                <div style={{ display: "flex", alignItems: "center", padding: "8px 8px 0 8px" }}>
+                  {leftSidebarOpen ? null : (
+                    <div className={collapsedToggleClass} onClick={() => setLeftSidebarOpen(true)}>
+                      <PanelLeft size={14} />
+                    </div>
+                  )}
+                  <div style={{ flex: 1 }} />
+                  {rightSidebarOpen ? null : (
+                    <div className={collapsedToggleClass} onClick={() => setRightSidebarOpen(true)}>
+                      <PanelRight size={14} />
+                    </div>
+                  )}
+                </div>
+              ) : null}
               <ScrollBody>
                 <div
                   style={{
@@ -1528,13 +1420,6 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
               </div>
             </div>
           </div>
-          {rightSidebarOpen ? null : (
-            <div style={{ flexShrink: 0, padding: "6px 6px 0 4px" }}>
-              <div style={collapsedToggleStyle} onClick={() => setRightSidebarOpen(true)}>
-                <PanelRight size={16} />
-              </div>
-            </div>
-          )}
         </Shell>
       </>
     );
@@ -1543,7 +1428,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
   return (
     <>
       {dragRegion}
-      <Shell>
+      <Shell $style={{ position: "relative" }}>
         <div
           style={{
             width: leftSidebarOpen ? `${leftWidth}px` : 0,
@@ -1572,13 +1457,59 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
             />
           </div>
         </div>
-        {leftSidebarOpen ? null : (
-          <div style={{ flexShrink: 0, padding: "6px 4px 0 6px", paddingTop: isDesktop ? "38px" : "6px" }}>
-            <div style={collapsedToggleStyle} onClick={() => setLeftSidebarOpen(true)}>
-              <PanelLeft size={16} />
+        {!leftSidebarOpen && leftSidebarPeeking ? (
+          <>
+            <div
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: "rgba(0, 0, 0, 0.4)",
+                zIndex: 99,
+              }}
+              onClick={() => setLeftSidebarPeeking(false)}
+              onMouseEnter={endPeek}
+            />
+            <div
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                bottom: 0,
+                width: `${leftWidth}px`,
+                zIndex: 100,
+                display: "flex",
+                flexDirection: "column",
+                boxShadow: "4px 0 24px rgba(0, 0, 0, 0.5)",
+              }}
+              onMouseEnter={startPeek}
+              onMouseLeave={endPeek}
+            >
+              <Sidebar
+                projects={projects}
+                newTaskRepos={viewModel.repos}
+                selectedNewTaskRepoId={selectedNewTaskRepoId}
+                activeId={activeTask.id}
+                onSelect={(id) => {
+                  selectTask(id);
+                  setLeftSidebarPeeking(false);
+                }}
+                onCreate={createTask}
+                onSelectNewTaskRepo={setSelectedNewTaskRepoId}
+                onMarkUnread={markTaskUnread}
+                onRenameTask={renameTask}
+                onRenameBranch={renameBranch}
+                onReorderProjects={reorderProjects}
+                onToggleSidebar={() => {
+                  setLeftSidebarPeeking(false);
+                  setLeftSidebarOpen(true);
+                }}
+              />
             </div>
-          </div>
-        )}
+          </>
+        ) : null}
         <div style={contentFrameStyle}>
           {leftSidebarOpen ? <PanelResizeHandle onResizeStart={onLeftResizeStart} onResize={onLeftResize} /> : null}
           <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
@@ -1598,6 +1529,15 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
               onSetOpenDiffs={(paths) => {
                 setOpenDiffsByTask((current) => ({ ...current, [activeTask.id]: paths }));
               }}
+              sidebarCollapsed={!leftSidebarOpen}
+              onToggleSidebar={() => {
+                setLeftSidebarPeeking(false);
+                setLeftSidebarOpen(true);
+              }}
+              onSidebarPeekStart={startPeek}
+              onSidebarPeekEnd={endPeek}
+              rightSidebarCollapsed={!rightSidebarOpen}
+              onToggleRightSidebar={() => setRightSidebarOpen(true)}
             />
           </div>
           {rightSidebarOpen ? <PanelResizeHandle onResizeStart={onRightResizeStart} onResize={onRightResize} /> : null}
@@ -1626,13 +1566,6 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
             </div>
           </div>
         </div>
-        {rightSidebarOpen ? null : (
-          <div style={{ flexShrink: 0, padding: "6px 6px 0 4px" }}>
-            <div style={collapsedToggleStyle} onClick={() => setRightSidebarOpen(true)}>
-              <PanelRight size={16} />
-            </div>
-          </div>
-        )}
       </Shell>
     </>
   );

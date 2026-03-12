@@ -10,11 +10,11 @@ interface ButtonProps {
 }
 
 export function Button({ children, variant = "primary", size = "md", href, onClick, className = "" }: ButtonProps) {
-  const baseStyles = "inline-flex items-center justify-center font-bold rounded-lg transition-all";
+  const baseStyles = "inline-flex items-center justify-center font-medium rounded-lg transition-all";
 
   const variants = {
     primary: "bg-white text-black hover:bg-zinc-200",
-    secondary: "bg-zinc-900 border border-white/10 text-white hover:bg-zinc-800",
+    secondary: "bg-[#0f0f11] border border-white/10 text-white hover:bg-white/[0.06]",
     ghost: "text-zinc-400 hover:text-white",
   };
 

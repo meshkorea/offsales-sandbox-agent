@@ -1,10 +1,26 @@
-import { memo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useNavigate } from "@tanstack/react-router";
 import { useStyletron } from "baseui";
 import { LabelSmall, LabelXSmall } from "baseui/typography";
-import { ChevronDown, ChevronUp, CloudUpload, GitPullRequestDraft, ListChecks, PanelLeft, Plus } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  CloudUpload,
+  CreditCard,
+  GitPullRequestDraft,
+  ListChecks,
+  LogOut,
+  PanelLeft,
+  Plus,
+  Settings,
+  User,
+} from "lucide-react";
 
 import { formatRelativeAge, type Task, type ProjectSection } from "./view-model";
 import { ContextMenuOverlay, TaskIndicator, PanelHeaderBar, SPanel, ScrollBody, useContextMenu } from "./ui";
+import { activeMockOrganization, eligibleOrganizations, useMockAppClient, useMockAppSnapshot } from "../../lib/mock-app";
 
 const PROJECT_COLORS = ["#6366f1", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316"];
 
@@ -400,7 +416,343 @@ export const Sidebar = memo(function Sidebar({
           })}
         </div>
       </ScrollBody>
+      <SidebarFooter />
       {contextMenu.menu ? <ContextMenuOverlay menu={contextMenu.menu} onClose={contextMenu.close} /> : null}
     </SPanel>
   );
 });
+
+const menuButtonStyle = (highlight: boolean) =>
+  ({
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    width: "100%",
+    padding: "8px 12px",
+    borderRadius: "6px",
+    border: "none",
+    background: highlight ? "rgba(255, 255, 255, 0.06)" : "transparent",
+    color: "rgba(255, 255, 255, 0.75)",
+    cursor: "pointer",
+    fontSize: "13px",
+    fontWeight: 400 as const,
+    textAlign: "left" as const,
+    transition: "background 120ms ease, color 120ms ease",
+  }) satisfies React.CSSProperties;
+
+function SidebarFooter() {
+  const [css] = useStyletron();
+  const navigate = useNavigate();
+  const client = useMockAppClient();
+  const snapshot = useMockAppSnapshot();
+  const organization = activeMockOrganization(snapshot);
+  const [open, setOpen] = useState(false);
+  const [workspaceFlyoutOpen, setWorkspaceFlyoutOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const flyoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const workspaceTriggerRef = useRef<HTMLDivElement>(null);
+  const flyoutRef = useRef<HTMLDivElement>(null);
+  const [flyoutPos, setFlyoutPos] = useState<{ top: number; left: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (workspaceFlyoutOpen && workspaceTriggerRef.current) {
+      const rect = workspaceTriggerRef.current.getBoundingClientRect();
+      setFlyoutPos({ top: rect.top, left: rect.right + 4 });
+    }
+  }, [workspaceFlyoutOpen]);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(event: MouseEvent) {
+      const target = event.target as Node;
+      const inContainer = containerRef.current?.contains(target);
+      const inFlyout = flyoutRef.current?.contains(target);
+      if (!inContainer && !inFlyout) {
+        if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+        setOpen(false);
+        setWorkspaceFlyoutOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  const switchToOrg = useCallback(
+    (org: (typeof snapshot.organizations)[number]) => {
+      setOpen(false);
+      setWorkspaceFlyoutOpen(false);
+      void (async () => {
+        await client.selectOrganization(org.id);
+        await navigate({ to: `/workspaces/${org.workspaceId}` as never });
+      })();
+    },
+    [client, navigate],
+  );
+
+  const openFlyout = useCallback(() => {
+    if (flyoutTimerRef.current) clearTimeout(flyoutTimerRef.current);
+    setWorkspaceFlyoutOpen(true);
+  }, []);
+
+  const closeFlyout = useCallback(() => {
+    flyoutTimerRef.current = setTimeout(() => setWorkspaceFlyoutOpen(false), 150);
+  }, []);
+
+  const menuItems: Array<{ icon: React.ReactNode; label: string; danger?: boolean; onClick: () => void }> = [];
+
+  if (organization) {
+    menuItems.push(
+      {
+        icon: <Settings size={14} />,
+        label: "Settings",
+        onClick: () => {
+          setOpen(false);
+          void navigate({ to: "/organizations/$organizationId/settings" as never, params: { organizationId: organization.id } as never });
+        },
+      },
+      {
+        icon: <CreditCard size={14} />,
+        label: "Billing",
+        onClick: () => {
+          setOpen(false);
+          void navigate({ to: "/organizations/$organizationId/billing" as never, params: { organizationId: organization.id } as never });
+        },
+      },
+    );
+  }
+
+  menuItems.push(
+    {
+      icon: <User size={14} />,
+      label: "Account",
+      onClick: () => {
+        setOpen(false);
+        void navigate({ to: "/account" as never });
+      },
+    },
+    {
+      icon: <LogOut size={14} />,
+      label: "Sign Out",
+      danger: true,
+      onClick: () => {
+        setOpen(false);
+        void (async () => {
+          await client.signOut();
+          await navigate({ to: "/signin" });
+        })();
+      },
+    },
+  );
+
+  const popoverStyle = css({
+    borderRadius: "10px",
+    border: "1px solid rgba(255, 255, 255, 0.10)",
+    backgroundColor: "#18181b",
+    boxShadow: "0 12px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04)",
+    padding: "4px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "2px",
+  });
+
+  return (
+    <div
+      ref={containerRef}
+      onMouseEnter={() => {
+        if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+        hoverTimerRef.current = setTimeout(() => setOpen(true), 300);
+      }}
+      onMouseLeave={() => {
+        if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+        hoverTimerRef.current = setTimeout(() => {
+          setOpen(false);
+          setWorkspaceFlyoutOpen(false);
+        }, 200);
+      }}
+      className={css({ position: "relative", flexShrink: 0 })}
+    >
+      {open ? (
+        <div
+          className={css({
+            position: "absolute",
+            bottom: "100%",
+            left: "8px",
+            right: "8px",
+            marginBottom: "4px",
+            zIndex: 9999,
+          })}
+        >
+          <div className={popoverStyle}>
+            {/* Workspace flyout trigger */}
+            {organization ? (
+              <div ref={workspaceTriggerRef} onMouseEnter={openFlyout} onMouseLeave={closeFlyout}>
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceFlyoutOpen((prev) => !prev)}
+                  className={css({
+                    ...menuButtonStyle(workspaceFlyoutOpen),
+                    fontWeight: 500,
+                    ":hover": {
+                      backgroundColor: "rgba(255, 255, 255, 0.06)",
+                      color: "#ffffff",
+                    },
+                  })}
+                >
+                  <span
+                    className={css({
+                      width: "18px",
+                      height: "18px",
+                      borderRadius: "4px",
+                      background: `linear-gradient(135deg, ${projectIconColor(organization.settings.displayName)}, ${projectIconColor(organization.settings.displayName + "x")})`,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "9px",
+                      fontWeight: 700,
+                      color: "#ffffff",
+                      flexShrink: 0,
+                    })}
+                  >
+                    {organization.settings.displayName.charAt(0).toUpperCase()}
+                  </span>
+                  <span className={css({ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" })}>
+                    {organization.settings.displayName}
+                  </span>
+                  <ChevronRight size={12} className={css({ flexShrink: 0, color: "rgba(255, 255, 255, 0.35)" })} />
+                </button>
+              </div>
+            ) : null}
+
+            {/* Workspace flyout portal */}
+            {workspaceFlyoutOpen && organization && flyoutPos
+              ? createPortal(
+                  <div
+                    ref={flyoutRef}
+                    className={css({
+                      position: "fixed",
+                      top: `${flyoutPos.top}px`,
+                      left: `${flyoutPos.left}px`,
+                      minWidth: "200px",
+                      zIndex: 10000,
+                    })}
+                    onMouseEnter={() => {
+                      openFlyout();
+                      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+                    }}
+                    onMouseLeave={() => {
+                      closeFlyout();
+                      hoverTimerRef.current = setTimeout(() => {
+                        setOpen(false);
+                        setWorkspaceFlyoutOpen(false);
+                      }, 200);
+                    }}
+                  >
+                    <div className={popoverStyle}>
+                      {eligibleOrganizations(snapshot).map((org) => {
+                        const isActive = organization.id === org.id;
+                        return (
+                          <button
+                            key={org.id}
+                            type="button"
+                            onClick={() => {
+                              if (!isActive) switchToOrg(org);
+                              else {
+                                setOpen(false);
+                                setWorkspaceFlyoutOpen(false);
+                              }
+                            }}
+                            className={css({
+                              ...menuButtonStyle(isActive),
+                              fontWeight: isActive ? 600 : 400,
+                              color: isActive ? "#ffffff" : "rgba(255, 255, 255, 0.65)",
+                              ":hover": {
+                                backgroundColor: "rgba(255, 255, 255, 0.06)",
+                                color: "#ffffff",
+                              },
+                            })}
+                          >
+                            <span
+                              className={css({
+                                width: "18px",
+                                height: "18px",
+                                borderRadius: "4px",
+                                background: `linear-gradient(135deg, ${projectIconColor(org.settings.displayName)}, ${projectIconColor(org.settings.displayName + "x")})`,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: "9px",
+                                fontWeight: 700,
+                                color: "#ffffff",
+                                flexShrink: 0,
+                              })}
+                            >
+                              {org.settings.displayName.charAt(0).toUpperCase()}
+                            </span>
+                            <span className={css({ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" })}>
+                              {org.settings.displayName}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>,
+                  document.body,
+                )
+              : null}
+
+            {menuItems.map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                onClick={item.onClick}
+                className={css({
+                  ...menuButtonStyle(false),
+                  color: item.danger ? "#ffa198" : "rgba(255, 255, 255, 0.75)",
+                  ":hover": {
+                    backgroundColor: "rgba(255, 255, 255, 0.06)",
+                    color: item.danger ? "#ff6b6b" : "#ffffff",
+                  },
+                })}
+              >
+                {item.icon}
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      <div className={css({ padding: "8px" })}>
+        <button
+          type="button"
+          onClick={() => {
+            if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+            setOpen((prev) => {
+              if (prev) setWorkspaceFlyoutOpen(false);
+              return !prev;
+            });
+          }}
+          className={css({
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: "28px",
+            height: "28px",
+            borderRadius: "6px",
+            border: "none",
+            background: open ? "rgba(255, 255, 255, 0.06)" : "transparent",
+            color: open ? "#ffffff" : "#71717a",
+            cursor: "pointer",
+            transition: "all 160ms ease",
+            ":hover": {
+              backgroundColor: "rgba(255, 255, 255, 0.06)",
+              color: "#a1a1aa",
+            },
+          })}
+        >
+          <Settings size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}

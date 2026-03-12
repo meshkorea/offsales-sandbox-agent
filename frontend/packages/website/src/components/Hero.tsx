@@ -23,7 +23,7 @@ function UniversalAPIDiagram() {
   }, []);
 
   return (
-    <div className="relative w-full aspect-[4/3] sm:aspect-[16/9] bg-[#050505] rounded-2xl border border-white/10 overflow-hidden flex items-center justify-center shadow-2xl">
+    <div className="relative w-full aspect-[4/3] sm:aspect-[16/9] bg-[#0c0c0e] rounded-xl border border-white/10 overflow-hidden flex items-center justify-center shadow-2xl">
       {/* Background Dots - color changes with active adapter */}
       <div
         className="absolute inset-0 opacity-[0.15] pointer-events-none transition-all duration-1000"
@@ -46,7 +46,7 @@ function UniversalAPIDiagram() {
 
         {/* YOUR APP NODE - Glass dark effect with backdrop blur */}
         <foreignObject x="60" y="175" width="180" height="100">
-          <div className="w-full h-full rounded-2xl border border-white/10 bg-black/40 backdrop-blur-md flex items-center justify-center">
+          <div className="w-full h-full rounded-xl border border-white/10 bg-[#09090b]/60 backdrop-blur-md flex items-center justify-center">
             <span className="text-white text-xl font-bold">Your App</span>
           </div>
         </foreignObject>
@@ -69,7 +69,7 @@ function UniversalAPIDiagram() {
 
         {/* SANDBOX BOUNDARY - Glass dark effect with backdrop blur */}
         <foreignObject x="360" y="45" width="410" height="360">
-          <div className="w-full h-full rounded-3xl border border-white/10 bg-black/40 backdrop-blur-md">
+          <div className="w-full h-full rounded-xl border border-white/10 bg-[#09090b]/60 backdrop-blur-md">
             <div className="text-white text-sm font-extrabold tracking-[0.2em] text-center pt-4">SANDBOX</div>
           </div>
         </foreignObject>
@@ -228,7 +228,7 @@ export function Hero() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5 }}
-                className="mb-6 text-3xl font-medium leading-[1.1] tracking-tight text-white md:text-5xl"
+                className="mb-6 text-3xl font-semibold leading-[1.1] tracking-tight text-white md:text-5xl"
               >
                 Run Coding Agents in Sandboxes.
                 <br />

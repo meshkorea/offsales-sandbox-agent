@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { type FoundryBillingPlanId, type FoundryOrganization, type FoundryOrganizationMember, type FoundryUser } from "@sandbox-agent/foundry-shared";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, BadgeCheck, Building2, CreditCard, Github, ShieldCheck, Star, Users } from "lucide-react";
+import { ArrowLeft, Clock, CreditCard, FileText, Github, LogOut, Settings, Users } from "lucide-react";
 import { activeMockUser, eligibleOrganizations, useMockAppClient, useMockAppSnapshot } from "../lib/mock-app";
 import { isMockFrontendClient } from "../lib/env";
 
@@ -16,115 +16,156 @@ const planCatalog: Record<
   {
     label: string;
     price: string;
+    pricePerMonth: number;
     seats: string;
+    taskHours: number;
     summary: string;
   }
 > = {
   free: {
     label: "Free",
     price: "$0",
+    pricePerMonth: 0,
     seats: "1 seat included",
-    summary: "Best for a personal workspace and quick evaluations.",
+    taskHours: 8,
+    summary: "Get started with up to 8 task hours per month.",
   },
   team: {
-    label: "Team",
-    price: "$240/mo",
-    seats: "5 seats included",
-    summary: "GitHub org onboarding, shared billing, and seat accrual on first prompt.",
+    label: "Pro",
+    price: "$25/mo",
+    pricePerMonth: 25,
+    seats: "per seat",
+    taskHours: 200,
+    summary: "200 task hours per seat, with the ability to purchase additional hours.",
   },
 };
+
+const taskHourPackages = [
+  { hours: 50, price: 6 },
+  { hours: 100, price: 12 },
+  { hours: 200, price: 24 },
+  { hours: 400, price: 48 },
+  { hours: 600, price: 72 },
+  { hours: 1000, price: 120 },
+];
 
 function appSurfaceStyle(): React.CSSProperties {
   return {
     minHeight: "100dvh",
     display: "flex",
     flexDirection: "column",
-    background:
-      "radial-gradient(circle at top left, rgba(255, 79, 0, 0.16), transparent 28%), radial-gradient(circle at top right, rgba(24, 140, 255, 0.18), transparent 32%), #050505",
+    background: "#09090b",
     color: "#ffffff",
+    fontFamily: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
   };
 }
 
-function topBarStyle(): React.CSSProperties {
-  return {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "18px 28px",
-    borderBottom: "1px solid rgba(255, 255, 255, 0.1)",
-    background: "rgba(0, 0, 0, 0.36)",
-    backdropFilter: "blur(16px)",
-  };
-}
+function DesktopDragRegion() {
+  const isDesktop = !!import.meta.env.VITE_DESKTOP;
+  const onDragMouseDown = useCallback((event: React.PointerEvent) => {
+    if (event.button !== 0) return;
+    const ipc = (window as Record<string, unknown>).__TAURI_INTERNALS__ as { invoke: (cmd: string, args?: unknown) => Promise<unknown> } | undefined;
+    if (ipc?.invoke) {
+      ipc.invoke("plugin:window|start_dragging").catch(() => {});
+    }
+  }, []);
 
-function contentWrapStyle(): React.CSSProperties {
-  return {
-    width: "min(1180px, calc(100vw - 40px))",
-    margin: "0 auto",
-    padding: "28px 0 40px",
-    display: "flex",
-    flexDirection: "column",
-    gap: "20px",
-  };
+  if (!isDesktop) return null;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        height: "38px",
+        zIndex: 9998,
+        pointerEvents: "none",
+      }}
+    >
+      <div
+        onPointerDown={onDragMouseDown}
+        style={
+          {
+            position: "absolute",
+            inset: 0,
+            WebkitAppRegion: "drag",
+            pointerEvents: "auto",
+            zIndex: 0,
+          } as React.CSSProperties
+        }
+      />
+    </div>
+  );
 }
 
 function primaryButtonStyle(): React.CSSProperties {
   return {
     border: 0,
-    borderRadius: "999px",
-    padding: "11px 16px",
-    background: "#ff4f00",
-    color: "#ffffff",
-    fontWeight: 700,
+    borderRadius: "6px",
+    padding: "6px 12px",
+    background: "#ffffff",
+    color: "#09090b",
+    fontWeight: 500,
+    fontSize: "12px",
     cursor: "pointer",
+    fontFamily: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
+    lineHeight: 1.4,
   };
 }
 
 function secondaryButtonStyle(): React.CSSProperties {
   return {
-    border: "1px solid rgba(255, 255, 255, 0.16)",
-    borderRadius: "999px",
-    padding: "10px 15px",
+    border: "1px solid rgba(255, 255, 255, 0.10)",
+    borderRadius: "6px",
+    padding: "5px 11px",
     background: "rgba(255, 255, 255, 0.03)",
-    color: "#ffffff",
-    fontWeight: 600,
+    color: "#d4d4d8",
+    fontWeight: 500,
+    fontSize: "12px",
     cursor: "pointer",
+    fontFamily: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
+    lineHeight: 1.4,
   };
 }
 
 function subtleButtonStyle(): React.CSSProperties {
   return {
     border: 0,
-    borderRadius: "999px",
-    padding: "10px 14px",
+    borderRadius: "6px",
+    padding: "6px 10px",
     background: "rgba(255, 255, 255, 0.05)",
-    color: "#ffffff",
-    fontWeight: 600,
+    color: "#a1a1aa",
+    fontWeight: 500,
+    fontSize: "12px",
     cursor: "pointer",
+    fontFamily: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
+    lineHeight: 1.4,
   };
 }
 
 function cardStyle(): React.CSSProperties {
   return {
-    background: "linear-gradient(180deg, rgba(21, 21, 24, 0.96), rgba(10, 10, 11, 0.98))",
-    border: "1px solid rgba(255, 255, 255, 0.1)",
-    borderRadius: "24px",
-    boxShadow: "0 18px 40px rgba(0, 0, 0, 0.36)",
+    background: "#0f0f11",
+    border: "1px solid rgba(255, 255, 255, 0.08)",
+    borderRadius: "8px",
   };
 }
 
-function badgeStyle(background: string, color = "#f4f4f5"): React.CSSProperties {
+function badgeStyle(background: string, color = "#a1a1aa"): React.CSSProperties {
   return {
     display: "inline-flex",
     alignItems: "center",
-    gap: "6px",
-    padding: "6px 10px",
-    borderRadius: "999px",
+    gap: "4px",
+    padding: "2px 6px",
+    borderRadius: "4px",
     background,
     color,
-    fontSize: "12px",
-    fontWeight: 700,
+    fontSize: "10px",
+    fontWeight: 500,
     letterSpacing: "0.01em",
+    lineHeight: 1.4,
   };
 }
 
@@ -168,86 +209,20 @@ function githubBadge(organization: FoundryOrganization) {
   return <span style={badgeStyle("rgba(255, 255, 255, 0.08)")}>Install GitHub App</span>;
 }
 
-function PageShell({
-  user,
-  title,
-  eyebrow,
-  description,
-  children,
-  actions,
-  onSignOut,
-}: {
-  user: FoundryUser | null;
-  title: string;
-  eyebrow: string;
-  description: string;
-  children: React.ReactNode;
-  actions?: React.ReactNode;
-  onSignOut?: () => void;
-}) {
-  return (
-    <div style={appSurfaceStyle()}>
-      <div style={topBarStyle()}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <div
-            style={{
-              width: "42px",
-              height: "42px",
-              borderRadius: "14px",
-              background: "linear-gradient(135deg, #ff4f00, #ff7a00)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontWeight: 800,
-              letterSpacing: "0.06em",
-            }}
-          >
-            SA
-          </div>
-          <div>
-            <div style={{ fontSize: "12px", fontWeight: 700, textTransform: "uppercase", color: "#a1a1aa" }}>{eyebrow}</div>
-            <div style={{ fontSize: "24px", fontWeight: 800 }}>{title}</div>
-          </div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          {actions}
-          {user ? (
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <div style={{ textAlign: "right" }}>
-                <div style={{ fontSize: "13px", fontWeight: 700 }}>{user.name}</div>
-                <div style={{ fontSize: "12px", color: "#a1a1aa" }}>@{user.githubLogin}</div>
-              </div>
-              {onSignOut ? (
-                <button type="button" onClick={onSignOut} style={secondaryButtonStyle()}>
-                  Sign out
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      </div>
-      <div style={contentWrapStyle()}>
-        <div style={{ maxWidth: "720px", color: "#d4d4d8", fontSize: "15px", lineHeight: 1.5 }}>{description}</div>
-        {children}
-      </div>
-    </div>
-  );
-}
-
 function StatCard({ label, value, caption }: { label: string; value: string; caption: string }) {
   return (
     <div
       style={{
         ...cardStyle(),
-        padding: "18px 20px",
+        padding: "14px 16px",
         display: "flex",
         flexDirection: "column",
-        gap: "8px",
+        gap: "6px",
       }}
     >
-      <div style={{ fontSize: "12px", color: "#a1a1aa", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</div>
-      <div style={{ fontSize: "26px", fontWeight: 800 }}>{value}</div>
-      <div style={{ fontSize: "13px", color: "#c4c4ca", lineHeight: 1.5 }}>{caption}</div>
+      <div style={{ fontSize: "10px", color: "#71717a", textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</div>
+      <div style={{ fontSize: "16px", fontWeight: 600 }}>{value}</div>
+      <div style={{ fontSize: "11px", color: "#71717a", lineHeight: 1.5 }}>{caption}</div>
     </div>
   );
 }
@@ -257,18 +232,18 @@ function MemberRow({ member }: { member: FoundryOrganizationMember }) {
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "minmax(0, 1.4fr) minmax(0, 1fr) 120px",
-        gap: "12px",
-        padding: "12px 0",
-        borderTop: "1px solid rgba(255, 255, 255, 0.08)",
+        gridTemplateColumns: "minmax(0, 1.4fr) minmax(0, 1fr) 100px",
+        gap: "10px",
+        padding: "8px 0",
+        borderTop: "1px solid rgba(255, 255, 255, 0.06)",
         alignItems: "center",
       }}
     >
       <div>
-        <div style={{ fontWeight: 700 }}>{member.name}</div>
-        <div style={{ color: "#a1a1aa", fontSize: "13px" }}>{member.email}</div>
+        <div style={{ fontWeight: 500, fontSize: "12px" }}>{member.name}</div>
+        <div style={{ color: "#a1a1aa", fontSize: "11px" }}>{member.email}</div>
       </div>
-      <div style={{ color: "#d4d4d8", textTransform: "capitalize" }}>{member.role}</div>
+      <div style={{ color: "#a1a1aa", fontSize: "12px", textTransform: "capitalize" }}>{member.role}</div>
       <div>
         <span
           style={badgeStyle(
@@ -286,116 +261,114 @@ function MemberRow({ member }: { member: FoundryOrganizationMember }) {
 export function MockSignInPage() {
   const client = useMockAppClient();
   const navigate = useNavigate();
-  const mockAccount = {
-    name: "Nathan",
-    email: "nathan@acme.dev",
-    githubLogin: "nathan",
-    label: "Mock account for review",
-  };
 
   return (
-    <div style={appSurfaceStyle()}>
-      <div style={{ ...contentWrapStyle(), justifyContent: "center", minHeight: "100dvh" }}>
-        <div
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#09090b",
+        fontFamily: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
+        color: "#ffffff",
+      }}
+    >
+      <DesktopDragRegion />
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          textAlign: "center",
+          width: "100%",
+          maxWidth: "320px",
+        }}
+      >
+        {/* Foundry icon */}
+        <svg width="48" height="48" viewBox="0 0 130 128" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginBottom: "24px" }}>
+          <path
+            fillRule="evenodd"
+            clipRule="evenodd"
+            d="M88.0429 44.2658C89.3803 43.625 90.8907 44.1955 91.5731 45.3776C92.2556 46.5596 91.9945 48.1529 90.7709 48.9907L72.3923 62.885C71.8013 63.2262 71.4248 63.7062 71.1029 64.2861C70.781 64.8659 70.5554 65.3922 70.5443 66.0553L67.7403 88.9495C67.521 90.3894 66.4114 91.423 64.9867 91.4576C63.5619 91.4922 62.3731 90.3429 62.24 88.9751L59.3859 66.0642C59.3971 65.4011 59.2126 64.8489 58.8714 64.2579C58.5302 63.6669 58.1442 63.231 57.5643 62.9091L39.15 48.9819C38.032 48.1828 37.6311 46.5786 38.3734 45.362C39.1157 44.1454 40.5656 43.7013 41.9223 44.2314L63.1512 53.2502C63.731 53.5721 64.2996 53.6398 64.9627 53.651C65.6259 53.6622 66.2298 53.5761 66.8208 53.2349L88.0429 44.2658Z"
+            fill="white"
+          />
+          <rect x="19.25" y="18.25" width="91.5" height="91.5" rx="25.75" stroke="#F0F0F0" strokeWidth="8.5" />
+        </svg>
+
+        <h1
           style={{
-            ...cardStyle(),
-            padding: "32px",
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 1.1fr) minmax(0, 0.9fr)",
-            gap: "28px",
+            fontSize: "20px",
+            fontWeight: 600,
+            color: "#ffffff",
+            margin: "0 0 8px 0",
+            letterSpacing: "-0.01em",
           }}
         >
-          <div style={{ display: "flex", flexDirection: "column", gap: "18px", justifyContent: "center" }}>
-            <span style={badgeStyle("rgba(255, 79, 0, 0.18)", "#ffd6c7")}>Mock Better Auth + GitHub OAuth</span>
-            <div style={{ fontSize: "42px", lineHeight: 1.05, fontWeight: 900, maxWidth: "11ch" }}>Sign in and land directly in the org onboarding funnel.</div>
-            <div style={{ fontSize: "16px", lineHeight: 1.6, color: "#d4d4d8", maxWidth: "56ch" }}>
-              {isMockFrontendClient
-                ? "This mock screen stands in for a basic GitHub OAuth sign-in page. After sign-in, the user moves into the separate organization selector and then the rest of the onboarding funnel."
-                : "GitHub OAuth starts here. After the callback exchange completes, the app restores the signed-in session and continues into organization selection."}
-            </div>
-            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-              <div style={badgeStyle("rgba(255, 255, 255, 0.06)")}>
-                <Github size={14} />
-                GitHub sign-in
-              </div>
-              <div style={badgeStyle("rgba(255, 255, 255, 0.06)")}>
-                <Building2 size={14} />
-                Org selection
-              </div>
-              <div style={badgeStyle("rgba(255, 255, 255, 0.06)")}>
-                <CreditCard size={14} />
-                Hosted billing
-              </div>
-            </div>
-          </div>
-          <div
-            style={{
-              ...cardStyle(),
-              padding: "24px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "18px",
-              justifyContent: "center",
-            }}
-          >
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              <div style={{ fontSize: "22px", fontWeight: 800 }}>Continue to Sandbox Agent</div>
-              <div style={{ color: "#d4d4d8", lineHeight: 1.55 }}>
-                {isMockFrontendClient
-                  ? "This mock sign-in uses a single GitHub account so the org selection step remains the place where the user chooses their workspace."
-                  : "This starts the live GitHub OAuth flow and restores the app session when the callback returns."}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                void (async () => {
-                  await client.signInWithGithub(isMockFrontendClient ? "user-nathan" : undefined);
-                  if (isMockFrontendClient) {
-                    await navigate({ to: "/organizations" });
-                  }
-                })();
-              }}
-              style={{
-                ...primaryButtonStyle(),
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "10px",
-                fontSize: "16px",
-                padding: "14px 18px",
-              }}
-            >
-              <Github size={18} />
-              Sign in with GitHub
-            </button>
-            <div
-              style={{
-                borderRadius: "18px",
-                border: "1px solid rgba(255, 255, 255, 0.08)",
-                background: "rgba(255, 255, 255, 0.03)",
-                padding: "16px",
-                display: "grid",
-                gap: "8px",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
-                <div>
-                  <div style={{ fontSize: "16px", fontWeight: 800 }}>{mockAccount.name}</div>
-                  <div style={{ color: "#a1a1aa", fontSize: "13px" }}>
-                    @{mockAccount.githubLogin} · {mockAccount.email}
-                  </div>
-                </div>
-                <span style={badgeStyle("rgba(24, 140, 255, 0.16)", "#b9d8ff")}>{isMockFrontendClient ? mockAccount.label : "Live GitHub identity"}</span>
-              </div>
-              <div style={{ color: "#a1a1aa", fontSize: "13px", lineHeight: 1.5 }}>
-                {isMockFrontendClient
-                  ? "Sign-in always lands as this single mock user. Organization choice happens on the next screen."
-                  : "In remote mode this card is replaced by the live GitHub user once the OAuth callback completes."}
-              </div>
-            </div>
-          </div>
-        </div>
+          Sign in to Sandbox Agent Foundry
+        </h1>
+
+        <p
+          style={{
+            fontSize: "13px",
+            fontWeight: 400,
+            color: "#71717a",
+            margin: "0 0 32px 0",
+            lineHeight: 1.5,
+          }}
+        >
+          Connect your GitHub account to get started.
+        </p>
+
+        {/* GitHub sign-in button */}
+        <button
+          type="button"
+          onClick={() => {
+            void (async () => {
+              await client.signInWithGithub(isMockFrontendClient ? "user-nathan" : undefined);
+              if (isMockFrontendClient) {
+                await navigate({ to: "/organizations" });
+              }
+            })();
+          }}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "10px",
+            width: "100%",
+            height: "44px",
+            padding: "0 20px",
+            background: "#ffffff",
+            color: "#09090b",
+            border: "none",
+            borderRadius: "8px",
+            fontFamily: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
+            fontSize: "14px",
+            fontWeight: 500,
+            cursor: "pointer",
+          }}
+        >
+          <Github size={20} />
+          Continue with GitHub
+        </button>
+
+        {/* Footer */}
+        <a
+          href="https://sandbox-agent.dev"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            marginTop: "32px",
+            fontSize: "13px",
+            color: "#52525b",
+            textDecoration: "none",
+          }}
+        >
+          Learn more
+        </a>
       </div>
     </div>
   );
@@ -404,159 +377,338 @@ export function MockSignInPage() {
 export function MockOrganizationSelectorPage() {
   const client = useMockAppClient();
   const snapshot = useMockAppSnapshot();
-  const user = activeMockUser(snapshot);
   const organizations: FoundryOrganization[] = eligibleOrganizations(snapshot);
   const navigate = useNavigate();
-  const starterRepo = snapshot.onboarding.starterRepo;
-  const starterRepoTarget = organizations.find((organization) => organization.kind === "organization") ?? organizations[0] ?? null;
 
   return (
-    <PageShell
-      user={user}
-      title="Choose an organization"
-      eyebrow="Onboarding"
-      description="After GitHub sign-in, choose which personal workspace or GitHub organization to onboard. Organization workspaces simulate GitHub app installation, repository import, and shared billing."
-      onSignOut={() => {
-        void (async () => {
-          await client.signOut();
-          await navigate({ to: "/signin" });
-        })();
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#09090b",
+        fontFamily: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
+        color: "#ffffff",
       }}
     >
+      <DesktopDragRegion />
       <div
         style={{
-          ...cardStyle(),
-          padding: "22px",
-          display: "grid",
-          gap: "16px",
+          display: "flex",
+          flexDirection: "column",
+          width: "100%",
+          maxWidth: "400px",
+          padding: "0 24px",
         }}
       >
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "16px", flexWrap: "wrap" }}>
-          <div style={{ display: "grid", gap: "8px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <Star size={18} />
-              <div style={{ fontSize: "20px", fontWeight: 800 }}>Starter repo</div>
-            </div>
-            <div style={{ color: "#d4d4d8", lineHeight: 1.55, maxWidth: "72ch" }}>
-              Star <strong>{starterRepo.repoFullName}</strong> before entering the main app, or skip it and continue onboarding. This keeps the starter-repo ask
-              inside the funnel instead of interrupting the workspace later.
-            </div>
-          </div>
-          {starterRepo.status === "starred" ? (
-            <span style={badgeStyle("rgba(46, 160, 67, 0.16)", "#b7f0c3")}>Starred</span>
-          ) : starterRepo.status === "skipped" ? (
-            <span style={badgeStyle("rgba(255, 255, 255, 0.08)")}>Skipped for now</span>
-          ) : (
-            <span style={badgeStyle("rgba(255, 193, 7, 0.18)", "#ffe6a6")}>Optional</span>
-          )}
+        {/* Header */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: "40px" }}>
+          <svg width="40" height="40" viewBox="0 0 130 128" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginBottom: "20px" }}>
+            <path
+              fillRule="evenodd"
+              clipRule="evenodd"
+              d="M88.0429 44.2658C89.3803 43.625 90.8907 44.1955 91.5731 45.3776C92.2556 46.5596 91.9945 48.1529 90.7709 48.9907L72.3923 62.885C71.8013 63.2262 71.4248 63.7062 71.1029 64.2861C70.781 64.8659 70.5554 65.3922 70.5443 66.0553L67.7403 88.9495C67.521 90.3894 66.4114 91.423 64.9867 91.4576C63.5619 91.4922 62.3731 90.3429 62.24 88.9751L59.3859 66.0642C59.3971 65.4011 59.2126 64.8489 58.8714 64.2579C58.5302 63.6669 58.1442 63.231 57.5643 62.9091L39.15 48.9819C38.032 48.1828 37.6311 46.5786 38.3734 45.362C39.1157 44.1454 40.5656 43.7013 41.9223 44.2314L63.1512 53.2502C63.731 53.5721 64.2996 53.6398 64.9627 53.651C65.6259 53.6622 66.2298 53.5761 66.8208 53.2349L88.0429 44.2658Z"
+              fill="white"
+            />
+            <rect x="19.25" y="18.25" width="91.5" height="91.5" rx="25.75" stroke="#F0F0F0" strokeWidth="8.5" />
+          </svg>
+          <h1 style={{ fontSize: "20px", fontWeight: 600, margin: "0 0 6px 0", letterSpacing: "-0.01em" }}>Select a workspace</h1>
+          <p style={{ fontSize: "13px", color: "#71717a", margin: 0 }}>Choose where you want to work.</p>
         </div>
-        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+
+        {/* Workspace list */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            borderRadius: "12px",
+            border: "1px solid rgba(255, 255, 255, 0.08)",
+            overflow: "hidden",
+          }}
+        >
+          {organizations.map((organization, index) => (
+            <button
+              key={organization.id}
+              type="button"
+              onClick={() => {
+                void (async () => {
+                  await client.selectOrganization(organization.id);
+                  await navigate({ to: workspacePath(organization) });
+                })();
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "14px",
+                padding: "16px 18px",
+                background: "#0f0f11",
+                border: "none",
+                borderTop: index > 0 ? "1px solid rgba(255, 255, 255, 0.06)" : "none",
+                color: "#ffffff",
+                cursor: "pointer",
+                textAlign: "left",
+                fontFamily: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
+                transition: "background 150ms ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(255, 255, 255, 0.04)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "#0f0f11";
+              }}
+            >
+              {/* Avatar */}
+              <div
+                style={{
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "10px",
+                  background: organization.kind === "personal" ? "linear-gradient(135deg, #3b82f6, #6366f1)" : "linear-gradient(135deg, #f97316, #ef4444)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  flexShrink: 0,
+                }}
+              >
+                {organization.settings.displayName.charAt(0).toUpperCase()}
+              </div>
+
+              {/* Info */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: "14px", fontWeight: 500, lineHeight: 1.3 }}>{organization.settings.displayName}</div>
+                <div style={{ fontSize: "12px", color: "#71717a", lineHeight: 1.3, marginTop: "1px" }}>
+                  {organization.kind === "personal" ? "Personal" : "Organization"} · {planCatalog[organization.billing.planId]!.label} ·{" "}
+                  {organization.members.length} member{organization.members.length !== 1 ? "s" : ""}
+                </div>
+              </div>
+
+              {/* Arrow */}
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#52525b"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ flexShrink: 0 }}
+              >
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div style={{ display: "flex", justifyContent: "center", marginTop: "24px", gap: "16px" }}>
           <button
             type="button"
             onClick={() => {
-              if (!starterRepoTarget) {
-                return;
-              }
-              void client.starStarterRepo(starterRepoTarget.id);
+              void (async () => {
+                await client.signOut();
+                await navigate({ to: "/signin" });
+              })();
             }}
-            style={primaryButtonStyle()}
-            disabled={!starterRepoTarget || starterRepo.status === "starred"}
+            style={{
+              background: "none",
+              border: "none",
+              color: "#52525b",
+              fontSize: "13px",
+              cursor: "pointer",
+              fontFamily: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
+              padding: 0,
+            }}
           >
-            <Star size={15} />
-            {starterRepo.status === "starred" ? "Repo starred" : "Star the Sandbox Agent repo"}
-          </button>
-          <button type="button" onClick={() => void client.skipStarterRepo()} style={secondaryButtonStyle()} disabled={starterRepo.status === "skipped"}>
-            {starterRepo.status === "skipped" ? "Skipped" : "Maybe later"}
+            Sign out
           </button>
         </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "18px" }}>
-        {organizations.map((organization) => (
-          <div
-            key={organization.id}
+    </div>
+  );
+}
+
+type SettingsSection = "settings" | "members" | "billing" | "docs";
+
+function SettingsNavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        width: "100%",
+        padding: "5px 10px",
+        borderRadius: "6px",
+        border: "none",
+        background: active ? "rgba(255, 255, 255, 0.06)" : "transparent",
+        color: active ? "#ffffff" : "rgba(255, 255, 255, 0.50)",
+        cursor: "pointer",
+        fontSize: "12px",
+        fontWeight: active ? 500 : 400,
+        textAlign: "left",
+        fontFamily: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
+        transition: "all 120ms ease",
+        lineHeight: 1.4,
+      }}
+      onMouseEnter={(event) => {
+        if (!active) event.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.04)";
+      }}
+      onMouseLeave={(event) => {
+        if (!active) event.currentTarget.style.backgroundColor = "transparent";
+      }}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function SettingsContentSection({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <h2 style={{ margin: "0 0 2px", fontSize: "13px", fontWeight: 600, color: "#e4e4e7" }}>{title}</h2>
+      {description ? <p style={{ margin: "0 0 12px", fontSize: "11px", color: "rgba(255, 255, 255, 0.40)", lineHeight: 1.5 }}>{description}</p> : null}
+      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>{children}</div>
+    </div>
+  );
+}
+
+function SettingsRow({ label, description, action }: { label: string; description?: string; action?: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "12px",
+        padding: "10px 12px",
+        borderRadius: "6px",
+        border: "1px solid rgba(255, 255, 255, 0.06)",
+        background: "rgba(255, 255, 255, 0.02)",
+      }}
+    >
+      <div>
+        <div style={{ fontSize: "12px", fontWeight: 500 }}>{label}</div>
+        {description ? <div style={{ fontSize: "11px", color: "rgba(255, 255, 255, 0.40)", marginTop: "1px" }}>{description}</div> : null}
+      </div>
+      {action ?? null}
+    </div>
+  );
+}
+
+function SettingsLayout({
+  organization,
+  activeSection,
+  onSectionChange,
+  children,
+}: {
+  organization: FoundryOrganization;
+  activeSection: SettingsSection;
+  onSectionChange?: (section: SettingsSection) => void;
+  children: React.ReactNode;
+}) {
+  const client = useMockAppClient();
+  const snapshot = useMockAppSnapshot();
+  const user = activeMockUser(snapshot);
+  const navigate = useNavigate();
+
+  const navSections: Array<{ section: SettingsSection; icon: React.ReactNode; label: string }> = [
+    { section: "settings", icon: <Settings size={13} />, label: "Settings" },
+    { section: "members", icon: <Users size={13} />, label: "Members" },
+    { section: "billing", icon: <CreditCard size={13} />, label: "Billing & Invoices" },
+    { section: "docs", icon: <FileText size={13} />, label: "Docs" },
+  ];
+
+  return (
+    <div style={appSurfaceStyle()}>
+      <DesktopDragRegion />
+      <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+        {/* Left nav */}
+        <div
+          style={{
+            width: "200px",
+            flexShrink: 0,
+            borderRight: "1px solid rgba(255, 255, 255, 0.06)",
+            padding: "44px 10px 16px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "2px",
+            overflowY: "auto",
+          }}
+        >
+          {/* Back to workspace */}
+          <button
+            type="button"
+            onClick={() => {
+              void (async () => {
+                await client.selectOrganization(organization.id);
+                await navigate({ to: workspacePath(organization) });
+              })();
+            }}
             style={{
-              ...cardStyle(),
-              padding: "22px",
+              ...subtleButtonStyle(),
               display: "flex",
-              flexDirection: "column",
-              gap: "16px",
+              alignItems: "center",
+              gap: "5px",
+              marginBottom: "10px",
+              fontSize: "11px",
             }}
           >
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "16px" }}>
-              <div>
-                <div style={{ fontSize: "22px", fontWeight: 800 }}>{organization.settings.displayName}</div>
-                <div style={{ color: "#a1a1aa", fontSize: "13px" }}>
-                  {organization.settings.slug} · {organization.settings.primaryDomain}
-                </div>
-              </div>
-              {statusBadge(organization)}
-            </div>
-            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-              {githubBadge(organization)}
-              <span style={badgeStyle("rgba(255, 255, 255, 0.06)")}>
-                <CreditCard size={14} />
-                {planCatalog[organization.billing.planId]!.label}
-              </span>
-            </div>
-            <div style={{ color: "#d4d4d8", lineHeight: 1.55, minHeight: "70px" }}>
-              {organization.kind === "personal"
-                ? "Personal workspaces skip seat purchasing but still show the same onboarding and billing entry points."
-                : "Organization onboarding includes GitHub repo import, seat accrual on first prompt, and billing controls for the shared workspace."}
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "10px" }}>
-              <StatCard
-                label="Members"
-                value={`${organization.members.length}`}
-                caption={`${organization.members.filter((member) => member.state === "active").length} active`}
-              />
-              <StatCard label="Repos" value={`${organization.repoCatalog.length}`} caption={organization.github.lastSyncLabel} />
-              <StatCard label="Seats" value={`${organization.seatAssignments.length}/${organization.billing.seatsIncluded}`} caption="Accrue on first prompt" />
-            </div>
-            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-              <button
-                type="button"
-                onClick={() => {
-                  void (async () => {
-                    await client.selectOrganization(organization.id);
-                    await navigate({ to: workspacePath(organization) });
-                  })();
-                }}
-                style={primaryButtonStyle()}
-              >
-                Continue as {organization.settings.displayName}
-              </button>
-              <button type="button" onClick={() => void navigate({ to: settingsPath(organization) })} style={secondaryButtonStyle()}>
-                Organization settings
-              </button>
-              <button type="button" onClick={() => void navigate({ to: billingPath(organization) })} style={subtleButtonStyle()}>
-                Billing
-              </button>
-            </div>
+            <ArrowLeft size={12} />
+            Back to workspace
+          </button>
+
+          {/* User header */}
+          <div style={{ padding: "2px 10px 12px", display: "flex", flexDirection: "column", gap: "1px" }}>
+            <span style={{ fontSize: "12px", fontWeight: 600 }}>{user?.name ?? "User"}</span>
+            <span style={{ fontSize: "10px", color: "rgba(255, 255, 255, 0.38)" }}>
+              {planCatalog[organization.billing.planId]?.label ?? "Free"} Plan · {user?.email ?? ""}
+            </span>
           </div>
-        ))}
+
+          {navSections.map((item) => (
+            <SettingsNavItem
+              key={item.section}
+              icon={item.icon}
+              label={item.label}
+              active={activeSection === item.section}
+              onClick={() => {
+                if (item.section === "billing") {
+                  void navigate({ to: billingPath(organization) });
+                } else if (onSectionChange) {
+                  onSectionChange(item.section);
+                } else {
+                  void navigate({ to: settingsPath(organization) });
+                }
+              }}
+            />
+          ))}
+        </div>
+
+        {/* Content */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "80px 36px 40px" }}>
+          <div style={{ maxWidth: "560px" }}>{children}</div>
+        </div>
       </div>
-    </PageShell>
+    </div>
   );
 }
 
 export function MockOrganizationSettingsPage({ organization }: { organization: FoundryOrganization }) {
   const client = useMockAppClient();
-  const snapshot = useMockAppSnapshot();
-  const user = activeMockUser(snapshot);
   const navigate = useNavigate();
+  const [section, setSection] = useState<SettingsSection>("settings");
   const [displayName, setDisplayName] = useState(organization.settings.displayName);
   const [slug, setSlug] = useState(organization.settings.slug);
   const [primaryDomain, setPrimaryDomain] = useState(organization.settings.primaryDomain);
-  const seatCaption = useMemo(
-    () => `${organization.seatAssignments.length} of ${organization.billing.seatsIncluded} seats already accrued`,
-    [organization.billing.seatsIncluded, organization.seatAssignments.length],
-  );
-  const openWorkspace = () => {
-    void (async () => {
-      await client.selectOrganization(organization.id);
-      await navigate({ to: workspacePath(organization) });
-    })();
-  };
 
   useEffect(() => {
     setDisplayName(organization.settings.displayName);
@@ -565,63 +717,29 @@ export function MockOrganizationSettingsPage({ organization }: { organization: F
   }, [organization.id, organization.settings.displayName, organization.settings.slug, organization.settings.primaryDomain]);
 
   return (
-    <PageShell
-      user={user}
-      title={`${organization.settings.displayName} settings`}
-      eyebrow="Organization"
-      description={
-        isMockFrontendClient
-          ? "This mock settings surface covers the org profile, GitHub installation state, background repository sync controls, and the seat-accrual rule from the spec."
-          : "This settings surface is backed by the app-shell actor and covers organization profile, GitHub installation state, repository sync controls, and seat accrual."
-      }
-      actions={
-        <>
-          <button type="button" onClick={() => void navigate({ to: "/organizations" })} style={secondaryButtonStyle()}>
-            <ArrowLeft size={15} />
-            Orgs
-          </button>
-          <button type="button" onClick={() => void navigate({ to: billingPath(organization) })} style={subtleButtonStyle()}>
-            Billing
-          </button>
-          <button type="button" onClick={openWorkspace} style={primaryButtonStyle()}>
-            Open workspace
-          </button>
-        </>
-      }
-      onSignOut={() => {
-        void (async () => {
-          await client.signOut();
-          await navigate({ to: "/signin" });
-        })();
-      }}
-    >
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.1fr) minmax(320px, 0.9fr)", gap: "18px" }}>
-        <div style={{ display: "grid", gap: "18px" }}>
-          <div style={{ ...cardStyle(), padding: "24px", display: "grid", gap: "16px" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px" }}>
-              <div>
-                <div style={{ fontSize: "20px", fontWeight: 800 }}>Organization profile</div>
-                <div style={{ color: "#a1a1aa", fontSize: "14px" }}>
-                  {isMockFrontendClient ? "Mock org state persisted in the client package." : "Organization profile persisted in the app-shell backend."}
-                </div>
-              </div>
-              {statusBadge(organization)}
-            </div>
-            <label style={{ display: "grid", gap: "8px" }}>
-              <span style={{ fontSize: "13px", fontWeight: 700 }}>Display name</span>
+    <SettingsLayout organization={organization} activeSection={section} onSectionChange={setSection}>
+      {section === "settings" ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+          <div>
+            <h1 style={{ margin: "0 0 2px", fontSize: "15px", fontWeight: 600 }}>Settings</h1>
+          </div>
+
+          <SettingsContentSection title="Organization Profile">
+            <label style={{ display: "grid", gap: "4px" }}>
+              <span style={{ fontSize: "11px", fontWeight: 500, color: "rgba(255, 255, 255, 0.55)" }}>Display name</span>
               <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} style={inputStyle()} />
             </label>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "14px" }}>
-              <label style={{ display: "grid", gap: "8px" }}>
-                <span style={{ fontSize: "13px", fontWeight: 700 }}>Slug</span>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+              <label style={{ display: "grid", gap: "4px" }}>
+                <span style={{ fontSize: "11px", fontWeight: 500, color: "rgba(255, 255, 255, 0.55)" }}>Slug</span>
                 <input value={slug} onChange={(event) => setSlug(event.target.value)} style={inputStyle()} />
               </label>
-              <label style={{ display: "grid", gap: "8px" }}>
-                <span style={{ fontSize: "13px", fontWeight: 700 }}>Primary domain</span>
+              <label style={{ display: "grid", gap: "4px" }}>
+                <span style={{ fontSize: "11px", fontWeight: 500, color: "rgba(255, 255, 255, 0.55)" }}>Primary domain</span>
                 <input value={primaryDomain} onChange={(event) => setPrimaryDomain(event.target.value)} style={inputStyle()} />
               </label>
             </div>
-            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+            <div>
               <button
                 type="button"
                 onClick={() =>
@@ -634,307 +752,378 @@ export function MockOrganizationSettingsPage({ organization }: { organization: F
                 }
                 style={primaryButtonStyle()}
               >
-                Save settings
-              </button>
-              <button type="button" onClick={() => void client.triggerGithubSync(organization.id)} style={secondaryButtonStyle()}>
-                Refresh repo sync
+                Save changes
               </button>
             </div>
-          </div>
+          </SettingsContentSection>
 
-          <div style={{ ...cardStyle(), padding: "24px", display: "grid", gap: "16px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <Github size={18} />
-              <div style={{ fontSize: "20px", fontWeight: 800 }}>GitHub access</div>
-            </div>
-            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-              {githubBadge(organization)}
-              <span style={badgeStyle("rgba(255, 255, 255, 0.06)")}>{organization.github.connectedAccount}</span>
-            </div>
-            <div style={{ color: "#d4d4d8", lineHeight: 1.55 }}>
-              {organization.github.importedRepoCount} repos imported. Last sync: {organization.github.lastSyncLabel}
-            </div>
-            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+          <SettingsContentSection
+            title="GitHub"
+            description={`Connected as ${organization.github.connectedAccount}. ${organization.github.importedRepoCount} repos imported.`}
+          >
+            <SettingsRow label="Installation status" description={`Last sync: ${organization.github.lastSyncLabel}`} action={githubBadge(organization)} />
+            <div style={{ display: "flex", gap: "8px" }}>
               <button type="button" onClick={() => void client.reconnectGithub(organization.id)} style={secondaryButtonStyle()}>
                 Reconnect GitHub
               </button>
               <button type="button" onClick={() => void client.triggerGithubSync(organization.id)} style={subtleButtonStyle()}>
-                Retry sync
+                Sync repos
               </button>
             </div>
-          </div>
+          </SettingsContentSection>
 
-          <div style={{ ...cardStyle(), padding: "24px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
-              <Users size={18} />
-              <div style={{ fontSize: "20px", fontWeight: 800 }}>Members and roles</div>
-            </div>
-            <div style={{ color: "#a1a1aa", fontSize: "14px", marginBottom: "8px" }}>
-              {isMockFrontendClient
-                ? "Mock org membership feeds seat accrual and billing previews."
-                : "Organization membership feeds seat accrual and billing state."}
-            </div>
+          <SettingsContentSection title="Sandbox Agent" description="Connect to Sandbox Agent for cloud development environments.">
+            <SettingsRow
+              label="Sandbox Agent connection"
+              description="Manage your Sandbox Agent integration and API keys."
+              action={
+                <button type="button" onClick={() => window.open("https://sandbox-agent.dev", "_blank", "noopener,noreferrer")} style={secondaryButtonStyle()}>
+                  Configure
+                </button>
+              }
+            />
+          </SettingsContentSection>
+
+          <SettingsContentSection title="More">
+            <SettingsRow
+              label="Delete organization"
+              description="Permanently delete this organization and all its data."
+              action={
+                <button
+                  type="button"
+                  style={{
+                    ...secondaryButtonStyle(),
+                    borderColor: "rgba(255, 110, 110, 0.24)",
+                    color: "#ffa198",
+                  }}
+                >
+                  Delete
+                </button>
+              }
+            />
+          </SettingsContentSection>
+        </div>
+      ) : null}
+
+      {section === "members" ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+          <div>
+            <h1 style={{ margin: "0 0 2px", fontSize: "15px", fontWeight: 600 }}>Members</h1>
+            <p style={{ margin: 0, fontSize: "11px", color: "rgba(255, 255, 255, 0.40)" }}>
+              {organization.members.length} member{organization.members.length !== 1 ? "s" : ""}
+            </p>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
             {organization.members.map((member) => (
               <MemberRow key={member.id} member={member} />
             ))}
           </div>
-        </div>
 
-        <div style={{ display: "grid", gap: "14px" }}>
-          <StatCard label="Seat policy" value="First prompt" caption="Seats accrue when a member sends their first prompt in the workspace." />
-          <StatCard label="Seat usage" value={`${organization.seatAssignments.length}`} caption={seatCaption} />
-          <StatCard
-            label="Default model"
-            value={organization.settings.defaultModel}
-            caption="Shown here to match the expected org-level configuration surface."
+          {/* Upgrade CTA for free plan */}
+          {!organization.billing.stripeCustomerId.trim() ? (
+            <div
+              style={{
+                ...cardStyle(),
+                padding: "20px",
+                border: "1px solid rgba(99, 102, 241, 0.3)",
+                background: "linear-gradient(135deg, rgba(99, 102, 241, 0.06) 0%, rgba(139, 92, 246, 0.04) 100%)",
+              }}
+            >
+              <div style={{ fontSize: "14px", fontWeight: 600, marginBottom: "4px" }}>Invite your team</div>
+              <div style={{ fontSize: "11px", color: "#a1a1aa", lineHeight: 1.6, marginBottom: "14px" }}>
+                Upgrade to Pro to add team members and unlock collaboration features:
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "16px" }}>
+                {[
+                  "Hand off tasks to teammates for review or continuation",
+                  "Shared workspace with unified billing across your org",
+                  "200 task hours per seat, with bulk hour purchases available",
+                  "Collaborative task history and audit trail",
+                ].map((feature) => (
+                  <div key={feature} style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
+                    <span style={{ color: "#6366f1", fontSize: "14px", lineHeight: 1.2, flexShrink: 0 }}>+</span>
+                    <span style={{ fontSize: "11px", color: "#d4d4d8", lineHeight: 1.5 }}>{feature}</span>
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={() => void navigate({ to: checkoutPath(organization, "team") })} style={primaryButtonStyle()}>
+                Upgrade to Pro — $25/mo per seat
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {section === "docs" ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+          <div>
+            <h1 style={{ margin: "0 0 2px", fontSize: "15px", fontWeight: 600 }}>Docs</h1>
+            <p style={{ margin: 0, fontSize: "11px", color: "rgba(255, 255, 255, 0.40)" }}>Documentation and resources.</p>
+          </div>
+          <SettingsRow
+            label="Sandbox Agent Documentation"
+            description="Learn about Sandbox Agent features, APIs, and integrations."
+            action={
+              <button type="button" onClick={() => window.open("https://sandbox-agent.dev", "_blank", "noopener,noreferrer")} style={secondaryButtonStyle()}>
+                Open docs
+              </button>
+            }
           />
         </div>
-      </div>
-    </PageShell>
+      ) : null}
+    </SettingsLayout>
   );
 }
 
 export function MockOrganizationBillingPage({ organization }: { organization: FoundryOrganization }) {
   const client = useMockAppClient();
-  const snapshot = useMockAppSnapshot();
-  const user = activeMockUser(snapshot);
   const navigate = useNavigate();
   const hasStripeCustomer = organization.billing.stripeCustomerId.trim().length > 0;
   const effectivePlanId: FoundryBillingPlanId = hasStripeCustomer ? organization.billing.planId : "free";
-  const effectiveSeatsIncluded = hasStripeCustomer ? organization.billing.seatsIncluded : 1;
-  const openWorkspace = () => {
-    void (async () => {
-      await client.selectOrganization(organization.id);
-      await navigate({ to: workspacePath(organization) });
-    })();
-  };
+  const currentPlan = planCatalog[effectivePlanId]!;
+  // Mock usage data
+  const taskHoursUsed = effectivePlanId === "free" ? 5.2 : 147.3;
+  const taskHoursIncluded = currentPlan.taskHours;
+  const taskHoursRemaining = Math.max(0, taskHoursIncluded - taskHoursUsed);
+  const usagePercent = Math.min(100, (taskHoursUsed / taskHoursIncluded) * 100);
+  const isOverage = taskHoursUsed > taskHoursIncluded;
+  const isFree = effectivePlanId === "free";
 
   return (
-    <PageShell
-      user={user}
-      title={`${organization.settings.displayName} billing`}
-      eyebrow="Stripe Billing"
-      description={
-        isMockFrontendClient
-          ? "This mock page covers plan selection, hosted checkout entry, renewal controls, seat usage, and invoice history. It is the reviewable UI surface for Milestone 2 billing without wiring the real Stripe backend yet."
-          : "This billing surface drives live Stripe checkout, portal management, renewal controls, seat usage, and invoice history from the persisted organization billing model."
-      }
-      actions={
-        <>
-          <button type="button" onClick={() => void navigate({ to: settingsPath(organization) })} style={secondaryButtonStyle()}>
-            Org settings
-          </button>
-          <button type="button" onClick={openWorkspace} style={primaryButtonStyle()}>
-            Open workspace
-          </button>
-        </>
-      }
-      onSignOut={() => {
-        void (async () => {
-          await client.signOut();
-          await navigate({ to: "/signin" });
-        })();
-      }}
-    >
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "14px" }}>
-        <StatCard label="Current plan" value={planCatalog[effectivePlanId]!.label} caption={organization.billing.status.replaceAll("_", " ")} />
-        <StatCard
-          label="Seats used"
-          value={`${organization.seatAssignments.length}/${effectiveSeatsIncluded}`}
-          caption="Seat accrual happens on first prompt in the workspace."
-        />
-        <StatCard label="Renewal" value={formatDate(organization.billing.renewalAt)} caption={`Payment method: ${organization.billing.paymentMethodLabel}`} />
-      </div>
+    <SettingsLayout organization={organization} activeSection="billing">
+      <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+        <div>
+          <h1 style={{ margin: "0 0 2px", fontSize: "15px", fontWeight: 600 }}>Billing & Invoices</h1>
+          <p style={{ margin: 0, fontSize: "11px", color: "rgba(255, 255, 255, 0.40)" }}>Manage your plan, task hours, and invoices.</p>
+        </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "18px" }}>
-        {(Object.entries(planCatalog) as Array<[FoundryBillingPlanId, (typeof planCatalog)[FoundryBillingPlanId]]>).map(([planId, plan]) => {
-          const isCurrent = effectivePlanId === planId;
-          return (
-            <div key={planId} style={{ ...cardStyle(), padding: "22px", display: "grid", gap: "14px" }}>
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px" }}>
-                <div>
-                  <div style={{ fontSize: "22px", fontWeight: 800 }}>{plan.label}</div>
-                  <div style={{ color: "#a1a1aa", fontSize: "13px" }}>{plan.seats}</div>
+        {/* Overview stats */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
+          <StatCard label="Current plan" value={currentPlan.label} caption={isFree ? "Free tier" : `${currentPlan.price} per seat`} />
+          <StatCard label="Task hours used" value={`${taskHoursUsed.toFixed(1)}h`} caption={`of ${taskHoursIncluded}h included`} />
+          <StatCard
+            label="Remaining"
+            value={`${taskHoursRemaining.toFixed(1)}h`}
+            caption={isOverage ? "Overage — $0.12/min" : `Resets ${formatDate(organization.billing.renewalAt)}`}
+          />
+        </div>
+
+        {/* Task hours usage bar */}
+        <div style={{ ...cardStyle(), padding: "16px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <Clock size={13} style={{ color: "#a1a1aa" }} />
+              <span style={{ fontSize: "12px", fontWeight: 600 }}>Task Hours</span>
+            </div>
+            <span style={{ fontSize: "11px", color: "#a1a1aa" }}>
+              {taskHoursUsed.toFixed(1)} / {taskHoursIncluded}h used
+            </span>
+          </div>
+          <div style={{ height: "6px", borderRadius: "3px", backgroundColor: "rgba(255, 255, 255, 0.08)", overflow: "hidden" }}>
+            <div
+              style={{
+                height: "100%",
+                width: `${usagePercent}%`,
+                borderRadius: "3px",
+                backgroundColor: usagePercent > 90 ? "#ef4444" : usagePercent > 70 ? "#f59e0b" : "#22c55e",
+                transition: "width 500ms ease",
+              }}
+            />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: "6px" }}>
+            <span style={{ fontSize: "10px", color: "#71717a" }}>Metered by the minute</span>
+            <span style={{ fontSize: "10px", color: "#71717a" }}>$0.12 / task hour overage</span>
+          </div>
+        </div>
+
+        {/* Upgrade to Pro (only shown on Free plan) */}
+        {isFree ? (
+          <div
+            style={{
+              ...cardStyle(),
+              padding: "18px",
+              border: "1px solid rgba(99, 102, 241, 0.3)",
+              background: "linear-gradient(135deg, rgba(99, 102, 241, 0.06) 0%, rgba(139, 92, 246, 0.04) 100%)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "16px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <div style={{ fontSize: "14px", fontWeight: 600 }}>Upgrade to Pro</div>
+                <div style={{ fontSize: "11px", color: "#a1a1aa", lineHeight: 1.5 }}>
+                  Get 200 task hours per month, plus the ability to purchase additional hours in bulk. Currently limited to {currentPlan.taskHours} hours on the
+                  Free plan.
                 </div>
-                {isCurrent ? <span style={badgeStyle("rgba(46, 160, 67, 0.16)", "#b7f0c3")}>Current</span> : null}
               </div>
-              <div style={{ fontSize: "34px", fontWeight: 900 }}>{plan.price}</div>
-              <div style={{ color: "#d4d4d8", lineHeight: 1.55, minHeight: "70px" }}>{plan.summary}</div>
               <button
                 type="button"
-                onClick={() => (isCurrent ? void navigate({ to: billingPath(organization) }) : void navigate({ to: checkoutPath(organization, planId) }))}
-                style={isCurrent ? secondaryButtonStyle() : primaryButtonStyle()}
+                onClick={() => void navigate({ to: checkoutPath(organization, "team") })}
+                style={{ ...primaryButtonStyle(), whiteSpace: "nowrap", flexShrink: 0 }}
               >
-                {isCurrent ? "Current plan" : `Choose ${plan.label}`}
+                Upgrade — $25/mo
               </button>
             </div>
-          );
-        })}
-      </div>
+          </div>
+        ) : null}
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 0.9fr) minmax(320px, 1.1fr)", gap: "18px" }}>
-        <div style={{ ...cardStyle(), padding: "24px", display: "grid", gap: "14px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <ShieldCheck size={18} />
-            <div style={{ fontSize: "20px", fontWeight: 800 }}>Subscription controls</div>
-          </div>
-          <div style={{ color: "#d4d4d8", lineHeight: 1.55 }}>
-            Stripe customer {organization.billing.stripeCustomerId || "pending"}.{" "}
-            {isMockFrontendClient
-              ? "This mock screen intentionally mirrors a hosted billing portal entry point and the in-product summary beside it."
-              : hasStripeCustomer
-                ? "Use the portal for payment method management and invoices, while in-product controls keep renewal state visible in the app shell."
-                : "Complete checkout first, then use the portal and renewal controls once Stripe has created the customer and subscription."}
-          </div>
-          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-            {hasStripeCustomer ? (
-              organization.billing.status === "scheduled_cancel" ? (
+        {/* Buy more task hours (only shown on Pro plan) */}
+        {!isFree ? (
+          <SettingsContentSection
+            title="Purchase Task Hours"
+            description="Buy additional task hours in bulk. Hours are added to your current balance and don't expire."
+          >
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
+              {taskHourPackages.map((pkg) => (
+                <div
+                  key={pkg.hours}
+                  style={{
+                    ...cardStyle(),
+                    padding: "14px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "8px",
+                    cursor: "pointer",
+                    transition: "border-color 150ms ease",
+                  }}
+                  onMouseEnter={(event) => {
+                    (event.currentTarget as HTMLDivElement).style.borderColor = "rgba(255, 255, 255, 0.20)";
+                  }}
+                  onMouseLeave={(event) => {
+                    (event.currentTarget as HTMLDivElement).style.borderColor = "rgba(255, 255, 255, 0.08)";
+                  }}
+                >
+                  <div style={{ fontSize: "16px", fontWeight: 700 }}>{pkg.hours}h</div>
+                  <div style={{ fontSize: "11px", color: "#a1a1aa" }}>${((pkg.price / pkg.hours) * 60).toFixed(1)}¢/min</div>
+                  <button type="button" style={{ ...secondaryButtonStyle(), width: "100%", textAlign: "center", marginTop: "auto" }}>
+                    ${pkg.price}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </SettingsContentSection>
+        ) : null}
+
+        {/* Payment method */}
+        {hasStripeCustomer ? (
+          <SettingsContentSection title="Payment" description={organization.billing.paymentMethodLabel || "No payment method on file."}>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                type="button"
+                onClick={() =>
+                  void (isMockFrontendClient ? navigate({ to: checkoutPath(organization, effectivePlanId) }) : client.openBillingPortal(organization.id))
+                }
+                style={secondaryButtonStyle()}
+              >
+                {isMockFrontendClient ? "Open hosted checkout mock" : "Manage in Stripe"}
+              </button>
+              {organization.billing.status === "scheduled_cancel" ? (
                 <button type="button" onClick={() => void client.resumeSubscription(organization.id)} style={primaryButtonStyle()}>
                   Resume subscription
                 </button>
               ) : (
-                <button type="button" onClick={() => void client.cancelScheduledRenewal(organization.id)} style={secondaryButtonStyle()}>
+                <button type="button" onClick={() => void client.cancelScheduledRenewal(organization.id)} style={subtleButtonStyle()}>
                   Cancel at period end
                 </button>
-              )
-            ) : (
-              <button type="button" onClick={() => void navigate({ to: checkoutPath(organization, "team") })} style={primaryButtonStyle()}>
-                Start Team checkout
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() =>
-                void (isMockFrontendClient
-                  ? navigate({ to: checkoutPath(organization, effectivePlanId) })
-                  : hasStripeCustomer
-                    ? client.openBillingPortal(organization.id)
-                    : navigate({ to: checkoutPath(organization, "team") }))
-              }
-              style={subtleButtonStyle()}
-            >
-              {isMockFrontendClient ? "Open hosted checkout mock" : hasStripeCustomer ? "Open Stripe portal" : "Go to checkout"}
-            </button>
-          </div>
-        </div>
+              )}
+            </div>
+          </SettingsContentSection>
+        ) : null}
 
-        <div style={{ ...cardStyle(), padding: "24px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
-            <BadgeCheck size={18} />
-            <div style={{ fontSize: "20px", fontWeight: 800 }}>Invoices</div>
-          </div>
-          <div style={{ color: "#a1a1aa", fontSize: "14px", marginBottom: "8px" }}>Recent hosted billing activity for review.</div>
+        {/* Invoices */}
+        <SettingsContentSection title="Invoices" description="Recent billing activity.">
           {organization.billing.invoices.length === 0 ? (
-            <div style={{ color: "#d4d4d8" }}>No invoices yet.</div>
+            <div style={{ color: "#a1a1aa", fontSize: "11px" }}>No invoices yet.</div>
           ) : (
-            organization.billing.invoices.map((invoice) => (
-              <div
-                key={invoice.id}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "minmax(0, 1fr) 120px 90px",
-                  gap: "12px",
-                  alignItems: "center",
-                  padding: "12px 0",
-                  borderTop: "1px solid rgba(255, 255, 255, 0.08)",
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 700 }}>{invoice.label}</div>
-                  <div style={{ fontSize: "13px", color: "#a1a1aa" }}>{invoice.issuedAt}</div>
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {organization.billing.invoices.map((invoice) => (
+                <div
+                  key={invoice.id}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "minmax(0, 1fr) 80px 70px",
+                    gap: "10px",
+                    alignItems: "center",
+                    padding: "8px 0",
+                    borderTop: "1px solid rgba(255, 255, 255, 0.06)",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: "12px", fontWeight: 500 }}>{invoice.label}</div>
+                    <div style={{ fontSize: "10px", color: "#a1a1aa" }}>{invoice.issuedAt}</div>
+                  </div>
+                  <div style={{ fontSize: "12px", fontWeight: 500 }}>${invoice.amountUsd}</div>
+                  <div>
+                    <span
+                      style={badgeStyle(
+                        invoice.status === "paid" ? "rgba(46, 160, 67, 0.16)" : "rgba(255, 193, 7, 0.18)",
+                        invoice.status === "paid" ? "#b7f0c3" : "#ffe6a6",
+                      )}
+                    >
+                      {invoice.status}
+                    </span>
+                  </div>
                 </div>
-                <div style={{ fontWeight: 700 }}>${invoice.amountUsd}</div>
-                <div>
-                  <span
-                    style={badgeStyle(
-                      invoice.status === "paid" ? "rgba(46, 160, 67, 0.16)" : "rgba(255, 193, 7, 0.18)",
-                      invoice.status === "paid" ? "#b7f0c3" : "#ffe6a6",
-                    )}
-                  >
-                    {invoice.status}
-                  </span>
-                </div>
-              </div>
-            ))
+              ))}
+            </div>
           )}
-        </div>
+        </SettingsContentSection>
       </div>
-    </PageShell>
+    </SettingsLayout>
   );
 }
 
 export function MockHostedCheckoutPage({ organization, planId }: { organization: FoundryOrganization; planId: FoundryBillingPlanId }) {
   const client = useMockAppClient();
-  const snapshot = useMockAppSnapshot();
-  const user = activeMockUser(snapshot);
   const navigate = useNavigate();
   const plan = planCatalog[planId]!;
 
   return (
-    <PageShell
-      user={user}
-      title={`Checkout ${plan.label}`}
-      eyebrow="Hosted Checkout"
-      description={
-        isMockFrontendClient
-          ? "This is the mock hosted Stripe step. Completing checkout updates the org billing state in the client package and returns the reviewer to the billing screen."
-          : "This hands off to a live Stripe Checkout session. After payment succeeds, the backend finalizes the session and routes back into the billing screen."
-      }
-      actions={
-        <button type="button" onClick={() => void navigate({ to: billingPath(organization) })} style={secondaryButtonStyle()}>
-          <ArrowLeft size={15} />
-          Back to billing
-        </button>
-      }
-      onSignOut={() => {
-        void (async () => {
-          await client.signOut();
-          await navigate({ to: "/signin" });
-        })();
-      }}
-    >
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 0.95fr) minmax(320px, 1.05fr)", gap: "18px" }}>
-        <div style={{ ...cardStyle(), padding: "24px", display: "grid", gap: "14px" }}>
-          <div style={{ fontSize: "20px", fontWeight: 800 }}>Order summary</div>
-          <div style={{ color: "#d4d4d8", lineHeight: 1.55 }}>
-            {organization.settings.displayName} is checking out on the {plan.label} plan.
-          </div>
-          <div style={{ display: "grid", gap: "10px" }}>
+    <SettingsLayout organization={organization} activeSection="billing">
+      <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+        <div>
+          <h1 style={{ margin: "0 0 2px", fontSize: "15px", fontWeight: 600 }}>Checkout {plan.label}</h1>
+          <p style={{ margin: 0, fontSize: "11px", color: "rgba(255, 255, 255, 0.40)" }}>Complete payment to activate the {plan.label} plan.</p>
+        </div>
+
+        <SettingsContentSection title="Order summary" description={`${organization.settings.displayName} — ${plan.label} plan.`}>
+          <div style={{ display: "flex", flexDirection: "column" }}>
             <CheckoutLine label="Plan" value={plan.label} />
             <CheckoutLine label="Price" value={plan.price} />
             <CheckoutLine label="Included seats" value={plan.seats} />
             <CheckoutLine label="Payment method" value="Visa ending in 4242" />
           </div>
-        </div>
-        <div style={{ ...cardStyle(), padding: "24px", display: "grid", gap: "16px" }}>
-          <div style={{ fontSize: "20px", fontWeight: 800 }}>Mock card details</div>
-          <div style={{ display: "grid", gap: "12px" }}>
-            <label style={{ display: "grid", gap: "8px" }}>
-              <span style={{ fontSize: "13px", fontWeight: 700 }}>Cardholder</span>
-              <input value={organization.settings.displayName} readOnly style={inputStyle()} />
-            </label>
-            <label style={{ display: "grid", gap: "8px" }}>
-              <span style={{ fontSize: "13px", fontWeight: 700 }}>Card number</span>
-              <input value="4242 4242 4242 4242" readOnly style={inputStyle()} />
-            </label>
+        </SettingsContentSection>
+
+        <SettingsContentSection title="Card details">
+          <label style={{ display: "grid", gap: "4px" }}>
+            <span style={{ fontSize: "11px", fontWeight: 500, color: "rgba(255, 255, 255, 0.55)" }}>Cardholder</span>
+            <input value={organization.settings.displayName} readOnly style={inputStyle()} />
+          </label>
+          <label style={{ display: "grid", gap: "4px" }}>
+            <span style={{ fontSize: "11px", fontWeight: 500, color: "rgba(255, 255, 255, 0.55)" }}>Card number</span>
+            <input value="4242 4242 4242 4242" readOnly style={inputStyle()} />
+          </label>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              type="button"
+              onClick={() => {
+                void (async () => {
+                  await client.completeHostedCheckout(organization.id, planId);
+                  if (isMockFrontendClient) {
+                    await navigate({ to: billingPath(organization), replace: true });
+                  }
+                })();
+              }}
+              style={primaryButtonStyle()}
+            >
+              {isMockFrontendClient ? "Complete checkout" : "Continue to Stripe"}
+            </button>
+            <button type="button" onClick={() => void navigate({ to: billingPath(organization) })} style={subtleButtonStyle()}>
+              Cancel
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              void (async () => {
-                await client.completeHostedCheckout(organization.id, planId);
-                if (isMockFrontendClient) {
-                  await navigate({ to: billingPath(organization), replace: true });
-                }
-              })();
-            }}
-            style={primaryButtonStyle()}
-          >
-            {isMockFrontendClient ? "Complete checkout" : "Continue to Stripe"}
-          </button>
-        </div>
+        </SettingsContentSection>
       </div>
-    </PageShell>
+    </SettingsLayout>
   );
 }
 
@@ -945,13 +1134,146 @@ function CheckoutLine({ label, value }: { label: string; value: string }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        gap: "12px",
-        padding: "12px 0",
-        borderTop: "1px solid rgba(255, 255, 255, 0.08)",
+        gap: "10px",
+        padding: "7px 0",
+        borderTop: "1px solid rgba(255, 255, 255, 0.06)",
       }}
     >
-      <div style={{ color: "#a1a1aa" }}>{label}</div>
-      <div style={{ fontWeight: 700 }}>{value}</div>
+      <div style={{ color: "#a1a1aa", fontSize: "11px" }}>{label}</div>
+      <div style={{ fontSize: "12px", fontWeight: 500 }}>{value}</div>
+    </div>
+  );
+}
+
+export function MockAccountSettingsPage() {
+  const client = useMockAppClient();
+  const snapshot = useMockAppSnapshot();
+  const user = activeMockUser(snapshot);
+  const navigate = useNavigate();
+  const [name, setName] = useState(user?.name ?? "");
+  const [email, setEmail] = useState(user?.email ?? "");
+
+  useEffect(() => {
+    setName(user?.name ?? "");
+    setEmail(user?.email ?? "");
+  }, [user?.name, user?.email]);
+
+  return (
+    <div style={appSurfaceStyle()}>
+      <DesktopDragRegion />
+      <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+        {/* Left nav */}
+        <div
+          style={{
+            width: "200px",
+            flexShrink: 0,
+            borderRight: "1px solid rgba(255, 255, 255, 0.06)",
+            padding: "44px 10px 16px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "2px",
+            overflowY: "auto",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => void navigate({ to: "/" })}
+            style={{
+              ...subtleButtonStyle(),
+              display: "flex",
+              alignItems: "center",
+              gap: "5px",
+              marginBottom: "10px",
+              fontSize: "11px",
+            }}
+          >
+            <ArrowLeft size={12} />
+            Back to workspace
+          </button>
+
+          <div style={{ padding: "2px 10px 12px", display: "flex", flexDirection: "column", gap: "1px" }}>
+            <span style={{ fontSize: "12px", fontWeight: 600 }}>{user?.name ?? "User"}</span>
+            <span style={{ fontSize: "10px", color: "rgba(255, 255, 255, 0.38)" }}>{user?.email ?? ""}</span>
+          </div>
+
+          <SettingsNavItem icon={<Settings size={13} />} label="General" active onClick={() => {}} />
+        </div>
+
+        {/* Content */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "80px 36px 40px" }}>
+          <div style={{ maxWidth: "560px" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+              <div>
+                <h1 style={{ margin: "0 0 2px", fontSize: "15px", fontWeight: 600 }}>Account</h1>
+                <p style={{ margin: 0, fontSize: "11px", color: "rgba(255, 255, 255, 0.40)" }}>Manage your personal account settings.</p>
+              </div>
+
+              <SettingsContentSection title="Profile">
+                <label style={{ display: "grid", gap: "4px" }}>
+                  <span style={{ fontSize: "11px", fontWeight: 500, color: "rgba(255, 255, 255, 0.55)" }}>Display name</span>
+                  <input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle()} />
+                </label>
+                <label style={{ display: "grid", gap: "4px" }}>
+                  <span style={{ fontSize: "11px", fontWeight: 500, color: "rgba(255, 255, 255, 0.55)" }}>Email</span>
+                  <input value={email} onChange={(e) => setEmail(e.target.value)} style={inputStyle()} />
+                </label>
+                <label style={{ display: "grid", gap: "4px" }}>
+                  <span style={{ fontSize: "11px", fontWeight: 500, color: "rgba(255, 255, 255, 0.55)" }}>GitHub</span>
+                  <input value={`@${user?.githubLogin ?? ""}`} readOnly style={{ ...inputStyle(), color: "rgba(255, 255, 255, 0.40)" }} />
+                </label>
+                <div>
+                  <button type="button" style={primaryButtonStyle()}>
+                    Save changes
+                  </button>
+                </div>
+              </SettingsContentSection>
+
+              <SettingsContentSection title="Sessions" description="Manage your active sessions across devices.">
+                <SettingsRow label="Current session" description="This device — signed in via GitHub OAuth." />
+              </SettingsContentSection>
+
+              <SettingsContentSection title="Sign out" description="Sign out of Foundry on this device.">
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void (async () => {
+                        await client.signOut();
+                        await navigate({ to: "/signin" });
+                      })();
+                    }}
+                    style={{ ...secondaryButtonStyle(), display: "inline-flex", alignItems: "center", gap: "6px" }}
+                  >
+                    <LogOut size={12} />
+                    Sign out
+                  </button>
+                </div>
+              </SettingsContentSection>
+
+              <SettingsContentSection title="Danger zone">
+                <SettingsRow
+                  label="Delete account"
+                  description="Permanently delete your account and all data."
+                  action={
+                    <button
+                      type="button"
+                      style={{
+                        ...secondaryButtonStyle(),
+                        borderColor: "rgba(255, 110, 110, 0.24)",
+                        color: "#ffa198",
+                        whiteSpace: "nowrap",
+                        flexShrink: 0,
+                      }}
+                    >
+                      Delete
+                    </button>
+                  }
+                />
+              </SettingsContentSection>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -959,11 +1281,14 @@ function CheckoutLine({ label, value }: { label: string; value: string }) {
 function inputStyle(): React.CSSProperties {
   return {
     width: "100%",
-    borderRadius: "14px",
-    border: "1px solid rgba(255, 255, 255, 0.12)",
+    borderRadius: "6px",
+    border: "1px solid rgba(255, 255, 255, 0.10)",
     background: "rgba(255, 255, 255, 0.04)",
     color: "#ffffff",
-    padding: "12px 14px",
+    padding: "6px 10px",
+    fontSize: "12px",
+    fontFamily: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
     outline: "none",
+    lineHeight: 1.5,
   };
 }

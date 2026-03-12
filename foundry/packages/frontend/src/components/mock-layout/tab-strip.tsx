@@ -21,6 +21,7 @@ export const TabStrip = memo(function TabStrip({
   onCloseTab,
   onCloseDiffTab,
   onAddTab,
+  sidebarCollapsed,
 }: {
   task: Task;
   activeTabId: string | null;
@@ -36,8 +37,10 @@ export const TabStrip = memo(function TabStrip({
   onCloseTab: (tabId: string) => void;
   onCloseDiffTab: (path: string) => void;
   onAddTab: () => void;
+  sidebarCollapsed?: boolean;
 }) {
   const [css, theme] = useStyletron();
+  const isDesktop = !!import.meta.env.VITE_DESKTOP;
   const contextMenu = useContextMenu();
 
   return (
@@ -53,7 +56,7 @@ export const TabStrip = memo(function TabStrip({
           borderBottom: `1px solid ${theme.colors.borderOpaque}`,
           gap: "4px",
           backgroundColor: "#09090b",
-          paddingLeft: "6px",
+          paddingLeft: sidebarCollapsed ? "14px" : "6px",
           height: "41px",
           minHeight: "41px",
           overflowX: "auto",

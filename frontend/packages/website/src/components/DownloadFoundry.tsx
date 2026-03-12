@@ -105,7 +105,7 @@ export function DownloadFoundry() {
             </button>
 
             {showDropdown && (
-              <div className="absolute left-1/2 top-full mt-2 -translate-x-1/2 rounded-lg border border-white/10 bg-zinc-900 p-2 shadow-xl">
+              <div className="absolute left-1/2 top-full mt-2 -translate-x-1/2 rounded-lg border border-white/10 bg-[#0f0f11] p-2 shadow-xl">
                 {secondary.map((p) => (
                   <a
                     key={p.arch}

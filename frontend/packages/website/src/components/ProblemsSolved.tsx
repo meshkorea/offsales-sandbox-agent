@@ -26,18 +26,18 @@ const problems = [
 
 export function ProblemsSolved() {
   return (
-    <section id="features" className="py-24 bg-zinc-950 border-y border-white/5">
+    <section id="features" className="py-24 bg-[#0f0f11] border-y border-white/5">
       <div className="max-w-7xl mx-auto px-6">
         <div className="text-center mb-16">
-          <h2 className="text-3xl font-bold text-white mb-4">Why Coding Agent SDK?</h2>
+          <h2 className="text-3xl font-semibold text-white mb-4">Why Coding Agent SDK?</h2>
           <p className="text-zinc-400 max-w-xl mx-auto">Solving the three fundamental friction points of agentic software development.</p>
         </div>
 
         <div className="grid md:grid-cols-3 gap-8">
           {problems.map((item, idx) => (
-            <div key={idx} className="group p-8 rounded-2xl bg-zinc-900/40 border border-white/5 hover:border-accent/30 transition-all duration-300">
+            <div key={idx} className="group p-8 rounded-xl bg-white/[0.02] border border-white/5 hover:border-accent/30 transition-all duration-300">
               <FeatureIcon icon={item.icon} color={item.color} />
-              <h3 className="text-xl font-bold text-white mb-3">{item.title}</h3>
+              <h3 className="text-xl font-semibold text-white mb-3">{item.title}</h3>
               <p className="text-zinc-400 text-sm leading-relaxed">{item.desc}</p>
             </div>
           ))}

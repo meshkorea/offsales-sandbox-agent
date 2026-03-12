@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { useStyletron } from "baseui";
 import { LabelSmall } from "baseui/typography";
-import { Clock, MailOpen } from "lucide-react";
+import { Clock, MailOpen, PanelLeft, PanelRight } from "lucide-react";
 
 import { PanelHeaderBar } from "./ui";
 import { type AgentTab, type Task } from "./view-model";
@@ -16,6 +16,12 @@ export const TranscriptHeader = memo(function TranscriptHeader({
   onCommitEditingField,
   onCancelEditingField,
   onSetActiveTabUnread,
+  sidebarCollapsed,
+  onToggleSidebar,
+  onSidebarPeekStart,
+  onSidebarPeekEnd,
+  rightSidebarCollapsed,
+  onToggleRightSidebar,
 }: {
   task: Task;
   activeTab: AgentTab | null | undefined;
@@ -26,11 +32,40 @@ export const TranscriptHeader = memo(function TranscriptHeader({
   onCommitEditingField: (field: "title" | "branch") => void;
   onCancelEditingField: () => void;
   onSetActiveTabUnread: (unread: boolean) => void;
+  sidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
+  onSidebarPeekStart?: () => void;
+  onSidebarPeekEnd?: () => void;
+  rightSidebarCollapsed?: boolean;
+  onToggleRightSidebar?: () => void;
 }) {
   const [css, theme] = useStyletron();
+  const isDesktop = !!import.meta.env.VITE_DESKTOP;
+  const needsTrafficLightInset = isDesktop && sidebarCollapsed;
 
   return (
-    <PanelHeaderBar $style={{ backgroundColor: "#0f0f11", borderBottom: "none" }}>
+    <PanelHeaderBar $style={{ backgroundColor: "#0f0f11", borderBottom: "none", paddingLeft: needsTrafficLightInset ? "74px" : "14px" }}>
+      {sidebarCollapsed && onToggleSidebar ? (
+        <div
+          className={css({
+            width: "26px",
+            height: "26px",
+            borderRadius: "6px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            color: "#71717a",
+            flexShrink: 0,
+            ":hover": { color: "#a1a1aa", backgroundColor: "rgba(255, 255, 255, 0.06)" },
+          })}
+          onClick={onToggleSidebar}
+          onMouseEnter={onSidebarPeekStart}
+          onMouseLeave={onSidebarPeekEnd}
+        >
+          <PanelLeft size={14} />
+        </div>
+      ) : null}
       {editingField === "title" ? (
         <input
           autoFocus
@@ -169,6 +204,25 @@ export const TranscriptHeader = memo(function TranscriptHeader({
           <MailOpen size={12} style={{ flexShrink: 0 }} />{" "}
           <span className={css({ "@media screen and (max-width: 768px)": { display: "none" } })}>{activeTab.unread ? "Mark read" : "Mark unread"}</span>
         </button>
+      ) : null}
+      {rightSidebarCollapsed && onToggleRightSidebar ? (
+        <div
+          className={css({
+            width: "26px",
+            height: "26px",
+            borderRadius: "6px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            color: "#71717a",
+            flexShrink: 0,
+            ":hover": { color: "#a1a1aa", backgroundColor: "rgba(255, 255, 255, 0.06)" },
+          })}
+          onClick={onToggleRightSidebar}
+        >
+          <PanelRight size={14} />
+        </div>
       ) : null}
     </PanelHeaderBar>
   );

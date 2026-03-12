@@ -36,7 +36,7 @@ export function FeatureGrid() {
           className="grid gap-4 md:grid-cols-2 lg:grid-cols-4"
         >
           {/* Universal Agent API - Span full width */}
-          <div className="group col-span-full flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-6 transition-colors hover:border-white/20">
+          <div className="group col-span-full flex flex-col gap-4 rounded-xl border border-white/10 bg-white/[0.02] p-6 transition-colors hover:border-white/20">
             <div className="flex items-center gap-3">
               <div className="text-zinc-500 transition-colors group-hover:text-orange-400">
                 <Workflow className="h-4 w-4" />
@@ -49,7 +49,7 @@ export function FeatureGrid() {
           </div>
 
           {/* Streaming Events */}
-          <div className="group flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-6 transition-colors hover:border-white/20">
+          <div className="group flex flex-col gap-4 rounded-xl border border-white/10 bg-white/[0.02] p-6 transition-colors hover:border-white/20">
             <div className="flex items-center gap-3">
               <div className="text-zinc-500 transition-colors group-hover:text-green-400">
                 <Server className="h-4 w-4" />
@@ -62,7 +62,7 @@ export function FeatureGrid() {
           </div>
 
           {/* Universal Schema */}
-          <div className="group flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-6 transition-colors hover:border-white/20">
+          <div className="group flex flex-col gap-4 rounded-xl border border-white/10 bg-white/[0.02] p-6 transition-colors hover:border-white/20">
             <div className="flex items-center gap-3">
               <div className="text-zinc-500 transition-colors group-hover:text-purple-400">
                 <Database className="h-4 w-4" />
@@ -75,7 +75,7 @@ export function FeatureGrid() {
           </div>
 
           {/* Runs Inside Any Sandbox */}
-          <div className="group lg:col-span-2 flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-6 transition-colors hover:border-white/20">
+          <div className="group lg:col-span-2 flex flex-col gap-4 rounded-xl border border-white/10 bg-white/[0.02] p-6 transition-colors hover:border-white/20">
             <div className="flex items-center gap-3">
               <div className="text-zinc-500 transition-colors group-hover:text-blue-400">
                 <Globe className="h-4 w-4" />
@@ -88,7 +88,7 @@ export function FeatureGrid() {
           </div>
 
           {/* Session Management */}
-          <div className="group lg:col-span-2 flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-6 transition-colors hover:border-white/20">
+          <div className="group lg:col-span-2 flex flex-col gap-4 rounded-xl border border-white/10 bg-white/[0.02] p-6 transition-colors hover:border-white/20">
             <div className="flex items-center gap-3">
               <div className="text-zinc-500 transition-colors group-hover:text-amber-400">
                 <Download className="h-4 w-4" />
@@ -101,7 +101,7 @@ export function FeatureGrid() {
           </div>
 
           {/* OpenCode SDK & UI Support */}
-          <div className="group lg:col-span-2 flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/[0.02] p-6 transition-colors hover:border-white/20">
+          <div className="group lg:col-span-2 flex flex-col gap-4 rounded-xl border border-white/10 bg-white/[0.02] p-6 transition-colors hover:border-white/20">
             <div className="flex items-center gap-3">
               <div className="text-zinc-500 transition-colors group-hover:text-pink-400">
                 <Plug className="h-4 w-4" />

@@ -108,6 +108,16 @@ export const RightSidebar = memo(function RightSidebar({
   const contextMenu = useContextMenu();
   const changedPaths = useMemo(() => new Set(task.fileChanges.map((file) => file.path)), [task.fileChanges]);
   const isTerminal = task.status === "archived";
+  const [compact, setCompact] = useState(false);
+  const headerRef = useCallback((node: HTMLDivElement | null) => {
+    if (!node) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setCompact(entry.contentRect.width < 400);
+      }
+    });
+    observer.observe(node);
+  }, []);
   const pullRequestUrl = task.pullRequest != null ? `https://github.com/${task.repoName}/pull/${task.pullRequest.number}` : null;
 
   const copyFilePath = useCallback(async (path: string) => {
@@ -137,121 +147,128 @@ export const RightSidebar = memo(function RightSidebar({
   );
 
   return (
-    <SPanel $style={{ backgroundColor: "#09090b" }}>
-      <PanelHeaderBar $style={{ backgroundColor: "#0f0f11", borderBottom: "none" }}>
-        <div className={css({ flex: 1 })} />
-        {!isTerminal ? (
-          <div className={css({ display: "flex", alignItems: "center", gap: "4px" })}>
-            <button
-              onClick={() => {
-                if (pullRequestUrl) {
-                  window.open(pullRequestUrl, "_blank", "noopener,noreferrer");
-                  return;
-                }
+    <SPanel $style={{ backgroundColor: "#09090b", minWidth: 0 }}>
+      <PanelHeaderBar $style={{ backgroundColor: "#0f0f11", borderBottom: "none", overflow: "hidden" }}>
+        <div ref={headerRef} className={css({ display: "flex", alignItems: "center", flex: 1, minWidth: 0, justifyContent: "flex-end", gap: "2px" })}>
+          {!isTerminal ? (
+            <div className={css({ display: "flex", alignItems: "center", gap: "2px", flexShrink: 1, minWidth: 0 })}>
+              <button
+                onClick={() => {
+                  if (pullRequestUrl) {
+                    window.open(pullRequestUrl, "_blank", "noopener,noreferrer");
+                    return;
+                  }
 
-                onPublishPr();
+                  onPublishPr();
+                }}
+                className={css({
+                  appearance: "none",
+                  WebkitAppearance: "none",
+                  background: "none",
+                  border: "none",
+                  margin: "0",
+                  boxSizing: "border-box",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: compact ? "4px 6px" : "4px 10px",
+                  borderRadius: "6px",
+                  fontSize: "11px",
+                  fontWeight: 500,
+                  lineHeight: 1,
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                  color: theme.colors.contentSecondary,
+                  cursor: "pointer",
+                  transition: "all 200ms ease",
+                  ":hover": { backgroundColor: "rgba(255, 255, 255, 0.06)", color: theme.colors.contentPrimary },
+                })}
+              >
+                <GitPullRequest size={12} style={{ flexShrink: 0 }} />
+                {!compact && <span>{pullRequestUrl ? "Open PR" : "Publish PR"}</span>}
+              </button>
+              <button
+                className={css({
+                  appearance: "none",
+                  WebkitAppearance: "none",
+                  background: "none",
+                  border: "none",
+                  margin: "0",
+                  boxSizing: "border-box",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: compact ? "4px 6px" : "4px 10px",
+                  borderRadius: "6px",
+                  fontSize: "11px",
+                  fontWeight: 500,
+                  lineHeight: 1,
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                  color: theme.colors.contentSecondary,
+                  cursor: "pointer",
+                  transition: "all 200ms ease",
+                  ":hover": { backgroundColor: "rgba(255, 255, 255, 0.06)", color: theme.colors.contentPrimary },
+                })}
+              >
+                <ArrowUpFromLine size={12} style={{ flexShrink: 0 }} />
+                {!compact && <span>Push</span>}
+              </button>
+              <button
+                onClick={onArchive}
+                className={css({
+                  appearance: "none",
+                  WebkitAppearance: "none",
+                  background: "none",
+                  border: "none",
+                  margin: "0",
+                  boxSizing: "border-box",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: compact ? "4px 6px" : "4px 10px",
+                  borderRadius: "6px",
+                  fontSize: "11px",
+                  fontWeight: 500,
+                  lineHeight: 1,
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                  color: theme.colors.contentSecondary,
+                  cursor: "pointer",
+                  transition: "all 200ms ease",
+                  ":hover": { backgroundColor: "rgba(255, 255, 255, 0.06)", color: theme.colors.contentPrimary },
+                })}
+              >
+                <Archive size={12} style={{ flexShrink: 0 }} />
+                {!compact && <span>Archive</span>}
+              </button>
+            </div>
+          ) : null}
+          {onToggleSidebar ? (
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={onToggleSidebar}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") onToggleSidebar();
               }}
               className={css({
-                appearance: "none",
-                WebkitAppearance: "none",
-                background: "none",
-                border: "none",
-                margin: "0",
-                boxSizing: "border-box",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "6px 12px",
-                borderRadius: "8px",
-                fontSize: "12px",
-                fontWeight: 500,
-                lineHeight: 1,
-                color: "#e4e4e7",
+                width: "26px",
+                height: "26px",
+                borderRadius: "6px",
+                color: "#71717a",
                 cursor: "pointer",
-                transition: "all 200ms ease",
-                ":hover": { backgroundColor: "rgba(255, 255, 255, 0.06)", color: "#ffffff" },
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+                ":hover": { color: "#a1a1aa", backgroundColor: "rgba(255, 255, 255, 0.06)" },
               })}
             >
-              <GitPullRequest size={12} style={{ flexShrink: 0 }} />
-              <span className={css({ "@media screen and (max-width: 768px)": { display: "none" } })}>{pullRequestUrl ? "Open PR" : "Publish PR"}</span>
-            </button>
-            <button
-              className={css({
-                appearance: "none",
-                WebkitAppearance: "none",
-                background: "none",
-                border: "none",
-                margin: "0",
-                boxSizing: "border-box",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "6px 12px",
-                borderRadius: "8px",
-                fontSize: "12px",
-                fontWeight: 500,
-                lineHeight: 1,
-                color: "#e4e4e7",
-                cursor: "pointer",
-                transition: "all 200ms ease",
-                ":hover": { backgroundColor: "rgba(255, 255, 255, 0.06)", color: "#ffffff" },
-              })}
-            >
-              <ArrowUpFromLine size={12} style={{ flexShrink: 0 }} />{" "}
-              <span className={css({ "@media screen and (max-width: 768px)": { display: "none" } })}>Push</span>
-            </button>
-            <button
-              onClick={onArchive}
-              className={css({
-                appearance: "none",
-                WebkitAppearance: "none",
-                background: "none",
-                border: "none",
-                margin: "0",
-                boxSizing: "border-box",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "6px 12px",
-                borderRadius: "8px",
-                fontSize: "12px",
-                fontWeight: 500,
-                lineHeight: 1,
-                color: "#e4e4e7",
-                cursor: "pointer",
-                transition: "all 200ms ease",
-                ":hover": { backgroundColor: "rgba(255, 255, 255, 0.06)", color: "#ffffff" },
-              })}
-            >
-              <Archive size={12} style={{ flexShrink: 0 }} />{" "}
-              <span className={css({ "@media screen and (max-width: 768px)": { display: "none" } })}>Archive</span>
-            </button>
-          </div>
-        ) : null}
-        {onToggleSidebar ? (
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={onToggleSidebar}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") onToggleSidebar();
-            }}
-            className={css({
-              width: "26px",
-              height: "26px",
-              borderRadius: "6px",
-              color: "#71717a",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-              ":hover": { color: "#a1a1aa", backgroundColor: "rgba(255, 255, 255, 0.06)" },
-            })}
-          >
-            <PanelRight size={14} />
-          </div>
-        ) : null}
+              <PanelRight size={14} />
+            </div>
+          ) : null}
+        </div>
       </PanelHeaderBar>
 
       <div

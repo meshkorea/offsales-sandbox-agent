@@ -1,5 +1,5 @@
 use std::sync::Mutex;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, LogicalPosition, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 
@@ -95,6 +95,29 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![get_backend_url, backend_health])
         .setup(|app| {
+            // Create main window programmatically so we can set traffic light position
+            let url = if cfg!(debug_assertions) {
+                WebviewUrl::External("http://localhost:4173".parse().unwrap())
+            } else {
+                WebviewUrl::default()
+            };
+
+            let mut builder = WebviewWindowBuilder::new(app, "main", url)
+                .title("Foundry")
+                .inner_size(1280.0, 800.0)
+                .min_inner_size(900.0, 600.0)
+                .resizable(true)
+                .theme(Some(tauri::Theme::Dark))
+                .title_bar_style(tauri::TitleBarStyle::Overlay)
+                .hidden_title(true);
+
+            #[cfg(target_os = "macos")]
+            {
+                builder = builder.traffic_light_position(LogicalPosition::new(14.0, 14.0));
+            }
+
+            builder.build()?;
+
             // In debug mode, assume the developer is running the backend externally
             if cfg!(debug_assertions) {
                 eprintln!("[foundry-desktop] Dev mode: skipping sidecar spawn. Run the backend separately.");
