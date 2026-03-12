@@ -14,7 +14,7 @@ interface TerminalPaneProps {
   isExpanded?: boolean;
   onExpand?: () => void;
   onCollapse?: () => void;
-  onStartResize?: (e: React.PointerEvent) => void;
+  onStartResize?: React.PointerEventHandler<HTMLDivElement>;
 }
 
 interface ProcessTab {
@@ -135,6 +135,7 @@ export function TerminalPane({ workspaceId, taskId, isExpanded, onExpand, onColl
         setProcessTabs((prev) => {
           const next = [...prev];
           const [moved] = next.splice(d.fromIdx, 1);
+          if (!moved) return prev;
           next.splice(d.overIdx!, 0, moved);
           return next;
         });

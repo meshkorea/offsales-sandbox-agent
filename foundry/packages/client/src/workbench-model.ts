@@ -300,6 +300,7 @@ export function buildInitialTasks(): Task[] {
       fileChanges: [],
       diffs: {},
       fileTree: [],
+      minutesUsed: 0,
     },
     {
       id: "h1",

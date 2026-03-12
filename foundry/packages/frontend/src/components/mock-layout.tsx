@@ -1053,7 +1053,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
   const activeOrg = activeMockOrganization(appSnapshot);
   const navigateToUsage = useCallback(() => {
     if (activeOrg) {
-      void navigate({ to: "/organizations/$organizationId/billing" as never, params: { organizationId: activeOrg.id } });
+      void navigate({ to: "/organizations/$organizationId/billing", params: { organizationId: activeOrg.id } });
     }
   }, [activeOrg, navigate]);
   const [projectOrder, setProjectOrder] = useState<string[] | null>(null);
@@ -1457,7 +1457,9 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
   const onDragMouseDown = useCallback((event: ReactPointerEvent) => {
     if (event.button !== 0) return;
     // Tauri v2 IPC: invoke start_dragging on the webview window
-    const ipc = (window as Record<string, unknown>).__TAURI_INTERNALS__ as { invoke: (cmd: string, args?: unknown) => Promise<unknown> } | undefined;
+    const ipc = ((window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ ?? undefined) as
+      | { invoke: (cmd: string, args?: unknown) => Promise<unknown> }
+      | undefined;
     if (ipc?.invoke) {
       ipc.invoke("plugin:window|start_dragging").catch(() => {});
     }
