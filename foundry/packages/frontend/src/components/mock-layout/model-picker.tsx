@@ -3,6 +3,7 @@ import { useStyletron } from "baseui";
 import { StatefulPopover, PLACEMENT } from "baseui/popover";
 import { ChevronDown, ChevronUp, Star } from "lucide-react";
 
+import { useFoundryTokens } from "../../app/theme";
 import { AgentIcon } from "./ui";
 import { MODEL_GROUPS, modelLabel, providerAgent, type ModelId } from "./view-model";
 
@@ -19,7 +20,8 @@ const ModelPickerContent = memo(function ModelPickerContent({
   onSetDefault: (id: ModelId) => void;
   close: () => void;
 }) {
-  const [css, theme] = useStyletron();
+  const [css] = useStyletron();
+  const t = useFoundryTokens();
   const [hoveredId, setHoveredId] = useState<ModelId | null>(null);
 
   return (
@@ -31,7 +33,7 @@ const ModelPickerContent = memo(function ModelPickerContent({
               padding: "6px 12px",
               fontSize: "10px",
               fontWeight: 700,
-              color: theme.colors.contentTertiary,
+              color: t.textTertiary,
               textTransform: "uppercase",
               letterSpacing: "0.05em",
             })}
@@ -61,21 +63,21 @@ const ModelPickerContent = memo(function ModelPickerContent({
                   cursor: "pointer",
                   fontSize: "12px",
                   fontWeight: isActive ? 600 : 400,
-                  color: isActive ? theme.colors.contentPrimary : theme.colors.contentSecondary,
+                  color: isActive ? t.textPrimary : t.textSecondary,
                   borderRadius: "6px",
                   marginLeft: "4px",
                   marginRight: "4px",
-                  ":hover": { backgroundColor: "rgba(255, 255, 255, 0.08)" },
+                  ":hover": { backgroundColor: t.borderSubtle },
                 })}
               >
                 <AgentIcon agent={agent} size={12} />
                 <span className={css({ flex: 1 })}>{model.label}</span>
-                {isDefault ? <Star size={11} fill="#ff4f00" color="#ff4f00" /> : null}
+                {isDefault ? <Star size={11} fill={t.accent} color={t.accent} /> : null}
                 {!isDefault && isHovered ? (
                   <Star
                     size={11}
-                    color={theme.colors.contentTertiary}
-                    className={css({ cursor: "pointer", ":hover": { color: "#ff4f00" } })}
+                    color={t.textTertiary}
+                    className={css({ cursor: "pointer", ":hover": { color: t.accent } })}
                     onClick={(event) => {
                       event.stopPropagation();
                       onSetDefault(model.id);
@@ -102,7 +104,8 @@ export const ModelPicker = memo(function ModelPicker({
   onChange: (id: ModelId) => void;
   onSetDefault: (id: ModelId) => void;
 }) {
-  const [css, theme] = useStyletron();
+  const [css] = useStyletron();
+  const t = useFoundryTokens();
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -121,8 +124,8 @@ export const ModelPicker = memo(function ModelPicker({
             borderTopRightRadius: "10px",
             borderBottomLeftRadius: "10px",
             borderBottomRightRadius: "10px",
-            border: "1px solid rgba(255, 255, 255, 0.10)",
-            boxShadow: "0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04)",
+            border: `1px solid ${t.borderDefault}`,
+            boxShadow: `0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px ${t.interactiveSubtle}`,
             zIndex: 100,
           },
         },
@@ -150,10 +153,10 @@ export const ModelPicker = memo(function ModelPicker({
             borderRadius: "6px",
             fontSize: "12px",
             fontWeight: 500,
-            color: theme.colors.contentSecondary,
-            backgroundColor: "rgba(255, 255, 255, 0.10)",
-            border: "1px solid rgba(255, 255, 255, 0.14)",
-            ":hover": { color: theme.colors.contentPrimary, backgroundColor: "rgba(255, 255, 255, 0.14)" },
+            color: t.textSecondary,
+            backgroundColor: t.borderDefault,
+            border: `1px solid ${t.borderMedium}`,
+            ":hover": { color: t.textPrimary, backgroundColor: t.borderMedium },
           })}
         >
           {modelLabel(value)}

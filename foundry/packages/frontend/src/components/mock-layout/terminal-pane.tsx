@@ -2,6 +2,7 @@ import type { SandboxProcessRecord } from "@sandbox-agent/foundry-client";
 import { ProcessTerminal } from "@sandbox-agent/react";
 import { useQuery } from "@tanstack/react-query";
 import { useStyletron } from "baseui";
+import { useFoundryTokens } from "../../app/theme";
 import { ChevronDown, Loader2, RefreshCw, Skull, SquareTerminal, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { SandboxAgent } from "sandbox-agent";
@@ -62,6 +63,7 @@ function formatProcessTabTitle(process: Pick<SandboxProcessRecord, "command" | "
 
 export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
   const [css] = useStyletron();
+  const t = useFoundryTokens();
   const [activeTabId, setActiveTabId] = useState<string>(PROCESSES_TAB_ID);
   const [processTabs, setProcessTabs] = useState<ProcessTab[]>([]);
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
@@ -388,7 +390,7 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
     alignItems: "center",
     justifyContent: "center",
     padding: "24px",
-    backgroundColor: "#080506",
+    backgroundColor: t.surfacePrimary,
   });
 
   const emptyCopyClassName = css({
@@ -396,7 +398,7 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
     display: "flex",
     flexDirection: "column",
     gap: "10px",
-    color: "rgba(255, 255, 255, 0.72)",
+    color: t.textSecondary,
     fontSize: "12px",
     lineHeight: 1.6,
     textAlign: "center",
@@ -412,13 +414,13 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
     gap: "6px",
     padding: "6px 10px",
     borderRadius: "8px",
-    border: "1px solid rgba(255, 255, 255, 0.1)",
-    color: "#f4f4f5",
+    border: `1px solid ${t.borderDefault}`,
+    color: t.textPrimary,
     cursor: "pointer",
     fontSize: "11px",
     fontWeight: 600,
     ":hover": {
-      backgroundColor: "rgba(255, 255, 255, 0.06)",
+      backgroundColor: t.interactiveHover,
     },
     ":disabled": {
       opacity: 0.45,
@@ -445,7 +447,7 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
           minHeight: 0,
           display: "grid",
           gridTemplateRows: "auto minmax(0, 1fr)",
-          backgroundColor: "#080506",
+          backgroundColor: t.surfacePrimary,
         })}
       >
         <div
@@ -454,7 +456,7 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
             flexDirection: "column",
             gap: "12px",
             padding: "14px 14px 12px",
-            borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+            borderBottom: `1px solid ${t.borderSubtle}`,
           })}
         >
           <div
@@ -472,8 +474,8 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
                 gap: "2px",
               })}
             >
-              <strong className={css({ fontSize: "12px", color: "#f5f5f5" })}>Processes</strong>
-              <span className={css({ fontSize: "11px", color: "rgba(255, 255, 255, 0.56)" })}>
+              <strong className={css({ fontSize: "12px", color: t.textPrimary })}>Processes</strong>
+              <span className={css({ fontSize: "11px", color: t.textMuted })}>
                 Process lifecycle goes through the actor. Terminal transport goes straight to the sandbox.
               </span>
             </div>
@@ -499,10 +501,10 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
             <input
               className={css({
                 width: "100%",
-                border: "1px solid rgba(255, 255, 255, 0.1)",
+                border: `1px solid ${t.borderDefault}`,
                 borderRadius: "8px",
-                backgroundColor: "#0d0a0b",
-                color: "#f4f4f5",
+                backgroundColor: t.surfaceTertiary,
+                color: t.textPrimary,
                 fontSize: "12px",
                 padding: "9px 10px",
               })}
@@ -516,10 +518,10 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
             <input
               className={css({
                 width: "100%",
-                border: "1px solid rgba(255, 255, 255, 0.1)",
+                border: `1px solid ${t.borderDefault}`,
                 borderRadius: "8px",
-                backgroundColor: "#0d0a0b",
-                color: "#f4f4f5",
+                backgroundColor: t.surfaceTertiary,
+                color: t.textPrimary,
                 fontSize: "12px",
                 padding: "9px 10px",
               })}
@@ -535,10 +537,10 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
                 width: "100%",
                 minHeight: "56px",
                 resize: "none",
-                border: "1px solid rgba(255, 255, 255, 0.1)",
+                border: `1px solid ${t.borderDefault}`,
                 borderRadius: "8px",
-                backgroundColor: "#0d0a0b",
-                color: "#f4f4f5",
+                backgroundColor: t.surfaceTertiary,
+                color: t.textPrimary,
                 fontSize: "12px",
                 padding: "9px 10px",
                 gridColumn: "1 / -1",
@@ -552,7 +554,7 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
             />
           </div>
 
-          <div className={css({ display: "flex", alignItems: "center", gap: "14px", fontSize: "11px", color: "rgba(255, 255, 255, 0.68)" })}>
+          <div className={css({ display: "flex", alignItems: "center", gap: "14px", fontSize: "11px", color: t.textSecondary })}>
             <label className={css({ display: "flex", alignItems: "center", gap: "6px" })}>
               <input
                 type="checkbox"
@@ -584,7 +586,7 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
             </button>
           </div>
 
-          {createError ? <div className={css({ fontSize: "11px", color: "#fda4af" })}>{createError}</div> : null}
+          {createError ? <div className={css({ fontSize: "11px", color: t.statusError })}>{createError}</div> : null}
         </div>
 
         <div
@@ -598,11 +600,11 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
             className={css({
               minHeight: 0,
               overflowY: "auto",
-              borderRight: "1px solid rgba(255, 255, 255, 0.08)",
+              borderRight: `1px solid ${t.borderSubtle}`,
             })}
           >
             {processes.length === 0 ? (
-              <div className={css({ padding: "16px", fontSize: "12px", color: "rgba(255,255,255,0.56)" })}>No processes yet.</div>
+              <div className={css({ padding: "16px", fontSize: "12px", color: t.textMuted })}>No processes yet.</div>
             ) : (
               processes.map((process) => {
                 const isSelected = selectedProcessId === process.id;
@@ -633,8 +635,8 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
                       gap: "8px",
                       padding: "12px 14px",
                       cursor: "pointer",
-                      backgroundColor: isSelected ? "rgba(255, 255, 255, 0.06)" : "transparent",
-                      borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
+                      backgroundColor: isSelected ? t.interactiveHover : "transparent",
+                      borderBottom: `1px solid ${t.borderSubtle}`,
                       outline: "none",
                       ":focus-visible": {
                         boxShadow: "inset 0 0 0 1px rgba(249, 115, 22, 0.85)",
@@ -647,11 +649,11 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
                           width: "8px",
                           height: "8px",
                           borderRadius: "999px",
-                          backgroundColor: process.status === "running" ? "#4ade80" : "#71717a",
+                          backgroundColor: process.status === "running" ? t.statusSuccess : t.textTertiary,
                           flexShrink: 0,
                         })}
                       />
-                      <span className={css({ fontSize: "12px", color: "#f4f4f5", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" })}>
+                      <span className={css({ fontSize: "12px", color: t.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" })}>
                         {formatCommandSummary(process)}
                       </span>
                     </div>
@@ -662,7 +664,7 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
                         justifyContent: "space-between",
                         gap: "10px",
                         fontSize: "10px",
-                        color: "rgba(255,255,255,0.5)",
+                        color: t.textMuted,
                       })}
                     >
                       <span>{process.pid ? `PID ${process.pid}` : "PID ?"}</span>
@@ -739,14 +741,14 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
                     flexDirection: "column",
                     gap: "8px",
                     padding: "14px",
-                    borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+                    borderBottom: `1px solid ${t.borderSubtle}`,
                   })}
                 >
                   <div className={css({ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" })}>
-                    <strong className={css({ fontSize: "12px", color: "#f4f4f5" })}>{formatCommandSummary(selectedProcess)}</strong>
-                    <span className={css({ fontSize: "10px", color: "rgba(255,255,255,0.56)" })}>{selectedProcess.status}</span>
+                    <strong className={css({ fontSize: "12px", color: t.textPrimary })}>{formatCommandSummary(selectedProcess)}</strong>
+                    <span className={css({ fontSize: "10px", color: t.textMuted })}>{selectedProcess.status}</span>
                   </div>
-                  <div className={css({ display: "flex", flexWrap: "wrap", gap: "10px", fontSize: "10px", color: "rgba(255,255,255,0.5)" })}>
+                  <div className={css({ display: "flex", flexWrap: "wrap", gap: "10px", fontSize: "10px", color: t.textMuted })}>
                     <span>{selectedProcess.pid ? `PID ${selectedProcess.pid}` : "PID ?"}</span>
                     <span>{selectedProcess.id}</span>
                     {selectedProcess.exitCode != null ? <span>exit={selectedProcess.exitCode}</span> : null}
@@ -759,16 +761,16 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
                       alignItems: "center",
                       justifyContent: "space-between",
                       padding: "10px 14px",
-                      borderBottom: "1px solid rgba(255,255,255,0.08)",
+                      borderBottom: `1px solid ${t.borderSubtle}`,
                     })}
                   >
-                    <span className={css({ fontSize: "11px", color: "rgba(255,255,255,0.68)" })}>Logs</span>
+                    <span className={css({ fontSize: "11px", color: t.textSecondary })}>Logs</span>
                     <button type="button" className={smallButtonClassName} onClick={() => void refreshLogs()} disabled={logsLoading}>
                       {logsLoading ? <Loader2 size={11} className={css({ animation: "hf-spin 0.8s linear infinite" })} /> : <RefreshCw size={11} />}
                       Refresh
                     </button>
                   </div>
-                  {logsError ? <div className={css({ padding: "14px", fontSize: "11px", color: "#fda4af" })}>{logsError}</div> : null}
+                  {logsError ? <div className={css({ padding: "14px", fontSize: "11px", color: t.statusError })}>{logsError}</div> : null}
                   <pre
                     className={css({
                       flex: 1,
@@ -778,7 +780,7 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
                       overflow: "auto",
                       fontSize: "11px",
                       lineHeight: 1.6,
-                      color: "#d4d4d8",
+                      color: t.textSecondary,
                       fontFamily: '"IBM Plex Mono", monospace',
                     })}
                   >
@@ -827,7 +829,7 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
     }
 
     return (
-      <div className={css({ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", backgroundColor: "#080506" })}>
+      <div className={css({ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", backgroundColor: t.surfacePrimary })}>
         <div
           className={css({
             display: "flex",
@@ -835,9 +837,9 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
             justifyContent: "space-between",
             gap: "10px",
             padding: "10px 14px",
-            borderBottom: "1px solid rgba(255,255,255,0.08)",
+            borderBottom: `1px solid ${t.borderSubtle}`,
             fontSize: "11px",
-            color: "rgba(255,255,255,0.56)",
+            color: t.textMuted,
           })}
         >
           <span>{formatCommandSummary(activeTerminalProcess)}</span>
@@ -854,7 +856,7 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
             minHeight: 0,
             border: "none",
             borderRadius: 0,
-            background: "#080506",
+            background: t.surfacePrimary,
           }}
           terminalStyle={{
             minHeight: 0,
@@ -910,7 +912,7 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
         minHeight: 0,
         display: "flex",
         flexDirection: "column",
-        backgroundColor: "#080506",
+        backgroundColor: t.surfacePrimary,
         overflow: "hidden",
       })}
     >
@@ -921,9 +923,9 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
           gap: "8px",
           minHeight: "38px",
           padding: "0 10px",
-          borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
-          backgroundColor: "#090607",
-          color: "rgba(255, 255, 255, 0.72)",
+          borderBottom: `1px solid ${t.borderSubtle}`,
+          backgroundColor: t.surfaceTertiary,
+          color: t.textSecondary,
           fontSize: "12px",
           fontWeight: 600,
         })}
@@ -943,7 +945,7 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
             justifyContent: "center",
             width: "20px",
             height: "20px",
-            color: "rgba(255, 255, 255, 0.56)",
+            color: t.textMuted,
           })}
         >
           <ChevronDown size={14} />
@@ -963,7 +965,7 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
             alignItems: "center",
             height: "100%",
             padding: "0 10px",
-            color: activeTabId === PROCESSES_TAB_ID ? "#f5f5f5" : "rgba(255, 255, 255, 0.65)",
+            color: activeTabId === PROCESSES_TAB_ID ? t.textPrimary : t.textMuted,
             cursor: "pointer",
             ":after":
               activeTabId === PROCESSES_TAB_ID
@@ -975,7 +977,7 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
                     bottom: 0,
                     height: "2px",
                     borderRadius: "999px",
-                    backgroundColor: "#f5f5f5",
+                    backgroundColor: t.textPrimary,
                   }
                 : undefined,
           })}
@@ -1008,7 +1010,7 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
                 gap: "6px",
                 height: "100%",
                 padding: "0 10px",
-                color: activeTabId === tab.id ? "#f5f5f5" : "rgba(255, 255, 255, 0.65)",
+                color: activeTabId === tab.id ? t.textPrimary : t.textMuted,
                 cursor: "pointer",
                 ":after":
                   activeTabId === tab.id
@@ -1020,7 +1022,7 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
                         bottom: 0,
                         height: "2px",
                         borderRadius: "999px",
-                        backgroundColor: "#f5f5f5",
+                        backgroundColor: t.textPrimary,
                       }
                     : undefined,
               })}
@@ -1044,7 +1046,7 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
                 width: "18px",
                 height: "18px",
                 marginRight: "4px",
-                color: "rgba(255, 255, 255, 0.42)",
+                color: t.textMuted,
                 cursor: "pointer",
               })}
             >
@@ -1071,7 +1073,7 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
             width: "28px",
             height: "100%",
             marginLeft: "2px",
-            color: "rgba(255, 255, 255, 0.72)",
+            color: t.textSecondary,
             fontSize: "18px",
             lineHeight: 1,
             cursor: "pointer",

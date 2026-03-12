@@ -4,6 +4,7 @@ import { useStyletron } from "baseui";
 import { LabelSmall, LabelXSmall } from "baseui/typography";
 import { Copy } from "lucide-react";
 
+import { useFoundryTokens } from "../../app/theme";
 import { HistoryMinimap } from "./history-minimap";
 import { SpinnerDot } from "./ui";
 import { buildDisplayMessages, formatMessageDuration, formatMessageTimestamp, type AgentTab, type HistoryEvent, type Message } from "./view-model";
@@ -19,7 +20,8 @@ const TranscriptMessageBody = memo(function TranscriptMessageBody({
   copiedMessageId: string | null;
   onCopyMessage: (message: Message) => void;
 }) {
-  const [css, theme] = useStyletron();
+  const [css] = useStyletron();
+  const t = useFoundryTokens();
   const isUser = message.sender === "client";
   const isCopied = copiedMessageId === message.id;
   const messageTimestamp = formatMessageTimestamp(message.createdAtMs);
@@ -47,8 +49,8 @@ const TranscriptMessageBody = memo(function TranscriptMessageBody({
           ...(isUser
             ? {
                 padding: "12px 16px",
-                backgroundColor: "rgba(255, 255, 255, 0.10)",
-                color: "#e4e4e7",
+                backgroundColor: t.borderDefault,
+                color: t.textPrimary,
                 borderTopLeftRadius: "18px",
                 borderTopRightRadius: "18px",
                 borderBottomLeftRadius: "18px",
@@ -57,7 +59,7 @@ const TranscriptMessageBody = memo(function TranscriptMessageBody({
             : {
                 backgroundColor: "transparent",
                 border: "none",
-                color: "#e4e4e7",
+                color: t.textPrimary,
                 borderRadius: "0",
                 padding: "0",
               }),
@@ -86,7 +88,7 @@ const TranscriptMessageBody = memo(function TranscriptMessageBody({
         })}
       >
         {displayFooter ? (
-          <LabelXSmall color={theme.colors.contentTertiary} $style={{ fontFamily: '"IBM Plex Mono", monospace', letterSpacing: "0.01em" }}>
+          <LabelXSmall color={t.textTertiary} $style={{ fontFamily: '"IBM Plex Mono", monospace', letterSpacing: "0.01em" }}>
             {displayFooter}
           </LabelXSmall>
         ) : null}
@@ -106,9 +108,9 @@ const TranscriptMessageBody = memo(function TranscriptMessageBody({
             gap: "5px",
             fontSize: "11px",
             cursor: "pointer",
-            color: isCopied ? theme.colors.contentPrimary : theme.colors.contentSecondary,
+            color: isCopied ? t.textPrimary : t.textSecondary,
             transition: "color 160ms ease",
-            ":hover": { color: theme.colors.contentPrimary },
+            ":hover": { color: t.textPrimary },
           })}
         >
           <Copy size={11} />
@@ -138,7 +140,8 @@ export const MessageList = memo(function MessageList({
   onCopyMessage: (message: Message) => void;
   thinkingTimerLabel: string | null;
 }) {
-  const [css, theme] = useStyletron();
+  const [css] = useStyletron();
+  const t = useFoundryTokens();
   const messages = useMemo(() => buildDisplayMessages(tab), [tab]);
   const messagesById = useMemo(() => new Map(messages.map((message) => [message.id, message])), [messages]);
   const transcriptEntries = useMemo<TranscriptEntry[]>(
@@ -183,7 +186,7 @@ export const MessageList = memo(function MessageList({
       display: "flex",
       alignItems: "center",
       gap: "8px",
-      color: "#ff4f00",
+      color: t.accent,
       fontSize: "11px",
       fontFamily: '"IBM Plex Mono", monospace',
       letterSpacing: "0.01em",
@@ -221,7 +224,7 @@ export const MessageList = memo(function MessageList({
               gap: "8px",
             })}
           >
-            <LabelSmall color={theme.colors.contentTertiary}>
+            <LabelSmall color={t.textTertiary}>
               {!tab.created ? "Choose an agent and model, then send your first message" : "No messages yet in this session"}
             </LabelSmall>
           </div>
@@ -241,15 +244,15 @@ export const MessageList = memo(function MessageList({
             renderThinkingState={() => (
               <div className={transcriptClassNames.thinkingRow}>
                 <SpinnerDot size={12} />
-                <LabelXSmall color="#ff4f00" $style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <LabelXSmall color={t.accent} $style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                   <span>Agent is thinking</span>
                   {thinkingTimerLabel ? (
                     <span
                       className={css({
                         padding: "2px 7px",
                         borderRadius: "999px",
-                        backgroundColor: "rgba(255, 79, 0, 0.12)",
-                        border: "1px solid rgba(255, 79, 0, 0.2)",
+                        backgroundColor: t.accentSubtle,
+                        border: `1px solid rgba(255, 79, 0, 0.2)`,
                         fontFamily: '"IBM Plex Mono", monospace',
                         fontSize: "10px",
                         letterSpacing: "0.04em",
