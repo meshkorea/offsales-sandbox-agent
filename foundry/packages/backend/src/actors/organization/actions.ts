@@ -34,7 +34,7 @@ import type {
 import { getActorRuntimeContext } from "../context.js";
 import { getOrCreateGithubState, getOrCreateHistory, getOrCreateRepository, getOrCreateTask, getTask, selfOrganization } from "../handles.js";
 import { logActorWarning, resolveErrorMessage } from "../logging.js";
-import { upsertActorRuntimeIssue } from "../runtime-issues.js";
+import { clearActorRuntimeIssues as clearOrganizationActorRuntimeIssues, upsertActorRuntimeIssue } from "../runtime-issues.js";
 import { normalizeRemoteUrl, repoIdFromRemote } from "../../services/repo.js";
 import { resolveWorkspaceGithubAuth } from "../../services/github-auth.js";
 import { foundryRepoClonePath } from "../../services/foundry-paths.js";
@@ -466,6 +466,10 @@ export const workspaceActions = {
   ...workspaceAppActions,
   async recordActorRuntimeIssue(c: any, input: any): Promise<void> {
     await upsertActorRuntimeIssue(c, input);
+  },
+
+  async clearActorRuntimeIssues(c: any, input?: { actorId?: string | null }): Promise<void> {
+    await clearOrganizationActorRuntimeIssues(c, input);
   },
 
   async useWorkspace(c: any, input: WorkspaceUseInput): Promise<{ workspaceId: string }> {

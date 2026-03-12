@@ -163,6 +163,7 @@ export interface BackendClient {
   selectAppOrganization(organizationId: string): Promise<FoundryAppSnapshot>;
   updateAppOrganizationProfile(input: UpdateFoundryOrganizationProfileInput): Promise<FoundryAppSnapshot>;
   triggerAppRepoImport(organizationId: string): Promise<FoundryAppSnapshot>;
+  clearAppOrganizationRuntimeIssues(organizationId: string, actorId?: string): Promise<FoundryAppSnapshot>;
   reconnectAppGithub(organizationId: string): Promise<void>;
   completeAppHostedCheckout(organizationId: string, planId: FoundryBillingPlanId): Promise<void>;
   openAppBillingPortal(organizationId: string): Promise<void>;
@@ -766,6 +767,15 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     async triggerAppRepoImport(organizationId: string): Promise<FoundryAppSnapshot> {
       return await appRequest<FoundryAppSnapshot>(`/app/organizations/${organizationId}/import`, {
         method: "POST",
+      });
+    },
+
+    async clearAppOrganizationRuntimeIssues(organizationId: string, actorId?: string): Promise<FoundryAppSnapshot> {
+      return await appRequest<FoundryAppSnapshot>(`/app/organizations/${organizationId}/runtime-issues/clear`, {
+        method: "POST",
+        body: JSON.stringify({
+          actorId: actorId ?? null,
+        }),
       });
     },
 

@@ -253,6 +253,10 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
       return unsupportedAppSnapshot();
     },
 
+    async clearAppOrganizationRuntimeIssues(): Promise<FoundryAppSnapshot> {
+      return unsupportedAppSnapshot();
+    },
+
     async reconnectAppGithub(): Promise<void> {
       notSupported("reconnectAppGithub");
     },

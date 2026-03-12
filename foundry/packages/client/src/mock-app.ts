@@ -133,6 +133,7 @@ export interface MockFoundryAppClient {
   selectOrganization(organizationId: string): Promise<void>;
   updateOrganizationProfile(input: UpdateMockOrganizationProfileInput): Promise<void>;
   triggerGithubSync(organizationId: string): Promise<void>;
+  clearOrganizationRuntimeIssues(organizationId: string, actorId?: string): Promise<void>;
   completeHostedCheckout(organizationId: string, planId: MockBillingPlanId): Promise<void>;
   openBillingPortal(organizationId: string): Promise<void>;
   cancelScheduledRenewal(organizationId: string): Promise<void>;
@@ -583,6 +584,21 @@ class MockFoundryAppStore implements MockFoundryAppClient {
     }, 1_250);
 
     this.importTimers.set(organizationId, timer);
+  }
+
+  async clearOrganizationRuntimeIssues(organizationId: string, actorId?: string): Promise<void> {
+    await this.injectAsyncLatency();
+    void actorId;
+    this.requireOrganization(organizationId);
+    this.updateOrganization(organizationId, (organization) => ({
+      ...organization,
+      runtime: {
+        ...organization.runtime,
+        status: "healthy",
+        errorCount: 0,
+        issues: [],
+      },
+    }));
   }
 
   async completeHostedCheckout(organizationId: string, planId: MockBillingPlanId): Promise<void> {

@@ -270,6 +270,21 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     );
   });
 
+  app.post("/api/rivet/app/organizations/:organizationId/runtime-issues/clear", async (c) => {
+    const sessionId = await resolveSessionId(c);
+    const body = await c.req.json().catch(() => ({}));
+    return c.json(
+      await appWorkspaceAction(
+        async (workspace) =>
+          await workspace.clearAppOrganizationRuntimeIssues({
+            sessionId,
+            organizationId: c.req.param("organizationId"),
+            actorId: typeof body?.actorId === "string" ? body.actorId : null,
+          }),
+      ),
+    );
+  });
+
   app.post("/api/rivet/app/organizations/:organizationId/reconnect", async (c) => {
     const sessionId = await resolveSessionId(c);
     return c.json(

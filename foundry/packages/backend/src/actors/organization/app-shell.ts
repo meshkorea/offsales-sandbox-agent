@@ -806,6 +806,17 @@ export const workspaceAppActions = {
     return await buildAppSnapshot(c, input.sessionId);
   },
 
+  async clearAppOrganizationRuntimeIssues(c: any, input: { sessionId: string; organizationId: string; actorId?: string | null }): Promise<FoundryAppSnapshot> {
+    assertAppWorkspace(c);
+    const { profile } = await requireSignedInSession(c, input.sessionId);
+    requireEligibleOrganization(profile, input.organizationId);
+    const workspace = await getOrCreateOrganization(c, input.organizationId);
+    await workspace.clearActorRuntimeIssues({
+      actorId: input.actorId ?? null,
+    });
+    return await buildAppSnapshot(c, input.sessionId);
+  },
+
   async beginAppGithubInstall(c: any, input: { sessionId: string; organizationId: string }): Promise<{ url: string }> {
     assertAppWorkspace(c);
     const { profile } = await requireSignedInSession(c, input.sessionId);

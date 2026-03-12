@@ -80,6 +80,11 @@ class RemoteFoundryAppStore implements FoundryAppClient {
     this.scheduleSyncPollingIfNeeded();
   }
 
+  async clearOrganizationRuntimeIssues(organizationId: string, actorId?: string): Promise<void> {
+    this.snapshot = await this.backend.clearAppOrganizationRuntimeIssues(organizationId, actorId);
+    this.notify();
+  }
+
   async completeHostedCheckout(organizationId: string, planId: FoundryBillingPlanId): Promise<void> {
     await this.backend.completeAppHostedCheckout(organizationId, planId);
   }

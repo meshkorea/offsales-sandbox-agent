@@ -180,6 +180,7 @@ For all Rivet/RivetKit implementation:
 - Organization grouping is managed by the GitHub organization structure. Do not introduce a second internal grouping model that can diverge from GitHub.
 - For workflow-backed actors, install a workflow `onError` hook and report failures into organization-scoped runtime issue state so the frontend can surface actor/workflow errors without querying the entire actor tree live.
 - The main workspace top bar should make organization runtime errors obvious. If actor/workflow errors exist, show them there and include detailed issue state in settings.
+- Expose and use an explicit clear-errors action for organization runtime issues after triage. Do not reset stale actor errors by hand-editing actor DB state.
 
 ## Testing Policy
 
@@ -196,6 +197,7 @@ For all Rivet/RivetKit implementation:
   - Merge the PR.
   - Confirm the task is finished and its status is updated correctly.
   - During this flow, verify that remote GitHub state updates correctly and that Foundry receives and applies the resulting webhook-driven state updates.
+  - If the test leaves stale runtime issues behind after investigation, use the clear-errors action before the next run.
 - End-to-end testing must run against the dev backend started via `docker compose -f compose.dev.yaml up` (host -> container). Do not run E2E against an in-process test runtime.
   - E2E tests should talk to the backend over HTTP (default `http://127.0.0.1:7741/api/rivet`) and use real GitHub repos/PRs.
   - For Foundry live verification, use `rivet-dev/sandbox-agent-testing` as the default testing repo unless the task explicitly says otherwise.

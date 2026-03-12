@@ -19,6 +19,7 @@ export interface FoundryAppClient {
   selectOrganization(organizationId: string): Promise<void>;
   updateOrganizationProfile(input: UpdateFoundryOrganizationProfileInput): Promise<void>;
   triggerGithubSync(organizationId: string): Promise<void>;
+  clearOrganizationRuntimeIssues(organizationId: string, actorId?: string): Promise<void>;
   completeHostedCheckout(organizationId: string, planId: FoundryBillingPlanId): Promise<void>;
   openBillingPortal(organizationId: string): Promise<void>;
   cancelScheduledRenewal(organizationId: string): Promise<void>;

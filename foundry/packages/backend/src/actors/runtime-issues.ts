@@ -1,6 +1,6 @@
 import type { WorkflowErrorEvent } from "rivetkit/workflow";
 import type { FoundryActorRuntimeIssue, FoundryActorRuntimeType } from "@sandbox-agent/foundry-shared";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { organizationActorIssues } from "./organization/db/schema.js";
 import { getOrCreateOrganization } from "./handles.js";
 
@@ -96,6 +96,17 @@ export async function listActorRuntimeIssues(c: any): Promise<ActorRuntimeIssueR
       occurredAt: row.occurredAt,
     }))
     .sort((left, right) => right.occurredAt - left.occurredAt);
+}
+
+export async function clearActorRuntimeIssues(c: any, input?: { actorId?: string | null }): Promise<void> {
+  await ensureOrganizationActorIssuesTable(c);
+  const actorId = input?.actorId?.trim();
+  if (actorId) {
+    await c.db.delete(organizationActorIssues).where(eq(organizationActorIssues.actorId, actorId)).run();
+    return;
+  }
+
+  await c.db.delete(organizationActorIssues).run();
 }
 
 function normalizeWorkflowIssue(event: WorkflowErrorEvent): NormalizedWorkflowIssue {

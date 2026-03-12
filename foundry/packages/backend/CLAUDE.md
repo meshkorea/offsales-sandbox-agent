@@ -40,6 +40,7 @@ AppShellOrganization("app")
 - Workflow handlers should be decomposed into small durable steps. Each local mutation or externally meaningful transition gets its own step; avoid monolithic workflow steps that bundle an entire cross-actor flow together.
 - Every actor that uses `workflow(...)` must install an `onError` hook and report normalized workflow failures into organization-scoped runtime issue state.
 - Organization runtime issue state is the backend source of truth for actor/workflow error badges in the frontend top bar and settings screens.
+- Provide an explicit action to clear recorded organization runtime issues after investigation. Use that action instead of manual DB edits when resetting stale actor errors in dev.
 
 ## Maintenance
 
