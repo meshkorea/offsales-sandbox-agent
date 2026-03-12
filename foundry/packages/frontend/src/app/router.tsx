@@ -185,6 +185,7 @@ function OrganizationsRoute() {
 }
 
 function OrganizationSettingsRoute() {
+  const { organizationId } = organizationSettingsRoute.useParams();
   const snapshot = useMockAppSnapshot();
   if (!isMockFrontendClient && isAppSnapshotBootstrapping(snapshot)) {
     return <AppLoadingScreen label="Loading organization settings..." />;
@@ -193,7 +194,6 @@ function OrganizationSettingsRoute() {
     return <Navigate to="/signin" replace />;
   }
 
-  const { organizationId } = organizationSettingsRoute.useParams();
   const organization = getMockOrganizationById(snapshot, organizationId);
   if (!organization) {
     return <Navigate to="/organizations" replace />;
@@ -203,6 +203,7 @@ function OrganizationSettingsRoute() {
 }
 
 function OrganizationBillingRoute() {
+  const { organizationId } = organizationBillingRoute.useParams();
   const snapshot = useMockAppSnapshot();
   if (!isMockFrontendClient && isAppSnapshotBootstrapping(snapshot)) {
     return <AppLoadingScreen label="Loading billing..." />;
@@ -211,7 +212,6 @@ function OrganizationBillingRoute() {
     return <Navigate to="/signin" replace />;
   }
 
-  const { organizationId } = organizationBillingRoute.useParams();
   const organization = getMockOrganizationById(snapshot, organizationId);
   if (!organization) {
     return <Navigate to="/organizations" replace />;
@@ -221,6 +221,7 @@ function OrganizationBillingRoute() {
 }
 
 function OrganizationCheckoutRoute() {
+  const { organizationId, planId } = organizationCheckoutRoute.useParams();
   const snapshot = useMockAppSnapshot();
   if (!isMockFrontendClient && isAppSnapshotBootstrapping(snapshot)) {
     return <AppLoadingScreen label="Loading checkout..." />;
@@ -229,7 +230,6 @@ function OrganizationCheckoutRoute() {
     return <Navigate to="/signin" replace />;
   }
 
-  const { organizationId, planId } = organizationCheckoutRoute.useParams();
   const organization = getMockOrganizationById(snapshot, organizationId);
   if (!organization) {
     return <Navigate to="/organizations" replace />;
