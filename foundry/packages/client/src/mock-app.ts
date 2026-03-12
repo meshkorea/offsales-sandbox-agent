@@ -140,6 +140,12 @@ export interface MockFoundryAppClient {
   resumeSubscription(organizationId: string): Promise<void>;
   reconnectGithub(organizationId: string): Promise<void>;
   recordSeatUsage(workspaceId: string): void;
+  setMockDebugOrganizationState(input: {
+    organizationId: string;
+    githubSyncStatus?: MockGithubSyncStatus;
+    githubInstallationStatus?: MockGithubInstallationStatus;
+    runtimeStatus?: MockActorRuntimeStatus;
+  }): Promise<void>;
 }
 
 const STORAGE_KEY = "sandbox-agent-foundry:mock-app:v1";
@@ -171,6 +177,22 @@ function buildHealthyRuntimeState(): MockFoundryActorRuntimeState {
     errorCount: 0,
     lastErrorAt: null,
     issues: [],
+  };
+}
+
+function buildSampleRuntimeIssue(organization: MockFoundryOrganization): MockFoundryActorRuntimeIssue {
+  return {
+    actorId: `${organization.id}:github-state`,
+    actorType: "organization",
+    scopeId: organization.id,
+    scopeLabel: `${organization.settings.displayName} organization`,
+    message: "GitHub sync failed while refreshing repositories",
+    workflowId: "github-sync",
+    stepName: "full-sync",
+    attempt: 2,
+    willRetry: true,
+    retryDelayMs: 5000,
+    occurredAt: Date.now(),
   };
 }
 
@@ -669,6 +691,50 @@ class MockFoundryAppStore implements MockFoundryAppClient {
         lastSyncAt: Date.now(),
       },
     }));
+  }
+
+  async setMockDebugOrganizationState(input: {
+    organizationId: string;
+    githubSyncStatus?: MockGithubSyncStatus;
+    githubInstallationStatus?: MockGithubInstallationStatus;
+    runtimeStatus?: MockActorRuntimeStatus;
+  }): Promise<void> {
+    await this.injectAsyncLatency();
+    this.requireOrganization(input.organizationId);
+    this.updateOrganization(input.organizationId, (organization) => {
+      const nextIssues =
+        input.runtimeStatus === "error" ? (organization.runtime.issues.length > 0 ? organization.runtime.issues : [buildSampleRuntimeIssue(organization)]) : [];
+      const nextRuntime =
+        input.runtimeStatus != null
+          ? {
+              ...organization.runtime,
+              status: input.runtimeStatus,
+              errorCount: nextIssues.length,
+              lastErrorAt: nextIssues[0]?.occurredAt ?? null,
+              issues: nextIssues,
+            }
+          : organization.runtime;
+      const nextSyncStatus = input.githubSyncStatus ?? organization.github.syncStatus;
+      return {
+        ...organization,
+        github: {
+          ...organization.github,
+          syncStatus: nextSyncStatus,
+          installationStatus: input.githubInstallationStatus ?? organization.github.installationStatus,
+          importedRepoCount: nextSyncStatus === "synced" ? organization.repoCatalog.length : organization.github.importedRepoCount,
+          lastSyncLabel:
+            nextSyncStatus === "syncing"
+              ? "Syncing repositories..."
+              : nextSyncStatus === "error"
+                ? "GitHub sync failed"
+                : nextSyncStatus === "pending"
+                  ? "Waiting to sync"
+                  : "Synced just now",
+          lastSyncAt: nextSyncStatus === "synced" ? Date.now() : organization.github.lastSyncAt,
+        },
+        runtime: nextRuntime,
+      };
+    });
   }
 
   recordSeatUsage(workspaceId: string): void {

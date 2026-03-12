@@ -26,6 +26,12 @@ export interface FoundryAppClient {
   resumeSubscription(organizationId: string): Promise<void>;
   reconnectGithub(organizationId: string): Promise<void>;
   recordSeatUsage(workspaceId: string): Promise<void>;
+  setMockDebugOrganizationState?(input: {
+    organizationId: string;
+    githubSyncStatus?: "pending" | "syncing" | "synced" | "error";
+    githubInstallationStatus?: "connected" | "install_required" | "reconnect_required";
+    runtimeStatus?: "healthy" | "error";
+  }): Promise<void>;
 }
 
 export interface CreateFoundryAppClientOptions {

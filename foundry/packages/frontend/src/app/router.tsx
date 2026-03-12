@@ -2,6 +2,7 @@ import { type ReactNode, useEffect } from "react";
 import { setFrontendErrorContext } from "@sandbox-agent/foundry-frontend-errors/client";
 import type { FoundryBillingPlanId } from "@sandbox-agent/foundry-shared";
 import { Navigate, Outlet, createRootRoute, createRoute, createRouter, useRouterState } from "@tanstack/react-router";
+import { DevPanel } from "../components/dev-panel";
 import { MockLayout } from "../components/mock-layout";
 import {
   MockAccountSettingsPage,
@@ -344,6 +345,7 @@ function RootLayout() {
     <>
       <RouteContextSync />
       <Outlet />
+      <DevPanel />
     </>
   );
 }
