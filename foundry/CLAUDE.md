@@ -203,6 +203,7 @@ For all Rivet/RivetKit implementation:
   - For Foundry live verification, use `rivet-dev/sandbox-agent-testing` as the default testing repo unless the task explicitly says otherwise.
   - Secrets (e.g. `OPENAI_API_KEY`, `GITHUB_TOKEN`/`GH_TOKEN`) must be provided via environment variables, never hardcoded in the repo.
   - `~/misc/env.txt` and `~/misc/the-foundry.env` contain the expected local OpenAI + GitHub OAuth/App config for dev.
+  - Local GitHub webhook forwarding uses Smee. Set `SMEE_URL` and `SMEE_TARGET` in those env files; `compose.dev.yaml` runs a `smee` service that forwards to `http://backend:7741/api/rivet/app/webhooks/github`.
   - Do not assume `gh auth token` is sufficient for Foundry task provisioning against private repos. Sandbox/bootstrap git clone, push, and PR flows require a repo-capable `GITHUB_TOKEN`/`GH_TOKEN` in the backend container.
   - If browser GitHub OAuth suddenly fails with symptoms like `GitHub OAuth is not configured` while other GitHub flows seem to work, first check whether the backend is relying on a `GITHUB_TOKEN` override instead of the OAuth/App env from `~/misc/env.txt` and `~/misc/the-foundry.env`. In local dev, clear `GITHUB_TOKEN`/`GH_TOKEN`, source those env files, and recreate the backend container; `docker restart` is not enough.
   - Preferred product behavior for org workspaces is to mint a GitHub App installation token from the workspace installation and inject it into backend/sandbox git operations. Do not rely on an operator's ambient CLI auth as the long-term solution.

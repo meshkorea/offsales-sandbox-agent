@@ -50,6 +50,7 @@ AppShellOrganization("app")
 ## Daytona Provider Rules
 
 - Daytona sandbox lifecycle uses native Daytona control-plane operations only: create, get, start, stop, delete, and preview endpoint lookup.
+- Local GitHub webhook forwarding in dev uses Smee. `compose.dev.yaml` runs a `smee` service; set `SMEE_URL` and `SMEE_TARGET` in `~/misc/env.txt` / `~/misc/the-foundry.env` so webhook traffic relays into `http://backend:7741/api/rivet/app/webhooks/github`.
 - Once a Daytona sandbox exists, the backend must treat sandbox-agent as the runtime surface. Run in-sandbox commands through sandbox-agent process APIs, not Daytona native process execution.
 - The Daytona snapshot image must fail fast if `sandbox-agent` or agent installation fails. Do not hide install failures with `|| true`.
 - Daytona does not reliably replace PID 1 with the image `ENTRYPOINT`/`CMD`. Start `sandbox-agent server` after sandbox creation via Daytona's native process API, then use sandbox-agent for all normal runtime commands.
