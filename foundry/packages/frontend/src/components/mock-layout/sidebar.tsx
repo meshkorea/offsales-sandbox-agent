@@ -52,6 +52,8 @@ export const Sidebar = memo(function Sidebar({
   onRenameTask,
   onRenameBranch,
   onReorderProjects,
+  taskOrderByProject,
+  onReorderTasks,
   onToggleSidebar,
 }: {
   projects: ProjectSection[];
@@ -65,14 +67,89 @@ export const Sidebar = memo(function Sidebar({
   onRenameTask: (id: string) => void;
   onRenameBranch: (id: string) => void;
   onReorderProjects: (fromIndex: number, toIndex: number) => void;
+  taskOrderByProject: Record<string, string[]>;
+  onReorderTasks: (projectId: string, fromIndex: number, toIndex: number) => void;
   onToggleSidebar?: () => void;
 }) {
   const [css] = useStyletron();
   const t = useFoundryTokens();
   const contextMenu = useContextMenu();
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
-  const dragIndexRef = useRef<number | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [hoveredProjectId, setHoveredProjectId] = useState<string | null>(null);
+
+  // Mouse-based drag and drop state
+  type DragState =
+    | { type: "project"; fromIdx: number; overIdx: number | null }
+    | { type: "task"; projectId: string; fromIdx: number; overIdx: number | null }
+    | null;
+  const [drag, setDrag] = useState<DragState>(null);
+  const dragRef = useRef<DragState>(null);
+  const startYRef = useRef(0);
+  const didDragRef = useRef(false);
+
+  // Attach global mousemove/mouseup when dragging
+  useEffect(() => {
+    if (!drag) return;
+    const onMove = (e: MouseEvent) => {
+      // Detect which element is under the cursor using data attributes
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      if (!el) return;
+      const projectEl = (el as HTMLElement).closest?.("[data-project-idx]") as HTMLElement | null;
+      const taskEl = (el as HTMLElement).closest?.("[data-task-idx]") as HTMLElement | null;
+
+      if (drag.type === "project" && projectEl) {
+        const overIdx = Number(projectEl.dataset.projectIdx);
+        if (overIdx !== drag.overIdx) {
+          setDrag({ ...drag, overIdx });
+          dragRef.current = { ...drag, overIdx };
+        }
+      } else if (drag.type === "task" && taskEl) {
+        const overProjectId = taskEl.dataset.taskProjectId ?? "";
+        const overIdx = Number(taskEl.dataset.taskIdx);
+        if (overProjectId === drag.projectId && overIdx !== drag.overIdx) {
+          setDrag({ ...drag, overIdx });
+          dragRef.current = { ...drag, overIdx };
+        }
+      }
+      // Mark that we actually moved (to distinguish from clicks)
+      if (Math.abs(e.clientY - startYRef.current) > 4) {
+        didDragRef.current = true;
+      }
+    };
+    const onUp = () => {
+      const d = dragRef.current;
+      if (d && didDragRef.current && d.overIdx !== null && d.fromIdx !== d.overIdx) {
+        if (d.type === "project") {
+          onReorderProjects(d.fromIdx, d.overIdx);
+        } else {
+          onReorderTasks(d.projectId, d.fromIdx, d.overIdx);
+        }
+      }
+      dragRef.current = null;
+      didDragRef.current = false;
+      setDrag(null);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    return () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+  }, [drag, onReorderProjects, onReorderTasks]);
+
+  const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  const createMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!createMenuOpen) return;
+    function handleClick(event: MouseEvent) {
+      if (createMenuRef.current && !createMenuRef.current.contains(event.target as Node)) {
+        setCreateMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [createMenuOpen]);
 
   return (
     <SPanel>
@@ -155,123 +232,185 @@ export const Sidebar = memo(function Sidebar({
             <PanelLeft size={14} />
           </div>
         ) : null}
-        <div
-          role="button"
-          tabIndex={0}
-          aria-disabled={newTaskRepos.length === 0}
-          onClick={() => {
-            if (newTaskRepos.length === 0) {
-              return;
-            }
-            onCreate();
-          }}
-          onKeyDown={(event) => {
-            if (newTaskRepos.length === 0) {
-              return;
-            }
-            if (event.key === "Enter" || event.key === " ") onCreate();
-          }}
-          className={css({
-            width: "26px",
-            height: "26px",
-            borderRadius: "8px",
-            backgroundColor: newTaskRepos.length > 0 ? t.borderMedium : t.interactiveHover,
-            color: t.textPrimary,
-            cursor: newTaskRepos.length > 0 ? "pointer" : "not-allowed",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            transition: "background 200ms ease",
-            flexShrink: 0,
-            opacity: newTaskRepos.length > 0 ? 1 : 0.6,
-            ":hover": newTaskRepos.length > 0 ? { backgroundColor: "rgba(255, 255, 255, 0.20)" } : undefined,
-          })}
-        >
-          <Plus size={14} style={{ display: "block" }} />
+        <div ref={createMenuRef} className={css({ position: "relative", flexShrink: 0 })}>
+          <div
+            role="button"
+            tabIndex={0}
+            aria-disabled={newTaskRepos.length === 0}
+            onClick={() => {
+              if (newTaskRepos.length === 0) return;
+              if (newTaskRepos.length === 1) {
+                onSelectNewTaskRepo(newTaskRepos[0]!.id);
+                onCreate();
+              } else {
+                setCreateMenuOpen((prev) => !prev);
+              }
+            }}
+            onKeyDown={(event) => {
+              if (newTaskRepos.length === 0) return;
+              if (event.key === "Enter" || event.key === " ") {
+                if (newTaskRepos.length === 1) {
+                  onSelectNewTaskRepo(newTaskRepos[0]!.id);
+                  onCreate();
+                } else {
+                  setCreateMenuOpen((prev) => !prev);
+                }
+              }
+            }}
+            className={css({
+              width: "26px",
+              height: "26px",
+              borderRadius: "8px",
+              backgroundColor: newTaskRepos.length > 0 ? t.borderMedium : t.interactiveHover,
+              color: t.textPrimary,
+              cursor: newTaskRepos.length > 0 ? "pointer" : "not-allowed",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "background 200ms ease",
+              flexShrink: 0,
+              opacity: newTaskRepos.length > 0 ? 1 : 0.6,
+              ":hover": newTaskRepos.length > 0 ? { backgroundColor: "rgba(255, 255, 255, 0.20)" } : undefined,
+            })}
+          >
+            <Plus size={14} style={{ display: "block" }} />
+          </div>
+          {createMenuOpen && newTaskRepos.length > 1 ? (
+            <div
+              className={css({
+                position: "absolute",
+                top: "100%",
+                right: 0,
+                marginTop: "4px",
+                zIndex: 9999,
+                minWidth: "200px",
+                borderRadius: "10px",
+                border: `1px solid ${t.borderDefault}`,
+                backgroundColor: t.surfaceElevated,
+                boxShadow: `${t.shadow}, 0 0 0 1px ${t.interactiveSubtle}`,
+                padding: "4px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "2px",
+                maxHeight: "240px",
+                overflowY: "auto",
+              })}
+            >
+              {newTaskRepos.map((repo) => (
+                <button
+                  key={repo.id}
+                  type="button"
+                  onClick={() => {
+                    onSelectNewTaskRepo(repo.id);
+                    setCreateMenuOpen(false);
+                    onCreate();
+                  }}
+                  className={css({
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: "6px",
+                    border: "none",
+                    background: "transparent",
+                    color: t.textSecondary,
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: 400,
+                    textAlign: "left",
+                    transition: "background 200ms ease, color 200ms ease",
+                    ":hover": {
+                      backgroundColor: t.interactiveHover,
+                      color: t.textPrimary,
+                    },
+                  })}
+                >
+                  <span
+                    className={css({
+                      width: "18px",
+                      height: "18px",
+                      borderRadius: "4px",
+                      background: `linear-gradient(135deg, ${projectIconColor(repo.label)}, ${projectIconColor(repo.label + "x")})`,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "9px",
+                      fontWeight: 700,
+                      color: t.textOnAccent,
+                      flexShrink: 0,
+                    })}
+                  >
+                    {projectInitial(repo.label)}
+                  </span>
+                  <span className={css({ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" })}>{repo.label}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       </PanelHeaderBar>
-      <div className={css({ padding: "0 8px 8px", display: "flex", flexDirection: "column", gap: "6px" })}>
-        <LabelXSmall color={t.textTertiary} $style={{ textTransform: "uppercase", letterSpacing: "0.04em" }}>
-          Repo
-        </LabelXSmall>
-        <select
-          value={selectedNewTaskRepoId}
-          disabled={newTaskRepos.length === 0}
-          onChange={(event) => {
-            onSelectNewTaskRepo(event.currentTarget.value);
-          }}
-          className={css({
-            width: "100%",
-            borderRadius: "8px",
-            border: `1px solid ${t.borderDefault}`,
-            backgroundColor: t.interactiveHover,
-            color: t.textPrimary,
-            fontSize: "12px",
-            padding: "8px 10px",
-            outline: "none",
-            cursor: newTaskRepos.length > 0 ? "pointer" : "not-allowed",
-            opacity: newTaskRepos.length > 0 ? 1 : 0.6,
-          })}
-        >
-          {newTaskRepos.length === 0 ? <option value="">No repos available</option> : null}
-          {newTaskRepos.map((repo) => (
-            <option key={repo.id} value={repo.id}>
-              {repo.label}
-            </option>
-          ))}
-        </select>
-      </div>
       <ScrollBody>
         <div className={css({ padding: "8px", display: "flex", flexDirection: "column", gap: "4px" })}>
           {projects.map((project, projectIndex) => {
             const isCollapsed = collapsedProjects[project.id] === true;
-            const isDragOver = dragOverIndex === projectIndex && dragIndexRef.current !== projectIndex;
+            const isProjectDropTarget = drag?.type === "project" && drag.overIdx === projectIndex && drag.fromIdx !== projectIndex;
+            const isBeingDragged = drag?.type === "project" && drag.fromIdx === projectIndex && didDragRef.current;
+            const orderedTaskIds = taskOrderByProject[project.id];
+            const orderedTasks = orderedTaskIds
+              ? (() => {
+                  const byId = new Map(project.tasks.map((t) => [t.id, t]));
+                  const sorted = orderedTaskIds.map((id) => byId.get(id)).filter(Boolean) as typeof project.tasks;
+                  for (const t of project.tasks) {
+                    if (!orderedTaskIds.includes(t.id)) sorted.push(t);
+                  }
+                  return sorted;
+                })()
+              : project.tasks;
 
             return (
               <div
                 key={project.id}
-                draggable
-                onDragStart={(event) => {
-                  dragIndexRef.current = projectIndex;
-                  event.dataTransfer.effectAllowed = "move";
-                  event.dataTransfer.setData("text/plain", String(projectIndex));
-                }}
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  event.dataTransfer.dropEffect = "move";
-                  setDragOverIndex(projectIndex);
-                }}
-                onDragLeave={() => {
-                  setDragOverIndex((current) => (current === projectIndex ? null : current));
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  const fromIndex = dragIndexRef.current;
-                  if (fromIndex != null && fromIndex !== projectIndex) {
-                    onReorderProjects(fromIndex, projectIndex);
-                  }
-                  dragIndexRef.current = null;
-                  setDragOverIndex(null);
-                }}
-                onDragEnd={() => {
-                  dragIndexRef.current = null;
-                  setDragOverIndex(null);
-                }}
+                data-project-idx={projectIndex}
                 className={css({
                   display: "flex",
                   flexDirection: "column",
                   gap: "4px",
-                  borderTop: isDragOver ? `2px solid ${t.accent}` : "2px solid transparent",
-                  transition: "border-color 150ms ease",
+                  position: "relative",
+                  opacity: isBeingDragged ? 0.4 : 1,
+                  transition: "opacity 150ms ease",
+                  "::before": {
+                    content: '""',
+                    position: "absolute",
+                    top: "-2px",
+                    left: 0,
+                    right: 0,
+                    height: "2px",
+                    backgroundColor: isProjectDropTarget ? t.textPrimary : "transparent",
+                    transition: "background-color 100ms ease",
+                  },
                 })}
               >
                 <div
-                  onClick={() =>
-                    setCollapsedProjects((current) => ({
-                      ...current,
-                      [project.id]: !current[project.id],
-                    }))
-                  }
+                  onMouseEnter={() => setHoveredProjectId(project.id)}
+                  onMouseLeave={() => setHoveredProjectId((cur) => (cur === project.id ? null : cur))}
+                  onMouseDown={(event) => {
+                    if (event.button !== 0) return;
+                    startYRef.current = event.clientY;
+                    didDragRef.current = false;
+                    setHoveredProjectId(null);
+                    const state: DragState = { type: "project", fromIdx: projectIndex, overIdx: null };
+                    dragRef.current = state;
+                    setDrag(state);
+                  }}
+                  onClick={() => {
+                    if (!didDragRef.current) {
+                      setCollapsedProjects((current) => ({
+                        ...current,
+                        [project.id]: !current[project.id],
+                      }));
+                    }
+                  }}
                   data-project-header
                   className={css({
                     display: "flex",
@@ -281,7 +420,6 @@ export const Sidebar = memo(function Sidebar({
                     gap: "8px",
                     cursor: "grab",
                     userSelect: "none",
-                    ":hover": { opacity: 0.8 },
                   })}
                 >
                   <div className={css({ display: "flex", alignItems: "center", gap: "4px", overflow: "hidden" })}>
@@ -323,11 +461,43 @@ export const Sidebar = memo(function Sidebar({
                       {project.label}
                     </LabelSmall>
                   </div>
-                  {isCollapsed ? <LabelXSmall color={t.textTertiary}>{formatRelativeAge(project.updatedAtMs)}</LabelXSmall> : null}
+                  <div className={css({ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 })}>
+                    {isCollapsed ? <LabelXSmall color={t.textTertiary}>{formatRelativeAge(project.updatedAtMs)}</LabelXSmall> : null}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setHoveredProjectId(null);
+                        onSelectNewTaskRepo(project.id);
+                        onCreate();
+                      }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className={css({
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: "26px",
+                        height: "26px",
+                        borderRadius: "6px",
+                        border: "none",
+                        background: "none",
+                        padding: 0,
+                        margin: 0,
+                        cursor: "pointer",
+                        color: t.textTertiary,
+                        opacity: hoveredProjectId === project.id ? 1 : 0,
+                        transition: "opacity 150ms ease, background 200ms ease, color 200ms ease",
+                        pointerEvents: hoveredProjectId === project.id ? "auto" : "none",
+                        ":hover": { backgroundColor: t.interactiveHover, color: t.textSecondary },
+                      })}
+                      title={`New task in ${project.label}`}
+                    >
+                      <Plus size={12} color={t.textTertiary} />
+                    </button>
+                  </div>
                 </div>
 
                 {!isCollapsed &&
-                  project.tasks.map((task) => {
+                  orderedTasks.map((task, taskIndex) => {
                     const isActive = task.id === activeId;
                     const isDim = task.status === "archived";
                     const isRunning = task.tabs.some((tab) => tab.status === "running");
@@ -336,11 +506,30 @@ export const Sidebar = memo(function Sidebar({
                     const totalAdded = task.fileChanges.reduce((sum, file) => sum + file.added, 0);
                     const totalRemoved = task.fileChanges.reduce((sum, file) => sum + file.removed, 0);
                     const hasDiffs = totalAdded > 0 || totalRemoved > 0;
+                    const isTaskDropTarget = drag?.type === "task" && drag.projectId === project.id && drag.overIdx === taskIndex && drag.fromIdx !== taskIndex;
+                    const isTaskBeingDragged = drag?.type === "task" && drag.projectId === project.id && drag.fromIdx === taskIndex && didDragRef.current;
 
                     return (
                       <div
                         key={task.id}
-                        onClick={() => onSelect(task.id)}
+                        data-task-idx={taskIndex}
+                        data-task-project-id={project.id}
+                        onMouseDown={(event) => {
+                          if (event.button !== 0) return;
+                          // Only start task drag if not already in a project drag
+                          if (dragRef.current) return;
+                          event.stopPropagation();
+                          startYRef.current = event.clientY;
+                          didDragRef.current = false;
+                          const state: DragState = { type: "task", projectId: project.id, fromIdx: taskIndex, overIdx: null };
+                          dragRef.current = state;
+                          setDrag(state);
+                        }}
+                        onClick={() => {
+                          if (!didDragRef.current) {
+                            onSelect(task.id);
+                          }
+                        }}
                         onContextMenu={(event) =>
                           contextMenu.open(event, [
                             { label: "Rename task", onClick: () => onRenameTask(task.id) },
@@ -351,10 +540,21 @@ export const Sidebar = memo(function Sidebar({
                         className={css({
                           padding: "8px 12px",
                           borderRadius: "8px",
-                          border: "1px solid transparent",
+                          position: "relative",
                           backgroundColor: isActive ? t.interactiveHover : "transparent",
+                          opacity: isTaskBeingDragged ? 0.4 : 1,
                           cursor: "pointer",
-                          transition: "all 200ms ease",
+                          transition: "all 150ms ease",
+                          "::before": {
+                            content: '""',
+                            position: "absolute",
+                            top: "-2px",
+                            left: 0,
+                            right: 0,
+                            height: "2px",
+                            backgroundColor: isTaskDropTarget ? t.textPrimary : "transparent",
+                            transition: "background-color 100ms ease",
+                          },
                           ":hover": {
                             backgroundColor: t.interactiveHover,
                           },
@@ -410,9 +610,52 @@ export const Sidebar = memo(function Sidebar({
                       </div>
                     );
                   })}
+                {/* Bottom drop zone for dragging to end of task list */}
+                {!isCollapsed && (
+                  <div
+                    data-task-idx={orderedTasks.length}
+                    data-task-project-id={project.id}
+                    className={css({
+                      minHeight: "4px",
+                      position: "relative",
+                      "::before": {
+                        content: '""',
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: "2px",
+                        backgroundColor:
+                          drag?.type === "task" && drag.projectId === project.id && drag.overIdx === orderedTasks.length && drag.fromIdx !== orderedTasks.length
+                            ? t.textPrimary
+                            : "transparent",
+                        transition: "background-color 100ms ease",
+                      },
+                    })}
+                  />
+                )}
               </div>
             );
           })}
+          {/* Bottom drop zone for dragging project to end of list */}
+          <div
+            data-project-idx={projects.length}
+            className={css({
+              minHeight: "4px",
+              position: "relative",
+              "::before": {
+                content: '""',
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                height: "2px",
+                backgroundColor:
+                  drag?.type === "project" && drag.overIdx === projects.length && drag.fromIdx !== projects.length ? t.textPrimary : "transparent",
+                transition: "background-color 100ms ease",
+              },
+            })}
+          />
         </div>
       </ScrollBody>
       <SidebarFooter />
@@ -450,7 +693,6 @@ function SidebarFooter() {
   const [workspaceFlyoutOpen, setWorkspaceFlyoutOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const flyoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const workspaceTriggerRef = useRef<HTMLDivElement>(null);
   const flyoutRef = useRef<HTMLDivElement>(null);
   const [flyoutPos, setFlyoutPos] = useState<{ top: number; left: number } | null>(null);
@@ -469,7 +711,6 @@ function SidebarFooter() {
       const inContainer = containerRef.current?.contains(target);
       const inFlyout = flyoutRef.current?.contains(target);
       if (!inContainer && !inFlyout) {
-        if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
         setOpen(false);
         setWorkspaceFlyoutOpen(false);
       }
@@ -557,21 +798,7 @@ function SidebarFooter() {
   });
 
   return (
-    <div
-      ref={containerRef}
-      onMouseEnter={() => {
-        if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
-        hoverTimerRef.current = setTimeout(() => setOpen(true), 300);
-      }}
-      onMouseLeave={() => {
-        if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
-        hoverTimerRef.current = setTimeout(() => {
-          setOpen(false);
-          setWorkspaceFlyoutOpen(false);
-        }, 200);
-      }}
-      className={css({ position: "relative", flexShrink: 0 })}
-    >
+    <div ref={containerRef} className={css({ position: "relative", flexShrink: 0 })}>
       {open ? (
         <div
           className={css({
@@ -638,14 +865,9 @@ function SidebarFooter() {
                     })}
                     onMouseEnter={() => {
                       openFlyout();
-                      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
                     }}
                     onMouseLeave={() => {
                       closeFlyout();
-                      hoverTimerRef.current = setTimeout(() => {
-                        setOpen(false);
-                        setWorkspaceFlyoutOpen(false);
-                      }, 200);
                     }}
                   >
                     <div className={popoverStyle}>
@@ -726,7 +948,6 @@ function SidebarFooter() {
         <button
           type="button"
           onClick={() => {
-            if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
             setOpen((prev) => {
               if (prev) setWorkspaceFlyoutOpen(false);
               return !prev;

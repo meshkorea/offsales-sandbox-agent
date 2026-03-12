@@ -16,11 +16,11 @@ import { TranscriptHeader } from "./mock-layout/transcript-header";
 import { PROMPT_TEXTAREA_MAX_HEIGHT, PROMPT_TEXTAREA_MIN_HEIGHT, SPanel, ScrollBody, Shell } from "./mock-layout/ui";
 import {
   buildDisplayMessages,
-  buildHistoryEvents,
   diffPath,
   diffTabId,
   formatThinkingDuration,
   isDiffTab,
+  buildHistoryEvents,
   type Task,
   type HistoryEvent,
   type LineAttachment,
@@ -79,6 +79,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
   onSidebarPeekEnd,
   rightSidebarCollapsed,
   onToggleRightSidebar,
+  onNavigateToUsage,
 }: {
   taskWorkbenchClient: ReturnType<typeof getTaskWorkbenchClient>;
   task: Task;
@@ -95,6 +96,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
   onSidebarPeekEnd?: () => void;
   rightSidebarCollapsed?: boolean;
   onToggleRightSidebar?: () => void;
+  onNavigateToUsage?: () => void;
 }) {
   const t = useFoundryTokens();
   const [defaultModel, setDefaultModel] = useState<ModelId>("claude-sonnet-4");
@@ -466,6 +468,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
         onSidebarPeekEnd={onSidebarPeekEnd}
         rightSidebarCollapsed={rightSidebarCollapsed}
         onToggleRightSidebar={onToggleRightSidebar}
+        onNavigateToUsage={onNavigateToUsage}
       />
       <div
         style={{
@@ -694,7 +697,7 @@ const RightRail = memo(function RightRail({
     const railHeight = railRef.current?.getBoundingClientRect().height ?? 0;
     const maxHeight = Math.max(RIGHT_RAIL_MIN_SECTION_HEIGHT, railHeight - RIGHT_RAIL_MIN_SECTION_HEIGHT - RIGHT_RAIL_SPLITTER_HEIGHT);
 
-    return Math.min(Math.max(nextHeight, RIGHT_RAIL_MIN_SECTION_HEIGHT), maxHeight);
+    return Math.min(Math.max(nextHeight, 43), maxHeight);
   }, []);
 
   useEffect(() => {
@@ -771,42 +774,35 @@ const RightRail = memo(function RightRail({
         />
       </div>
       <div
-        role="separator"
-        aria-orientation="horizontal"
-        aria-label="Resize terminal panel"
-        onPointerDown={startResize}
-        className={css({
-          height: `${RIGHT_RAIL_SPLITTER_HEIGHT}px`,
-          flexShrink: 0,
-          cursor: "ns-resize",
-          position: "relative",
-          backgroundColor: t.surfacePrimary,
-          borderRight: `1px solid ${t.borderDefault}`,
-          ":before": {
-            content: '""',
-            position: "absolute",
-            left: "50%",
-            top: "50%",
-            width: "42px",
-            height: "4px",
-            borderRadius: "999px",
-            transform: "translate(-50%, -50%)",
-            backgroundColor: t.borderMedium,
-          },
-        })}
-      />
-      <div
         className={css({
           height: `${terminalHeight}px`,
-          minHeight: `${RIGHT_RAIL_MIN_SECTION_HEIGHT}px`,
+          minHeight: "43px",
           backgroundColor: t.surfacePrimary,
           overflow: "hidden",
           borderBottomRightRadius: "12px",
           borderRight: `1px solid ${t.borderDefault}`,
           borderBottom: `1px solid ${t.borderDefault}`,
+          display: "flex",
+          flexDirection: "column",
         })}
       >
-        <TerminalPane workspaceId={workspaceId} taskId={task.id} />
+        <TerminalPane
+          workspaceId={workspaceId}
+          taskId={task.id}
+          onStartResize={startResize}
+          isExpanded={(() => {
+            const railHeight = railRef.current?.getBoundingClientRect().height ?? 0;
+            return railHeight > 0 && terminalHeight >= railHeight * 0.7;
+          })()}
+          onExpand={() => {
+            const railHeight = railRef.current?.getBoundingClientRect().height ?? 0;
+            const maxHeight = Math.max(RIGHT_RAIL_MIN_SECTION_HEIGHT, railHeight - RIGHT_RAIL_SPLITTER_HEIGHT - 42);
+            setTerminalHeight(maxHeight);
+          }}
+          onCollapse={() => {
+            setTerminalHeight(43);
+          }}
+        />
       </div>
     </div>
   );
@@ -906,6 +902,13 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
   );
   const tasks = viewModel.tasks ?? [];
   const rawProjects = viewModel.projects ?? [];
+  const appSnapshot = useMockAppSnapshot();
+  const activeOrg = activeMockOrganization(appSnapshot);
+  const navigateToUsage = useCallback(() => {
+    if (activeOrg) {
+      void navigate({ to: "/organizations/$organizationId/billing" as never, params: { organizationId: activeOrg.id } });
+    }
+  }, [activeOrg, navigate]);
   const [projectOrder, setProjectOrder] = useState<string[] | null>(null);
   const projects = useMemo(() => {
     if (!projectOrder) return rawProjects;
@@ -916,15 +919,6 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
     }
     return ordered;
   }, [rawProjects, projectOrder]);
-  const reorderProjects = useCallback(
-    (fromIndex: number, toIndex: number) => {
-      const ids = projects.map((p) => p.id);
-      const [moved] = ids.splice(fromIndex, 1);
-      ids.splice(toIndex, 0, moved!);
-      setProjectOrder(ids);
-    },
-    [projects],
-  );
   const [activeTabIdByTask, setActiveTabIdByTask] = useState<Record<string, string | null>>({});
   const [lastAgentTabIdByTask, setLastAgentTabIdByTask] = useState<Record<string, string | null>>({});
   const [openDiffsByTask, setOpenDiffsByTask] = useState<Record<string, string[]>>({});
@@ -947,6 +941,30 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
   const endPeek = useCallback(() => {
     peekTimeoutRef.current = setTimeout(() => setLeftSidebarPeeking(false), 200);
   }, []);
+
+  const reorderProjects = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      const ids = projects.map((p) => p.id);
+      const [moved] = ids.splice(fromIndex, 1);
+      ids.splice(toIndex, 0, moved!);
+      setProjectOrder(ids);
+    },
+    [projects],
+  );
+
+  const [taskOrderByProject, setTaskOrderByProject] = useState<Record<string, string[]>>({});
+  const reorderTasks = useCallback(
+    (projectId: string, fromIndex: number, toIndex: number) => {
+      const project = projects.find((p) => p.id === projectId);
+      if (!project) return;
+      const currentOrder = taskOrderByProject[projectId] ?? project.tasks.map((t) => t.id);
+      const ids = [...currentOrder];
+      const [moved] = ids.splice(fromIndex, 1);
+      ids.splice(toIndex, 0, moved!);
+      setTaskOrderByProject((prev) => ({ ...prev, [projectId]: ids }));
+    },
+    [projects, taskOrderByProject],
+  );
 
   useEffect(() => {
     leftWidthRef.current = leftWidth;
@@ -1340,6 +1358,8 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
                 onRenameTask={renameTask}
                 onRenameBranch={renameBranch}
                 onReorderProjects={reorderProjects}
+                taskOrderByProject={taskOrderByProject}
+                onReorderTasks={reorderTasks}
                 onToggleSidebar={() => setLeftSidebarOpen(false)}
               />
             </div>
@@ -1458,6 +1478,8 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
               onRenameTask={renameTask}
               onRenameBranch={renameBranch}
               onReorderProjects={reorderProjects}
+              taskOrderByProject={taskOrderByProject}
+              onReorderTasks={reorderTasks}
               onToggleSidebar={() => setLeftSidebarOpen(false)}
             />
           </div>
@@ -1507,6 +1529,8 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
                 onRenameTask={renameTask}
                 onRenameBranch={renameBranch}
                 onReorderProjects={reorderProjects}
+                taskOrderByProject={taskOrderByProject}
+                onReorderTasks={reorderTasks}
                 onToggleSidebar={() => {
                   setLeftSidebarPeeking(false);
                   setLeftSidebarOpen(true);
@@ -1543,6 +1567,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
               onSidebarPeekEnd={endPeek}
               rightSidebarCollapsed={!rightSidebarOpen}
               onToggleRightSidebar={() => setRightSidebarOpen(true)}
+              onNavigateToUsage={navigateToUsage}
             />
           </div>
           {rightSidebarOpen ? <PanelResizeHandle onResizeStart={onRightResizeStart} onResize={onRightResize} /> : null}

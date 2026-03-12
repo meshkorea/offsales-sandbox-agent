@@ -89,6 +89,7 @@ export interface WorkbenchTask {
   fileChanges: WorkbenchFileChange[];
   diffs: Record<string, string>;
   fileTree: WorkbenchFileTreeNode[];
+  minutesUsed: number;
 }
 
 export interface WorkbenchRepo {

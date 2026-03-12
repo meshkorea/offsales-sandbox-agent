@@ -475,6 +475,7 @@ export async function getWorkbenchTask(c: any): Promise<any> {
     fileChanges: gitState.fileChanges,
     diffs: gitState.diffs,
     fileTree: gitState.fileTree,
+    minutesUsed: 0,
   };
 }
 

@@ -1,7 +1,7 @@
 import { memo, useState } from "react";
 import { useStyletron } from "baseui";
 import { StatefulPopover, PLACEMENT } from "baseui/popover";
-import { ChevronDown, ChevronUp, Star } from "lucide-react";
+import { ChevronUp, Star } from "lucide-react";
 
 import { useFoundryTokens } from "../../app/theme";
 import { AgentIcon } from "./ui";
@@ -107,6 +107,7 @@ export const ModelPicker = memo(function ModelPicker({
   const [css] = useStyletron();
   const t = useFoundryTokens();
   const [isOpen, setIsOpen] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
 
   return (
     <StatefulPopover
@@ -140,10 +141,13 @@ export const ModelPicker = memo(function ModelPicker({
     >
       <div className={css({ display: "inline-flex" })}>
         <button
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
           className={css({
             appearance: "none",
             WebkitAppearance: "none",
             background: "none",
+            border: "none",
             margin: "0",
             display: "flex",
             alignItems: "center",
@@ -153,14 +157,14 @@ export const ModelPicker = memo(function ModelPicker({
             borderRadius: "6px",
             fontSize: "12px",
             fontWeight: 500,
-            color: t.textSecondary,
-            backgroundColor: t.borderDefault,
-            border: `1px solid ${t.borderMedium}`,
-            ":hover": { color: t.textPrimary, backgroundColor: t.borderMedium },
+            color: t.textTertiary,
+            backgroundColor: "transparent",
+            transition: "background 200ms ease, color 200ms ease",
+            ":hover": { color: t.textSecondary, backgroundColor: t.interactiveHover },
           })}
         >
           {modelLabel(value)}
-          {isOpen ? <ChevronDown size={11} /> : <ChevronUp size={11} />}
+          {(isHovered || isOpen) && <ChevronUp size={11} />}
         </button>
       </div>
     </StatefulPopover>

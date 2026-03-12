@@ -3,14 +3,18 @@ import { ProcessTerminal } from "@sandbox-agent/react";
 import { useQuery } from "@tanstack/react-query";
 import { useStyletron } from "baseui";
 import { useFoundryTokens } from "../../app/theme";
-import { ChevronDown, Loader2, RefreshCw, Skull, SquareTerminal, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronUp, Plus, SquareTerminal, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SandboxAgent } from "sandbox-agent";
 import { backendClient } from "../../lib/backend";
 
 interface TerminalPaneProps {
   workspaceId: string;
   taskId: string | null;
+  isExpanded?: boolean;
+  onExpand?: () => void;
+  onCollapse?: () => void;
+  onStartResize?: (e: React.PointerEvent) => void;
 }
 
 interface ProcessTab {
@@ -19,32 +23,7 @@ interface ProcessTab {
   title: string;
 }
 
-const PROCESSES_TAB_ID = "processes";
 const MIN_TERMINAL_HEIGHT = 220;
-
-function decodeBase64Utf8(value: string): string {
-  try {
-    const bytes = Uint8Array.from(window.atob(value), (char) => char.charCodeAt(0));
-    return new TextDecoder().decode(bytes);
-  } catch {
-    return value;
-  }
-}
-
-function parseArgs(value: string): string[] {
-  return value
-    .split("\n")
-    .map((part) => part.trim())
-    .filter(Boolean);
-}
-
-function formatCommandSummary(process: Pick<SandboxProcessRecord, "command" | "args">): string {
-  return [process.command, ...process.args].join(" ").trim();
-}
-
-function canOpenTerminal(process: SandboxProcessRecord | null | undefined): boolean {
-  return Boolean(process && process.status === "running" && process.interactive && process.tty);
-}
 
 function defaultShellRequest(cwd?: string | null) {
   return {
@@ -61,24 +40,145 @@ function formatProcessTabTitle(process: Pick<SandboxProcessRecord, "command" | "
   return label && label.length > 0 ? label : `Terminal ${fallbackIndex}`;
 }
 
-export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
+function formatCommandSummary(process: Pick<SandboxProcessRecord, "command" | "args">): string {
+  return [process.command, ...process.args].join(" ").trim();
+}
+
+function HeaderIconButton({
+  css,
+  t,
+  label,
+  disabled,
+  onClick,
+  children,
+}: {
+  css: ReturnType<typeof useStyletron>[0];
+  t: ReturnType<typeof useFoundryTokens>;
+  label: string;
+  disabled?: boolean;
+  onClick?: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={label}
+      onClick={() => {
+        if (!disabled) onClick?.();
+      }}
+      onKeyDown={(e) => {
+        if ((e.key === "Enter" || e.key === " ") && !disabled) onClick?.();
+      }}
+      className={css({
+        width: "26px",
+        height: "26px",
+        borderRadius: "6px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: t.textTertiary,
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.4 : 1,
+        transition: "background 200ms ease, color 200ms ease",
+        ":hover": disabled
+          ? undefined
+          : {
+              backgroundColor: t.interactiveHover,
+              color: t.textSecondary,
+            },
+      })}
+    >
+      {children}
+    </div>
+  );
+}
+
+export function TerminalPane({ workspaceId, taskId, isExpanded, onExpand, onCollapse, onStartResize }: TerminalPaneProps) {
   const [css] = useStyletron();
   const t = useFoundryTokens();
-  const [activeTabId, setActiveTabId] = useState<string>(PROCESSES_TAB_ID);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [processTabs, setProcessTabs] = useState<ProcessTab[]>([]);
-  const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
-  const [command, setCommand] = useState("");
-  const [argsText, setArgsText] = useState("");
-  const [cwdOverride, setCwdOverride] = useState("");
-  const [interactive, setInteractive] = useState(true);
-  const [tty, setTty] = useState(true);
-  const [createError, setCreateError] = useState<string | null>(null);
   const [creatingProcess, setCreatingProcess] = useState(false);
-  const [actingProcessId, setActingProcessId] = useState<string | null>(null);
-  const [logsText, setLogsText] = useState("");
-  const [logsLoading, setLogsLoading] = useState(false);
-  const [logsError, setLogsError] = useState<string | null>(null);
+  const [hoveredTabId, setHoveredTabId] = useState<string | null>(null);
   const [terminalClient, setTerminalClient] = useState<SandboxAgent | null>(null);
+  const [customTabNames, setCustomTabNames] = useState<Record<string, string>>({});
+  const [editingTabId, setEditingTabId] = useState<string | null>(null);
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  // Drag-to-reorder state
+  const [tabDrag, setTabDrag] = useState<{ fromIdx: number; overIdx: number | null } | null>(null);
+  const tabDragRef = useRef<{ fromIdx: number; overIdx: number | null } | null>(null);
+  const tabDragStartY = useRef(0);
+  const didTabDrag = useRef(false);
+
+  useEffect(() => {
+    if (!tabDrag) return;
+    const onMove = (e: MouseEvent) => {
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      if (!el) return;
+      const tabEl = (el as HTMLElement).closest?.("[data-terminal-idx]") as HTMLElement | null;
+      if (tabEl) {
+        const overIdx = Number(tabEl.dataset.terminalIdx);
+        if (overIdx !== tabDrag.overIdx) {
+          setTabDrag({ ...tabDrag, overIdx });
+          tabDragRef.current = { ...tabDrag, overIdx };
+        }
+      }
+      if (Math.abs(e.clientY - tabDragStartY.current) > 4) {
+        didTabDrag.current = true;
+      }
+    };
+    const onUp = () => {
+      const d = tabDragRef.current;
+      if (d && didTabDrag.current && d.overIdx !== null && d.fromIdx !== d.overIdx) {
+        setProcessTabs((prev) => {
+          const next = [...prev];
+          const [moved] = next.splice(d.fromIdx, 1);
+          next.splice(d.overIdx!, 0, moved);
+          return next;
+        });
+      }
+      tabDragRef.current = null;
+      didTabDrag.current = false;
+      setTabDrag(null);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    return () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+  }, [tabDrag]);
+
+  // Horizontal splitter for terminal list width
+  const DEFAULT_LIST_WIDTH = 180;
+  const MIN_LIST_WIDTH = 40;
+  const MAX_LIST_WIDTH = 360;
+  const [listWidth, setListWidth] = useState(DEFAULT_LIST_WIDTH);
+  const splitterRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  const onSplitterPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      e.preventDefault();
+      splitterRef.current = { startX: e.clientX, startWidth: listWidth };
+      const onMove = (ev: PointerEvent) => {
+        if (!splitterRef.current) return;
+        // Dragging left = increase list width, dragging right = decrease
+        const delta = splitterRef.current.startX - ev.clientX;
+        const next = Math.min(MAX_LIST_WIDTH, Math.max(MIN_LIST_WIDTH, splitterRef.current.startWidth + delta));
+        setListWidth(next);
+      };
+      const onUp = () => {
+        splitterRef.current = null;
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+      };
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+    },
+    [listWidth],
+  );
 
   const taskQuery = useQuery({
     queryKey: ["mock-layout", "task", workspaceId, taskId],
@@ -207,56 +307,11 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
   }, [terminalClient]);
 
   useEffect(() => {
-    setActiveTabId(PROCESSES_TAB_ID);
+    setActiveTabId(null);
     setProcessTabs([]);
-    setSelectedProcessId(null);
-    setLogsText("");
-    setLogsError(null);
   }, [taskId]);
 
   const processes = processesQuery.data?.processes ?? [];
-  const selectedProcess = useMemo(() => processes.find((process) => process.id === selectedProcessId) ?? null, [processes, selectedProcessId]);
-
-  useEffect(() => {
-    if (!processes.length) {
-      setSelectedProcessId(null);
-      return;
-    }
-
-    setSelectedProcessId((current) => {
-      if (current && processes.some((process) => process.id === current)) {
-        return current;
-      }
-      return processes[0]?.id ?? null;
-    });
-  }, [processes]);
-
-  const refreshLogs = useCallback(async () => {
-    if (!activeSandbox?.sandboxId || !selectedProcess) {
-      setLogsText("");
-      setLogsError(null);
-      return;
-    }
-
-    setLogsLoading(true);
-    setLogsError(null);
-    try {
-      const response = await backendClient.getSandboxProcessLogs(workspaceId, activeSandbox.providerId, activeSandbox.sandboxId, selectedProcess.id, {
-        stream: selectedProcess.tty ? "pty" : "combined",
-        tail: 200,
-      });
-      setLogsText(response.entries.map((entry: ProcessLogResponseEntry) => decodeBase64Utf8(entry.data)).join(""));
-    } catch (error) {
-      setLogsText("");
-      setLogsError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setLogsLoading(false);
-    }
-  }, [activeSandbox, selectedProcess, workspaceId]);
-
-  useEffect(() => {
-    void refreshLogs();
-  }, [refreshLogs]);
 
   const openTerminalTab = useCallback((process: SandboxProcessRecord) => {
     setProcessTabs((current) => {
@@ -277,8 +332,16 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
   }, []);
 
   const closeTerminalTab = useCallback((tabId: string) => {
-    setProcessTabs((current) => current.filter((tab) => tab.id !== tabId));
-    setActiveTabId((current) => (current === tabId ? PROCESSES_TAB_ID : current));
+    setProcessTabs((current) => {
+      const next = current.filter((tab) => tab.id !== tabId);
+      setActiveTabId((currentActive) => {
+        if (currentActive === tabId) {
+          return next.length > 0 ? next[next.length - 1]!.id : null;
+        }
+        return currentActive;
+      });
+      return next;
+    });
   }, []);
 
   const spawnTerminal = useCallback(async () => {
@@ -287,7 +350,6 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
     }
 
     setCreatingProcess(true);
-    setCreateError(null);
     try {
       const created = await backendClient.createSandboxProcess({
         workspaceId,
@@ -297,87 +359,13 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
       });
       await processesQuery.refetch();
       openTerminalTab(created);
-    } catch (error) {
-      setCreateError(error instanceof Error ? error.message : String(error));
     } finally {
       setCreatingProcess(false);
     }
   }, [activeSandbox, openTerminalTab, processesQuery, workspaceId]);
 
-  const createCustomProcess = useCallback(async () => {
-    if (!activeSandbox?.sandboxId) {
-      return;
-    }
-
-    const trimmedCommand = command.trim();
-    if (!trimmedCommand) {
-      setCreateError("Command is required.");
-      return;
-    }
-
-    setCreatingProcess(true);
-    setCreateError(null);
-    try {
-      const created = await backendClient.createSandboxProcess({
-        workspaceId,
-        providerId: activeSandbox.providerId,
-        sandboxId: activeSandbox.sandboxId,
-        request: {
-          command: trimmedCommand,
-          args: parseArgs(argsText),
-          cwd: cwdOverride.trim() || activeSandbox.cwd || undefined,
-          interactive,
-          tty,
-        },
-      });
-      await processesQuery.refetch();
-      setSelectedProcessId(created.id);
-      setCommand("");
-      setArgsText("");
-      setCwdOverride("");
-      setInteractive(true);
-      setTty(true);
-      if (created.interactive && created.tty) {
-        openTerminalTab(created);
-      } else {
-        setActiveTabId(PROCESSES_TAB_ID);
-      }
-    } catch (error) {
-      setCreateError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setCreatingProcess(false);
-    }
-  }, [activeSandbox, argsText, command, cwdOverride, interactive, openTerminalTab, processesQuery, tty, workspaceId]);
-
-  const handleProcessAction = useCallback(
-    async (processId: string, action: "stop" | "kill" | "delete") => {
-      if (!activeSandbox?.sandboxId) {
-        return;
-      }
-
-      setActingProcessId(`${action}:${processId}`);
-      try {
-        if (action === "stop") {
-          await backendClient.stopSandboxProcess(workspaceId, activeSandbox.providerId, activeSandbox.sandboxId, processId, { waitMs: 2_000 });
-        } else if (action === "kill") {
-          await backendClient.killSandboxProcess(workspaceId, activeSandbox.providerId, activeSandbox.sandboxId, processId, { waitMs: 2_000 });
-        } else {
-          await backendClient.deleteSandboxProcess(workspaceId, activeSandbox.providerId, activeSandbox.sandboxId, processId);
-          setProcessTabs((current) => current.filter((tab) => tab.processId !== processId));
-          setActiveTabId((current) => (current.startsWith("terminal:") && current === `terminal:${processId}` ? PROCESSES_TAB_ID : current));
-        }
-        await processesQuery.refetch();
-      } catch (error) {
-        setCreateError(error instanceof Error ? error.message : String(error));
-      } finally {
-        setActingProcessId(null);
-      }
-    },
-    [activeSandbox, processesQuery, workspaceId],
-  );
-
   const processTabsById = useMemo(() => new Map(processTabs.map((tab) => [tab.id, tab])), [processTabs]);
-  const activeProcessTab = activeTabId === PROCESSES_TAB_ID ? null : (processTabsById.get(activeTabId) ?? null);
+  const activeProcessTab = activeTabId ? (processTabsById.get(activeTabId) ?? null) : null;
   const activeTerminalProcess = useMemo(
     () => (activeProcessTab ? (processes.find((process) => process.id === activeProcessTab.processId) ?? null) : null),
     [activeProcessTab, processes],
@@ -404,406 +392,17 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
     textAlign: "center",
   });
 
-  const smallButtonClassName = css({
-    appearance: "none",
-    WebkitAppearance: "none",
-    background: "none",
-    margin: "0",
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "6px",
-    padding: "6px 10px",
-    borderRadius: "8px",
-    border: `1px solid ${t.borderDefault}`,
-    color: t.textPrimary,
-    cursor: "pointer",
-    fontSize: "11px",
-    fontWeight: 600,
-    ":hover": {
-      backgroundColor: t.interactiveHover,
-    },
-    ":disabled": {
-      opacity: 0.45,
-      cursor: "not-allowed",
-    },
-  });
-
-  const renderProcessesView = () => {
-    if (!activeSandbox?.sandboxId) {
+  const renderTerminalView = () => {
+    if (!activeProcessTab) {
       return (
         <div className={emptyBodyClassName}>
           <div className={emptyCopyClassName}>
-            <strong>Processes will appear when the sandbox is ready.</strong>
-            <span>The active task does not have a sandbox runtime yet.</span>
+            <SquareTerminal size={24} style={{ margin: "0 auto 4px", opacity: 0.4 }} />
+            <strong>No terminal open.</strong>
+            <span>Click + to open a new terminal session.</span>
           </div>
         </div>
       );
-    }
-
-    return (
-      <div
-        className={css({
-          flex: 1,
-          minHeight: 0,
-          display: "grid",
-          gridTemplateRows: "auto minmax(0, 1fr)",
-          backgroundColor: t.surfacePrimary,
-        })}
-      >
-        <div
-          className={css({
-            display: "flex",
-            flexDirection: "column",
-            gap: "12px",
-            padding: "14px 14px 12px",
-            borderBottom: `1px solid ${t.borderSubtle}`,
-          })}
-        >
-          <div
-            className={css({
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "10px",
-            })}
-          >
-            <div
-              className={css({
-                display: "flex",
-                flexDirection: "column",
-                gap: "2px",
-              })}
-            >
-              <strong className={css({ fontSize: "12px", color: t.textPrimary })}>Processes</strong>
-              <span className={css({ fontSize: "11px", color: t.textMuted })}>
-                Process lifecycle goes through the actor. Terminal transport goes straight to the sandbox.
-              </span>
-            </div>
-            <div className={css({ display: "flex", alignItems: "center", gap: "8px" })}>
-              <button type="button" className={smallButtonClassName} onClick={() => void processesQuery.refetch()} disabled={processesQuery.isFetching}>
-                {processesQuery.isFetching ? <Loader2 size={12} className={css({ animation: "hf-spin 0.8s linear infinite" })} /> : <RefreshCw size={12} />}
-                Refresh
-              </button>
-              <button type="button" className={smallButtonClassName} onClick={() => void spawnTerminal()} disabled={creatingProcess}>
-                {creatingProcess ? <Loader2 size={12} className={css({ animation: "hf-spin 0.8s linear infinite" })} /> : <SquareTerminal size={12} />}
-                New Terminal
-              </button>
-            </div>
-          </div>
-
-          <div
-            className={css({
-              display: "grid",
-              gap: "8px",
-              gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-            })}
-          >
-            <input
-              className={css({
-                width: "100%",
-                border: `1px solid ${t.borderDefault}`,
-                borderRadius: "8px",
-                backgroundColor: t.surfaceTertiary,
-                color: t.textPrimary,
-                fontSize: "12px",
-                padding: "9px 10px",
-              })}
-              value={command}
-              onChange={(event) => {
-                setCommand(event.target.value);
-                setCreateError(null);
-              }}
-              placeholder="Command"
-            />
-            <input
-              className={css({
-                width: "100%",
-                border: `1px solid ${t.borderDefault}`,
-                borderRadius: "8px",
-                backgroundColor: t.surfaceTertiary,
-                color: t.textPrimary,
-                fontSize: "12px",
-                padding: "9px 10px",
-              })}
-              value={cwdOverride}
-              onChange={(event) => {
-                setCwdOverride(event.target.value);
-                setCreateError(null);
-              }}
-              placeholder={activeSandbox.cwd ?? "Working directory"}
-            />
-            <textarea
-              className={css({
-                width: "100%",
-                minHeight: "56px",
-                resize: "none",
-                border: `1px solid ${t.borderDefault}`,
-                borderRadius: "8px",
-                backgroundColor: t.surfaceTertiary,
-                color: t.textPrimary,
-                fontSize: "12px",
-                padding: "9px 10px",
-                gridColumn: "1 / -1",
-              })}
-              value={argsText}
-              onChange={(event) => {
-                setArgsText(event.target.value);
-                setCreateError(null);
-              }}
-              placeholder="Arguments, one per line"
-            />
-          </div>
-
-          <div className={css({ display: "flex", alignItems: "center", gap: "14px", fontSize: "11px", color: t.textSecondary })}>
-            <label className={css({ display: "flex", alignItems: "center", gap: "6px" })}>
-              <input
-                type="checkbox"
-                checked={interactive}
-                onChange={(event) => {
-                  setInteractive(event.target.checked);
-                  if (!event.target.checked) {
-                    setTty(false);
-                  }
-                }}
-              />
-              interactive
-            </label>
-            <label className={css({ display: "flex", alignItems: "center", gap: "6px" })}>
-              <input
-                type="checkbox"
-                checked={tty}
-                onChange={(event) => {
-                  setTty(event.target.checked);
-                  if (event.target.checked) {
-                    setInteractive(true);
-                  }
-                }}
-              />
-              tty
-            </label>
-            <button type="button" className={smallButtonClassName} onClick={() => void createCustomProcess()} disabled={creatingProcess}>
-              Create Process
-            </button>
-          </div>
-
-          {createError ? <div className={css({ fontSize: "11px", color: t.statusError })}>{createError}</div> : null}
-        </div>
-
-        <div
-          className={css({
-            minHeight: 0,
-            display: "grid",
-            gridTemplateColumns: "minmax(220px, 0.95fr) minmax(0, 1.05fr)",
-          })}
-        >
-          <div
-            className={css({
-              minHeight: 0,
-              overflowY: "auto",
-              borderRight: `1px solid ${t.borderSubtle}`,
-            })}
-          >
-            {processes.length === 0 ? (
-              <div className={css({ padding: "16px", fontSize: "12px", color: t.textMuted })}>No processes yet.</div>
-            ) : (
-              processes.map((process) => {
-                const isSelected = selectedProcessId === process.id;
-                const isStopping = actingProcessId === `stop:${process.id}`;
-                const isKilling = actingProcessId === `kill:${process.id}`;
-                const isDeleting = actingProcessId === `delete:${process.id}`;
-
-                return (
-                  <div
-                    key={process.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => {
-                      setSelectedProcessId(process.id);
-                      setActiveTabId(PROCESSES_TAB_ID);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        setSelectedProcessId(process.id);
-                        setActiveTabId(PROCESSES_TAB_ID);
-                      }
-                    }}
-                    className={css({
-                      width: "100%",
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "8px",
-                      padding: "12px 14px",
-                      cursor: "pointer",
-                      backgroundColor: isSelected ? t.interactiveHover : "transparent",
-                      borderBottom: `1px solid ${t.borderSubtle}`,
-                      outline: "none",
-                      ":focus-visible": {
-                        boxShadow: "inset 0 0 0 1px rgba(249, 115, 22, 0.85)",
-                      },
-                    })}
-                  >
-                    <div className={css({ display: "flex", alignItems: "center", gap: "8px" })}>
-                      <span
-                        className={css({
-                          width: "8px",
-                          height: "8px",
-                          borderRadius: "999px",
-                          backgroundColor: process.status === "running" ? t.statusSuccess : t.textTertiary,
-                          flexShrink: 0,
-                        })}
-                      />
-                      <span className={css({ fontSize: "12px", color: t.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" })}>
-                        {formatCommandSummary(process)}
-                      </span>
-                    </div>
-                    <div
-                      className={css({
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: "10px",
-                        fontSize: "10px",
-                        color: t.textMuted,
-                      })}
-                    >
-                      <span>{process.pid ? `PID ${process.pid}` : "PID ?"}</span>
-                      <span>{process.id.slice(0, 8)}</span>
-                    </div>
-                    <div className={css({ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px" })}>
-                      {canOpenTerminal(process) ? (
-                        <button
-                          type="button"
-                          className={smallButtonClassName}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            openTerminalTab(process);
-                          }}
-                        >
-                          <SquareTerminal size={11} />
-                          Open
-                        </button>
-                      ) : null}
-                      {process.status === "running" ? (
-                        <>
-                          <button
-                            type="button"
-                            className={smallButtonClassName}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void handleProcessAction(process.id, "stop");
-                            }}
-                            disabled={Boolean(actingProcessId)}
-                          >
-                            {isStopping ? <Loader2 size={11} className={css({ animation: "hf-spin 0.8s linear infinite" })} /> : null}
-                            Stop
-                          </button>
-                          <button
-                            type="button"
-                            className={smallButtonClassName}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void handleProcessAction(process.id, "kill");
-                            }}
-                            disabled={Boolean(actingProcessId)}
-                          >
-                            {isKilling ? <Loader2 size={11} className={css({ animation: "hf-spin 0.8s linear infinite" })} /> : <Skull size={11} />}
-                            Kill
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          className={smallButtonClassName}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void handleProcessAction(process.id, "delete");
-                          }}
-                          disabled={Boolean(actingProcessId)}
-                        >
-                          {isDeleting ? <Loader2 size={11} className={css({ animation: "hf-spin 0.8s linear infinite" })} /> : <Trash2 size={11} />}
-                          Delete
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          <div className={css({ minHeight: 0, display: "flex", flexDirection: "column" })}>
-            {selectedProcess ? (
-              <>
-                <div
-                  className={css({
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "8px",
-                    padding: "14px",
-                    borderBottom: `1px solid ${t.borderSubtle}`,
-                  })}
-                >
-                  <div className={css({ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" })}>
-                    <strong className={css({ fontSize: "12px", color: t.textPrimary })}>{formatCommandSummary(selectedProcess)}</strong>
-                    <span className={css({ fontSize: "10px", color: t.textMuted })}>{selectedProcess.status}</span>
-                  </div>
-                  <div className={css({ display: "flex", flexWrap: "wrap", gap: "10px", fontSize: "10px", color: t.textMuted })}>
-                    <span>{selectedProcess.pid ? `PID ${selectedProcess.pid}` : "PID ?"}</span>
-                    <span>{selectedProcess.id}</span>
-                    {selectedProcess.exitCode != null ? <span>exit={selectedProcess.exitCode}</span> : null}
-                  </div>
-                </div>
-                <div className={css({ minHeight: 0, flex: 1, display: "flex", flexDirection: "column" })}>
-                  <div
-                    className={css({
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      padding: "10px 14px",
-                      borderBottom: `1px solid ${t.borderSubtle}`,
-                    })}
-                  >
-                    <span className={css({ fontSize: "11px", color: t.textSecondary })}>Logs</span>
-                    <button type="button" className={smallButtonClassName} onClick={() => void refreshLogs()} disabled={logsLoading}>
-                      {logsLoading ? <Loader2 size={11} className={css({ animation: "hf-spin 0.8s linear infinite" })} /> : <RefreshCw size={11} />}
-                      Refresh
-                    </button>
-                  </div>
-                  {logsError ? <div className={css({ padding: "14px", fontSize: "11px", color: t.statusError })}>{logsError}</div> : null}
-                  <pre
-                    className={css({
-                      flex: 1,
-                      minHeight: 0,
-                      margin: 0,
-                      padding: "14px",
-                      overflow: "auto",
-                      fontSize: "11px",
-                      lineHeight: 1.6,
-                      color: t.textSecondary,
-                      fontFamily: '"IBM Plex Mono", monospace',
-                    })}
-                  >
-                    {logsText || (logsLoading ? "Loading..." : "(no output)")}
-                  </pre>
-                </div>
-              </>
-            ) : (
-              <div className={emptyBodyClassName}>
-                <div className={emptyCopyClassName}>
-                  <strong>Select a process to inspect its details.</strong>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderTerminalView = () => {
-    if (!activeProcessTab) {
-      return renderProcessesView();
     }
 
     if (!activeTerminalProcess) {
@@ -822,7 +421,7 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
         <div className={emptyBodyClassName}>
           <div className={emptyCopyClassName}>
             <strong>Interactive terminal transport is unavailable.</strong>
-            <span>This tab was created through the standard process API flow. Mock mode does not open a live terminal transport.</span>
+            <span>Mock mode does not open a live terminal transport.</span>
           </div>
         </div>
       );
@@ -837,7 +436,7 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
             justifyContent: "space-between",
             gap: "10px",
             padding: "10px 14px",
-            borderBottom: `1px solid ${t.borderSubtle}`,
+            borderBottom: `1px solid ${t.borderDefault}`,
             fontSize: "11px",
             color: t.textMuted,
           })}
@@ -876,7 +475,7 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
       return (
         <div className={emptyBodyClassName}>
           <div className={emptyCopyClassName}>
-            <strong>Select a task to inspect its processes.</strong>
+            <strong>Select a task to open a terminal.</strong>
           </div>
         </div>
       );
@@ -903,12 +502,24 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
       );
     }
 
-    return activeTabId === PROCESSES_TAB_ID ? renderProcessesView() : renderTerminalView();
+    if (!activeSandbox?.sandboxId) {
+      return (
+        <div className={emptyBodyClassName}>
+          <div className={emptyCopyClassName}>
+            <strong>Waiting for sandbox...</strong>
+            <span>The active task does not have a sandbox runtime yet.</span>
+          </div>
+        </div>
+      );
+    }
+
+    return renderTerminalView();
   };
 
   return (
     <section
       className={css({
+        flex: 1,
         minHeight: 0,
         display: "flex",
         flexDirection: "column",
@@ -916,176 +527,267 @@ export function TerminalPane({ workspaceId, taskId }: TerminalPaneProps) {
         overflow: "hidden",
       })}
     >
+      {/* Resize handle */}
+      <div
+        onPointerDown={onStartResize}
+        className={css({
+          height: "3px",
+          flexShrink: 0,
+          cursor: "ns-resize",
+          position: "relative",
+          "::before": {
+            content: '""',
+            position: "absolute",
+            top: "-2px",
+            left: 0,
+            right: 0,
+            height: "7px",
+          },
+        })}
+      />
+      {/* Full-width header bar */}
       <div
         className={css({
           display: "flex",
           alignItems: "center",
-          gap: "8px",
-          minHeight: "38px",
-          padding: "0 10px",
-          borderBottom: `1px solid ${t.borderSubtle}`,
-          backgroundColor: t.surfaceTertiary,
-          color: t.textSecondary,
-          fontSize: "12px",
-          fontWeight: 600,
+          gap: "6px",
+          minHeight: "39px",
+          maxHeight: "39px",
+          padding: "0 14px",
+          borderTop: `1px solid ${t.borderDefault}`,
+          backgroundColor: t.surfacePrimary,
+          flexShrink: 0,
         })}
       >
-        <button
-          type="button"
-          aria-label="Terminal controls"
-          className={css({
-            appearance: "none",
-            WebkitAppearance: "none",
-            background: "none",
-            border: "none",
-            padding: "0",
-            margin: "0",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: "20px",
-            height: "20px",
-            color: t.textMuted,
-          })}
-        >
-          <ChevronDown size={14} />
-        </button>
+        <SquareTerminal size={14} color={t.textTertiary} />
+        <span className={css({ fontSize: "12px", fontWeight: 600, color: t.textSecondary })}>Terminal</span>
+        <div className={css({ flex: 1 })} />
+        <div className={css({ display: "flex", alignItems: "center", gap: "2px" })}>
+          <HeaderIconButton
+            css={css}
+            t={t}
+            label="New terminal"
+            disabled={!activeSandbox?.sandboxId || creatingProcess}
+            onClick={() => {
+              if (activeSandbox?.sandboxId && !creatingProcess) void spawnTerminal();
+            }}
+          >
+            <Plus size={14} />
+          </HeaderIconButton>
+          <HeaderIconButton
+            css={css}
+            t={t}
+            label="Kill terminal"
+            disabled={!activeTabId}
+            onClick={() => {
+              if (activeTabId) closeTerminalTab(activeTabId);
+            }}
+          >
+            <Trash2 size={13} />
+          </HeaderIconButton>
+          <HeaderIconButton css={css} t={t} label={isExpanded ? "Collapse terminal" : "Expand terminal"} onClick={isExpanded ? onCollapse : onExpand}>
+            {isExpanded ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+          </HeaderIconButton>
+        </div>
+      </div>
 
-        <button
-          type="button"
-          onClick={() => setActiveTabId(PROCESSES_TAB_ID)}
-          className={css({
-            appearance: "none",
-            WebkitAppearance: "none",
-            background: "none",
-            border: "none",
-            margin: "0",
-            position: "relative",
-            display: "flex",
-            alignItems: "center",
-            height: "100%",
-            padding: "0 10px",
-            color: activeTabId === PROCESSES_TAB_ID ? t.textPrimary : t.textMuted,
-            cursor: "pointer",
-            ":after":
-              activeTabId === PROCESSES_TAB_ID
-                ? {
-                    content: '""',
-                    position: "absolute",
-                    left: "10px",
-                    right: "10px",
-                    bottom: 0,
-                    height: "2px",
-                    borderRadius: "999px",
-                    backgroundColor: t.textPrimary,
-                  }
-                : undefined,
-          })}
-        >
-          Processes
-        </button>
+      {/* Two-column body: terminal left, list right — hidden when no tabs */}
+      {processTabs.length > 0 && (
+        <div className={css({ flex: 1, minHeight: 0, display: "flex", flexDirection: "row" })}>
+          {/* Left: terminal content */}
+          <div className={css({ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" })}>{renderBody()}</div>
 
-        {processTabs.map((tab) => (
+          {/* Splitter */}
           <div
-            key={tab.id}
+            onPointerDown={onSplitterPointerDown}
             className={css({
+              width: "1px",
+              flexShrink: 0,
+              cursor: "col-resize",
+              backgroundColor: t.borderDefault,
               position: "relative",
+              "::before": {
+                content: '""',
+                position: "absolute",
+                top: 0,
+                bottom: 0,
+                left: "-3px",
+                width: "7px",
+              },
+            })}
+          />
+
+          {/* Right: vertical terminal list */}
+          <div
+            className={css({
+              width: `${listWidth}px`,
+              flexShrink: 0,
+              backgroundColor: t.surfacePrimary,
               display: "flex",
-              alignItems: "center",
-              height: "100%",
+              flexDirection: "column",
+              overflowY: "auto",
             })}
           >
-            <button
-              type="button"
-              onClick={() => setActiveTabId(tab.id)}
-              className={css({
-                appearance: "none",
-                WebkitAppearance: "none",
-                background: "none",
-                border: "none",
-                margin: "0",
-                position: "relative",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                height: "100%",
-                padding: "0 10px",
-                color: activeTabId === tab.id ? t.textPrimary : t.textMuted,
-                cursor: "pointer",
-                ":after":
-                  activeTabId === tab.id
-                    ? {
-                        content: '""',
-                        position: "absolute",
-                        left: "10px",
-                        right: "10px",
-                        bottom: 0,
-                        height: "2px",
-                        borderRadius: "999px",
-                        backgroundColor: t.textPrimary,
-                      }
-                    : undefined,
-              })}
-            >
-              {tab.title}
-            </button>
-            <button
-              type="button"
-              aria-label={`Close ${tab.title}`}
-              onClick={() => closeTerminalTab(tab.id)}
-              className={css({
-                appearance: "none",
-                WebkitAppearance: "none",
-                background: "none",
-                border: "none",
-                padding: "0",
-                margin: "0",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                width: "18px",
-                height: "18px",
-                marginRight: "4px",
-                color: t.textMuted,
-                cursor: "pointer",
-              })}
-            >
-              <X size={12} />
-            </button>
-          </div>
-        ))}
+            {processTabs.map((tab, tabIndex) => {
+              const isActive = activeTabId === tab.id;
+              const isHovered = hoveredTabId === tab.id;
+              const isDropTarget = tabDrag !== null && tabDrag.overIdx === tabIndex && tabDrag.fromIdx !== tabIndex;
+              const isBeingDragged = tabDrag !== null && tabDrag.fromIdx === tabIndex && didTabDrag.current;
+              return (
+                <div
+                  key={tab.id}
+                  data-terminal-idx={tabIndex}
+                  onMouseEnter={() => setHoveredTabId(tab.id)}
+                  onMouseLeave={() => setHoveredTabId((cur) => (cur === tab.id ? null : cur))}
+                  onMouseDown={(e) => {
+                    if (e.button !== 0 || editingTabId === tab.id) return;
+                    tabDragStartY.current = e.clientY;
+                    didTabDrag.current = false;
+                    const state = { fromIdx: tabIndex, overIdx: null };
+                    tabDragRef.current = state;
+                    setTabDrag(state);
+                  }}
+                  onClick={() => {
+                    if (!didTabDrag.current) setActiveTabId(tab.id);
+                  }}
+                  className={css({
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: listWidth < 80 ? "center" : "flex-start",
+                    gap: "8px",
+                    padding: listWidth < 80 ? "8px 0" : "8px 12px",
+                    margin: "2px 4px",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    overflow: "hidden",
+                    position: "relative",
+                    "::before": {
+                      content: '""',
+                      position: "absolute",
+                      top: "-2px",
+                      left: 0,
+                      right: 0,
+                      height: "2px",
+                      backgroundColor: isDropTarget ? t.textPrimary : "transparent",
+                      transition: "background-color 100ms ease",
+                    },
+                    backgroundColor: isActive ? t.interactiveHover : "transparent",
+                    opacity: isBeingDragged ? 0.4 : 1,
+                    color: isActive ? t.textPrimary : t.textTertiary,
+                    fontWeight: isActive ? 600 : 400,
+                    fontSize: "12px",
+                    transition: "all 150ms ease",
+                    ":hover": {
+                      backgroundColor: t.interactiveHover,
+                    },
+                  })}
+                >
+                  <SquareTerminal size={14} style={{ flexShrink: 0 }} />
+                  {listWidth >= 80 &&
+                    (editingTabId === tab.id ? (
+                      <input
+                        ref={editInputRef}
+                        defaultValue={customTabNames[tab.id] ?? tab.title}
+                        autoFocus
+                        onClick={(e) => e.stopPropagation()}
+                        onBlur={(e) => {
+                          const val = e.currentTarget.value.trim();
+                          if (val) {
+                            setCustomTabNames((prev) => ({ ...prev, [tab.id]: val }));
+                          }
+                          setEditingTabId(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.currentTarget.blur();
+                          } else if (e.key === "Escape") {
+                            setEditingTabId(null);
+                          }
+                        }}
+                        className={css({
+                          flex: 1,
+                          minWidth: 0,
+                          background: "transparent",
+                          border: "none",
+                          outline: "none",
+                          color: "inherit",
+                          font: "inherit",
+                          fontSize: "12px",
+                          padding: 0,
+                          margin: 0,
+                        })}
+                      />
+                    ) : (
+                      <span
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          setEditingTabId(tab.id);
+                        }}
+                        className={css({ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" })}
+                      >
+                        {customTabNames[tab.id] ?? tab.title}
+                      </span>
+                    ))}
+                  {listWidth >= 80 && (
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Close ${tab.title}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        closeTerminalTab(tab.id);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") closeTerminalTab(tab.id);
+                      }}
+                      className={css({
+                        width: "18px",
+                        height: "18px",
+                        borderRadius: "4px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: t.textMuted,
+                        flexShrink: 0,
+                        opacity: isHovered ? 1 : 0,
+                        pointerEvents: isHovered ? "auto" : "none",
+                        transition: "opacity 150ms ease, background 200ms ease, color 200ms ease",
+                        ":hover": {
+                          backgroundColor: "rgba(255, 255, 255, 0.20)",
+                          color: t.textSecondary,
+                        },
+                      })}
+                    >
+                      <Trash2 size={11} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
 
-        <button
-          type="button"
-          aria-label="New terminal tab"
-          onClick={() => void spawnTerminal()}
-          disabled={!activeSandbox?.sandboxId || creatingProcess}
-          className={css({
-            appearance: "none",
-            WebkitAppearance: "none",
-            background: "none",
-            border: "none",
-            padding: "0",
-            margin: "0",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: "28px",
-            height: "100%",
-            marginLeft: "2px",
-            color: t.textSecondary,
-            fontSize: "18px",
-            lineHeight: 1,
-            cursor: "pointer",
-            opacity: !activeSandbox?.sandboxId || creatingProcess ? 0.4 : 1,
-          })}
-        >
-          +
-        </button>
-      </div>
-      {renderBody()}
+            {/* Bottom drop zone for dragging to end of list */}
+            <div
+              data-terminal-idx={processTabs.length}
+              className={css({
+                flex: 1,
+                minHeight: "8px",
+                position: "relative",
+                "::before": {
+                  content: '""',
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: "2px",
+                  backgroundColor:
+                    tabDrag !== null && tabDrag.overIdx === processTabs.length && tabDrag.fromIdx !== processTabs.length ? t.textPrimary : "transparent",
+                  transition: "background-color 100ms ease",
+                },
+              })}
+            />
+          </div>
+        </div>
+      )}
     </section>
   );
 }
-
-type ProcessLogResponseEntry = Awaited<ReturnType<typeof backendClient.getSandboxProcessLogs>>["entries"][number];
