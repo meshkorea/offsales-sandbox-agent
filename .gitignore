@@ -57,5 +57,5 @@ Cargo.lock
 sdks/cli/platforms/*/bin/
 
 # Foundry desktop app build artifacts
-factory/packages/desktop/frontend-dist/
-factory/packages/desktop/src-tauri/sidecars/
+foundry/packages/desktop/frontend-dist/
+foundry/packages/desktop/src-tauri/sidecars/
