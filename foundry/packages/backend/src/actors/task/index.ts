@@ -12,13 +12,15 @@ import type {
   ProviderId,
 } from "@sandbox-agent/foundry-shared";
 import { expectQueueResponse } from "../../services/queue.js";
-import { selfTask } from "../handles.js";
+import { reportWorkflowIssueToOrganization } from "../runtime-issues.js";
+import { getOrCreateGithubState, selfTask } from "../handles.js";
 import { taskDb } from "./db/db.js";
 import { getCurrentRecord } from "./workflow/common.js";
 import {
   changeWorkbenchModel,
   closeWorkbenchSession,
   createWorkbenchSession,
+  getWorkbenchTaskSummary,
   getWorkbenchTask,
   markWorkbenchUnread,
   publishWorkbenchPr,
@@ -48,6 +50,8 @@ export interface TaskInput {
   explicitTitle: string | null;
   explicitBranchName: string | null;
   initialPrompt: string | null;
+  createdAt?: number | null;
+  updatedAt?: number | null;
 }
 
 interface InitializeCommand {
@@ -107,7 +111,7 @@ interface TaskWorkbenchSessionCommand {
   sessionId: string;
 }
 
-export const task = actor({
+const taskConfig: any = {
   db: taskDb,
   queues: Object.fromEntries(TASK_QUEUE_NAMES.map((name) => [name, queue()])),
   options: {
@@ -127,17 +131,18 @@ export const task = actor({
     explicitTitle: input.explicitTitle,
     explicitBranchName: input.explicitBranchName,
     initialPrompt: input.initialPrompt,
+    createdAt: input.createdAt ?? Date.now(),
+    updatedAt: input.updatedAt ?? Date.now(),
     initialized: false,
     previousStatus: null as string | null,
   }),
   actions: {
     async initialize(c, cmd: InitializeCommand): Promise<TaskRecord> {
       const self = selfTask(c);
-      const result = await self.send(taskWorkflowQueueName("task.command.initialize"), cmd ?? {}, {
-        wait: true,
-        timeout: 60_000,
+      await self.send(taskWorkflowQueueName("task.command.initialize"), cmd ?? {}, {
+        wait: false,
       });
-      return expectQueueResponse<TaskRecord>(result);
+      return await getCurrentRecord({ db: c.db, state: c.state });
     },
 
     async provision(c, cmd: InitializeCommand): Promise<{ ok: true }> {
@@ -223,11 +228,29 @@ export const task = actor({
     },
 
     async get(c): Promise<TaskRecord> {
-      return await getCurrentRecord({ db: c.db, state: c.state });
+      const record = await getCurrentRecord({ db: c.db, state: c.state });
+      if (!record.branchName) {
+        return record;
+      }
+
+      const githubState = await getOrCreateGithubState(c, c.state.workspaceId);
+      const pr = await githubState.getPullRequestForBranch({
+        repoId: c.state.repoId,
+        branchName: record.branchName,
+      });
+
+      return {
+        ...record,
+        prUrl: pr?.url ?? null,
+      };
     },
 
     async getWorkbench(c) {
       return await getWorkbenchTask(c);
+    },
+
+    async getWorkbenchSummary(c) {
+      return await getWorkbenchTaskSummary(c);
     },
 
     async markWorkbenchUnread(c): Promise<void> {
@@ -383,7 +406,18 @@ export const task = actor({
       });
     },
   },
-  run: workflow(runTaskWorkflow),
-});
+  run: workflow(runTaskWorkflow, {
+    onError: async (c: any, event) => {
+      await reportWorkflowIssueToOrganization(c, event, {
+        actorType: "task",
+        organizationId: c.state.workspaceId,
+        scopeId: c.state.taskId,
+        scopeLabel: `Task ${c.state.taskId}`,
+      });
+    },
+  }),
+};
+
+export const task = (actor as any)(taskConfig);
 
 export { TASK_QUEUE_NAMES };

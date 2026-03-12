@@ -6,6 +6,8 @@ export type MockGithubInstallationStatus = "connected" | "install_required" | "r
 export type MockGithubSyncStatus = "pending" | "syncing" | "synced" | "error";
 export type MockOrganizationKind = "personal" | "organization";
 export type MockStarterRepoStatus = "pending" | "starred" | "skipped";
+export type MockActorRuntimeStatus = "healthy" | "error";
+export type MockActorRuntimeType = "organization" | "repository" | "task" | "history" | "sandbox_instance" | "task_status_sync";
 
 export interface MockFoundryUser {
   id: string;
@@ -52,6 +54,27 @@ export interface MockFoundryGithubState {
   lastSyncAt: number | null;
 }
 
+export interface MockFoundryActorRuntimeIssue {
+  actorId: string;
+  actorType: MockActorRuntimeType;
+  scopeId: string | null;
+  scopeLabel: string;
+  message: string;
+  workflowId: string | null;
+  stepName: string | null;
+  attempt: number | null;
+  willRetry: boolean;
+  retryDelayMs: number | null;
+  occurredAt: number;
+}
+
+export interface MockFoundryActorRuntimeState {
+  status: MockActorRuntimeStatus;
+  errorCount: number;
+  lastErrorAt: number | null;
+  issues: MockFoundryActorRuntimeIssue[];
+}
+
 export interface MockFoundryOrganizationSettings {
   displayName: string;
   slug: string;
@@ -67,6 +90,7 @@ export interface MockFoundryOrganization {
   kind: MockOrganizationKind;
   settings: MockFoundryOrganizationSettings;
   github: MockFoundryGithubState;
+  runtime: MockFoundryActorRuntimeState;
   billing: MockFoundryBillingState;
   members: MockFoundryOrganizationMember[];
   seatAssignments: string[];
@@ -140,6 +164,15 @@ function syncStatusFromLegacy(value: unknown): MockGithubSyncStatus {
   }
 }
 
+function buildHealthyRuntimeState(): MockFoundryActorRuntimeState {
+  return {
+    status: "healthy",
+    errorCount: 0,
+    lastErrorAt: null,
+    issues: [],
+  };
+}
+
 function buildDefaultSnapshot(): MockFoundryAppSnapshot {
   return {
     auth: {
@@ -203,6 +236,7 @@ function buildDefaultSnapshot(): MockFoundryAppSnapshot {
           lastSyncLabel: "Synced just now",
           lastSyncAt: Date.now() - 60_000,
         },
+        runtime: buildHealthyRuntimeState(),
         billing: {
           planId: "free",
           status: "active",
@@ -237,6 +271,7 @@ function buildDefaultSnapshot(): MockFoundryAppSnapshot {
           lastSyncLabel: "Waiting for first import",
           lastSyncAt: null,
         },
+        runtime: buildHealthyRuntimeState(),
         billing: {
           planId: "team",
           status: "active",
@@ -279,6 +314,7 @@ function buildDefaultSnapshot(): MockFoundryAppSnapshot {
           lastSyncLabel: "Sync stalled 2 hours ago",
           lastSyncAt: Date.now() - 2 * 60 * 60_000,
         },
+        runtime: buildHealthyRuntimeState(),
         billing: {
           planId: "team",
           status: "trialing",
@@ -317,6 +353,7 @@ function buildDefaultSnapshot(): MockFoundryAppSnapshot {
           lastSyncLabel: "Synced yesterday",
           lastSyncAt: Date.now() - 24 * 60 * 60_000,
         },
+        runtime: buildHealthyRuntimeState(),
         billing: {
           planId: "free",
           status: "active",
@@ -370,6 +407,7 @@ function parseStoredSnapshot(): MockFoundryAppSnapshot | null {
           syncStatus: syncStatusFromLegacy(organization.github?.syncStatus ?? organization.repoImportStatus),
           lastSyncAt: organization.github?.lastSyncAt ?? null,
         },
+        runtime: organization.runtime ?? buildHealthyRuntimeState(),
       })),
     };
   } catch {

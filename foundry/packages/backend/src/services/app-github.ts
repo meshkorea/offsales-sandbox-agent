@@ -15,6 +15,16 @@ export interface GitHubOAuthSession {
   scopes: string[];
 }
 
+function parseScopesHeader(value: string | null): string[] {
+  if (!value) {
+    return [];
+  }
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
 export interface GitHubViewerIdentity {
   id: string;
   login: string;
@@ -39,6 +49,29 @@ export interface GitHubRepositoryRecord {
   private: boolean;
 }
 
+export interface GitHubMemberRecord {
+  id: string;
+  login: string;
+  name: string;
+  email: string | null;
+  role: string | null;
+  state: "active" | "invited";
+}
+
+export interface GitHubPullRequestRecord {
+  repoFullName: string;
+  cloneUrl: string;
+  number: number;
+  title: string;
+  body: string | null;
+  state: string;
+  url: string;
+  headRefName: string;
+  baseRefName: string;
+  authorLogin: string | null;
+  isDraft: boolean;
+}
+
 interface GitHubTokenResponse {
   access_token?: string;
   scope?: string;
@@ -57,7 +90,17 @@ export interface GitHubWebhookEvent {
   repositories_added?: Array<{ id: number; full_name: string; private: boolean }>;
   repositories_removed?: Array<{ id: number; full_name: string }>;
   repository?: { id: number; full_name: string; clone_url?: string; private?: boolean; owner?: { login?: string } };
-  pull_request?: { number: number; title?: string; state?: string; head?: { ref?: string }; base?: { ref?: string } };
+  pull_request?: {
+    number: number;
+    title?: string;
+    body?: string | null;
+    state?: string;
+    html_url?: string;
+    draft?: boolean;
+    user?: { login?: string } | null;
+    head?: { ref?: string };
+    base?: { ref?: string };
+  };
   sender?: { login?: string; id?: number };
   [key: string]: unknown;
 }
@@ -237,6 +280,25 @@ export class GitHubAppClient {
     };
   }
 
+  async getTokenScopes(accessToken: string): Promise<string[]> {
+    const response = await fetch(`${this.apiBaseUrl}/user`, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${accessToken}`,
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    });
+
+    const payload = await parseJsonPayload<{ message?: string } | Record<string, unknown>>(response, "GitHub scope request failed for /user");
+    if (!response.ok) {
+      const message =
+        typeof payload === "object" && payload && "message" in payload && typeof payload.message === "string" ? payload.message : "GitHub request failed";
+      throw new GitHubAppError(message, response.status);
+    }
+
+    return parseScopesHeader(response.headers.get("x-oauth-scopes"));
+  }
+
   async listOrganizations(accessToken: string): Promise<GitHubOrgIdentity[]> {
     const organizations = await this.paginate<{ id: number; login: string; description?: string | null }>("/user/orgs?per_page=100", accessToken);
     return organizations.map((organization) => ({
@@ -305,6 +367,56 @@ export class GitHubAppClient {
     }));
   }
 
+  async listInstallationMembers(installationId: number, organizationLogin: string): Promise<GitHubMemberRecord[]> {
+    const accessToken = await this.createInstallationAccessToken(installationId);
+    const members = await this.paginate<{
+      id: number;
+      login: string;
+      type?: string;
+    }>(`/orgs/${organizationLogin}/members?per_page=100`, accessToken);
+
+    return members.map((member) => ({
+      id: String(member.id),
+      login: member.login,
+      name: member.login,
+      email: null,
+      role: member.type === "User" ? "member" : null,
+      state: "active",
+    }));
+  }
+
+  async listOrganizationMembers(accessToken: string, organizationLogin: string): Promise<GitHubMemberRecord[]> {
+    const members = await this.paginate<{
+      id: number;
+      login: string;
+      type?: string;
+    }>(`/orgs/${organizationLogin}/members?per_page=100`, accessToken);
+
+    return members.map((member) => ({
+      id: String(member.id),
+      login: member.login,
+      name: member.login,
+      email: null,
+      role: member.type === "User" ? "member" : null,
+      state: "active",
+    }));
+  }
+
+  async listInstallationPullRequests(installationId: number): Promise<GitHubPullRequestRecord[]> {
+    const accessToken = await this.createInstallationAccessToken(installationId);
+    const repositories = await this.listInstallationRepositories(installationId);
+    return await this.listPullRequestsForRepositories(repositories, accessToken);
+  }
+
+  async listUserPullRequests(accessToken: string): Promise<GitHubPullRequestRecord[]> {
+    const repositories = await this.listUserRepositories(accessToken);
+    return await this.listPullRequestsForRepositories(repositories, accessToken);
+  }
+
+  async listPullRequestsForUserRepositories(accessToken: string, repositories: GitHubRepositoryRecord[]): Promise<GitHubPullRequestRecord[]> {
+    return await this.listPullRequestsForRepositories(repositories, accessToken);
+  }
+
   async buildInstallationUrl(organizationLogin: string, state: string): Promise<string> {
     if (!this.isAppConfigured()) {
       throw new GitHubAppError("GitHub App is not configured", 500);
@@ -333,7 +445,7 @@ export class GitHubAppClient {
       },
     });
 
-    const payload = (await response.json()) as { token?: string; message?: string };
+    const payload = await parseJsonPayload<{ token?: string; message?: string }>(response, "Unable to mint GitHub installation token");
     if (!response.ok || !payload.token) {
       throw new GitHubAppError(payload.message ?? "Unable to mint GitHub installation token", response.status);
     }
@@ -371,7 +483,7 @@ export class GitHubAppClient {
       },
     });
 
-    const payload = (await response.json()) as T | { message?: string };
+    const payload = await parseJsonPayload<T | { message?: string }>(response, `GitHub app request failed for ${path}`);
     if (!response.ok) {
       throw new GitHubAppError(
         typeof payload === "object" && payload && "message" in payload ? (payload.message ?? "GitHub request failed") : "GitHub request failed",
@@ -403,7 +515,7 @@ export class GitHubAppClient {
       },
     });
 
-    const payload = (await response.json()) as T | { message?: string };
+    const payload = await parseJsonPayload<T | { message?: string }>(response, `GitHub request failed for ${path}`);
     if (!response.ok) {
       throw new GitHubAppError(
         typeof payload === "object" && payload && "message" in payload ? (payload.message ?? "GitHub request failed") : "GitHub request failed",
@@ -426,6 +538,64 @@ export class GitHubAppClient {
     return items;
   }
 
+  private async listPullRequestsForRepositories(repositories: GitHubRepositoryRecord[], accessToken: string): Promise<GitHubPullRequestRecord[]> {
+    const pullRequests: GitHubPullRequestRecord[] = [];
+
+    for (const repository of repositories) {
+      const [owner, name] = repository.fullName.split("/", 2);
+      if (!owner || !name) {
+        continue;
+      }
+
+      let items: Array<{
+        number: number;
+        title: string;
+        body?: string | null;
+        state: string;
+        html_url: string;
+        draft?: boolean;
+        user?: { login?: string } | null;
+        head?: { ref?: string } | null;
+        base?: { ref?: string } | null;
+      }>;
+      try {
+        items = await this.paginate<{
+          number: number;
+          title: string;
+          body?: string | null;
+          state: string;
+          html_url: string;
+          draft?: boolean;
+          user?: { login?: string } | null;
+          head?: { ref?: string } | null;
+          base?: { ref?: string } | null;
+        }>(`/repos/${owner}/${name}/pulls?state=all&per_page=100`, accessToken);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(`[foundry][github] skipping PR sync for ${repository.fullName}: ${message}`);
+        continue;
+      }
+
+      for (const item of items) {
+        pullRequests.push({
+          repoFullName: repository.fullName,
+          cloneUrl: repository.cloneUrl,
+          number: item.number,
+          title: item.title,
+          body: item.body ?? null,
+          state: item.state,
+          url: item.html_url,
+          headRefName: item.head?.ref ?? "",
+          baseRefName: item.base?.ref ?? "",
+          authorLogin: item.user?.login ?? null,
+          isDraft: Boolean(item.draft),
+        });
+      }
+    }
+
+    return pullRequests;
+  }
+
   private async requestPage<T>(url: string, accessToken: string): Promise<GitHubPageResponse<T>> {
     const response = await fetch(url, {
       headers: {
@@ -435,7 +605,7 @@ export class GitHubAppClient {
       },
     });
 
-    const payload = (await response.json()) as T[] | { repositories?: T[]; message?: string };
+    const payload = await parseJsonPayload<T[] | { repositories?: T[]; message?: string }>(response, `GitHub page request failed for ${url}`);
     if (!response.ok) {
       throw new GitHubAppError(
         typeof payload === "object" && payload && "message" in payload ? (payload.message ?? "GitHub request failed") : "GitHub request failed",
@@ -459,7 +629,7 @@ export class GitHubAppClient {
       },
     });
 
-    const payload = (await response.json()) as T[] | { installations?: T[]; message?: string };
+    const payload = await parseJsonPayload<T[] | { installations?: T[]; message?: string }>(response, `GitHub app page request failed for ${url}`);
     if (!response.ok) {
       throw new GitHubAppError(
         typeof payload === "object" && payload && "message" in payload ? (payload.message ?? "GitHub request failed") : "GitHub request failed",
@@ -489,6 +659,17 @@ function parseNextLink(linkHeader: string | null): string | null {
   }
 
   return null;
+}
+
+async function parseJsonPayload<T>(response: Response, context: string): Promise<T> {
+  const text = await response.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    const excerpt = text.slice(0, 200).replace(/\s+/g, " ").trim();
+    const suffix = excerpt ? `: ${excerpt}` : "";
+    throw new GitHubAppError(`${context}${suffix}`, response.status || 502);
+  }
 }
 
 function base64UrlEncode(value: string | Buffer): string {

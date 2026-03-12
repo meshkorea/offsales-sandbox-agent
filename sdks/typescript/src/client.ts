@@ -22,7 +22,7 @@ import {
   type SetSessionModeResponse,
   type SetSessionModeRequest,
 } from "acp-http-client";
-import type { SandboxAgentSpawnHandle, SandboxAgentSpawnOptions } from "./spawn.ts";
+import type { SandboxAgentSpawnHandle, SandboxAgentSpawnOptions } from "./spawn.js";
 import {
   type AcpServerListResponse,
   type AgentInfo,
@@ -73,7 +73,7 @@ import {
   type TerminalExitStatus,
   type TerminalReadyStatus,
   type TerminalResizePayload,
-} from "./types.ts";
+} from "./types.js";
 
 const API_PREFIX = "/v1";
 const FS_PATH = `${API_PREFIX}/fs`;

@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { describe, expect, it } from "vitest";
 import { setupTest } from "rivetkit/test";
-import { workspaceKey } from "../src/actors/keys.js";
+import { organizationKey } from "../src/actors/keys.js";
 import { registry } from "../src/actors/index.js";
 import { createTestDriver } from "./helpers/test-driver.js";
 import { createTestRuntimeContext } from "./helpers/test-context.js";
@@ -26,7 +26,7 @@ describe("workspace star sandbox agent repo", () => {
     createTestRuntimeContext(testDriver);
 
     const { client } = await setupTest(t, registry);
-    const ws = await client.workspace.getOrCreate(workspaceKey("alpha"), {
+    const ws = await client.organization.getOrCreate(organizationKey("alpha"), {
       createWithInput: "alpha",
     });
 

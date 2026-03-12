@@ -1,5 +1,5 @@
 import type { AnyMessage, NewSessionRequest, SessionConfigOption, SessionModeState } from "acp-http-client";
-import type { components, operations } from "./generated/openapi.ts";
+import type { components, operations } from "./generated/openapi.js";
 
 export type ProblemDetails = components["schemas"]["ProblemDetails"];
 

@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { eq } from "drizzle-orm";
 import { getActorRuntimeContext } from "../../context.js";
+import { getOrCreateGithubState } from "../../handles.js";
 import { logActorWarning, resolveErrorMessage } from "../../logging.js";
 import { resolveWorkspaceGithubAuth } from "../../../services/github-auth.js";
 import { task as taskTable, taskRuntime, taskSandboxes } from "../db/schema.js";
@@ -101,8 +102,12 @@ export async function idleSubmitPrActivity(loopCtx: any): Promise<void> {
       historyKind: "task.push.auto",
     });
 
-    const pr = await driver.github.createPr(loopCtx.state.repoLocalPath, loopCtx.state.branchName, loopCtx.state.title, undefined, {
-      githubToken: auth?.githubToken ?? null,
+    const githubState = await getOrCreateGithubState(loopCtx, loopCtx.state.workspaceId);
+    const pr = await githubState.createPullRequest({
+      repoId: loopCtx.state.repoId,
+      repoPath: loopCtx.state.repoLocalPath,
+      branchName: loopCtx.state.branchName,
+      title: loopCtx.state.title,
     });
 
     await db.update(taskTable).set({ prSubmitted: 1, updatedAt: Date.now() }).where(eq(taskTable.id, TASK_ROW_ID)).run();

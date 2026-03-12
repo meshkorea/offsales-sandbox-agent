@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { initActorRuntimeContext } from "./actors/context.js";
 import { registry, resolveManagerPort } from "./actors/index.js";
-import { workspaceKey } from "./actors/keys.js";
+import { organizationKey } from "./actors/keys.js";
 import { loadConfig } from "./config/backend.js";
 import { createBackends, createNotificationService } from "./notifications/index.js";
 import { createDefaultDriver } from "./driver.js";
@@ -10,7 +10,7 @@ import { createProviderRegistry } from "./providers/index.js";
 import { createClient } from "rivetkit/client";
 import type { FoundryBillingPlanId } from "@sandbox-agent/foundry-shared";
 import { createDefaultAppShellServices } from "./services/app-shell-runtime.js";
-import { APP_SHELL_WORKSPACE_ID } from "./actors/workspace/app-shell.js";
+import { APP_SHELL_ORGANIZATION_ID } from "./actors/organization/app-shell.js";
 
 export interface BackendStartOptions {
   host?: string;
@@ -40,9 +40,13 @@ async function withRetries<T>(run: () => Promise<T>, attempts = 20, delayMs = 25
 }
 
 export async function startBackend(options: BackendStartOptions = {}): Promise<void> {
+  process.on("unhandledRejection", (reason) => {
+    console.error("foundry backend unhandled rejection", reason);
+  });
+
   // sandbox-agent agent plugins vary on which env var they read for OpenAI/Codex auth.
-  // Normalize to keep local dev + docker-compose simple.
-  if (!process.env.CODEX_API_KEY && process.env.OPENAI_API_KEY) {
+  // Prefer a real OpenAI API key over stale exported Codex auth tokens when both exist.
+  if (process.env.OPENAI_API_KEY) {
     process.env.CODEX_API_KEY = process.env.OPENAI_API_KEY;
   }
 
@@ -137,8 +141,8 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
   const appWorkspace = async () =>
     await withRetries(
       async () =>
-        await actorClient.workspace.getOrCreate(workspaceKey(APP_SHELL_WORKSPACE_ID), {
-          createWithInput: APP_SHELL_WORKSPACE_ID,
+        await actorClient.organization.getOrCreate(organizationKey(APP_SHELL_ORGANIZATION_ID), {
+          createWithInput: APP_SHELL_ORGANIZATION_ID,
         }),
     );
 
@@ -173,6 +177,31 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     const result = await appWorkspaceAction(async (workspace) => await workspace.completeAppGithubAuth({ code, state }));
     c.header("x-foundry-session", result.sessionId);
     return Response.redirect(result.redirectTo, 302);
+  });
+
+  app.post("/api/rivet/app/auth/github/bootstrap", async (c) => {
+    const body = await c.req.json();
+    const accessToken = typeof body?.accessToken === "string" ? body.accessToken.trim() : "";
+    const organizationLogins = Array.isArray(body?.organizationLogins)
+      ? body.organizationLogins
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0)
+      : null;
+    if (!accessToken) {
+      return c.text("Missing accessToken", 400);
+    }
+    const sessionId = await resolveSessionId(c);
+    const result = await appWorkspaceAction(
+      async (workspace) =>
+        await workspace.bootstrapAppGithubSession({
+          accessToken,
+          sessionId,
+          organizationLogins,
+        }),
+    );
+    c.header("x-foundry-session", result.sessionId);
+    return c.json(result);
   });
 
   app.post("/api/rivet/app/sign-out", async (c) => {
@@ -333,6 +362,16 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
 
   app.post("/api/rivet/app/webhooks/stripe", handleStripeWebhook);
   app.post("/api/rivet/app/stripe/webhook", handleStripeWebhook);
+
+  app.post("/api/rivet/app/webhooks/github", async (c) => {
+    const payload = await c.req.text();
+    await (await appWorkspace()).handleAppGithubWebhook({
+      payload,
+      signatureHeader: c.req.header("x-hub-signature-256") ?? null,
+      eventHeader: c.req.header("x-github-event") ?? null,
+    });
+    return c.json({ ok: true });
+  });
 
   app.all("/api/rivet", forward);
   app.all("/api/rivet/*", forward);

@@ -19,9 +19,7 @@ services:
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       # sandbox-agent codex plugin currently expects CODEX_API_KEY. Map from OPENAI_API_KEY for convenience.
       CODEX_API_KEY: "${CODEX_API_KEY:-${OPENAI_API_KEY:-}}"
-      # Support either GITHUB_TOKEN or GITHUB_PAT in local env files.
-      GITHUB_TOKEN: "${GITHUB_TOKEN:-${GITHUB_PAT:-}}"
-      GH_TOKEN: "${GH_TOKEN:-${GITHUB_TOKEN:-${GITHUB_PAT:-}}}"
+      GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
       APP_URL: "${APP_URL:-}"
       BETTER_AUTH_URL: "${BETTER_AUTH_URL:-}"
       BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:-}"
@@ -74,7 +72,32 @@ services:
       HOME: "/tmp"
       HF_BACKEND_HTTP: "http://backend:7741"
     ports:
-      - "4173:4173"
+      - "${FOUNDRY_FRONTEND_PORT:-4173}:4173"
+    volumes:
+      - "..:/app"
+      # Ensure logs in .foundry/ persist on the host even if we change source mounts later.
+      - "./.foundry:/app/foundry/.foundry"
+      - "../../../task/rivet-checkout:/task/rivet-checkout:ro"
+      # Use Linux-native workspace dependencies inside the container instead of host node_modules.
+      - "foundry_node_modules:/app/node_modules"
+      - "foundry_client_node_modules:/app/foundry/packages/client/node_modules"
+      - "foundry_frontend_errors_node_modules:/app/foundry/packages/frontend-errors/node_modules"
+      - "foundry_frontend_node_modules:/app/foundry/packages/frontend/node_modules"
+      - "foundry_shared_node_modules:/app/foundry/packages/shared/node_modules"
+      - "foundry_pnpm_store:/tmp/.local/share/pnpm/store"
+
+  frontend-mock:
+    build:
+      context: ..
+      dockerfile: foundry/docker/frontend.dev.Dockerfile
+    working_dir: /app
+    depends_on:
+      - backend
+    environment:
+      HOME: "/tmp"
+      FOUNDRY_FRONTEND_CLIENT_MODE: "mock"
+    ports:
+      - "${FOUNDRY_FRONTEND_MOCK_PORT:-4180}:4173"
     volumes:
       - "..:/app"
       # Ensure logs in .foundry/ persist on the host even if we change source mounts later.

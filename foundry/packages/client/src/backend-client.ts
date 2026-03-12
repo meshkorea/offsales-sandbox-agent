@@ -18,6 +18,7 @@ import type {
   TaskWorkbenchSetSessionUnreadInput,
   TaskWorkbenchSendMessageInput,
   TaskWorkbenchSnapshot,
+  WorkbenchTask,
   TaskWorkbenchTabInput,
   TaskWorkbenchUpdateDraftInput,
   HistoryEvent,
@@ -34,7 +35,7 @@ import type {
 } from "@sandbox-agent/foundry-shared";
 import type { ProcessCreateRequest, ProcessInfo, ProcessLogFollowQuery, ProcessLogsResponse, ProcessSignalQuery } from "sandbox-agent";
 import { createMockBackendClient } from "./mock/backend-client.js";
-import { sandboxInstanceKey, workspaceKey } from "./keys.js";
+import { sandboxInstanceKey, organizationKey, taskKey } from "./keys.js";
 
 export type TaskAction = "push" | "sync" | "merge" | "archive" | "kill";
 
@@ -103,6 +104,10 @@ interface WorkspaceHandle {
   revertWorkbenchFile(input: TaskWorkbenchDiffInput): Promise<void>;
 }
 
+interface TaskHandle {
+  getWorkbench(): Promise<WorkbenchTask>;
+}
+
 interface SandboxInstanceHandle {
   createSession(input: {
     prompt: string;
@@ -124,8 +129,11 @@ interface SandboxInstanceHandle {
 }
 
 interface RivetClient {
-  workspace: {
+  organization: {
     getOrCreate(key?: string | string[], opts?: { createWithInput?: unknown }): WorkspaceHandle;
+  };
+  task: {
+    get(key?: string | string[]): TaskHandle;
   };
   sandboxInstance: {
     getOrCreate(key?: string | string[], opts?: { createWithInput?: unknown }): SandboxInstanceHandle;
@@ -238,6 +246,7 @@ export interface BackendClient {
   ): Promise<{ providerId: ProviderId; sandboxId: string; state: string; at: number }>;
   getSandboxAgentConnection(workspaceId: string, providerId: ProviderId, sandboxId: string): Promise<{ endpoint: string; token?: string }>;
   getWorkbench(workspaceId: string): Promise<TaskWorkbenchSnapshot>;
+  getWorkbenchTask(workspaceId: string, taskId: string): Promise<WorkbenchTask>;
   subscribeWorkbench(workspaceId: string, listener: () => void): () => void;
   createWorkbenchTask(workspaceId: string, input: TaskWorkbenchCreateTaskInput): Promise<TaskWorkbenchCreateTaskResponse>;
   markWorkbenchUnread(workspaceId: string, input: TaskWorkbenchSelectInput): Promise<void>;
@@ -482,7 +491,8 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       const shouldUseCandidate = metadata.clientEndpoint ? await probeMetadataEndpoint(candidateEndpoint, metadata.clientNamespace, 1_500) : true;
       const resolvedEndpoint = shouldUseCandidate ? candidateEndpoint : options.endpoint;
 
-      return createClient({
+      const buildClient = createClient as any;
+      return buildClient({
         endpoint: resolvedEndpoint,
         namespace: metadata.clientNamespace,
         token: metadata.clientToken,
@@ -495,13 +505,20 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
   };
 
   const workspace = async (workspaceId: string): Promise<WorkspaceHandle> =>
-    (await getClient()).workspace.getOrCreate(workspaceKey(workspaceId), {
+    (await getClient()).organization.getOrCreate(organizationKey(workspaceId), {
       createWithInput: workspaceId,
     });
 
   const sandboxByKey = async (workspaceId: string, providerId: ProviderId, sandboxId: string): Promise<SandboxInstanceHandle> => {
     const client = await getClient();
     return (client as any).sandboxInstance.get(sandboxInstanceKey(workspaceId, providerId, sandboxId));
+  };
+
+  const taskById = async (workspaceId: string, taskId: string): Promise<TaskHandle> => {
+    const ws = await workspace(workspaceId);
+    const detail = await ws.getTask({ workspaceId, taskId });
+    const client = await getClient();
+    return client.task.get(taskKey(workspaceId, detail.repoId, taskId));
   };
 
   function isActorNotFoundError(error: unknown): boolean {
@@ -576,8 +593,14 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 
     entry.listeners.add(listener);
 
-    if (!entry.disposeConnPromise) {
-      entry.disposeConnPromise = (async () => {
+    const ensureConnection = (currentEntry: NonNullable<typeof entry>) => {
+      if (currentEntry.disposeConnPromise) {
+        return;
+      }
+
+      let reconnecting = false;
+      let disposeConnPromise: Promise<(() => Promise<void>) | null> | null = null;
+      disposeConnPromise = (async () => {
         const handle = await workspace(workspaceId);
         const conn = (handle as any).connect();
         const unsubscribeEvent = conn.on("workbenchUpdated", () => {
@@ -589,14 +612,39 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
             currentListener();
           }
         });
-        const unsubscribeError = conn.onError(() => {});
+        const unsubscribeError = conn.onError(() => {
+          if (reconnecting) {
+            return;
+          }
+          reconnecting = true;
+
+          const current = workbenchSubscriptions.get(workspaceId);
+          if (!current || current.disposeConnPromise !== disposeConnPromise) {
+            return;
+          }
+
+          current.disposeConnPromise = null;
+          void disposeConnPromise?.then(async (disposeConn) => {
+            await disposeConn?.();
+          });
+
+          if (current.listeners.size > 0) {
+            ensureConnection(current);
+            for (const currentListener of [...current.listeners]) {
+              currentListener();
+            }
+          }
+        });
         return async () => {
           unsubscribeEvent();
           unsubscribeError();
           await conn.dispose();
         };
       })().catch(() => null);
-    }
+      currentEntry.disposeConnPromise = disposeConnPromise;
+    };
+
+    ensureConnection(entry);
 
     return () => {
       const current = workbenchSubscriptions.get(workspaceId);
@@ -982,6 +1030,10 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 
     async getWorkbench(workspaceId: string): Promise<TaskWorkbenchSnapshot> {
       return (await workspace(workspaceId)).getWorkbench({ workspaceId });
+    },
+
+    async getWorkbenchTask(workspaceId: string, taskId: string): Promise<WorkbenchTask> {
+      return (await taskById(workspaceId, taskId)).getWorkbench();
     },
 
     subscribeWorkbench(workspaceId: string, listener: () => void): () => void {

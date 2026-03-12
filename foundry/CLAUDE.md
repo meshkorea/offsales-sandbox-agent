@@ -39,7 +39,8 @@ Use `pnpm` workspaces and Turborepo.
 - Start the local production-build preview stack: `just foundry-preview`
 - Start only the backend locally: `just foundry-backend-start`
 - Start only the frontend locally: `pnpm --filter @sandbox-agent/foundry-frontend dev`
-- Start the frontend against the mock workbench client: `FOUNDRY_FRONTEND_CLIENT_MODE=mock pnpm --filter @sandbox-agent/foundry-frontend dev`
+- Start the frontend against the mock workbench client on a separate port: `FOUNDRY_FRONTEND_CLIENT_MODE=mock pnpm --filter @sandbox-agent/foundry-frontend dev -- --port 4180`
+- Keep the real frontend on `4173` and the mock frontend on `4180` intentionally so both can run in parallel against the same real backend during UI testing.
 - Stop the compose dev stack: `just foundry-dev-down`
 - Tail compose logs: `just foundry-dev-logs`
 - Stop the preview stack: `just foundry-preview-down`
@@ -66,6 +67,14 @@ Use `pnpm` workspaces and Turborepo.
 - Use Bun for CLI/backend execution paths and process spawning.
 - Do not add Node compatibility fallbacks for OpenTUI/runtime execution.
 
+## Sandbox Runtime Ownership
+
+- For Daytona sandboxes, `ENTRYPOINT`/`CMD` does not reliably hand PID 1 to `sandbox-agent server`. Start `sandbox-agent server` after sandbox creation via Daytona's native process API, then route normal runtime commands through sandbox-agent.
+- For Daytona sandboxes, use sandbox-agent process APIs (`/v1/processes/run` or the equivalent SDK surface) for clone, git, and runtime task commands after the server is up. Native Daytona process execution is only for the one-time server bootstrap plus lifecycle/control-plane calls.
+- Native Daytona calls are otherwise limited to sandbox lifecycle/control-plane operations such as create/get/start/stop/delete and preview endpoint lookup.
+- If a sandbox fails to start, inspect the provider API first. For Daytona, check the Daytona API/build logs and preview endpoint health before assuming the bug is in task/workbench code. Apply the same rule to any non-Daytona provider by checking the underlying sandbox API directly.
+- Task UI must surface startup state clearly. While a sandbox/session is still booting, show the current task phase and status message; if startup fails, show the error directly in the task UI instead of leaving the user at a generic loading/empty state.
+
 ## Defensive Error Handling
 
 - Write code defensively: validate assumptions at boundaries and state transitions.
@@ -85,6 +94,7 @@ For all Rivet/RivetKit implementation:
    - Example: the `task` actor instance already represents `(workspaceId, repoId, taskId)`, so its SQLite tables should not need those columns for primary keys.
 3. Do not use backend-global SQLite singletons; database access must go through actor `db` providers (`c.db`).
 4. The default dependency source for RivetKit is the published `rivetkit` package so workspace installs and CI remain self-contained.
+   - Current coordinated build for this branch: `https://pkg.pr.new/rivet-dev/rivet/rivetkit@4409`
 5. When working on coordinated RivetKit changes, you may temporarily relink to a local checkout instead of the published package.
    - Dedicated local checkout for this workspace: `/Users/nathan/conductor/workspaces/task/rivet-checkout`
    - Preferred local link target: `../rivet-checkout/rivetkit-typescript/packages/rivetkit`
@@ -142,6 +152,10 @@ For all Rivet/RivetKit implementation:
 - Keep strict single-writer ownership: each table/row has exactly one actor writer.
 - Parent actors (`workspace`, `project`, `task`, `history`, `sandbox-instance`) use command-only loops with no timeout.
 - Periodic syncing lives in dedicated child actors with one timeout cadence each.
+- Prefer event-driven actor coordination over synchronous actor-to-actor waiting. Inside an actor, enqueue downstream work and continue unless the current actor truly needs the finished child result to complete its own local mutation safely.
+- When publishing to actor queues, prefer `wait: false`. Waiting on queue responses inside actors should be the exception, not the default.
+- Coordinator actors must not block on child actor provisioning, sync, webhook fanout, or other long-running remote work. Commit local durable state first, then let child actors advance the flow asynchronously.
+- Workflow handlers should be decomposed into narrow durable steps. Each mutation or externally meaningful transition should be its own step; do not hide multi-phase cross-actor flows inside one monolithic workflow step.
 - Actor handle policy:
 - Prefer explicit `get` or explicit `create` based on workflow intent; do not default to `getOrCreate`.
 - Use `get`/`getForId` when the actor is expected to already exist; if missing, surface an explicit `Actor not found` error with recovery context.
@@ -157,17 +171,38 @@ For all Rivet/RivetKit implementation:
 - Put simple metadata in `c.state` (KV state): small scalars and identifiers like `{ taskId }`, `{ repoId }`, booleans, counters, timestamps, status strings.
 - If it grows beyond trivial (arrays, maps, histories, query/filter needs, relational consistency), use SQLite + Drizzle in `c.db`.
 
+## GitHub Ownership
+
+- Foundry is multiplayer. Every signed-in user has their own GitHub account and their own app session state.
+- Per-user GitHub identity/auth belongs in a dedicated user-scoped actor, not in organization state.
+- Keep a single GitHub source-of-truth actor per organization. It is the only actor allowed to receive GitHub webhooks, call the GitHub API, persist GitHub repositories/members/pull requests, and dispatch GitHub-derived updates to the rest of the actor tree.
+- Repository/task/history actors must consume GitHub-derived state from the organization GitHub actor; they must not maintain their own GitHub caches.
+- Organization grouping is managed by the GitHub organization structure. Do not introduce a second internal grouping model that can diverge from GitHub.
+- For workflow-backed actors, install a workflow `onError` hook and report failures into organization-scoped runtime issue state so the frontend can surface actor/workflow errors without querying the entire actor tree live.
+- The main workspace top bar should make organization runtime errors obvious. If actor/workflow errors exist, show them there and include detailed issue state in settings.
+
 ## Testing Policy
 
 - Never use vitest mocks (`vi.mock`, `vi.spyOn`, `vi.fn`). Instead, define driver interfaces for external I/O and pass test implementations via the actor runtime context.
 - All external service calls (git CLI, GitHub CLI, sandbox-agent HTTP, tmux) must go through the `BackendDriver` interface on the runtime context.
 - Integration tests use `setupTest()` from `rivetkit/test` and are gated behind `HF_ENABLE_ACTOR_INTEGRATION_TESTS=1`.
+- The canonical "main user flow" for large Foundry changes must be exercised in the live product with `agent-browser`, and screenshots from the full flow should be returned to the user.
+  - Sign in.
+  - Create a task.
+  - Prompt the agent to make a change.
+  - Create a pull request for the change.
+  - Prompt another change.
+  - Push that change.
+  - Merge the PR.
+  - Confirm the task is finished and its status is updated correctly.
+  - During this flow, verify that remote GitHub state updates correctly and that Foundry receives and applies the resulting webhook-driven state updates.
 - End-to-end testing must run against the dev backend started via `docker compose -f compose.dev.yaml up` (host -> container). Do not run E2E against an in-process test runtime.
   - E2E tests should talk to the backend over HTTP (default `http://127.0.0.1:7741/api/rivet`) and use real GitHub repos/PRs.
   - For Foundry live verification, use `rivet-dev/sandbox-agent-testing` as the default testing repo unless the task explicitly says otherwise.
   - Secrets (e.g. `OPENAI_API_KEY`, `GITHUB_TOKEN`/`GH_TOKEN`) must be provided via environment variables, never hardcoded in the repo.
   - `~/misc/env.txt` and `~/misc/the-foundry.env` contain the expected local OpenAI + GitHub OAuth/App config for dev.
   - Do not assume `gh auth token` is sufficient for Foundry task provisioning against private repos. Sandbox/bootstrap git clone, push, and PR flows require a repo-capable `GITHUB_TOKEN`/`GH_TOKEN` in the backend container.
+  - If browser GitHub OAuth suddenly fails with symptoms like `GitHub OAuth is not configured` while other GitHub flows seem to work, first check whether the backend is relying on a `GITHUB_TOKEN` override instead of the OAuth/App env from `~/misc/env.txt` and `~/misc/the-foundry.env`. In local dev, clear `GITHUB_TOKEN`/`GH_TOKEN`, source those env files, and recreate the backend container; `docker restart` is not enough.
   - Preferred product behavior for org workspaces is to mint a GitHub App installation token from the workspace installation and inject it into backend/sandbox git operations. Do not rely on an operator's ambient CLI auth as the long-term solution.
 - Treat client E2E tests in `packages/client/test` as the primary end-to-end source of truth for product behavior.
 - Keep backend tests small and targeted. Only retain backend-only tests for invariants or persistence rules that are not well-covered through client E2E.

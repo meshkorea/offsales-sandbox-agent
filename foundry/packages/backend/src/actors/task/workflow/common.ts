@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { eq } from "drizzle-orm";
 import type { TaskRecord, TaskStatus } from "@sandbox-agent/foundry-shared";
-import { getOrCreateWorkspace } from "../../handles.js";
+import { getOrCreateOrganization } from "../../handles.js";
 import { task as taskTable, taskRuntime, taskSandboxes } from "../db/schema.js";
 import { historyKey } from "../../keys.js";
 
@@ -83,8 +83,10 @@ export async function setTaskState(ctx: any, status: TaskStatus, statusMessage?:
       .run();
   }
 
-  const workspace = await getOrCreateWorkspace(ctx, ctx.state.workspaceId);
-  await workspace.notifyWorkbenchUpdated({});
+  if (typeof ctx?.client === "function") {
+    const workspace = await getOrCreateOrganization(ctx, ctx.state.workspaceId);
+    await workspace.notifyWorkbenchUpdated({});
+  }
 }
 
 export async function getCurrentRecord(ctx: any): Promise<TaskRecord> {
@@ -110,7 +112,34 @@ export async function getCurrentRecord(ctx: any): Promise<TaskRecord> {
     .get();
 
   if (!row) {
-    throw new Error(`Task not found: ${ctx.state.taskId}`);
+    return {
+      workspaceId: ctx.state.workspaceId,
+      repoId: ctx.state.repoId,
+      repoRemote: ctx.state.repoRemote,
+      taskId: ctx.state.taskId,
+      branchName: ctx.state.branchName ?? null,
+      title: ctx.state.title ?? null,
+      task: ctx.state.task,
+      providerId: ctx.state.providerId,
+      status: "init_enqueue_provision",
+      statusMessage: "provision queued",
+      activeSandboxId: null,
+      activeSessionId: null,
+      sandboxes: [],
+      agentType: ctx.state.agentType ?? null,
+      prSubmitted: false,
+      diffStat: null,
+      hasUnpushed: null,
+      conflictsWithMain: null,
+      parentBranch: null,
+      prUrl: null,
+      prAuthor: null,
+      ciStatus: null,
+      reviewStatus: null,
+      reviewer: null,
+      createdAt: ctx.state.createdAt ?? Date.now(),
+      updatedAt: ctx.state.updatedAt ?? ctx.state.createdAt ?? Date.now(),
+    } satisfies TaskRecord;
   }
 
   const sandboxes = await db
@@ -165,17 +194,19 @@ export async function getCurrentRecord(ctx: any): Promise<TaskRecord> {
 }
 
 export async function appendHistory(ctx: any, kind: string, payload: Record<string, unknown>): Promise<void> {
-  const client = ctx.client();
-  const history = await client.history.getOrCreate(historyKey(ctx.state.workspaceId, ctx.state.repoId), {
-    createWithInput: { workspaceId: ctx.state.workspaceId, repoId: ctx.state.repoId },
-  });
-  await history.append({
-    kind,
-    taskId: ctx.state.taskId,
-    branchName: ctx.state.branchName,
-    payload,
-  });
+  if (typeof ctx?.client === "function") {
+    const client = ctx.client();
+    const history = await client.history.getOrCreate(historyKey(ctx.state.workspaceId, ctx.state.repoId), {
+      createWithInput: { workspaceId: ctx.state.workspaceId, repoId: ctx.state.repoId },
+    });
+    await history.append({
+      kind,
+      taskId: ctx.state.taskId,
+      branchName: ctx.state.branchName,
+      payload,
+    });
 
-  const workspace = await getOrCreateWorkspace(ctx, ctx.state.workspaceId);
-  await workspace.notifyWorkbenchUpdated({});
+    const workspace = await getOrCreateOrganization(ctx, ctx.state.workspaceId);
+    await workspace.notifyWorkbenchUpdated({});
+  }
 }

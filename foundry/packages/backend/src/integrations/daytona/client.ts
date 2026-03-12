@@ -19,6 +19,11 @@ export interface DaytonaPreviewEndpoint {
   token?: string;
 }
 
+export interface DaytonaExecuteCommandResult {
+  exitCode?: number;
+  result?: string;
+}
+
 export interface DaytonaClientOptions {
   apiUrl?: string;
   apiKey?: string;
@@ -88,15 +93,6 @@ export class DaytonaClient {
     await this.daytona.delete(sandbox);
   }
 
-  async executeCommand(sandboxId: string, command: string): Promise<{ exitCode: number; result: string }> {
-    const sandbox = await this.daytona.get(sandboxId);
-    const response = await sandbox.process.executeCommand(command);
-    return {
-      exitCode: response.exitCode,
-      result: response.result,
-    };
-  }
-
   async getPreviewEndpoint(sandboxId: string, port: number): Promise<DaytonaPreviewEndpoint> {
     const sandbox = await this.daytona.get(sandboxId);
     // Use signed preview URLs for server-to-sandbox communication.
@@ -108,6 +104,15 @@ export class DaytonaClient {
     return {
       url: preview.url,
       token: preview.token,
+    };
+  }
+
+  async executeCommand(sandboxId: string, command: string, env?: Record<string, string>, timeoutSeconds?: number): Promise<DaytonaExecuteCommandResult> {
+    const sandbox = await this.daytona.get(sandboxId);
+    const response = await sandbox.process.executeCommand(command, undefined, env, timeoutSeconds);
+    return {
+      exitCode: response.exitCode,
+      result: response.result,
     };
   }
 }

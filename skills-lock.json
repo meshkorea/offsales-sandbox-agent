@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "rivetkit": {
+      "source": "rivet-dev/skills",
+      "sourceType": "github",
+      "computedHash": "379e5ac7cac1c94e9da4c3ddba059bc7e9b50725ab420bce9158887a447680e5"
+    }
+  }
+}

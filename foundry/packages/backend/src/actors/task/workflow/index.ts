@@ -8,6 +8,7 @@ import {
   initCompleteActivity,
   initCreateSandboxActivity,
   initCreateSessionActivity,
+  initEnqueueProvisionActivity,
   initEnsureAgentActivity,
   initEnsureNameActivity,
   initExposeSandboxActivity,
@@ -56,7 +57,7 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
     const body = msg.body;
 
     await loopCtx.step("init-bootstrap-db", async () => initBootstrapDbActivity(loopCtx, body));
-    await loopCtx.removed("init-enqueue-provision", "step");
+    await loopCtx.step("init-enqueue-provision", async () => initEnqueueProvisionActivity(loopCtx, body));
     await loopCtx.removed("init-dispatch-provision-v2", "step");
     const currentRecord = await loopCtx.step("init-read-current-record", async () => getCurrentRecord(loopCtx));
 

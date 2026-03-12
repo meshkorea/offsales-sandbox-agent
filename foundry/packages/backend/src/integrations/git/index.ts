@@ -15,7 +15,7 @@ interface GitAuthOptions {
 }
 
 function resolveGithubToken(options?: GitAuthOptions): string | null {
-  const token = options?.githubToken ?? process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN ?? process.env.HF_GITHUB_TOKEN ?? process.env.HF_GH_TOKEN ?? null;
+  const token = options?.githubToken ?? process.env.GITHUB_TOKEN ?? null;
   if (!token) return null;
   const trimmed = token.trim();
   return trimmed.length > 0 ? trimmed : null;
@@ -35,8 +35,7 @@ function ensureAskpassScript(): string {
   const content = [
     "#!/bin/sh",
     'prompt="$1"',
-    // Prefer GH_TOKEN/GITHUB_TOKEN but support HF_* aliases too.
-    'token="${GH_TOKEN:-${GITHUB_TOKEN:-${HF_GITHUB_TOKEN:-${HF_GH_TOKEN:-}}}}"',
+    'token="${GITHUB_TOKEN:-}"',
     'case "$prompt" in',
     '  *Username*) echo "x-access-token" ;;',
     '  *Password*) echo "$token" ;;',
@@ -58,9 +57,7 @@ function gitEnv(options?: GitAuthOptions): Record<string, string> {
   const token = resolveGithubToken(options);
   if (token) {
     env.GIT_ASKPASS = ensureAskpassScript();
-    // Some tooling expects these vars; keep them aligned.
     env.GITHUB_TOKEN = token;
-    env.GH_TOKEN = token;
   }
 
   return env;

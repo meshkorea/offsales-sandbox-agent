@@ -9,13 +9,14 @@
     "build": "tsup src/index.ts --format esm --dts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e:full": "HF_ENABLE_DAEMON_FULL_E2E=1 vitest run test/e2e/full-integration-e2e.test.ts",
-    "test:e2e:workbench": "HF_ENABLE_DAEMON_WORKBENCH_E2E=1 vitest run test/e2e/workbench-e2e.test.ts",
-    "test:e2e:workbench-load": "HF_ENABLE_DAEMON_WORKBENCH_LOAD_E2E=1 vitest run test/e2e/workbench-load-e2e.test.ts"
+    "test:e2e:github-pr": "vitest run --config vitest.e2e.config.ts test/e2e/github-pr-e2e.test.ts",
+    "test:e2e:full": "vitest run --config vitest.e2e.config.ts test/e2e/full-integration-e2e.test.ts",
+    "test:e2e:workbench": "vitest run --config vitest.e2e.config.ts test/e2e/workbench-e2e.test.ts",
+    "test:e2e:workbench-load": "vitest run --config vitest.e2e.config.ts test/e2e/workbench-load-e2e.test.ts"
   },
   "dependencies": {
     "@sandbox-agent/foundry-shared": "workspace:*",
-    "rivetkit": "2.1.6",
+    "rivetkit": "https://pkg.pr.new/rivet-dev/rivet/rivetkit@4409",
     "sandbox-agent": "workspace:*"
   },
   "devDependencies": {

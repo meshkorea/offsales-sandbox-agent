@@ -54,6 +54,7 @@ export function createTestStackDriver(overrides?: Partial<StackDriver>): StackDr
 export function createTestGithubDriver(overrides?: Partial<GithubDriver>): GithubDriver {
   return {
     listPullRequests: async () => [],
+    getPrInfo: async () => null,
     createPr: async (_repoPath, _headBranch, _title) => ({
       number: 1,
       url: `https://github.com/test/repo/pull/1`,
@@ -101,6 +102,15 @@ export function createTestSandboxAgentClient(overrides?: Partial<SandboxAgentCli
       nextCursor: undefined,
     }),
     createProcess: async () => defaultProcess,
+    runProcess: async () => ({
+      durationMs: 1,
+      exitCode: 0,
+      stderr: "",
+      stderrTruncated: false,
+      stdout: "",
+      stdoutTruncated: false,
+      timedOut: false,
+    }),
     listProcesses: async () => ({ processes: [defaultProcess] }),
     getProcessLogs: async () => defaultLogs,
     stopProcess: async () => ({ ...defaultProcess, status: "exited", exitCode: 0, exitedAtMs: Date.now() }),
@@ -127,10 +137,13 @@ export function createTestDaytonaClient(overrides?: Partial<DaytonaClientLike>):
     startSandbox: async () => {},
     stopSandbox: async () => {},
     deleteSandbox: async () => {},
-    executeCommand: async () => ({ exitCode: 0, result: "" }),
     getPreviewEndpoint: async (sandboxId, port) => ({
       url: `https://preview.example/sandbox/${sandboxId}/port/${port}`,
       token: "preview-token",
+    }),
+    executeCommand: async () => ({
+      exitCode: 0,
+      result: "",
     }),
     ...overrides,
   };

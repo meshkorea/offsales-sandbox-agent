@@ -4,6 +4,8 @@ export type FoundryGithubInstallationStatus = "connected" | "install_required" |
 export type FoundryGithubSyncStatus = "pending" | "syncing" | "synced" | "error";
 export type FoundryOrganizationKind = "personal" | "organization";
 export type FoundryStarterRepoStatus = "pending" | "starred" | "skipped";
+export type FoundryActorRuntimeStatus = "healthy" | "error";
+export type FoundryActorRuntimeType = "organization" | "repository" | "task" | "history" | "sandbox_instance" | "task_status_sync";
 
 export interface FoundryUser {
   id: string;
@@ -50,6 +52,27 @@ export interface FoundryGithubState {
   lastSyncAt: number | null;
 }
 
+export interface FoundryActorRuntimeIssue {
+  actorId: string;
+  actorType: FoundryActorRuntimeType;
+  scopeId: string | null;
+  scopeLabel: string;
+  message: string;
+  workflowId: string | null;
+  stepName: string | null;
+  attempt: number | null;
+  willRetry: boolean;
+  retryDelayMs: number | null;
+  occurredAt: number;
+}
+
+export interface FoundryActorRuntimeState {
+  status: FoundryActorRuntimeStatus;
+  errorCount: number;
+  lastErrorAt: number | null;
+  issues: FoundryActorRuntimeIssue[];
+}
+
 export interface FoundryOrganizationSettings {
   displayName: string;
   slug: string;
@@ -65,6 +88,7 @@ export interface FoundryOrganization {
   kind: FoundryOrganizationKind;
   settings: FoundryOrganizationSettings;
   github: FoundryGithubState;
+  runtime: FoundryActorRuntimeState;
   billing: FoundryBillingState;
   members: FoundryOrganizationMember[];
   seatAssignments: string[];

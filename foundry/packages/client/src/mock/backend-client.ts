@@ -82,6 +82,35 @@ function toTaskStatus(status: TaskRecord["status"], archived: boolean): TaskReco
   return status;
 }
 
+function mapWorkbenchTaskStatus(task: TaskWorkbenchSnapshot["tasks"][number]): TaskRecord["status"] {
+  if (task.status === "archived") {
+    return "archived";
+  }
+  if (task.lifecycle?.state === "error") {
+    return "error";
+  }
+  if (task.status === "idle") {
+    return "idle";
+  }
+  if (task.status === "new") {
+    return task.lifecycle?.code ?? "init_create_sandbox";
+  }
+  return "running";
+}
+
+function mapWorkbenchTaskStatusMessage(task: TaskWorkbenchSnapshot["tasks"][number], status: TaskRecord["status"]): string {
+  if (status === "archived") {
+    return "archived";
+  }
+  if (status === "error") {
+    return task.lifecycle?.message ?? "mock task initialization failed";
+  }
+  if (task.status === "new") {
+    return task.lifecycle?.message ?? "mock sandbox provisioning";
+  }
+  return task.tabs.some((tab) => tab.status === "running") ? "agent responding" : "mock sandbox ready";
+}
+
 export function createMockBackendClient(defaultWorkspaceId = "default"): BackendClient {
   const workbench = getSharedMockWorkbenchClient();
   const listenersBySandboxId = new Map<string, Set<() => void>>();
@@ -121,6 +150,8 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
     const task = requireTask(taskId);
     const cwd = mockCwd(task.repoName, task.id);
     const archived = task.status === "archived";
+    const taskStatus = mapWorkbenchTaskStatus(task);
+    const sandboxAvailable = task.status !== "new" && taskStatus !== "error" && taskStatus !== "archived";
     return {
       workspaceId: defaultWorkspaceId,
       repoId: task.repoId,
@@ -130,21 +161,23 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
       title: task.title,
       task: task.title,
       providerId: "local",
-      status: toTaskStatus(archived ? "archived" : "running", archived),
-      statusMessage: archived ? "archived" : "mock sandbox ready",
-      activeSandboxId: task.id,
-      activeSessionId: task.tabs[0]?.sessionId ?? null,
-      sandboxes: [
-        {
-          sandboxId: task.id,
-          providerId: "local",
-          sandboxActorId: "mock-sandbox",
-          switchTarget: `mock://${task.id}`,
-          cwd,
-          createdAt: task.updatedAtMs,
-          updatedAt: task.updatedAtMs,
-        },
-      ],
+      status: toTaskStatus(taskStatus, archived),
+      statusMessage: mapWorkbenchTaskStatusMessage(task, taskStatus),
+      activeSandboxId: sandboxAvailable ? task.id : null,
+      activeSessionId: sandboxAvailable ? (task.tabs[0]?.sessionId ?? null) : null,
+      sandboxes: sandboxAvailable
+        ? [
+            {
+              sandboxId: task.id,
+              providerId: "local",
+              sandboxActorId: "mock-sandbox",
+              switchTarget: `mock://${task.id}`,
+              cwd,
+              createdAt: task.updatedAtMs,
+              updatedAt: task.updatedAtMs,
+            },
+          ]
+        : [],
       agentType: task.tabs[0]?.agent === "Codex" ? "codex" : "claude",
       prSubmitted: Boolean(task.pullRequest),
       diffStat: task.fileChanges.length > 0 ? `+${task.fileChanges.length}/-${task.fileChanges.length}` : "+0/-0",
@@ -272,7 +305,7 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
           taskId: task.id,
           branchName: task.branch,
           title: task.title,
-          status: task.status === "archived" ? "archived" : "running",
+          status: mapWorkbenchTaskStatus(task),
           updatedAt: task.updatedAtMs,
         }));
     },
@@ -460,6 +493,10 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
 
     async getWorkbench(): Promise<TaskWorkbenchSnapshot> {
       return workbench.getSnapshot();
+    },
+
+    async getWorkbenchTask(_workspaceId: string, taskId: string) {
+      return requireTask(taskId);
     },
 
     subscribeWorkbench(_workspaceId: string, listener: () => void): () => void {

@@ -9,11 +9,19 @@ import type {
   ProcessInfo,
   ProcessLogFollowQuery,
   ProcessLogsResponse,
+  ProcessRunRequest,
+  ProcessRunResponse,
   ProcessSignalQuery,
   SessionEvent,
   SessionRecord,
 } from "sandbox-agent";
-import type { DaytonaClientOptions, DaytonaCreateSandboxOptions, DaytonaPreviewEndpoint, DaytonaSandbox } from "./integrations/daytona/client.js";
+import type {
+  DaytonaClientOptions,
+  DaytonaCreateSandboxOptions,
+  DaytonaExecuteCommandResult,
+  DaytonaPreviewEndpoint,
+  DaytonaSandbox,
+} from "./integrations/daytona/client.js";
 import {
   validateRemote,
   ensureCloned,
@@ -35,7 +43,7 @@ import {
   gitSpiceSyncRepo,
   gitSpiceTrackBranch,
 } from "./integrations/git-spice/index.js";
-import { listPullRequests, createPr, starRepository } from "./integrations/github/index.js";
+import { listPullRequests, getPrInfo, createPr, starRepository } from "./integrations/github/index.js";
 import { SandboxAgentClient } from "./integrations/sandbox-agent/client.js";
 import { DaytonaClient } from "./integrations/daytona/client.js";
 
@@ -69,6 +77,7 @@ export interface StackDriver {
 
 export interface GithubDriver {
   listPullRequests(repoPath: string, options?: { githubToken?: string | null }): Promise<PullRequestSnapshot[]>;
+  getPrInfo(repoPath: string, branchName: string, options?: { githubToken?: string | null }): Promise<PullRequestSnapshot | null>;
   createPr(
     repoPath: string,
     headBranch: string,
@@ -85,6 +94,7 @@ export interface SandboxAgentClientLike {
   listSessions(request?: ListPageRequest): Promise<ListPage<SessionRecord>>;
   listEvents(request: ListEventsRequest): Promise<ListPage<SessionEvent>>;
   createProcess(request: ProcessCreateRequest): Promise<ProcessInfo>;
+  runProcess(request: ProcessRunRequest): Promise<ProcessRunResponse>;
   listProcesses(): Promise<{ processes: ProcessInfo[] }>;
   getProcessLogs(processId: string, query?: ProcessLogFollowQuery): Promise<ProcessLogsResponse>;
   stopProcess(processId: string, query?: ProcessSignalQuery): Promise<ProcessInfo>;
@@ -105,8 +115,8 @@ export interface DaytonaClientLike {
   startSandbox(sandboxId: string, timeoutSeconds?: number): Promise<void>;
   stopSandbox(sandboxId: string, timeoutSeconds?: number): Promise<void>;
   deleteSandbox(sandboxId: string): Promise<void>;
-  executeCommand(sandboxId: string, command: string): Promise<{ exitCode: number; result: string }>;
   getPreviewEndpoint(sandboxId: string, port: number): Promise<DaytonaPreviewEndpoint>;
+  executeCommand(sandboxId: string, command: string, env?: Record<string, string>, timeoutSeconds?: number): Promise<DaytonaExecuteCommandResult>;
 }
 
 export interface DaytonaDriver {
@@ -154,6 +164,7 @@ export function createDefaultDriver(): BackendDriver {
     },
     github: {
       listPullRequests,
+      getPrInfo,
       createPr,
       starRepository,
     },

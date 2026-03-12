@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
 import { setupTest } from "rivetkit/test";
-import { workspaceKey } from "../src/actors/keys.js";
+import { organizationKey } from "../src/actors/keys.js";
 import { registry } from "../src/actors/index.js";
 import { createTestDriver } from "./helpers/test-driver.js";
 import { createTestRuntimeContext } from "./helpers/test-context.js";
@@ -41,10 +41,10 @@ describe("workspace isolation", () => {
     createTestRuntimeContext(testDriver);
 
     const { client } = await setupTest(t, registry);
-    const wsA = await client.workspace.getOrCreate(workspaceKey("alpha"), {
+    const wsA = await client.organization.getOrCreate(organizationKey("alpha"), {
       createWithInput: "alpha",
     });
-    const wsB = await client.workspace.getOrCreate(workspaceKey("beta"), {
+    const wsB = await client.organization.getOrCreate(organizationKey("beta"), {
       createWithInput: "beta",
     });
 

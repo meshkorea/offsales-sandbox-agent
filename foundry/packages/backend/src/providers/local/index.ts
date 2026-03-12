@@ -108,7 +108,6 @@ export class LocalProvider implements SandboxProvider {
             ...(process.env.CLAUDE_API_KEY ? { CLAUDE_API_KEY: process.env.CLAUDE_API_KEY } : {}),
             ...(process.env.OPENAI_API_KEY ? { OPENAI_API_KEY: process.env.OPENAI_API_KEY } : {}),
             ...(process.env.CODEX_API_KEY ? { CODEX_API_KEY: process.env.CODEX_API_KEY } : {}),
-            ...(process.env.GH_TOKEN ? { GH_TOKEN: process.env.GH_TOKEN } : {}),
             ...(process.env.GITHUB_TOKEN ? { GITHUB_TOKEN: process.env.GITHUB_TOKEN } : {}),
           },
         },
@@ -217,7 +216,10 @@ export class LocalProvider implements SandboxProvider {
     try {
       const { stdout, stderr } = await execFileAsync("bash", ["-lc", req.command], {
         cwd,
-        env: process.env as Record<string, string>,
+        env: {
+          ...(process.env as Record<string, string>),
+          ...(req.env ?? {}),
+        },
         maxBuffer: 1024 * 1024 * 16,
       });
       return {

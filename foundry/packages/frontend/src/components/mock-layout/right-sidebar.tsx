@@ -122,6 +122,24 @@ export const RightSidebar = memo(function RightSidebar({
     observer.observe(node);
   }, []);
   const pullRequestUrl = task.pullRequest != null ? `https://github.com/${task.repoName}/pull/${task.pullRequest.number}` : null;
+  const pullRequestStatusLabel =
+    task.pullRequest?.status === "merged"
+      ? "Merged"
+      : task.pullRequest?.status === "closed"
+        ? "Closed"
+        : task.pullRequest?.status === "draft"
+          ? "Draft"
+          : task.pullRequest?.status === "ready"
+            ? "Open"
+            : null;
+  const pullRequestActionLabel =
+    task.pullRequest?.status === "merged"
+      ? "Open merged PR"
+      : task.pullRequest?.status === "closed"
+        ? "Open closed PR"
+        : pullRequestUrl
+          ? "Open PR"
+          : "Publish PR";
 
   const copyFilePath = useCallback(async (path: string) => {
     try {
@@ -155,6 +173,38 @@ export const RightSidebar = memo(function RightSidebar({
         <div ref={headerRef} className={css({ display: "flex", alignItems: "center", flex: 1, minWidth: 0, justifyContent: "flex-end", gap: "2px" })}>
           {!isTerminal ? (
             <div className={css({ display: "flex", alignItems: "center", gap: "2px", flexShrink: 1, minWidth: 0 })}>
+              {pullRequestStatusLabel ? (
+                <span
+                  className={css({
+                    display: "inline-flex",
+                    alignItems: "center",
+                    padding: compact ? "3px 6px" : "4px 8px",
+                    borderRadius: "999px",
+                    fontSize: "10px",
+                    fontWeight: 600,
+                    color:
+                      task.pullRequest?.status === "merged"
+                        ? "#86efac"
+                        : task.pullRequest?.status === "closed"
+                          ? "#fca5a5"
+                          : task.pullRequest?.status === "draft"
+                            ? t.accent
+                            : t.textSecondary,
+                    backgroundColor:
+                      task.pullRequest?.status === "merged"
+                        ? "rgba(22, 101, 52, 0.35)"
+                        : task.pullRequest?.status === "closed"
+                          ? "rgba(127, 29, 29, 0.35)"
+                          : task.pullRequest?.status === "draft"
+                            ? "rgba(154, 52, 18, 0.28)"
+                            : t.interactiveHover,
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
+                  })}
+                >
+                  {pullRequestStatusLabel}
+                </span>
+              ) : null}
               <button
                 onClick={() => {
                   if (pullRequestUrl) {
@@ -188,7 +238,7 @@ export const RightSidebar = memo(function RightSidebar({
                 })}
               >
                 <GitPullRequest size={12} style={{ flexShrink: 0 }} />
-                {!compact && <span>{pullRequestUrl ? "Open PR" : "Publish PR"}</span>}
+                {!compact && <span>{pullRequestActionLabel}</span>}
               </button>
               <button
                 className={css({

@@ -257,3 +257,14 @@ Update this file continuously during the migration.
 - Owner: Unassigned.
 - Status: resolved
 - Links: `sdks/acp-http-client/src/index.ts`, `sdks/acp-http-client/tests/smoke.test.ts`, `sdks/typescript/tests/integration.test.ts`
+
+- Date: 2026-03-12
+- Area: Foundry actor coordination and workflow granularity
+- Issue: Foundry organization workflows were waiting synchronously on downstream repository/task actor work, which made durable task creation depend on sandbox/session provisioning and surfaced child-actor failures as parent workflow retries/timeouts.
+- Impact: Parent coordinator actors became fragile, slow, and hard to debug because one monolithic workflow step hid multiple cross-actor phases and remote side effects.
+- Decision: Prefer an event-driven actor pattern. When an actor publishes to another actor's queue, default to `wait: false` and let the downstream actor own its lifecycle unless the caller truly needs the completed response to commit its own local mutation safely.
+- Decision: Coordinator actors should return after their own durable writes and enqueue child work rather than waiting synchronously for provisioning, sync, or other long-running remote side effects.
+- Decision: Workflow handlers should be decomposed into small, explicit steps. Each mutation or externally meaningful transition should be its own step instead of bundling a multi-actor flow into one monolithic step.
+- Owner: Unassigned.
+- Status: accepted
+- Links: `foundry/CLAUDE.md`, `foundry/packages/backend/CLAUDE.md`

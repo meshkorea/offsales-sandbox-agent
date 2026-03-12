@@ -7,6 +7,8 @@ import type {
   ProcessInfo,
   ProcessLogFollowQuery,
   ProcessLogsResponse,
+  ProcessRunRequest,
+  ProcessRunResponse,
   ProcessSignalQuery,
   SessionEvent,
   SessionPersistDriver,
@@ -214,6 +216,11 @@ export class SandboxAgentClient {
   async createProcess(request: ProcessCreateRequest): Promise<ProcessInfo> {
     const sdk = await this.sdk();
     return await sdk.createProcess(request);
+  }
+
+  async runProcess(request: ProcessRunRequest): Promise<ProcessRunResponse> {
+    const sdk = await this.sdk();
+    return await sdk.runProcess(request);
   }
 
   async listProcesses(): Promise<{ processes: ProcessInfo[] }> {

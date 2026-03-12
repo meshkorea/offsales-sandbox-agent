@@ -28,6 +28,7 @@ import {
   type ModelId,
 } from "./mock-layout/view-model";
 import { activeMockOrganization, useMockAppSnapshot } from "../lib/mock-app";
+import { backendClient } from "../lib/backend";
 import { getTaskWorkbenchClient } from "../lib/workbench";
 
 function firstAgentTabId(task: Task): string | null {
@@ -61,6 +62,39 @@ function sanitizeActiveTabId(task: Task, tabId: string | null | undefined, openD
   }
 
   return openDiffs.length > 0 ? diffTabId(openDiffs[openDiffs.length - 1]!) : lastAgentTabId;
+}
+
+function resolvedTaskLifecycle(task: Task) {
+  return (
+    task.lifecycle ?? {
+      code: task.status === "running" ? "running" : task.status === "idle" ? "idle" : task.status === "archived" ? "archived" : "init_create_sandbox",
+      state: task.status === "running" || task.status === "idle" ? "ready" : task.status === "archived" ? "archived" : "starting",
+      label:
+        task.status === "running" ? "Agent running" : task.status === "idle" ? "Task idle" : task.status === "archived" ? "Task archived" : "Creating sandbox",
+      message: null,
+    }
+  );
+}
+
+function taskLifecycleAccent(task: Task): string {
+  switch (resolvedTaskLifecycle(task).state) {
+    case "error":
+      return "#ef4444";
+    case "starting":
+      return "#f59e0b";
+    case "ready":
+      return "#10b981";
+    case "archived":
+    case "killed":
+      return "#94a3b8";
+    default:
+      return "#94a3b8";
+  }
+}
+
+function shouldShowTaskLifecycle(task: Task): boolean {
+  const lifecycle = resolvedTaskLifecycle(task);
+  return lifecycle.state === "starting" || lifecycle.state === "error";
 }
 
 const TranscriptPanel = memo(function TranscriptPanel({
@@ -445,6 +479,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
     activeAgentTab?.status === "running" && activeAgentTab.thinkingSinceMs !== null
       ? formatThinkingDuration(timerNowMs - activeAgentTab.thinkingSinceMs)
       : null;
+  const lifecycle = resolvedTaskLifecycle(task);
 
   return (
     <SPanel>
@@ -470,6 +505,37 @@ const TranscriptPanel = memo(function TranscriptPanel({
         onToggleRightSidebar={onToggleRightSidebar}
         onNavigateToUsage={onNavigateToUsage}
       />
+      {shouldShowTaskLifecycle(task) ? (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "4px",
+            padding: "10px 16px",
+            borderLeft: `3px solid ${taskLifecycleAccent(task)}`,
+            background: lifecycle.state === "error" ? "rgba(127, 29, 29, 0.35)" : "rgba(120, 53, 15, 0.28)",
+            borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              fontSize: "12px",
+              fontWeight: 700,
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
+            }}
+          >
+            <span style={{ color: taskLifecycleAccent(task) }}>{lifecycle.label}</span>
+            <span style={{ opacity: 0.6 }}>{lifecycle.code}</span>
+          </div>
+          <div style={{ fontSize: "13px", color: "#e4e4e7" }}>
+            {lifecycle.message ?? (lifecycle.state === "starting" ? "Waiting for the sandbox and first session to come online." : "Task startup failed.")}
+          </div>
+        </div>
+      ) : null}
       <div
         style={{
           flex: 1,
@@ -530,7 +596,12 @@ const TranscriptPanel = memo(function TranscriptPanel({
                 }}
               >
                 <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 600 }}>Create the first session</h2>
-                <p style={{ margin: 0, opacity: 0.75 }}>Sessions are where you chat with the agent. Start one now to send the first prompt on this task.</p>
+                <p style={{ margin: 0, opacity: 0.75 }}>
+                  {lifecycle.state === "starting"
+                    ? `Task startup is still in progress: ${lifecycle.label}.`
+                    : "Sessions are where you chat with the agent. Start one now to send the first prompt on this task."}
+                </p>
+                {lifecycle.message ? <p style={{ margin: 0, fontSize: "13px", color: "#d4d4d8" }}>{lifecycle.message}</p> : null}
                 <button
                   type="button"
                   onClick={addTab}
@@ -814,6 +885,72 @@ interface MockLayoutProps {
   selectedSessionId?: string | null;
 }
 
+function githubStatusPill(organization: ReturnType<typeof activeMockOrganization>) {
+  if (!organization) {
+    return null;
+  }
+
+  const label =
+    organization.github.installationStatus !== "connected"
+      ? "GitHub disconnected"
+      : organization.github.syncStatus === "syncing"
+        ? "GitHub syncing"
+        : organization.github.syncStatus === "error"
+          ? "GitHub error"
+          : organization.github.syncStatus === "pending"
+            ? "GitHub pending"
+            : "GitHub synced";
+
+  const colors =
+    organization.github.installationStatus !== "connected"
+      ? { background: "rgba(255, 193, 7, 0.18)", color: "#ffe6a6" }
+      : organization.github.syncStatus === "syncing"
+        ? { background: "rgba(24, 140, 255, 0.18)", color: "#b9d8ff" }
+        : organization.github.syncStatus === "error"
+          ? { background: "rgba(255, 79, 0, 0.18)", color: "#ffd6c7" }
+          : { background: "rgba(46, 160, 67, 0.16)", color: "#b7f0c3" };
+
+  return (
+    <span
+      style={{
+        border: "1px solid rgba(255,255,255,0.08)",
+        borderRadius: "999px",
+        padding: "6px 10px",
+        background: colors.background,
+        color: colors.color,
+        fontSize: "12px",
+        fontWeight: 700,
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+function actorRuntimePill(organization: ReturnType<typeof activeMockOrganization>) {
+  if (!organization || organization.runtime.status !== "error") {
+    return null;
+  }
+
+  const label = organization.runtime.errorCount === 1 ? "1 actor error" : `${organization.runtime.errorCount} actor errors`;
+
+  return (
+    <span
+      style={{
+        border: "1px solid rgba(255,255,255,0.08)",
+        borderRadius: "999px",
+        padding: "6px 10px",
+        background: "rgba(255, 79, 0, 0.2)",
+        color: "#ffd6c7",
+        fontSize: "12px",
+        fontWeight: 800,
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
 function MockWorkspaceOrgBar() {
   const navigate = useNavigate();
   const snapshot = useMockAppSnapshot();
@@ -834,6 +971,7 @@ function MockWorkspaceOrgBar() {
     fontSize: "13px",
     fontWeight: 600,
   } satisfies React.CSSProperties;
+  const latestRuntimeIssue = organization.runtime.issues[0] ?? null;
 
   return (
     <div
@@ -850,6 +988,15 @@ function MockWorkspaceOrgBar() {
       <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
         <strong style={{ fontSize: "14px", fontWeight: 600 }}>{organization.settings.displayName}</strong>
         <span style={{ fontSize: "12px", color: t.textMuted }}>{organization.settings.primaryDomain}</span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+        {actorRuntimePill(organization)}
+        {githubStatusPill(organization)}
+        <span style={{ fontSize: "12px", color: t.textMuted }}>
+          {organization.runtime.status === "error" && latestRuntimeIssue
+            ? `${latestRuntimeIssue.scopeLabel}: ${latestRuntimeIssue.message}`
+            : organization.github.lastSyncLabel}
+        </span>
       </div>
       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
         <button
@@ -923,6 +1070,8 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
   const [lastAgentTabIdByTask, setLastAgentTabIdByTask] = useState<Record<string, string | null>>({});
   const [openDiffsByTask, setOpenDiffsByTask] = useState<Record<string, string[]>>({});
   const [selectedNewTaskRepoId, setSelectedNewTaskRepoId] = useState("");
+  const [activeTaskDetail, setActiveTaskDetail] = useState<Task | null>(null);
+  const [activeTaskDetailLoading, setActiveTaskDetailLoading] = useState(false);
   const [leftWidth, setLeftWidth] = useState(() => readStoredWidth(LEFT_WIDTH_STORAGE_KEY, LEFT_SIDEBAR_DEFAULT_WIDTH));
   const [rightWidth, setRightWidth] = useState(() => readStoredWidth(RIGHT_WIDTH_STORAGE_KEY, RIGHT_SIDEBAR_DEFAULT_WIDTH));
   const leftWidthRef = useRef(leftWidth);
@@ -995,7 +1144,43 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
     startRightRef.current = rightWidthRef.current;
   }, []);
 
-  const activeTask = useMemo(() => tasks.find((task) => task.id === selectedTaskId) ?? tasks[0] ?? null, [tasks, selectedTaskId]);
+  const activeTaskSummary = useMemo(() => tasks.find((task) => task.id === selectedTaskId) ?? tasks[0] ?? null, [tasks, selectedTaskId]);
+  const activeTask = useMemo(() => {
+    if (activeTaskSummary && activeTaskDetail?.id === activeTaskSummary.id) {
+      return activeTaskDetail;
+    }
+    return activeTaskSummary;
+  }, [activeTaskDetail, activeTaskSummary]);
+
+  useEffect(() => {
+    if (!activeTaskSummary) {
+      setActiveTaskDetail(null);
+      setActiveTaskDetailLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setActiveTaskDetailLoading(true);
+    void backendClient
+      .getWorkbenchTask(workspaceId, activeTaskSummary.id)
+      .then((task) => {
+        if (cancelled) return;
+        setActiveTaskDetail(task as Task);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error("failed to load active task detail", error);
+        setActiveTaskDetail(null);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setActiveTaskDetailLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTaskSummary?.id, workspaceId, viewModel]);
 
   useEffect(() => {
     if (activeTask) {
@@ -1091,6 +1276,9 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
     if (!activeTask) {
       return;
     }
+    if (activeTaskDetailLoading) {
+      return;
+    }
     if (activeTask.tabs.length > 0) {
       autoCreatingSessionForTaskRef.current.delete(activeTask.id);
       return;
@@ -1113,7 +1301,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
         autoCreatingSessionForTaskRef.current.delete(activeTask.id);
       }
     })();
-  }, [activeTask, selectedSessionId, syncRouteSession, taskWorkbenchClient]);
+  }, [activeTask, activeTaskDetailLoading, selectedSessionId, syncRouteSession, taskWorkbenchClient]);
 
   const createTask = useCallback(() => {
     void (async () => {

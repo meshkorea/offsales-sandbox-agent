@@ -8,6 +8,8 @@ import type {
   ProcessInfo,
   ProcessLogFollowQuery,
   ProcessLogsResponse,
+  ProcessRunRequest,
+  ProcessRunResponse,
   ProcessSignalQuery,
   SessionEvent,
   SessionRecord,
@@ -18,6 +20,7 @@ import { SandboxInstancePersistDriver } from "./persist.js";
 import { getActorRuntimeContext } from "../context.js";
 import { selfSandboxInstance } from "../handles.js";
 import { logActorWarning, resolveErrorMessage } from "../logging.js";
+import { reportWorkflowIssueToOrganization } from "../runtime-issues.js";
 import { expectQueueResponse } from "../../services/queue.js";
 
 export interface SandboxInstanceInput {
@@ -454,7 +457,7 @@ async function runSandboxInstanceWorkflow(ctx: any): Promise<void> {
   });
 }
 
-export const sandboxInstance = actor({
+const sandboxInstanceConfig: any = {
   db: sandboxInstanceDb,
   queues: Object.fromEntries(SANDBOX_INSTANCE_QUEUE_NAMES.map((name) => [name, queue()])),
   options: {
@@ -475,6 +478,11 @@ export const sandboxInstance = actor({
       const created = await client.createProcess(request);
       broadcastProcessesUpdated(c);
       return created;
+    },
+
+    async runProcess(c: any, request: ProcessRunRequest): Promise<ProcessRunResponse> {
+      const client = await getSandboxAgentClient(c);
+      return await client.runProcess(request);
     },
 
     async listProcesses(c: any): Promise<{ processes: ProcessInfo[] }> {
@@ -632,5 +640,16 @@ export const sandboxInstance = actor({
       return await derivePersistedSessionStatus(new SandboxInstancePersistDriver(c.db), command.sessionId);
     },
   },
-  run: workflow(runSandboxInstanceWorkflow),
-});
+  run: workflow(runSandboxInstanceWorkflow, {
+    onError: async (c: any, event) => {
+      await reportWorkflowIssueToOrganization(c, event, {
+        actorType: "sandbox_instance",
+        organizationId: c.state.workspaceId,
+        scopeId: c.state.sandboxId,
+        scopeLabel: `Sandbox ${c.state.sandboxId}`,
+      });
+    },
+  }),
+};
+
+export const sandboxInstance = (actor as any)(sandboxInstanceConfig);

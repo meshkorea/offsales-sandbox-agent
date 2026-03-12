@@ -51,6 +51,7 @@ export interface ExecuteSandboxCommandRequest {
   workspaceId: string;
   sandboxId: string;
   command: string;
+  env?: Record<string, string>;
   label?: string;
 }
 

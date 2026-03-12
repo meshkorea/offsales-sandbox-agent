@@ -39,4 +39,4 @@ ENV SANDBOX_AGENT_BIN="/root/.local/bin/sandbox-agent"
 
 WORKDIR /app
 
-CMD ["bash", "-lc", "git config --global --add safe.directory /app >/dev/null 2>&1 || true; pnpm install --force --frozen-lockfile --filter @sandbox-agent/foundry-backend... && exec bun foundry/packages/backend/src/index.ts start --host 0.0.0.0 --port 7741"]
+CMD ["bash", "-lc", "git config --global --add safe.directory /app >/dev/null 2>&1 || true; pnpm install --force --frozen-lockfile --filter @sandbox-agent/foundry-backend... && pnpm --filter acp-http-client build && pnpm --filter @sandbox-agent/cli-shared build && mkdir -p /app/sdks/typescript/dist && printf 'export * from \"../src/index.ts\";\\n' > /app/sdks/typescript/dist/index.js && printf 'export * from \"../src/index.ts\";\\n' > /app/sdks/typescript/dist/index.d.ts && exec bun foundry/packages/backend/src/index.ts start --host 0.0.0.0 --port 7741"]

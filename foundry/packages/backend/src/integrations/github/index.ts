@@ -11,7 +11,6 @@ function ghEnv(options?: GithubAuthOptions): Record<string, string> {
   const env: Record<string, string> = { ...(process.env as Record<string, string>) };
   const token = options?.githubToken?.trim();
   if (token) {
-    env.GH_TOKEN = token;
     env.GITHUB_TOKEN = token;
   }
   return env;

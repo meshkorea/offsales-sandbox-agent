@@ -2,10 +2,11 @@
 import { basename } from "node:path";
 import { asc, eq } from "drizzle-orm";
 import { getActorRuntimeContext } from "../context.js";
-import { getOrCreateTaskStatusSync, getOrCreateProject, getOrCreateWorkspace, getSandboxInstance, selfTask } from "../handles.js";
-import { resolveWorkspaceGithubAuth } from "../../services/github-auth.js";
+import { getOrCreateGithubState, getOrCreateTaskStatusSync, getOrCreateRepository, getOrCreateOrganization, getSandboxInstance, selfTask } from "../handles.js";
+import { logActorWarning, resolveErrorMessage } from "../logging.js";
 import { task as taskTable, taskRuntime, taskWorkbenchSessions } from "./db/schema.js";
 import { getCurrentRecord } from "./workflow/common.js";
+import { pushActiveBranchActivity } from "./workflow/push.js";
 
 const STATUS_SYNC_INTERVAL_MS = 1_000;
 
@@ -37,6 +38,71 @@ function agentKindForModel(model: string) {
     return "Codex";
   }
   return "Claude";
+}
+
+function taskLifecycleState(status: string) {
+  if (status === "error") {
+    return "error";
+  }
+  if (status === "archived") {
+    return "archived";
+  }
+  if (status === "killed") {
+    return "killed";
+  }
+  if (status === "running" || status === "idle" || status === "init_complete") {
+    return "ready";
+  }
+  return "starting";
+}
+
+function taskLifecycleLabel(status: string) {
+  switch (status) {
+    case "init_bootstrap_db":
+      return "Bootstrapping task state";
+    case "init_enqueue_provision":
+      return "Queueing sandbox provision";
+    case "init_ensure_name":
+      return "Preparing task name";
+    case "init_assert_name":
+      return "Confirming task name";
+    case "init_create_sandbox":
+      return "Creating sandbox";
+    case "init_ensure_agent":
+      return "Waiting for sandbox agent";
+    case "init_start_sandbox_instance":
+      return "Starting sandbox runtime";
+    case "init_create_session":
+      return "Creating first session";
+    case "init_write_db":
+      return "Saving task state";
+    case "init_start_status_sync":
+      return "Starting task status sync";
+    case "init_complete":
+      return "Task initialized";
+    case "running":
+      return "Agent running";
+    case "idle":
+      return "Task idle";
+    case "archive_stop_status_sync":
+      return "Stopping task status sync";
+    case "archive_release_sandbox":
+      return "Releasing sandbox";
+    case "archive_finalize":
+      return "Finalizing archive";
+    case "archived":
+      return "Task archived";
+    case "kill_destroy_sandbox":
+      return "Destroying sandbox";
+    case "kill_finalize":
+      return "Finalizing task shutdown";
+    case "killed":
+      return "Task killed";
+    case "error":
+      return "Task error";
+    default:
+      return status.replaceAll("_", " ");
+  }
 }
 
 export function agentTypeForModel(model: string) {
@@ -185,12 +251,11 @@ async function updateSessionMeta(c: any, sessionId: string, values: Record<strin
 }
 
 async function notifyWorkbenchUpdated(c: any): Promise<void> {
-  const workspace = await getOrCreateWorkspace(c, c.state.workspaceId);
+  if (typeof c?.client !== "function") {
+    return;
+  }
+  const workspace = await getOrCreateOrganization(c, c.state.workspaceId);
   await workspace.notifyWorkbenchUpdated({});
-}
-
-function shellFragment(parts: string[]): string {
-  return parts.join(" && ");
 }
 
 async function executeInSandbox(
@@ -202,14 +267,18 @@ async function executeInSandbox(
     label: string;
   },
 ): Promise<{ exitCode: number; result: string }> {
-  const { providers } = getActorRuntimeContext();
-  const provider = providers.get(c.state.providerId);
-  return await provider.executeCommand({
-    workspaceId: c.state.workspaceId,
-    sandboxId: params.sandboxId,
-    command: `bash -lc ${JSON.stringify(shellFragment([`cd ${JSON.stringify(params.cwd)}`, params.command]))}`,
-    label: params.label,
+  const sandbox = getSandboxInstance(c, c.state.workspaceId, c.state.providerId, params.sandboxId);
+  const result = await sandbox.runProcess({
+    command: "bash",
+    args: ["-lc", params.command],
+    cwd: params.cwd,
+    timeoutMs: 120_000,
+    maxOutputBytes: 1024 * 1024 * 4,
   });
+  return {
+    exitCode: typeof result.exitCode === "number" ? result.exitCode : result.timedOut ? 124 : 1,
+    result: [result.stdout ?? "", result.stderr ?? ""].filter(Boolean).join(""),
+  };
 }
 
 function parseGitStatus(output: string): Array<{ path: string; type: "M" | "A" | "D" }> {
@@ -409,7 +478,7 @@ async function readPullRequestSummary(c: any, branchName: string | null) {
   }
 
   try {
-    const project = await getOrCreateProject(c, c.state.workspaceId, c.state.repoId, c.state.repoRemote);
+    const project = await getOrCreateRepository(c, c.state.workspaceId, c.state.repoId, c.state.repoRemote);
     return await project.getPullRequestForBranch({ branchName });
   } catch {
     return null;
@@ -426,6 +495,71 @@ export async function ensureWorkbenchSeeded(c: any): Promise<any> {
     });
   }
   return record;
+}
+
+async function buildWorkbenchTabsSummary(c: any, record: any): Promise<any[]> {
+  const sessions = await listSessionMetaRows(c);
+  return sessions.map((meta) => {
+    const status =
+      record.activeSessionId === meta.sessionId ? (record.status === "error" ? "error" : record.status === "running" ? "running" : "idle") : "idle";
+
+    return {
+      id: meta.id,
+      sessionId: meta.sessionId,
+      sessionName: meta.sessionName,
+      agent: agentKindForModel(meta.model),
+      model: meta.model,
+      status,
+      thinkingSinceMs: status === "running" ? (meta.thinkingSinceMs ?? null) : null,
+      unread: Boolean(meta.unread),
+      created: Boolean(meta.created),
+      draft: {
+        text: meta.draftText ?? "",
+        attachments: Array.isArray(meta.draftAttachments) ? meta.draftAttachments : [],
+        updatedAtMs: meta.draftUpdatedAtMs ?? null,
+      },
+      transcript: [],
+    };
+  });
+}
+
+async function buildWorkbenchTaskPayload(
+  c: any,
+  record: any,
+  tabs: any[],
+  gitState: { fileChanges: any[]; diffs: Record<string, string>; fileTree: any[] },
+): Promise<any> {
+  return {
+    id: c.state.taskId,
+    repoId: c.state.repoId,
+    title: record.title ?? "New Task",
+    status: record.status === "archived" ? "archived" : record.status === "running" ? "running" : record.status === "idle" ? "idle" : "new",
+    lifecycle: {
+      code: record.status,
+      state: taskLifecycleState(record.status),
+      label: taskLifecycleLabel(record.status),
+      message: record.statusMessage ?? null,
+    },
+    repoName: repoLabelFromRemote(c.state.repoRemote),
+    updatedAtMs: record.updatedAt,
+    branch: record.branchName,
+    pullRequest: await readPullRequestSummary(c, record.branchName),
+    tabs,
+    fileChanges: gitState.fileChanges,
+    diffs: gitState.diffs,
+    fileTree: gitState.fileTree,
+    minutesUsed: 0,
+  };
+}
+
+export async function getWorkbenchTaskSummary(c: any): Promise<any> {
+  const record = await ensureWorkbenchSeeded(c);
+  const tabs = await buildWorkbenchTabsSummary(c, record);
+  return await buildWorkbenchTaskPayload(c, record, tabs, {
+    fileChanges: [],
+    diffs: {},
+    fileTree: [],
+  });
 }
 
 export async function getWorkbenchTask(c: any): Promise<any> {
@@ -462,21 +596,7 @@ export async function getWorkbenchTask(c: any): Promise<any> {
     });
   }
 
-  return {
-    id: c.state.taskId,
-    repoId: c.state.repoId,
-    title: record.title ?? "New Task",
-    status: record.status === "archived" ? "archived" : record.status === "running" ? "running" : record.status === "idle" ? "idle" : "new",
-    repoName: repoLabelFromRemote(c.state.repoRemote),
-    updatedAtMs: record.updatedAt,
-    branch: record.branchName,
-    pullRequest: await readPullRequestSummary(c, record.branchName),
-    tabs,
-    fileChanges: gitState.fileChanges,
-    diffs: gitState.diffs,
-    fileTree: gitState.fileTree,
-    minutesUsed: 0,
-  };
+  return await buildWorkbenchTaskPayload(c, record, tabs, gitState);
 }
 
 export async function renameWorkbenchTask(c: any, value: string): Promise<void> {
@@ -540,7 +660,7 @@ export async function renameWorkbenchBranch(c: any, value: string): Promise<void
     .run();
   c.state.branchName = nextBranch;
 
-  const project = await getOrCreateProject(c, c.state.workspaceId, c.state.repoId, c.state.repoRemote);
+  const project = await getOrCreateRepository(c, c.state.workspaceId, c.state.repoId, c.state.repoRemote);
   await project.registerTaskBranch({
     taskId: c.state.taskId,
     branchName: nextBranch,
@@ -680,7 +800,16 @@ export async function sendWorkbenchMessage(c: any, sessionId: string, text: stri
   });
   await sync.setIntervalMs({ intervalMs: STATUS_SYNC_INTERVAL_MS });
   await sync.start();
-  await sync.force();
+  void sync.force().catch((error: unknown) => {
+    logActorWarning("task.workbench", "session status sync force failed", {
+      workspaceId: c.state.workspaceId,
+      repoId: c.state.repoId,
+      taskId: c.state.taskId,
+      sandboxId: record.activeSandboxId,
+      sessionId,
+      error: resolveErrorMessage(error),
+    });
+  });
   await notifyWorkbenchUpdated(c);
 }
 
@@ -803,10 +932,17 @@ export async function publishWorkbenchPr(c: any): Promise<void> {
   if (!record.branchName) {
     throw new Error("cannot publish PR without a branch");
   }
-  const { driver } = getActorRuntimeContext();
-  const auth = await resolveWorkspaceGithubAuth(c, c.state.workspaceId);
-  const created = await driver.github.createPr(c.state.repoLocalPath, record.branchName, record.title ?? c.state.task, undefined, {
-    githubToken: auth?.githubToken ?? null,
+  await pushActiveBranchActivity(c, {
+    reason: "publish_pr",
+    historyKind: "task.push.pr_publish",
+    commitMessage: record.title ?? c.state.task,
+  });
+  const githubState = await getOrCreateGithubState(c, c.state.workspaceId);
+  await githubState.createPullRequest({
+    repoId: c.state.repoId,
+    repoPath: c.state.repoLocalPath,
+    branchName: record.branchName,
+    title: record.title ?? c.state.task,
   });
   await c.db
     .update(taskTable)

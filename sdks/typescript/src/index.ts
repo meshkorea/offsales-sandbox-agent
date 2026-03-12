@@ -8,11 +8,11 @@ export {
   UnsupportedSessionCategoryError,
   UnsupportedSessionConfigOptionError,
   UnsupportedSessionValueError,
-} from "./client.ts";
+} from "./client.js";
 
 export { AcpRpcError } from "acp-http-client";
 
-export { buildInspectorUrl } from "./inspector.ts";
+export { buildInspectorUrl } from "./inspector.js";
 
 export type {
   SandboxAgentHealthWaitOptions,
@@ -33,11 +33,11 @@ export type {
   PermissionRequestListener,
   SessionPermissionRequest,
   SessionPermissionRequestOption,
-} from "./client.ts";
+} from "./client.js";
 
-export type { InspectorUrlOptions } from "./inspector.ts";
+export type { InspectorUrlOptions } from "./inspector.js";
 
-export { InMemorySessionPersistDriver } from "./types.ts";
+export { InMemorySessionPersistDriver } from "./types.js";
 
 export type {
   AcpEnvelope,
@@ -98,9 +98,9 @@ export type {
   TerminalReadyStatus,
   TerminalResizePayload,
   TerminalStatusMessage,
-} from "./types.ts";
+} from "./types.js";
 
 export type {
   SandboxAgentSpawnLogMode,
   SandboxAgentSpawnOptions,
-} from "./spawn.ts";
+} from "./spawn.js";

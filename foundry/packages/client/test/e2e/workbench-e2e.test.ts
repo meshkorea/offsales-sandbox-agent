@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { TaskWorkbenchSnapshot, WorkbenchAgentTab, WorkbenchTask, WorkbenchModelId, WorkbenchTranscriptEvent } from "@sandbox-agent/foundry-shared";
 import { createBackendClient } from "../../src/backend-client.js";
 
-const RUN_WORKBENCH_E2E = process.env.HF_ENABLE_DAEMON_WORKBENCH_E2E === "1";
+const DEFAULT_E2E_GITHUB_REPO = "rivet-dev/sandbox-agent-testing";
 const execFileAsync = promisify(execFile);
 
 function requiredEnv(name: string): string {
@@ -144,10 +144,11 @@ function transcriptIncludesAgentText(transcript: WorkbenchTranscriptEvent[], exp
 }
 
 describe("e2e(client): workbench flows", () => {
-  it.skipIf(!RUN_WORKBENCH_E2E)("creates a task, adds sessions, exchanges messages, and manages workbench state", { timeout: 20 * 60_000 }, async () => {
+  it("creates a task, adds sessions, exchanges messages, and manages workbench state", { timeout: 20 * 60_000 }, async () => {
     const endpoint = process.env.HF_E2E_BACKEND_ENDPOINT?.trim() || "http://127.0.0.1:7741/api/rivet";
     const workspaceId = process.env.HF_E2E_WORKSPACE?.trim() || "default";
-    const repoRemote = requiredEnv("HF_E2E_GITHUB_REPO");
+    const repoRemote = process.env.HF_E2E_GITHUB_REPO?.trim() || DEFAULT_E2E_GITHUB_REPO;
+    requiredEnv("GITHUB_TOKEN");
     const model = workbenchModelEnv("HF_E2E_MODEL", "gpt-4o");
     const runId = `wb-${Date.now().toString(36)}`;
     const expectedFile = `${runId}.txt`;

@@ -141,7 +141,7 @@ foundry-frontend-dev host='127.0.0.1' port='4173' backend='http://127.0.0.1:7741
 	VITE_HF_BACKEND_ENDPOINT="{{backend}}" pnpm --filter @sandbox-agent/foundry-frontend dev -- --host {{host}} --port {{port}}
 
 [group('foundry')]
-foundry-dev-mock host='127.0.0.1' port='4173':
+foundry-dev-mock host='127.0.0.1' port='4180':
 	pnpm install
 	FOUNDRY_FRONTEND_CLIENT_MODE=mock pnpm --filter @sandbox-agent/foundry-frontend dev -- --host {{host}} --port {{port}}
 

@@ -4,6 +4,7 @@ import { actor, queue } from "rivetkit";
 import { Loop, workflow } from "rivetkit/workflow";
 import type { HistoryEvent } from "@sandbox-agent/foundry-shared";
 import { selfHistory } from "../handles.js";
+import { reportWorkflowIssueToOrganization } from "../runtime-issues.js";
 import { historyDb } from "./db/db.js";
 import { events } from "./db/schema.js";
 
@@ -107,5 +108,14 @@ export const history = actor({
       }));
     },
   },
-  run: workflow(runHistoryWorkflow),
+  run: workflow(runHistoryWorkflow, {
+    onError: async (c: any, event) => {
+      await reportWorkflowIssueToOrganization(c, event, {
+        actorType: "history",
+        organizationId: c.state.workspaceId,
+        scopeId: c.state.repoId,
+        scopeLabel: `History ${c.state.repoId}`,
+      });
+    },
+  }),
 });

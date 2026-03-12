@@ -1,6 +1,16 @@
+import type { TaskStatus } from "./contracts.js";
+
 export type WorkbenchTaskStatus = "running" | "idle" | "new" | "archived";
 export type WorkbenchAgentKind = "Claude" | "Codex" | "Cursor";
 export type WorkbenchModelId = "claude-sonnet-4" | "claude-opus-4" | "gpt-4o" | "o3";
+export type WorkbenchTaskLifecycleState = "starting" | "ready" | "error" | "archived" | "killed";
+
+export interface WorkbenchTaskLifecycle {
+  code: TaskStatus;
+  state: WorkbenchTaskLifecycleState;
+  label: string;
+  message: string | null;
+}
 
 export interface WorkbenchTranscriptEvent {
   id: string;
@@ -73,7 +83,7 @@ export interface WorkbenchParsedDiffLine {
 
 export interface WorkbenchPullRequestSummary {
   number: number;
-  status: "draft" | "ready";
+  status: "draft" | "ready" | "closed" | "merged";
 }
 
 export interface WorkbenchTask {
@@ -81,6 +91,7 @@ export interface WorkbenchTask {
   repoId: string;
   title: string;
   status: WorkbenchTaskStatus;
+  lifecycle?: WorkbenchTaskLifecycle;
   repoName: string;
   updatedAtMs: number;
   branch: string | null;

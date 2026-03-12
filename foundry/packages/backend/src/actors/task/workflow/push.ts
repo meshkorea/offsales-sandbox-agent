@@ -1,18 +1,26 @@
 // @ts-nocheck
 import { eq } from "drizzle-orm";
 import { getActorRuntimeContext } from "../../context.js";
+import { resolveWorkspaceGithubAuth } from "../../../services/github-auth.js";
 import { taskRuntime, taskSandboxes } from "../db/schema.js";
 import { TASK_ROW_ID, appendHistory, getCurrentRecord } from "./common.js";
 
 export interface PushActiveBranchOptions {
   reason?: string | null;
   historyKind?: string;
+  commitMessage?: string | null;
+}
+
+function wrapBashScript(script: string): string {
+  const encoded = Buffer.from(script, "utf8").toString("base64");
+  return `bash -lc "$(printf %s ${JSON.stringify(encoded)} | base64 -d)"`;
 }
 
 export async function pushActiveBranchActivity(loopCtx: any, options: PushActiveBranchOptions = {}): Promise<void> {
   const record = await getCurrentRecord(loopCtx);
   const activeSandboxId = record.activeSandboxId;
   const branchName = loopCtx.state.branchName ?? record.branchName;
+  const commitMessage = (options.commitMessage?.trim() || loopCtx.state.title?.trim() || branchName || "Foundry update").slice(0, 240);
 
   if (!activeSandboxId) {
     throw new Error("cannot push: no active sandbox");
@@ -30,6 +38,13 @@ export async function pushActiveBranchActivity(loopCtx: any, options: PushActive
 
   const { providers } = getActorRuntimeContext();
   const provider = providers.get(providerId);
+  const auth = await resolveWorkspaceGithubAuth(loopCtx, loopCtx.state.workspaceId);
+  const commandEnv =
+    auth?.githubToken && auth.githubToken.trim().length > 0
+      ? {
+          GITHUB_TOKEN: auth.githubToken,
+        }
+      : undefined;
 
   const now = Date.now();
   await loopCtx.db
@@ -47,15 +62,29 @@ export async function pushActiveBranchActivity(loopCtx: any, options: PushActive
   const script = [
     "set -euo pipefail",
     `cd ${JSON.stringify(cwd)}`,
+    "export GIT_TERMINAL_PROMPT=0",
     "git rev-parse --verify HEAD >/dev/null",
-    "git config credential.helper '!f() { echo username=x-access-token; echo password=${GH_TOKEN:-$GITHUB_TOKEN}; }; f'",
+    'git config user.email "foundry@local" >/dev/null 2>&1 || true',
+    'git config user.name "Foundry" >/dev/null 2>&1 || true',
+    'git config credential.helper ""',
+    "if ! git config --local --get http.https://github.com/.extraheader >/dev/null 2>&1; then",
+    '  TOKEN="${GITHUB_TOKEN:-}"',
+    '  if [ -z "$TOKEN" ]; then echo "missing github token for push" >&2; exit 1; fi',
+    "  AUTH_HEADER=\"$(printf 'x-access-token:%s' \"$TOKEN\" | base64 | tr -d '\\n')\"",
+    '  git config http.https://github.com/.extraheader "AUTHORIZATION: basic $AUTH_HEADER"',
+    "fi",
+    "git add -A",
+    "if ! git diff --cached --quiet --ignore-submodules --; then",
+    `  git commit -m ${JSON.stringify(commitMessage)}`,
+    "fi",
     `git push -u origin ${JSON.stringify(branchName)}`,
-  ].join("; ");
+  ].join("\n");
 
   const result = await provider.executeCommand({
     workspaceId: loopCtx.state.workspaceId,
     sandboxId: activeSandboxId,
-    command: ["bash", "-lc", JSON.stringify(script)].join(" "),
+    command: wrapBashScript(script),
+    ...(commandEnv ? { env: commandEnv } : {}),
     label: `git push ${branchName}`,
   });
 

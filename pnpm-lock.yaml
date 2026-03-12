@@ -73,7 +73,7 @@ importers:
     devDependencies:
       '@cloudflare/workers-types':
         specifier: latest
-        version: 4.20260310.1
+        version: 4.20260312.1
       '@types/node':
         specifier: latest
         version: 25.4.0
@@ -97,7 +97,7 @@ importers:
         version: 3.2.4(@types/debug@4.1.12)(@types/node@25.4.0)(jiti@1.21.7)(tsx@4.21.0)(yaml@2.8.2)
       wrangler:
         specifier: latest
-        version: 4.72.0(@cloudflare/workers-types@4.20260310.1)
+        version: 4.72.0(@cloudflare/workers-types@4.20260312.1)
 
   examples/computesdk:
     dependencies:
@@ -106,7 +106,7 @@ importers:
         version: link:../shared
       computesdk:
         specifier: latest
-        version: 2.3.0
+        version: 2.4.0
       sandbox-agent:
         specifier: workspace:*
         version: link:../../sdks/typescript
@@ -472,7 +472,7 @@ importers:
         version: link:../../../sdks/persist-rivet
       drizzle-orm:
         specifier: ^0.44.5
-        version: 0.44.7(@cloudflare/workers-types@4.20260310.1)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.18.0)(better-sqlite3@11.10.0)(bun-types@1.3.10)(pg@8.20.0)
+        version: 0.44.7(@cloudflare/workers-types@4.20260312.1)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.18.0)(better-sqlite3@11.10.0)(bun-types@1.3.10)(pg@8.20.0)
       hono:
         specifier: ^4.11.9
         version: 4.12.2
@@ -480,8 +480,8 @@ importers:
         specifier: ^10.3.1
         version: 10.3.1
       rivetkit:
-        specifier: 2.1.6
-        version: 2.1.6(@hono/node-server@1.19.9(hono@4.12.2))(@hono/node-ws@1.3.0(@hono/node-server@1.19.9(hono@4.12.2))(hono@4.12.2))(drizzle-kit@0.31.9)(drizzle-orm@0.44.7(@cloudflare/workers-types@4.20260310.1)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.18.0)(better-sqlite3@11.10.0)(bun-types@1.3.10)(pg@8.20.0))(ws@8.19.0)
+        specifier: https://pkg.pr.new/rivet-dev/rivet/rivetkit@4409
+        version: https://pkg.pr.new/rivet-dev/rivet/rivetkit@4409(@hono/node-server@1.19.9(hono@4.12.2))(@hono/node-ws@1.3.0(@hono/node-server@1.19.9(hono@4.12.2))(hono@4.12.2))(drizzle-kit@0.31.9)(drizzle-orm@0.44.7(@cloudflare/workers-types@4.20260312.1)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.18.0)(better-sqlite3@11.10.0)(bun-types@1.3.10)(pg@8.20.0))(ws@8.19.0)
       sandbox-agent:
         specifier: workspace:*
         version: link:../../../sdks/typescript
@@ -508,8 +508,8 @@ importers:
         specifier: workspace:*
         version: link:../shared
       rivetkit:
-        specifier: 2.1.6
-        version: 2.1.6(@hono/node-server@1.19.9(hono@4.12.2))(@hono/node-ws@1.3.0(@hono/node-server@1.19.9(hono@4.12.2))(hono@4.12.2))(drizzle-kit@0.31.9)(drizzle-orm@0.44.7(@cloudflare/workers-types@4.20260310.1)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.18.0)(better-sqlite3@11.10.0)(bun-types@1.3.10)(pg@8.20.0))(ws@8.19.0)
+        specifier: https://pkg.pr.new/rivet-dev/rivet/rivetkit@4409
+        version: https://pkg.pr.new/rivet-dev/rivet/rivetkit@4409(@hono/node-server@1.19.9(hono@4.12.2))(@hono/node-ws@1.3.0(@hono/node-server@1.19.9(hono@4.12.2))(hono@4.12.2))(drizzle-kit@0.31.9)(drizzle-orm@0.44.7(@cloudflare/workers-types@4.20260312.1)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.18.0)(better-sqlite3@11.10.0)(bun-types@1.3.10)(pg@8.20.0))(ws@8.19.0)
       sandbox-agent:
         specifier: workspace:*
         version: link:../../../sdks/typescript
@@ -1576,8 +1576,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@cloudflare/workers-types@4.20260310.1':
-    resolution: {integrity: sha512-Cg4gyGDtfimNMgBr2h06aGR5Bt8puUbblyzPNZN55mBfVYCTWwQiUd9PrbkcoddKrWHlsy0ACH/16dAeGf5BQg==}
+  '@cloudflare/workers-types@4.20260312.1':
+    resolution: {integrity: sha512-ySoTKc2ZKpwHll4H6byPWkxI/vmCc86B4h+hKo077zSTmBqIcxvbFozmOcEY7dhudMMDBnCgwZ9FknRrJxyqiQ==}
 
   '@computesdk/cmd@0.4.1':
     resolution: {integrity: sha512-hhcYrwMnOpRSwWma3gkUeAVsDFG56nURwSaQx8vCepv0IuUv39bK4mMkgszolnUQrVjBDdW7b3lV+l5B2S8fRA==}
@@ -2928,11 +2928,13 @@ packages:
     resolution: {integrity: sha512-3qndQUQXLdwafMEqfhz24hUtDPcsf1Bu3q52Kb8MqeH8JUh3h6R4HYW3ZJXiQsLcyYyFM68PuIwlLRlg1xDEpg==}
     engines: {node: ^14.18.0 || >=16.0.0}
 
-  '@rivetkit/engine-runner-protocol@2.1.6':
-    resolution: {integrity: sha512-QwaWvAJN2KGae+UHKZbLiEWaWj9ycmwtrRtUq728CU+lidkaGv5yHxXb4gkXSD7rhGQcR98+XWZLb0F0BM/vAg==}
+  '@rivetkit/engine-runner-protocol@https://pkg.pr.new/rivet-dev/rivet/@rivetkit/engine-runner-protocol@d86b999ca1407ba8a9a6688e446ea23e00ed7d00':
+    resolution: {tarball: https://pkg.pr.new/rivet-dev/rivet/@rivetkit/engine-runner-protocol@d86b999ca1407ba8a9a6688e446ea23e00ed7d00}
+    version: 2.1.6
 
-  '@rivetkit/engine-runner@2.1.6':
-    resolution: {integrity: sha512-WpiEmi/SxAVED0N/M0kvPZwq/MxMuuz/Y89ut1sTP7syPzpCauGxafOdqkTqiX1ef+N1ZlrtX+v/LwDF/jIgFw==}
+  '@rivetkit/engine-runner@https://pkg.pr.new/rivet-dev/rivet/@rivetkit/engine-runner@d86b999ca1407ba8a9a6688e446ea23e00ed7d00':
+    resolution: {tarball: https://pkg.pr.new/rivet-dev/rivet/@rivetkit/engine-runner@d86b999ca1407ba8a9a6688e446ea23e00ed7d00}
+    version: 2.1.6
 
   '@rivetkit/fast-json-patch@3.1.2':
     resolution: {integrity: sha512-CtA50xgsSSzICQduF/NDShPRzvucnNvsW/lQO0WgMTT1XAj9Lfae4pm7r3llFwilgG+9iq76Hv1LUqNy72v6yw==}
@@ -2941,22 +2943,26 @@ packages:
     resolution: {integrity: sha512-5RC9Ze/wTKqSlJvopdCgr+EfyV93+iiH8Thog0QXrl8PT1unuBNw/jadXNMtwgAxrIaCJL+JLaHQH9w7rqpMDw==}
     engines: {node: '>=20'}
 
-  '@rivetkit/sqlite-vfs@2.1.6':
-    resolution: {integrity: sha512-jbCrigzqoygZTYdZu7izaQjr77Q4BFX1HwhW4Mf0UFIaKT72AteH/w4PcktzrKcw4Utmo0zX0C6zNBRKo0IpOA==}
+  '@rivetkit/sqlite-vfs@https://pkg.pr.new/rivet-dev/rivet/@rivetkit/sqlite-vfs@d86b999ca1407ba8a9a6688e446ea23e00ed7d00':
+    resolution: {tarball: https://pkg.pr.new/rivet-dev/rivet/@rivetkit/sqlite-vfs@d86b999ca1407ba8a9a6688e446ea23e00ed7d00}
+    version: 2.1.6
     engines: {node: '>=20.0.0'}
 
   '@rivetkit/sqlite@0.1.1':
     resolution: {integrity: sha512-NE7ZBy/hQhOrWzMZFjkHX9SoXxf+ILcDvVV+mNbUYPgiy/fsDzlXdK0+JDTGnko5f4Xl6/KVCoCozz9gkwkq8A==}
 
-  '@rivetkit/traces@2.1.6':
-    resolution: {integrity: sha512-wuuGWoWWdUPbqs5u+31YodSUOsYMydaa+/cxZ7I5KaUe26fK0i1E+0ytqC1JGQm6utWeuYp8cLUX3WSEfVKJhQ==}
+  '@rivetkit/traces@https://pkg.pr.new/rivet-dev/rivet/@rivetkit/traces@d86b999ca1407ba8a9a6688e446ea23e00ed7d00':
+    resolution: {tarball: https://pkg.pr.new/rivet-dev/rivet/@rivetkit/traces@d86b999ca1407ba8a9a6688e446ea23e00ed7d00}
+    version: 2.1.6
     engines: {node: '>=18.0.0'}
 
-  '@rivetkit/virtual-websocket@2.0.33':
-    resolution: {integrity: sha512-sMoHZgBy9WDW76pv+ML3LPgf7TWk5vXdu3ZpPO20j6n+rB3fLacnnmzjt5xD6tZcJ/x5qINyEywGgcxA7MTMuQ==}
+  '@rivetkit/virtual-websocket@https://pkg.pr.new/rivet-dev/rivet/@rivetkit/virtual-websocket@d86b999ca1407ba8a9a6688e446ea23e00ed7d00':
+    resolution: {tarball: https://pkg.pr.new/rivet-dev/rivet/@rivetkit/virtual-websocket@d86b999ca1407ba8a9a6688e446ea23e00ed7d00}
+    version: 2.0.33
 
-  '@rivetkit/workflow-engine@2.1.6':
-    resolution: {integrity: sha512-eLVFBbhOlBQKzO5lu032tOo0OEAFFp7uNcGwvB1mBFmYsm7aKBgnJl214IV39a6fRtCL2meVxiMU1GKb006zYw==}
+  '@rivetkit/workflow-engine@https://pkg.pr.new/rivet-dev/rivet/@rivetkit/workflow-engine@d86b999ca1407ba8a9a6688e446ea23e00ed7d00':
+    resolution: {tarball: https://pkg.pr.new/rivet-dev/rivet/@rivetkit/workflow-engine@d86b999ca1407ba8a9a6688e446ea23e00ed7d00}
+    version: 2.1.6
     engines: {node: '>=18.0.0'}
 
   '@rolldown/pluginutils@1.0.0-beta.27':
@@ -4000,8 +4006,8 @@ packages:
   compare-versions@6.1.1:
     resolution: {integrity: sha512-4hm4VPpIecmlg59CHXnRDnqGplJFrbLG4aFEl5vl6cK1u76ws3LLvX7ikFnTDl5vo39sjWD6AaDPYodJp/NNHg==}
 
-  computesdk@2.3.0:
-    resolution: {integrity: sha512-4B7CRN2qB6XkuAnN7dZ0aMYqHaFrh2qdSuh02lM+cgMEQ7wZy9v44FAjBGfWebHXuPNA/nZRx7211U6CEiGdTw==}
+  computesdk@2.4.0:
+    resolution: {integrity: sha512-CS5jOf1sw6B2MmHvNUU1WYzMgrJ964DC1r+1brUqIopq0HuVBxeHYrgWUotYbrg0OxX30on1zhm25/Z4StyeEg==}
 
   confbox@0.1.8:
     resolution: {integrity: sha512-RMtmw0iFkeR4YV+fUOSucriAQNb9g8zFR52MWCtl+cCZOFRNL6zeB395vPzFhEjjn4fMxXudmELnl/KF/WrK6w==}
@@ -6159,8 +6165,9 @@ packages:
     resolution: {integrity: sha512-g6QUff04oZpHs0eG5p83rFLhHeV00ug/Yf9nZM6fLeUrPguBTkTQOdpAWWspMh55TZfVQDPaN3NQJfbVRAxdIw==}
     engines: {iojs: '>=1.0.0', node: '>=0.10.0'}
 
-  rivetkit@2.1.6:
-    resolution: {integrity: sha512-AFe06CTZoAYWwCltxPp1XNilfOgK53Itvbc/lv0uF+aEwFEAPIZFQPBTrVgt7NGZSuiM2l6/hjMv7yuBZQ71sw==}
+  rivetkit@https://pkg.pr.new/rivet-dev/rivet/rivetkit@4409:
+    resolution: {tarball: https://pkg.pr.new/rivet-dev/rivet/rivetkit@4409}
+    version: 2.1.6
     engines: {node: '>=22.0.0'}
     peerDependencies:
       '@hono/node-server': ^1.14.0
@@ -8112,7 +8119,7 @@ snapshots:
   '@cloudflare/workerd-windows-64@1.20260310.1':
     optional: true
 
-  '@cloudflare/workers-types@4.20260310.1': {}
+  '@cloudflare/workers-types@4.20260312.1': {}
 
   '@computesdk/cmd@0.4.1': {}
 
@@ -9229,14 +9236,14 @@ snapshots:
 
   '@rivetkit/bare-ts@0.6.2': {}
 
-  '@rivetkit/engine-runner-protocol@2.1.6':
+  '@rivetkit/engine-runner-protocol@https://pkg.pr.new/rivet-dev/rivet/@rivetkit/engine-runner-protocol@d86b999ca1407ba8a9a6688e446ea23e00ed7d00':
     dependencies:
       '@rivetkit/bare-ts': 0.6.2
 
-  '@rivetkit/engine-runner@2.1.6':
+  '@rivetkit/engine-runner@https://pkg.pr.new/rivet-dev/rivet/@rivetkit/engine-runner@d86b999ca1407ba8a9a6688e446ea23e00ed7d00':
     dependencies:
-      '@rivetkit/engine-runner-protocol': 2.1.6
-      '@rivetkit/virtual-websocket': 2.0.33
+      '@rivetkit/engine-runner-protocol': https://pkg.pr.new/rivet-dev/rivet/@rivetkit/engine-runner-protocol@d86b999ca1407ba8a9a6688e446ea23e00ed7d00
+      '@rivetkit/virtual-websocket': https://pkg.pr.new/rivet-dev/rivet/@rivetkit/virtual-websocket@d86b999ca1407ba8a9a6688e446ea23e00ed7d00
       pino: 9.14.0
       uuid: 12.0.0
       ws: 8.19.0
@@ -9248,7 +9255,7 @@ snapshots:
 
   '@rivetkit/on-change@6.0.2-rc.1': {}
 
-  '@rivetkit/sqlite-vfs@2.1.6':
+  '@rivetkit/sqlite-vfs@https://pkg.pr.new/rivet-dev/rivet/@rivetkit/sqlite-vfs@d86b999ca1407ba8a9a6688e446ea23e00ed7d00':
     dependencies:
       '@rivetkit/bare-ts': 0.6.2
       '@rivetkit/sqlite': 0.1.1
@@ -9256,16 +9263,16 @@ snapshots:
 
   '@rivetkit/sqlite@0.1.1': {}
 
-  '@rivetkit/traces@2.1.6':
+  '@rivetkit/traces@https://pkg.pr.new/rivet-dev/rivet/@rivetkit/traces@d86b999ca1407ba8a9a6688e446ea23e00ed7d00':
     dependencies:
       '@rivetkit/bare-ts': 0.6.2
       cbor-x: 1.6.3
       fdb-tuple: 1.0.0
       vbare: 0.0.4
 
-  '@rivetkit/virtual-websocket@2.0.33': {}
+  '@rivetkit/virtual-websocket@https://pkg.pr.new/rivet-dev/rivet/@rivetkit/virtual-websocket@d86b999ca1407ba8a9a6688e446ea23e00ed7d00': {}
 
-  '@rivetkit/workflow-engine@2.1.6':
+  '@rivetkit/workflow-engine@https://pkg.pr.new/rivet-dev/rivet/@rivetkit/workflow-engine@d86b999ca1407ba8a9a6688e446ea23e00ed7d00':
     dependencies:
       '@rivetkit/bare-ts': 0.6.2
       cbor-x: 1.6.3
@@ -10568,7 +10575,7 @@ snapshots:
 
   compare-versions@6.1.1: {}
 
-  computesdk@2.3.0:
+  computesdk@2.4.0:
     dependencies:
       '@computesdk/cmd': 0.4.1
 
@@ -10924,9 +10931,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  drizzle-orm@0.44.7(@cloudflare/workers-types@4.20260310.1)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.18.0)(better-sqlite3@11.10.0)(bun-types@1.3.10)(pg@8.20.0):
+  drizzle-orm@0.44.7(@cloudflare/workers-types@4.20260312.1)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.18.0)(better-sqlite3@11.10.0)(bun-types@1.3.10)(pg@8.20.0):
     optionalDependencies:
-      '@cloudflare/workers-types': 4.20260310.1
+      '@cloudflare/workers-types': 4.20260312.1
       '@opentelemetry/api': 1.9.0
       '@types/better-sqlite3': 7.6.13
       '@types/pg': 8.18.0
@@ -13006,19 +13013,19 @@ snapshots:
 
   reusify@1.1.0: {}
 
-  rivetkit@2.1.6(@hono/node-server@1.19.9(hono@4.12.2))(@hono/node-ws@1.3.0(@hono/node-server@1.19.9(hono@4.12.2))(hono@4.12.2))(drizzle-kit@0.31.9)(drizzle-orm@0.44.7(@cloudflare/workers-types@4.20260310.1)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.18.0)(better-sqlite3@11.10.0)(bun-types@1.3.10)(pg@8.20.0))(ws@8.19.0):
+  rivetkit@https://pkg.pr.new/rivet-dev/rivet/rivetkit@4409(@hono/node-server@1.19.9(hono@4.12.2))(@hono/node-ws@1.3.0(@hono/node-server@1.19.9(hono@4.12.2))(hono@4.12.2))(drizzle-kit@0.31.9)(drizzle-orm@0.44.7(@cloudflare/workers-types@4.20260312.1)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.18.0)(better-sqlite3@11.10.0)(bun-types@1.3.10)(pg@8.20.0))(ws@8.19.0):
     dependencies:
       '@hono/standard-validator': 0.1.5(hono@4.12.2)
       '@hono/zod-openapi': 1.2.2(hono@4.12.2)(zod@4.3.6)
       '@rivetkit/bare-ts': 0.6.2
-      '@rivetkit/engine-runner': 2.1.6
+      '@rivetkit/engine-runner': https://pkg.pr.new/rivet-dev/rivet/@rivetkit/engine-runner@d86b999ca1407ba8a9a6688e446ea23e00ed7d00
       '@rivetkit/fast-json-patch': 3.1.2
       '@rivetkit/on-change': 6.0.2-rc.1
       '@rivetkit/sqlite': 0.1.1
-      '@rivetkit/sqlite-vfs': 2.1.6
-      '@rivetkit/traces': 2.1.6
-      '@rivetkit/virtual-websocket': 2.0.33
-      '@rivetkit/workflow-engine': 2.1.6
+      '@rivetkit/sqlite-vfs': https://pkg.pr.new/rivet-dev/rivet/@rivetkit/sqlite-vfs@d86b999ca1407ba8a9a6688e446ea23e00ed7d00
+      '@rivetkit/traces': https://pkg.pr.new/rivet-dev/rivet/@rivetkit/traces@d86b999ca1407ba8a9a6688e446ea23e00ed7d00
+      '@rivetkit/virtual-websocket': https://pkg.pr.new/rivet-dev/rivet/@rivetkit/virtual-websocket@d86b999ca1407ba8a9a6688e446ea23e00ed7d00
+      '@rivetkit/workflow-engine': https://pkg.pr.new/rivet-dev/rivet/@rivetkit/workflow-engine@d86b999ca1407ba8a9a6688e446ea23e00ed7d00
       cbor-x: 1.6.3
       get-port: 7.1.0
       hono: 4.12.2
@@ -13034,7 +13041,7 @@ snapshots:
       '@hono/node-server': 1.19.9(hono@4.12.2)
       '@hono/node-ws': 1.3.0(@hono/node-server@1.19.9(hono@4.12.2))(hono@4.12.2)
       drizzle-kit: 0.31.9
-      drizzle-orm: 0.44.7(@cloudflare/workers-types@4.20260310.1)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.18.0)(better-sqlite3@11.10.0)(bun-types@1.3.10)(pg@8.20.0)
+      drizzle-orm: 0.44.7(@cloudflare/workers-types@4.20260312.1)(@opentelemetry/api@1.9.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.18.0)(better-sqlite3@11.10.0)(bun-types@1.3.10)(pg@8.20.0)
       ws: 8.19.0
     transitivePeerDependencies:
       - '@standard-schema/spec'
@@ -14253,7 +14260,7 @@ snapshots:
       '@cloudflare/workerd-linux-arm64': 1.20260310.1
       '@cloudflare/workerd-windows-64': 1.20260310.1
 
-  wrangler@4.72.0(@cloudflare/workers-types@4.20260310.1):
+  wrangler@4.72.0(@cloudflare/workers-types@4.20260312.1):
     dependencies:
       '@cloudflare/kv-asset-handler': 0.4.2
       '@cloudflare/unenv-preset': 2.15.0(unenv@2.0.0-rc.24)(workerd@1.20260310.1)
@@ -14264,7 +14271,7 @@ snapshots:
       unenv: 2.0.0-rc.24
       workerd: 1.20260310.1
     optionalDependencies:
-      '@cloudflare/workers-types': 4.20260310.1
+      '@cloudflare/workers-types': 4.20260312.1
       fsevents: 2.3.3
     transitivePeerDependencies:
       - bufferutil

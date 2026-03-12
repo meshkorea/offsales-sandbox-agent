@@ -268,6 +268,40 @@ export function buildInitialTasks(): Task[] {
   return [
     // ── rivet-dev/sandbox-agent ──
     {
+      id: "h0",
+      repoId: "sandbox-agent",
+      title: "Recover from sandbox session bootstrap timeout",
+      status: "idle",
+      lifecycle: {
+        code: "error",
+        state: "error",
+        label: "Session startup failed",
+        message: "createSession failed after 3 attempts: upstream 504 Gateway Timeout",
+      },
+      repoName: "rivet-dev/sandbox-agent",
+      updatedAtMs: minutesAgo(1),
+      branch: "fix/session-bootstrap-timeout",
+      pullRequest: null,
+      tabs: [
+        {
+          id: "t0",
+          sessionId: null,
+          sessionName: "Failed startup",
+          agent: "Claude",
+          model: "claude-sonnet-4",
+          status: "error",
+          thinkingSinceMs: null,
+          unread: false,
+          created: false,
+          draft: { text: "", attachments: [], updatedAtMs: null },
+          transcript: [],
+        },
+      ],
+      fileChanges: [],
+      diffs: {},
+      fileTree: [],
+    },
+    {
       id: "h1",
       repoId: "sandbox-agent",
       title: "Normalize Pi ACP bootstrap payloads",

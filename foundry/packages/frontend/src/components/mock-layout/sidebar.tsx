@@ -593,6 +593,11 @@ export const Sidebar = memo(function Sidebar({
                                 #{task.pullRequest.number}
                               </LabelXSmall>
                               {task.pullRequest.status === "draft" ? <CloudUpload size={11} color={t.accent} /> : null}
+                              {task.pullRequest.status === "merged" ? <LabelXSmall color="#86efac">merged</LabelXSmall> : null}
+                              {task.pullRequest.status === "closed" ? <LabelXSmall color="#fca5a5">closed</LabelXSmall> : null}
+                              {task.pullRequest.status === "draft" ? <CloudUpload size={11} color={t.accent} /> : null}
+                              {task.pullRequest.status === "merged" ? <LabelXSmall color="#86efac">merged</LabelXSmall> : null}
+                              {task.pullRequest.status === "closed" ? <LabelXSmall color="#fca5a5">closed</LabelXSmall> : null}
                             </span>
                           ) : (
                             <GitPullRequestDraft size={11} color={t.textTertiary} />

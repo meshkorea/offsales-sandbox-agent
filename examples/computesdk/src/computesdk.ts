@@ -91,7 +91,7 @@ export async function setupComputeSdkSandboxAgent(): Promise<{
   };
 
   console.log("Installing sandbox-agent...");
-  await run("curl -fsSL https://releases.rivet.dev/sandbox-agent/latest/install.sh | sh");
+  await run("curl -fsSL https://releases.rivet.dev/sandbox-agent/0.3.x/install.sh | sh");
 
   if (env.ANTHROPIC_API_KEY) {
     console.log("Installing Claude agent...");

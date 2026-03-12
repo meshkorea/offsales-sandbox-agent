@@ -3,7 +3,14 @@ import { desc, eq } from "drizzle-orm";
 import { resolveCreateFlowDecision } from "../../../services/create-flow.js";
 import { resolveWorkspaceGithubAuth } from "../../../services/github-auth.js";
 import { getActorRuntimeContext } from "../../context.js";
-import { getOrCreateTaskStatusSync, getOrCreateHistory, getOrCreateProject, getOrCreateSandboxInstance, getSandboxInstance, selfTask } from "../../handles.js";
+import {
+  getOrCreateTaskStatusSync,
+  getOrCreateHistory,
+  getOrCreateRepository,
+  getOrCreateSandboxInstance,
+  getSandboxInstance,
+  selfTask,
+} from "../../handles.js";
 import { logActorWarning, resolveErrorMessage } from "../../logging.js";
 import { task as taskTable, taskRuntime, taskSandboxes } from "../db/schema.js";
 import { TASK_ROW_ID, appendHistory, buildAgentPrompt, collectErrorMessages, resolveErrorDetail, setTaskState } from "./common.js";
@@ -166,7 +173,7 @@ export async function initEnsureNameActivity(loopCtx: any): Promise<void> {
     (branch: any) => branch.branchName,
   );
 
-  const project = await getOrCreateProject(loopCtx, loopCtx.state.workspaceId, loopCtx.state.repoId, loopCtx.state.repoRemote);
+  const project = await getOrCreateRepository(loopCtx, loopCtx.state.workspaceId, loopCtx.state.repoId, loopCtx.state.repoRemote);
   const reservedBranches = await project.listReservedBranches({});
 
   const resolved = resolveCreateFlowDecision({
@@ -516,7 +523,16 @@ export async function initStartStatusSyncActivity(loopCtx: any, body: any, sandb
   });
 
   await sync.start();
-  await sync.force();
+  void sync.force().catch((error: unknown) => {
+    logActorWarning("task.init", "initial status sync force failed", {
+      workspaceId: loopCtx.state.workspaceId,
+      repoId: loopCtx.state.repoId,
+      taskId: loopCtx.state.taskId,
+      sandboxId: sandbox.sandboxId,
+      sessionId,
+      error: resolveErrorMessage(error),
+    });
+  });
 }
 
 export async function initCompleteActivity(loopCtx: any, body: any, sandbox: any, session: any): Promise<void> {

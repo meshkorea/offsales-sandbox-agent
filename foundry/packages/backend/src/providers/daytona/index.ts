@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import type {
   AgentEndpoint,
   AttachTarget,
@@ -30,6 +31,10 @@ export interface DaytonaProviderConfig {
   autoStopInterval?: number;
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
 export class DaytonaProvider implements SandboxProvider {
   constructor(
     private readonly config: DaytonaProviderConfig,
@@ -47,7 +52,6 @@ export class DaytonaProvider implements SandboxProvider {
     "CODEX_API_KEY",
     "OPENCODE_API_KEY",
     "CEREBRAS_API_KEY",
-    "GH_TOKEN",
     "GITHUB_TOKEN",
   ] as const;
 
@@ -145,35 +149,122 @@ export class DaytonaProvider implements SandboxProvider {
     return envVars;
   }
 
-  private buildShellExports(extra: Record<string, string> = {}): string[] {
-    const merged = {
-      ...this.buildEnvVars(),
-      ...extra,
-    };
-
-    return Object.entries(merged).map(([key, value]) => {
-      const encoded = Buffer.from(value, "utf8").toString("base64");
-      return `export ${key}="$(printf %s ${JSON.stringify(encoded)} | base64 -d)"`;
-    });
+  private wrapBashScript(script: string): string {
+    const compact = script
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .join("; ");
+    return `bash -lc ${shellQuote(compact)}`;
   }
 
   private buildSnapshotImage() {
     // Use Daytona image build + snapshot caching so base tooling (git + sandbox-agent)
     // is prepared once and reused for subsequent sandboxes.
-    return Image.base(this.config.image).runCommands(
-      "apt-get update && apt-get install -y curl ca-certificates git openssh-client nodejs npm",
-      `curl -fsSL https://releases.rivet.dev/sandbox-agent/${DaytonaProvider.SANDBOX_AGENT_VERSION}/install.sh | sh`,
-      `bash -lc 'export PATH="$HOME/.local/bin:$PATH"; sandbox-agent install-agent codex || true; sandbox-agent install-agent claude || true'`,
-    );
+    // Daytona keeps its own wrapper as PID 1, so sandbox-agent must be started
+    // after sandbox creation via the native process API rather than image entrypoint/CMD.
+    return Image.base(this.config.image)
+      .runCommands(
+        "apt-get update && apt-get install -y curl ca-certificates git openssh-client",
+        "curl -fsSL https://deb.nodesource.com/setup_20.x | bash -",
+        "apt-get install -y nodejs",
+        `curl -fsSL https://releases.rivet.dev/sandbox-agent/${DaytonaProvider.SANDBOX_AGENT_VERSION}/install.sh | sh`,
+        `bash -lc 'export PATH="$HOME/.local/bin:$PATH"; sandbox-agent install-agent codex; sandbox-agent install-agent claude'`,
+      )
+      .env({
+        SANDBOX_AGENT_ACP_REQUEST_TIMEOUT_MS: this.getAcpRequestTimeoutMs().toString(),
+      });
   }
 
-  private async runCheckedCommand(sandboxId: string, command: string, label: string): Promise<void> {
+  private async startSandboxAgent(sandboxId: string): Promise<void> {
     const client = this.requireClient();
+    const startScript = [
+      "set -euo pipefail",
+      'export PATH="$HOME/.local/bin:$PATH"',
+      `if ps -ef | grep -F "sandbox-agent server --no-token --host 0.0.0.0 --port ${DaytonaProvider.SANDBOX_AGENT_PORT}" | grep -v grep >/dev/null 2>&1; then exit 0; fi`,
+      'rm -f "$HOME/.codex/auth.json" "$HOME/.config/codex/auth.json" /tmp/sandbox-agent.log',
+      `nohup sandbox-agent server --no-token --host 0.0.0.0 --port ${DaytonaProvider.SANDBOX_AGENT_PORT} >/tmp/sandbox-agent.log 2>&1 &`,
+    ].join("\n");
+    const result = await this.withTimeout("start sandbox-agent", () =>
+      client.executeCommand(sandboxId, this.wrapBashScript(startScript), undefined, Math.ceil(this.getRequestTimeoutMs() / 1000)),
+    );
 
-    const result = await this.withTimeout(`execute command (${label})`, () => client.executeCommand(sandboxId, command));
-    if (result.exitCode !== 0) {
-      throw new Error(`daytona ${label} failed (${result.exitCode}): ${result.result}`);
+    if ((result.exitCode ?? 1) !== 0) {
+      throw new Error(`daytona start sandbox-agent failed (${result.exitCode ?? "unknown"}): ${result.result ?? ""}`);
     }
+  }
+
+  private async getSandboxAgentEndpoint(sandboxId: string, label: string): Promise<AgentEndpoint> {
+    const client = this.requireClient();
+    const preview = await this.withTimeout(`get preview endpoint (${label})`, () => client.getPreviewEndpoint(sandboxId, DaytonaProvider.SANDBOX_AGENT_PORT));
+    return preview.token ? { endpoint: preview.url, token: preview.token } : { endpoint: preview.url };
+  }
+
+  private async waitForSandboxAgentHealth(sandboxId: string, label: string): Promise<AgentEndpoint> {
+    const deadline = Date.now() + this.getRequestTimeoutMs();
+    let lastDetail = "sandbox-agent health unavailable";
+
+    while (Date.now() < deadline) {
+      try {
+        const endpoint = await this.getSandboxAgentEndpoint(sandboxId, label);
+        const response = await fetch(`${endpoint.endpoint.replace(/\/$/, "")}/v1/health`, {
+          headers: {
+            ...(endpoint.token ? { Authorization: `Bearer ${endpoint.token}` } : {}),
+          },
+        });
+        if (response.ok) {
+          return endpoint;
+        }
+        lastDetail = `${response.status} ${response.statusText}`;
+      } catch (error) {
+        lastDetail = error instanceof Error ? error.message : String(error);
+      }
+
+      await delay(1_000);
+    }
+
+    throw new Error(`daytona sandbox-agent ${label} failed health check: ${lastDetail}`);
+  }
+
+  private async runViaSandboxAgent(
+    endpoint: AgentEndpoint,
+    command: string,
+    env: Record<string, string> | undefined,
+    label: string,
+  ): Promise<ExecuteSandboxCommandResult> {
+    const response = await this.withTimeout(`execute via sandbox-agent (${label})`, async () => {
+      return await fetch(`${endpoint.endpoint.replace(/\/$/, "")}/v1/processes/run`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(endpoint.token ? { Authorization: `Bearer ${endpoint.token}` } : {}),
+        },
+        body: JSON.stringify({
+          command: "bash",
+          args: ["-lc", command],
+          ...(env && Object.keys(env).length > 0 ? { env } : {}),
+          timeoutMs: this.getRequestTimeoutMs(),
+          maxOutputBytes: 1024 * 1024 * 4,
+        }),
+      });
+    });
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      throw new Error(`daytona sandbox-agent ${label} failed (${response.status}): ${detail || response.statusText}`);
+    }
+
+    const body = (await response.json()) as {
+      exitCode?: number | null;
+      stdout?: string;
+      stderr?: string;
+      timedOut?: boolean;
+    };
+
+    return {
+      exitCode: typeof body.exitCode === "number" ? body.exitCode : body.timedOut ? 124 : 1,
+      result: [body.stdout ?? "", body.stderr ?? ""].filter(Boolean).join(""),
+    };
   }
 
   id() {
@@ -224,55 +315,43 @@ export class DaytonaProvider implements SandboxProvider {
     });
 
     const repoDir = `/home/daytona/foundry/${req.workspaceId}/${req.repoId}/${req.taskId}/repo`;
-
-    // Prepare a working directory for the agent. This must succeed for the task to work.
-    const installStartedAt = Date.now();
-    await this.runCheckedCommand(
-      sandbox.id,
-      [
-        "bash",
-        "-lc",
-        `'set -euo pipefail; export DEBIAN_FRONTEND=noninteractive; if command -v git >/dev/null 2>&1 && command -v npx >/dev/null 2>&1; then exit 0; fi; apt-get update -y >/tmp/apt-update.log 2>&1; apt-get install -y git openssh-client ca-certificates nodejs npm >/tmp/apt-install.log 2>&1'`,
-      ].join(" "),
-      "install git + node toolchain",
-    );
-    emitDebug("daytona.createSandbox.install_toolchain.done", {
+    const agent = await this.ensureSandboxAgent({
+      workspaceId: req.workspaceId,
       sandboxId: sandbox.id,
-      durationMs: Date.now() - installStartedAt,
     });
 
     const cloneStartedAt = Date.now();
-    await this.runCheckedCommand(
-      sandbox.id,
-      [
-        "bash",
-        "-lc",
-        `${JSON.stringify(
-          [
-            "set -euo pipefail",
-            "export GIT_TERMINAL_PROMPT=0",
-            "export GIT_ASKPASS=/bin/echo",
-            `TOKEN=${JSON.stringify(req.githubToken ?? "")}`,
-            'if [ -z "$TOKEN" ]; then TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"; fi',
-            "GIT_AUTH_ARGS=()",
-            `if [ -n "$TOKEN" ] && [[ "${req.repoRemote}" == https://github.com/* ]]; then AUTH_HEADER="$(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\\n')"; GIT_AUTH_ARGS=(-c "http.https://github.com/.extraheader=AUTHORIZATION: basic $AUTH_HEADER"); fi`,
-            `rm -rf "${repoDir}"`,
-            `mkdir -p "${repoDir}"`,
-            `rmdir "${repoDir}"`,
-            // Foundry test repos can be private, so clone/fetch must use the sandbox's GitHub token when available.
-            `git "\${GIT_AUTH_ARGS[@]}" clone "${req.repoRemote}" "${repoDir}"`,
-            `cd "${repoDir}"`,
-            `if [ -n "$TOKEN" ] && [[ "${req.repoRemote}" == https://github.com/* ]]; then git config --local credential.helper ""; git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $AUTH_HEADER"; fi`,
-            `git "\${GIT_AUTH_ARGS[@]}" fetch origin --prune`,
-            // The task branch may not exist remotely yet (agent push creates it). Base off current branch (default branch).
-            `if git show-ref --verify --quiet "refs/remotes/origin/${req.branchName}"; then git checkout -B "${req.branchName}" "origin/${req.branchName}"; else git checkout -B "${req.branchName}" "$(git branch --show-current 2>/dev/null || echo main)"; fi`,
-            `git config user.email "foundry@local" >/dev/null 2>&1 || true`,
-            `git config user.name "Foundry" >/dev/null 2>&1 || true`,
-          ].join("; "),
-        )}`,
-      ].join(" "),
-      "clone repo",
-    );
+    const commandEnv: Record<string, string> = {};
+    if (req.githubToken && req.githubToken.trim().length > 0) {
+      commandEnv.GITHUB_TOKEN = req.githubToken;
+    }
+    const cloneScript = [
+      "set -euo pipefail",
+      "export GIT_TERMINAL_PROMPT=0",
+      `REMOTE=${shellQuote(req.repoRemote)}`,
+      `BRANCH_NAME=${shellQuote(req.branchName)}`,
+      'TOKEN="${GITHUB_TOKEN:-}"',
+      'AUTH_REMOTE="$REMOTE"',
+      'AUTH_HEADER=""',
+      'if [ -n "$TOKEN" ] && [[ "$REMOTE" == https://github.com/* ]]; then AUTH_REMOTE="https://x-access-token:${TOKEN}@${REMOTE#https://}"; AUTH_HEADER="$(printf \'x-access-token:%s\' \"$TOKEN\" | base64 | tr -d \'\\n\')"; fi',
+      `rm -rf "${repoDir}"`,
+      `mkdir -p "${repoDir}"`,
+      `rmdir "${repoDir}"`,
+      // Foundry test repos can be private, so clone/fetch must use the sandbox's GitHub token when available.
+      `git clone "$AUTH_REMOTE" "${repoDir}"`,
+      `cd "${repoDir}"`,
+      'git remote set-url origin "$REMOTE"',
+      'if [ -n "$AUTH_HEADER" ]; then git config --local credential.helper ""; git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $AUTH_HEADER"; fi',
+      `git fetch origin --prune`,
+      // The task branch may not exist remotely yet (agent push creates it). Base off current branch (default branch).
+      'if git show-ref --verify --quiet "refs/remotes/origin/$BRANCH_NAME"; then git checkout -B "$BRANCH_NAME" "origin/$BRANCH_NAME"; else git checkout -B "$BRANCH_NAME" "$(git branch --show-current 2>/dev/null || echo main)"; fi',
+      `git config user.email "foundry@local" >/dev/null 2>&1 || true`,
+      `git config user.name "Foundry" >/dev/null 2>&1 || true`,
+    ].join("\n");
+    const cloneResult = await this.runViaSandboxAgent(agent, this.wrapBashScript(cloneScript), commandEnv, "clone repo");
+    if (cloneResult.exitCode !== 0) {
+      throw new Error(`daytona clone repo failed (${cloneResult.exitCode}): ${cloneResult.result}`);
+    }
     emitDebug("daytona.createSandbox.clone_repo.done", {
       sandboxId: sandbox.id,
       durationMs: Date.now() - cloneStartedAt,
@@ -352,92 +431,9 @@ export class DaytonaProvider implements SandboxProvider {
   }
 
   async ensureSandboxAgent(req: EnsureAgentRequest): Promise<AgentEndpoint> {
-    const client = this.requireClient();
-    const acpRequestTimeoutMs = this.getAcpRequestTimeoutMs();
-    const sandboxAgentExports = this.buildShellExports({
-      SANDBOX_AGENT_ACP_REQUEST_TIMEOUT_MS: acpRequestTimeoutMs.toString(),
-    });
-
     await this.ensureStarted(req.sandboxId);
-
-    await this.runCheckedCommand(
-      req.sandboxId,
-      [
-        "bash",
-        "-lc",
-        `'set -euo pipefail; if command -v curl >/dev/null 2>&1; then exit 0; fi; export DEBIAN_FRONTEND=noninteractive; apt-get update -y >/tmp/apt-update.log 2>&1; apt-get install -y curl ca-certificates >/tmp/apt-install.log 2>&1'`,
-      ].join(" "),
-      "install curl",
-    );
-
-    await this.runCheckedCommand(
-      req.sandboxId,
-      [
-        "bash",
-        "-lc",
-        `'set -euo pipefail; if command -v npx >/dev/null 2>&1; then exit 0; fi; export DEBIAN_FRONTEND=noninteractive; apt-get update -y >/tmp/apt-update.log 2>&1; apt-get install -y nodejs npm >/tmp/apt-install.log 2>&1'`,
-      ].join(" "),
-      "install node toolchain",
-    );
-
-    await this.runCheckedCommand(
-      req.sandboxId,
-      [
-        "bash",
-        "-lc",
-        `'set -euo pipefail; export PATH="$HOME/.local/bin:$PATH"; if sandbox-agent --version 2>/dev/null | grep -q "${DaytonaProvider.SANDBOX_AGENT_VERSION}"; then exit 0; fi; curl -fsSL https://releases.rivet.dev/sandbox-agent/${DaytonaProvider.SANDBOX_AGENT_VERSION}/install.sh | sh'`,
-      ].join(" "),
-      "install sandbox-agent",
-    );
-
-    for (const agentId of DaytonaProvider.AGENT_IDS) {
-      try {
-        await this.runCheckedCommand(
-          req.sandboxId,
-          ["bash", "-lc", `'export PATH="$HOME/.local/bin:$PATH"; sandbox-agent install-agent ${agentId}'`].join(" "),
-          `install agent ${agentId}`,
-        );
-      } catch {
-        // Some sandbox-agent builds may not ship every agent plugin; treat this as best-effort.
-      }
-    }
-
-    await this.runCheckedCommand(
-      req.sandboxId,
-      [
-        "bash",
-        "-lc",
-        JSON.stringify(
-          [
-            "set -euo pipefail",
-            'export PATH="$HOME/.local/bin:$PATH"',
-            ...sandboxAgentExports,
-            "command -v sandbox-agent >/dev/null 2>&1",
-            "if pgrep -x sandbox-agent >/dev/null; then exit 0; fi",
-            'rm -f "$HOME/.codex/auth.json" "$HOME/.config/codex/auth.json"',
-            `nohup sandbox-agent server --no-token --host 0.0.0.0 --port ${DaytonaProvider.SANDBOX_AGENT_PORT} >/tmp/sandbox-agent.log 2>&1 &`,
-          ].join("; "),
-        ),
-      ].join(" "),
-      "start sandbox-agent",
-    );
-
-    await this.runCheckedCommand(
-      req.sandboxId,
-      [
-        "bash",
-        "-lc",
-        `'for i in $(seq 1 45); do curl -fsS "http://127.0.0.1:${DaytonaProvider.SANDBOX_AGENT_PORT}/v1/health" >/dev/null && exit 0; sleep 1; done; echo "sandbox-agent failed to become healthy" >&2; tail -n 80 /tmp/sandbox-agent.log >&2; exit 1'`,
-      ].join(" "),
-      "wait for sandbox-agent health",
-    );
-
-    const preview = await this.withTimeout("get preview endpoint", () => client.getPreviewEndpoint(req.sandboxId, DaytonaProvider.SANDBOX_AGENT_PORT));
-
-    return {
-      endpoint: preview.url,
-      token: preview.token,
-    };
+    await this.startSandboxAgent(req.sandboxId);
+    return await this.waitForSandboxAgentHealth(req.sandboxId, "ensure sandbox-agent");
   }
 
   async health(req: SandboxHealthRequest): Promise<SandboxHealth> {
@@ -478,8 +474,10 @@ export class DaytonaProvider implements SandboxProvider {
   }
 
   async executeCommand(req: ExecuteSandboxCommandRequest): Promise<ExecuteSandboxCommandResult> {
-    const client = this.requireClient();
-    await this.ensureStarted(req.sandboxId);
-    return await this.withTimeout(`execute command (${req.label ?? "command"})`, () => client.executeCommand(req.sandboxId, req.command));
+    const endpoint = await this.ensureSandboxAgent({
+      workspaceId: req.workspaceId,
+      sandboxId: req.sandboxId,
+    });
+    return await this.runViaSandboxAgent(endpoint, req.command, req.env, req.label ?? "command");
   }
 }

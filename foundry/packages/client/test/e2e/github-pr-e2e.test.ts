@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { TaskRecord, HistoryEvent } from "@sandbox-agent/foundry-shared";
 import { createBackendClient } from "../../src/backend-client.js";
 
-const RUN_E2E = process.env.HF_ENABLE_DAEMON_E2E === "1";
+const DEFAULT_E2E_GITHUB_REPO = "rivet-dev/sandbox-agent-testing";
 
 function requiredEnv(name: string): string {
   const value = process.env[name]?.trim();
@@ -143,10 +143,10 @@ async function githubApi(token: string, path: string, init?: RequestInit): Promi
 }
 
 describe("e2e: backend -> sandbox-agent -> git -> PR", () => {
-  it.skipIf(!RUN_E2E)("creates a task, waits for agent to implement, and opens a PR", { timeout: 15 * 60_000 }, async () => {
+  it("creates a task, waits for agent to implement, and opens a PR", { timeout: 15 * 60_000 }, async () => {
     const endpoint = process.env.HF_E2E_BACKEND_ENDPOINT?.trim() || "http://127.0.0.1:7741/api/rivet";
     const workspaceId = process.env.HF_E2E_WORKSPACE?.trim() || "default";
-    const repoRemote = requiredEnv("HF_E2E_GITHUB_REPO");
+    const repoRemote = process.env.HF_E2E_GITHUB_REPO?.trim() || DEFAULT_E2E_GITHUB_REPO;
     const githubToken = requiredEnv("GITHUB_TOKEN");
 
     const { fullName } = parseGithubRepo(repoRemote);

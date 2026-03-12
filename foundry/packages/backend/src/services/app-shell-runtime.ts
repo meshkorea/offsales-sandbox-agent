@@ -1,8 +1,10 @@
 import {
   GitHubAppClient,
   type GitHubInstallationRecord,
+  type GitHubMemberRecord,
   type GitHubOAuthSession,
   type GitHubOrgIdentity,
+  type GitHubPullRequestRecord,
   type GitHubRepositoryRecord,
   type GitHubViewerIdentity,
   type GitHubWebhookEvent,
@@ -23,11 +25,15 @@ export type AppShellGithubClient = Pick<
   | "isWebhookConfigured"
   | "buildAuthorizeUrl"
   | "exchangeCode"
+  | "getTokenScopes"
   | "getViewer"
   | "listOrganizations"
   | "listInstallations"
   | "listUserRepositories"
+  | "listUserPullRequests"
   | "listInstallationRepositories"
+  | "listInstallationMembers"
+  | "listInstallationPullRequests"
   | "buildInstallationUrl"
   | "verifyWebhookEvent"
 >;
@@ -67,8 +73,10 @@ export function createDefaultAppShellServices(options: CreateAppShellServicesOpt
 
 export type {
   GitHubInstallationRecord,
+  GitHubMemberRecord,
   GitHubOAuthSession,
   GitHubOrgIdentity,
+  GitHubPullRequestRecord,
   GitHubRepositoryRecord,
   GitHubViewerIdentity,
   GitHubWebhookEvent,

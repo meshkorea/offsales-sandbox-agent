@@ -13,6 +13,9 @@
     "declaration": true,
     "sourceMap": true,
     "paths": {
+      "sandbox-agent": ["../sdks/typescript/src/index.ts"],
+      "@sandbox-agent/cli-shared": ["../sdks/cli-shared/src/index.ts"],
+      "acp-http-client": ["../sdks/acp-http-client/src/index.ts"],
       "@sandbox-agent/foundry-client": ["packages/client/src/index.ts"],
       "@sandbox-agent/foundry-shared": ["packages/shared/src/index.ts"],
       "@sandbox-agent/foundry-backend": ["packages/backend/src/index.ts"],

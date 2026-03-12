@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { TaskWorkbenchSnapshot, WorkbenchAgentTab, WorkbenchTask, WorkbenchModelId, WorkbenchTranscriptEvent } from "@sandbox-agent/foundry-shared";
 import { createBackendClient } from "../../src/backend-client.js";
 
-const RUN_WORKBENCH_LOAD_E2E = process.env.HF_ENABLE_DAEMON_WORKBENCH_LOAD_E2E === "1";
+const DEFAULT_E2E_GITHUB_REPO = "rivet-dev/sandbox-agent-testing";
 
 function requiredEnv(name: string): string {
   const value = process.env[name]?.trim();
@@ -174,10 +174,11 @@ async function measureWorkbenchSnapshot(
 }
 
 describe("e2e(client): workbench load", () => {
-  it.skipIf(!RUN_WORKBENCH_LOAD_E2E)("runs a simple sequential load profile against the real backend", { timeout: 30 * 60_000 }, async () => {
+  it("runs a simple sequential load profile against the real backend", { timeout: 30 * 60_000 }, async () => {
     const endpoint = process.env.HF_E2E_BACKEND_ENDPOINT?.trim() || "http://127.0.0.1:7741/api/rivet";
     const workspaceId = process.env.HF_E2E_WORKSPACE?.trim() || "default";
-    const repoRemote = requiredEnv("HF_E2E_GITHUB_REPO");
+    const repoRemote = process.env.HF_E2E_GITHUB_REPO?.trim() || DEFAULT_E2E_GITHUB_REPO;
+    requiredEnv("GITHUB_TOKEN");
     const model = workbenchModelEnv("HF_E2E_MODEL", "gpt-4o");
     const taskCount = intEnv("HF_LOAD_TASK_COUNT", 3);
     const extraSessionCount = intEnv("HF_LOAD_EXTRA_SESSION_COUNT", 2);

@@ -697,13 +697,44 @@ export function MockOrganizationSettingsPage({ organization }: { organization: F
             description={`Connected as ${organization.github.connectedAccount}. ${organization.github.importedRepoCount} repos imported.`}
           >
             <SettingsRow label="Installation status" description={`Last sync: ${organization.github.lastSyncLabel}`} action={githubBadge(t, organization)} />
-            <div style={{ display: "flex", gap: "8px" }}>
+            {organization.runtime.status === "error" ? (
+              <div
+                style={{
+                  display: "grid",
+                  gap: "8px",
+                  padding: "12px",
+                  borderRadius: "8px",
+                  background: "rgba(255, 79, 0, 0.08)",
+                  border: "1px solid rgba(255, 79, 0, 0.18)",
+                }}
+              >
+                <div style={{ color: t.textPrimary, fontSize: "12px", fontWeight: 600 }}>
+                  {organization.runtime.errorCount === 1
+                    ? "1 actor is currently reporting a workflow error"
+                    : `${organization.runtime.errorCount} actors are currently reporting workflow errors`}
+                </div>
+                {organization.runtime.issues.slice(0, 4).map((issue) => (
+                  <div key={issue.actorId} style={{ color: t.textSecondary, fontSize: "11px", lineHeight: 1.5 }}>
+                    <strong>{issue.scopeLabel}</strong>: {issue.message}
+                    {issue.stepName ? ` · step ${issue.stepName}` : ""}
+                    {issue.attempt != null ? ` · attempt ${issue.attempt}` : ""}
+                    {issue.willRetry && issue.retryDelayMs != null ? ` · retrying in ${issue.retryDelayMs}ms` : ""}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
               <button type="button" onClick={() => void client.reconnectGithub(organization.id)} style={secondaryButtonStyle(t)}>
                 Reconnect GitHub
               </button>
               <button type="button" onClick={() => void client.triggerGithubSync(organization.id)} style={subtleButtonStyle(t)}>
                 Sync repos
               </button>
+              {organization.runtime.errorCount > 0 ? (
+                <button type="button" onClick={() => void client.clearOrganizationRuntimeIssues(organization.id)} style={subtleButtonStyle(t)}>
+                  Clear actor errors
+                </button>
+              ) : null}
             </div>
           </SettingsContentSection>
 
