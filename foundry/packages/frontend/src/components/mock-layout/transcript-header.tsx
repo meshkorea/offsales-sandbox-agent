@@ -3,6 +3,7 @@ import { useStyletron } from "baseui";
 import { LabelSmall } from "baseui/typography";
 import { Clock, MailOpen, PanelLeft, PanelRight } from "lucide-react";
 
+import { useFoundryTokens } from "../../app/theme";
 import { PanelHeaderBar } from "./ui";
 import { type AgentTab, type Task } from "./view-model";
 
@@ -39,12 +40,13 @@ export const TranscriptHeader = memo(function TranscriptHeader({
   rightSidebarCollapsed?: boolean;
   onToggleRightSidebar?: () => void;
 }) {
-  const [css, theme] = useStyletron();
+  const [css] = useStyletron();
+  const t = useFoundryTokens();
   const isDesktop = !!import.meta.env.VITE_DESKTOP;
   const needsTrafficLightInset = isDesktop && sidebarCollapsed;
 
   return (
-    <PanelHeaderBar $style={{ backgroundColor: "#0f0f11", borderBottom: "none", paddingLeft: needsTrafficLightInset ? "74px" : "14px" }}>
+    <PanelHeaderBar $style={{ backgroundColor: t.surfaceSecondary, borderBottom: "none", paddingLeft: needsTrafficLightInset ? "74px" : "14px" }}>
       {sidebarCollapsed && onToggleSidebar ? (
         <div
           className={css({
@@ -55,9 +57,9 @@ export const TranscriptHeader = memo(function TranscriptHeader({
             alignItems: "center",
             justifyContent: "center",
             cursor: "pointer",
-            color: "#71717a",
+            color: t.textTertiary,
             flexShrink: 0,
-            ":hover": { color: "#a1a1aa", backgroundColor: "rgba(255, 255, 255, 0.06)" },
+            ":hover": { color: t.textSecondary, backgroundColor: t.interactiveHover },
           })}
           onClick={onToggleSidebar}
           onMouseEnter={onSidebarPeekStart}
@@ -89,8 +91,8 @@ export const TranscriptHeader = memo(function TranscriptHeader({
             outline: "none",
             fontWeight: 500,
             fontSize: "14px",
-            color: theme.colors.contentPrimary,
-            borderBottom: "1px solid rgba(255, 255, 255, 0.3)",
+            color: t.textPrimary,
+            borderBottom: `1px solid ${t.borderFocus}`,
             minWidth: "80px",
             maxWidth: "300px",
           })}
@@ -98,7 +100,7 @@ export const TranscriptHeader = memo(function TranscriptHeader({
       ) : (
         <LabelSmall
           title="Rename"
-          color={theme.colors.contentPrimary}
+          color={t.textPrimary}
           $style={{ fontWeight: 400, whiteSpace: "nowrap", cursor: "pointer", ":hover": { textDecoration: "underline" } }}
           onClick={() => onStartEditingField("title", task.title)}
         >
@@ -127,9 +129,9 @@ export const TranscriptHeader = memo(function TranscriptHeader({
               outline: "none",
               padding: "2px 8px",
               borderRadius: "999px",
-              border: "1px solid rgba(255, 255, 255, 0.3)",
-              backgroundColor: "rgba(255, 255, 255, 0.03)",
-              color: "#e4e4e7",
+              border: `1px solid ${t.borderFocus}`,
+              backgroundColor: t.interactiveSubtle,
+              color: t.textPrimary,
               fontSize: "11px",
               whiteSpace: "nowrap",
               fontFamily: '"IBM Plex Mono", monospace',
@@ -143,14 +145,14 @@ export const TranscriptHeader = memo(function TranscriptHeader({
             className={css({
               padding: "2px 8px",
               borderRadius: "999px",
-              border: "1px solid rgba(255, 255, 255, 0.14)",
-              backgroundColor: "rgba(255, 255, 255, 0.03)",
-              color: "#e4e4e7",
+              border: `1px solid ${t.borderMedium}`,
+              backgroundColor: t.interactiveSubtle,
+              color: t.textPrimary,
               fontSize: "11px",
               whiteSpace: "nowrap",
               fontFamily: '"IBM Plex Mono", monospace',
               cursor: "pointer",
-              ":hover": { borderColor: "rgba(255, 255, 255, 0.3)" },
+              ":hover": { borderColor: t.borderFocus },
             })}
           >
             {task.branch}
@@ -165,12 +167,12 @@ export const TranscriptHeader = memo(function TranscriptHeader({
           gap: "5px",
           padding: "3px 10px",
           borderRadius: "6px",
-          backgroundColor: "rgba(255, 255, 255, 0.05)",
-          border: "1px solid rgba(255, 255, 255, 0.08)",
+          backgroundColor: t.interactiveHover,
+          border: `1px solid ${t.borderSubtle}`,
           fontSize: "11px",
           fontWeight: 500,
           lineHeight: 1,
-          color: theme.colors.contentSecondary,
+          color: t.textSecondary,
           whiteSpace: "nowrap",
         })}
       >
@@ -195,10 +197,10 @@ export const TranscriptHeader = memo(function TranscriptHeader({
             fontSize: "11px",
             fontWeight: 500,
             lineHeight: 1,
-            color: theme.colors.contentSecondary,
+            color: t.textSecondary,
             cursor: "pointer",
             transition: "all 200ms ease",
-            ":hover": { backgroundColor: "rgba(255, 255, 255, 0.06)", color: theme.colors.contentPrimary },
+            ":hover": { backgroundColor: t.interactiveHover, color: t.textPrimary },
           })}
         >
           <MailOpen size={12} style={{ flexShrink: 0 }} />{" "}
@@ -215,9 +217,9 @@ export const TranscriptHeader = memo(function TranscriptHeader({
             alignItems: "center",
             justifyContent: "center",
             cursor: "pointer",
-            color: "#71717a",
+            color: t.textTertiary,
             flexShrink: 0,
-            ":hover": { color: "#a1a1aa", backgroundColor: "rgba(255, 255, 255, 0.06)" },
+            ":hover": { color: t.textSecondary, backgroundColor: t.interactiveHover },
           })}
           onClick={onToggleRightSidebar}
         >

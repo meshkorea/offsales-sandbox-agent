@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useStyletron } from "baseui";
 
 import { PanelLeft, PanelRight } from "lucide-react";
+import { useFoundryTokens } from "../app/theme";
 
 import { DiffContent } from "./mock-layout/diff-content";
 import { MessageList } from "./mock-layout/message-list";
@@ -95,6 +96,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
   rightSidebarCollapsed?: boolean;
   onToggleRightSidebar?: () => void;
 }) {
+  const t = useFoundryTokens();
   const [defaultModel, setDefaultModel] = useState<ModelId>("claude-sonnet-4");
   const [editingField, setEditingField] = useState<"title" | "branch" | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -471,13 +473,13 @@ const TranscriptPanel = memo(function TranscriptPanel({
           minHeight: 0,
           display: "flex",
           flexDirection: "column",
-          backgroundColor: "#09090b",
+          backgroundColor: t.surfacePrimary,
           overflow: "hidden",
           borderTopLeftRadius: "12px",
           borderTopRightRadius: rightSidebarCollapsed ? "12px" : 0,
           borderBottomLeftRadius: "24px",
           borderBottomRightRadius: rightSidebarCollapsed ? "24px" : 0,
-          border: "1px solid rgba(255, 255, 255, 0.10)",
+          border: `1px solid ${t.borderDefault}`,
         }}
       >
         <TabStrip
@@ -534,8 +536,8 @@ const TranscriptPanel = memo(function TranscriptPanel({
                     border: 0,
                     borderRadius: "999px",
                     padding: "10px 18px",
-                    background: "rgba(255, 255, 255, 0.12)",
-                    color: "#e4e4e7",
+                    background: t.borderMedium,
+                    color: t.textPrimary,
                     cursor: "pointer",
                     fontWeight: 600,
                   }}
@@ -676,6 +678,7 @@ const RightRail = memo(function RightRail({
   onToggleSidebar?: () => void;
 }) {
   const [css] = useStyletron();
+  const t = useFoundryTokens();
   const railRef = useRef<HTMLDivElement>(null);
   const [terminalHeight, setTerminalHeight] = useState(() => {
     if (typeof window === "undefined") {
@@ -745,7 +748,7 @@ const RightRail = memo(function RightRail({
         flex: 1,
         display: "flex",
         flexDirection: "column",
-        backgroundColor: "#090607",
+        backgroundColor: t.surfacePrimary,
       })}
     >
       <div
@@ -777,8 +780,8 @@ const RightRail = memo(function RightRail({
           flexShrink: 0,
           cursor: "ns-resize",
           position: "relative",
-          backgroundColor: "#050505",
-          borderRight: "1px solid rgba(255, 255, 255, 0.10)",
+          backgroundColor: t.surfacePrimary,
+          borderRight: `1px solid ${t.borderDefault}`,
           ":before": {
             content: '""',
             position: "absolute",
@@ -788,7 +791,7 @@ const RightRail = memo(function RightRail({
             height: "4px",
             borderRadius: "999px",
             transform: "translate(-50%, -50%)",
-            backgroundColor: "rgba(255, 255, 255, 0.14)",
+            backgroundColor: t.borderMedium,
           },
         })}
       />
@@ -796,11 +799,11 @@ const RightRail = memo(function RightRail({
         className={css({
           height: `${terminalHeight}px`,
           minHeight: `${RIGHT_RAIL_MIN_SECTION_HEIGHT}px`,
-          backgroundColor: "#080506",
+          backgroundColor: t.surfacePrimary,
           overflow: "hidden",
           borderBottomRightRadius: "12px",
-          borderRight: "1px solid rgba(255, 255, 255, 0.10)",
-          borderBottom: "1px solid rgba(255, 255, 255, 0.10)",
+          borderRight: `1px solid ${t.borderDefault}`,
+          borderBottom: `1px solid ${t.borderDefault}`,
         })}
       >
         <TerminalPane workspaceId={workspaceId} taskId={task.id} />
@@ -819,17 +822,18 @@ function MockWorkspaceOrgBar() {
   const navigate = useNavigate();
   const snapshot = useMockAppSnapshot();
   const organization = activeMockOrganization(snapshot);
+  const t = useFoundryTokens();
 
   if (!organization) {
     return null;
   }
 
   const buttonStyle = {
-    border: "1px solid rgba(255,255,255,0.12)",
+    border: `1px solid ${t.borderMedium}`,
     borderRadius: "999px",
     padding: "8px 12px",
-    background: "rgba(255,255,255,0.03)",
-    color: "rgba(255,255,255,0.86)",
+    background: t.interactiveSubtle,
+    color: t.textPrimary,
     cursor: "pointer",
     fontSize: "13px",
     fontWeight: 600,
@@ -843,13 +847,13 @@ function MockWorkspaceOrgBar() {
         justifyContent: "space-between",
         gap: "16px",
         padding: "12px 20px",
-        borderBottom: "1px solid rgba(255,255,255,0.08)",
-        background: "#101010",
+        borderBottom: `1px solid ${t.borderSubtle}`,
+        background: t.surfaceSecondary,
       }}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
         <strong style={{ fontSize: "14px", fontWeight: 600 }}>{organization.settings.displayName}</strong>
-        <span style={{ fontSize: "12px", color: "rgba(255,255,255,0.6)" }}>{organization.settings.primaryDomain}</span>
+        <span style={{ fontSize: "12px", color: t.textMuted }}>{organization.settings.primaryDomain}</span>
       </div>
       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
         <button
@@ -892,6 +896,7 @@ function MockWorkspaceOrgBar() {
 
 export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: MockLayoutProps) {
   const [css] = useStyletron();
+  const t = useFoundryTokens();
   const navigate = useNavigate();
   const taskWorkbenchClient = useMemo(() => getTaskWorkbenchClient(workspaceId), [workspaceId]);
   const viewModel = useSyncExternalStore(
@@ -1287,11 +1292,11 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
     alignItems: "center",
     justifyContent: "center",
     cursor: "pointer",
-    color: "#71717a",
+    color: t.textTertiary,
     position: "relative",
     zIndex: 9999,
     flexShrink: 0,
-    ":hover": { color: "#a1a1aa", backgroundColor: "rgba(255, 255, 255, 0.06)" },
+    ":hover": { color: t.textSecondary, backgroundColor: t.interactiveHover },
   });
 
   const sidebarTransition = "width 200ms ease";
@@ -1341,7 +1346,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
           </div>
           <div style={contentFrameStyle}>
             {leftSidebarOpen ? <PanelResizeHandle onResizeStart={onLeftResizeStart} onResize={onLeftResize} /> : null}
-            <SPanel $style={{ backgroundColor: "#09090b", flex: 1, minWidth: 0 }}>
+            <SPanel $style={{ backgroundColor: t.surfacePrimary, flex: 1, minWidth: 0 }}>
               {!leftSidebarOpen || !rightSidebarOpen ? (
                 <div style={{ display: "flex", alignItems: "center", padding: "8px 8px 0 8px" }}>
                   {leftSidebarOpen ? null : (
@@ -1391,8 +1396,8 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
                         border: 0,
                         borderRadius: "999px",
                         padding: "10px 18px",
-                        background: viewModel.repos.length > 0 ? "rgba(255, 255, 255, 0.12)" : "#444",
-                        color: "#e4e4e7",
+                        background: viewModel.repos.length > 0 ? t.borderMedium : t.textTertiary,
+                        color: t.textPrimary,
                         cursor: viewModel.repos.length > 0 ? "pointer" : "not-allowed",
                         fontWeight: 600,
                       }}

@@ -3,6 +3,7 @@ import { useStyletron } from "baseui";
 import { LabelXSmall } from "baseui/typography";
 import { FileCode, Plus, X } from "lucide-react";
 
+import { useFoundryTokens } from "../../app/theme";
 import { ContextMenuOverlay, TabAvatar, useContextMenu } from "./ui";
 import { diffTabId, fileName, type Task } from "./view-model";
 
@@ -39,7 +40,8 @@ export const TabStrip = memo(function TabStrip({
   onAddTab: () => void;
   sidebarCollapsed?: boolean;
 }) {
-  const [css, theme] = useStyletron();
+  const [css] = useStyletron();
+  const t = useFoundryTokens();
   const isDesktop = !!import.meta.env.VITE_DESKTOP;
   const contextMenu = useContextMenu();
 
@@ -53,9 +55,9 @@ export const TabStrip = memo(function TabStrip({
         className={css({
           display: "flex",
           alignItems: "stretch",
-          borderBottom: `1px solid ${theme.colors.borderOpaque}`,
+          borderBottom: `1px solid ${t.borderDefault}`,
           gap: "4px",
-          backgroundColor: "#09090b",
+          backgroundColor: t.surfacePrimary,
           paddingLeft: sidebarCollapsed ? "14px" : "6px",
           height: "41px",
           minHeight: "41px",
@@ -97,11 +99,11 @@ export const TabStrip = memo(function TabStrip({
                 marginTop: "6px",
                 marginBottom: "6px",
                 borderRadius: "8px",
-                backgroundColor: isActive ? "rgba(255, 255, 255, 0.06)" : "transparent",
+                backgroundColor: isActive ? t.interactiveHover : "transparent",
                 cursor: "pointer",
                 transition: "color 200ms ease, background-color 200ms ease",
                 flexShrink: 0,
-                ":hover": { color: "#e4e4e7", backgroundColor: isActive ? "rgba(255, 255, 255, 0.06)" : "rgba(255, 255, 255, 0.04)" },
+                ":hover": { color: t.textPrimary, backgroundColor: isActive ? t.interactiveHover : t.interactiveSubtle },
               })}
             >
               <div
@@ -144,19 +146,19 @@ export const TabStrip = memo(function TabStrip({
                     maxWidth: "180px",
                     fontSize: "11px",
                     fontWeight: 600,
-                    color: theme.colors.contentPrimary,
-                    borderBottom: "1px solid rgba(255, 255, 255, 0.3)",
+                    color: t.textPrimary,
+                    borderBottom: `1px solid ${t.borderFocus}`,
                   })}
                 />
               ) : (
-                <LabelXSmall color={isActive ? theme.colors.contentPrimary : theme.colors.contentSecondary} $style={{ fontWeight: 500 }}>
+                <LabelXSmall color={isActive ? t.textPrimary : t.textSecondary} $style={{ fontWeight: 500 }}>
                   {tab.sessionName}
                 </LabelXSmall>
               )}
               {task.tabs.length > 1 ? (
                 <X
                   size={11}
-                  color={theme.colors.contentTertiary}
+                  color={t.textTertiary}
                   data-tab-close
                   className={css({ cursor: "pointer", opacity: 0 })}
                   onClick={(event) => {
@@ -190,23 +192,20 @@ export const TabStrip = memo(function TabStrip({
                 marginTop: "6px",
                 marginBottom: "6px",
                 borderRadius: "8px",
-                backgroundColor: isActive ? "rgba(255, 255, 255, 0.06)" : "transparent",
+                backgroundColor: isActive ? t.interactiveHover : "transparent",
                 cursor: "pointer",
                 transition: "color 200ms ease, background-color 200ms ease",
                 flexShrink: 0,
-                ":hover": { color: "#e4e4e7", backgroundColor: isActive ? "rgba(255, 255, 255, 0.06)" : "rgba(255, 255, 255, 0.04)" },
+                ":hover": { color: t.textPrimary, backgroundColor: isActive ? t.interactiveHover : t.interactiveSubtle },
               })}
             >
-              <FileCode size={12} color={isActive ? theme.colors.contentPrimary : theme.colors.contentSecondary} />
-              <LabelXSmall
-                color={isActive ? theme.colors.contentPrimary : theme.colors.contentSecondary}
-                $style={{ fontWeight: 500, fontFamily: '"IBM Plex Mono", monospace' }}
-              >
+              <FileCode size={12} color={isActive ? t.textPrimary : t.textSecondary} />
+              <LabelXSmall color={isActive ? t.textPrimary : t.textSecondary} $style={{ fontWeight: 500, fontFamily: '"IBM Plex Mono", monospace' }}>
                 {fileName(path)}
               </LabelXSmall>
               <X
                 size={11}
-                color={theme.colors.contentTertiary}
+                color={t.textTertiary}
                 data-tab-close
                 className={css({ cursor: "pointer", opacity: 0 })}
                 onClick={(event) => {
@@ -230,7 +229,7 @@ export const TabStrip = memo(function TabStrip({
             flexShrink: 0,
           })}
         >
-          <Plus size={14} color={theme.colors.contentTertiary} />
+          <Plus size={14} color={t.textTertiary} />
         </div>
       </div>
       {contextMenu.menu ? <ContextMenuOverlay menu={contextMenu.menu} onClose={contextMenu.close} /> : null}

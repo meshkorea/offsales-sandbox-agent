@@ -3,6 +3,7 @@ import { useStyletron } from "baseui";
 import { ChatComposer, type ChatComposerClassNames } from "@sandbox-agent/react";
 import { FileCode, SendHorizonal, Square, X } from "lucide-react";
 
+import { useFoundryTokens } from "../../app/theme";
 import { ModelPicker } from "./model-picker";
 import { PROMPT_TEXTAREA_MAX_HEIGHT, PROMPT_TEXTAREA_MIN_HEIGHT } from "./ui";
 import { fileName, type LineAttachment, type ModelId } from "./view-model";
@@ -36,16 +37,17 @@ export const PromptComposer = memo(function PromptComposer({
   onChangeModel: (model: ModelId) => void;
   onSetDefaultModel: (model: ModelId) => void;
 }) {
-  const [css, theme] = useStyletron();
+  const [css] = useStyletron();
+  const t = useFoundryTokens();
   const composerClassNames: Partial<ChatComposerClassNames> = {
     form: css({
       position: "relative",
-      backgroundColor: "rgba(255, 255, 255, 0.06)",
-      border: `1px solid ${theme.colors.borderOpaque}`,
+      backgroundColor: t.interactiveHover,
+      border: `1px solid ${t.borderDefault}`,
       borderRadius: "12px",
       minHeight: `${PROMPT_TEXTAREA_MIN_HEIGHT + 36}px`,
       transition: "border-color 200ms ease",
-      ":focus-within": { borderColor: "rgba(255, 255, 255, 0.15)" },
+      ":focus-within": { borderColor: t.borderMedium },
       display: "flex",
       flexDirection: "column",
     }),
@@ -57,7 +59,7 @@ export const PromptComposer = memo(function PromptComposer({
       background: "transparent",
       border: "none",
       borderRadius: "12px 12px 0 0",
-      color: theme.colors.contentPrimary,
+      color: t.textPrimary,
       fontSize: "13px",
       fontFamily: "inherit",
       resize: "none",
@@ -66,7 +68,7 @@ export const PromptComposer = memo(function PromptComposer({
       maxHeight: `${PROMPT_TEXTAREA_MAX_HEIGHT + 40}px`,
       boxSizing: "border-box",
       overflowY: "hidden",
-      "::placeholder": { color: theme.colors.contentSecondary },
+      "::placeholder": { color: t.textSecondary },
     }),
     submit: css({
       appearance: "none",
@@ -87,11 +89,11 @@ export const PromptComposer = memo(function PromptComposer({
       justifyContent: "center",
       lineHeight: 0,
       fontSize: 0,
-      color: theme.colors.contentPrimary,
+      color: t.textPrimary,
       transition: "background 200ms ease",
-      backgroundColor: isRunning ? "rgba(255, 255, 255, 0.06)" : "rgba(255, 255, 255, 0.12)",
+      backgroundColor: isRunning ? t.interactiveHover : t.borderMedium,
       ":hover": {
-        backgroundColor: isRunning ? "rgba(255, 255, 255, 0.12)" : "rgba(255, 255, 255, 0.20)",
+        backgroundColor: isRunning ? t.borderMedium : "rgba(255, 255, 255, 0.20)",
       },
       ":disabled": {
         cursor: "not-allowed",
@@ -105,7 +107,7 @@ export const PromptComposer = memo(function PromptComposer({
       width: "100%",
       height: "100%",
       lineHeight: 0,
-      color: isRunning ? theme.colors.contentPrimary : "#ffffff",
+      color: isRunning ? t.textPrimary : t.textPrimary,
     }),
   };
 
@@ -131,11 +133,11 @@ export const PromptComposer = memo(function PromptComposer({
                 gap: "4px",
                 padding: "2px 8px",
                 borderRadius: "4px",
-                backgroundColor: "rgba(255, 255, 255, 0.06)",
-                border: "1px solid rgba(255, 255, 255, 0.14)",
+                backgroundColor: t.interactiveHover,
+                border: `1px solid ${t.borderMedium}`,
                 fontSize: "11px",
                 fontFamily: '"IBM Plex Mono", monospace',
-                color: theme.colors.contentSecondary,
+                color: t.textSecondary,
               })}
             >
               <FileCode size={11} />

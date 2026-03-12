@@ -2,10 +2,12 @@ import { memo, useEffect, useState } from "react";
 import { useStyletron } from "baseui";
 import { LabelXSmall } from "baseui/typography";
 
+import { useFoundryTokens } from "../../app/theme";
 import { formatMessageTimestamp, type HistoryEvent } from "./view-model";
 
 export const HistoryMinimap = memo(function HistoryMinimap({ events, onSelect }: { events: HistoryEvent[]; onSelect: (event: HistoryEvent) => void }) {
-  const [css, theme] = useStyletron();
+  const [css] = useStyletron();
+  const t = useFoundryTokens();
   const [open, setOpen] = useState(false);
   const [activeEventId, setActiveEventId] = useState<string | null>(events[events.length - 1]?.id ?? null);
 
@@ -42,10 +44,10 @@ export const HistoryMinimap = memo(function HistoryMinimap({ events, onSelect }:
           })}
         >
           <div className={css({ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" })}>
-            <LabelXSmall color={theme.colors.contentTertiary} $style={{ letterSpacing: "0.08em", textTransform: "uppercase" }}>
+            <LabelXSmall color={t.textTertiary} $style={{ letterSpacing: "0.08em", textTransform: "uppercase" }}>
               Task Events
             </LabelXSmall>
-            <LabelXSmall color={theme.colors.contentTertiary}>{events.length}</LabelXSmall>
+            <LabelXSmall color={t.textTertiary}>{events.length}</LabelXSmall>
           </div>
           <div className={css({ display: "flex", flexDirection: "column", gap: "6px" })}>
             {events.map((event) => {
@@ -70,12 +72,12 @@ export const HistoryMinimap = memo(function HistoryMinimap({ events, onSelect }:
                     padding: "9px 10px",
                     borderRadius: "12px",
                     cursor: "pointer",
-                    backgroundColor: isActive ? "rgba(255, 255, 255, 0.08)" : "transparent",
-                    color: isActive ? theme.colors.contentPrimary : theme.colors.contentSecondary,
+                    backgroundColor: isActive ? t.borderSubtle : "transparent",
+                    color: isActive ? t.textPrimary : t.textSecondary,
                     transition: "background 160ms ease, color 160ms ease",
                     ":hover": {
-                      backgroundColor: "rgba(255, 255, 255, 0.08)",
-                      color: theme.colors.contentPrimary,
+                      backgroundColor: t.borderSubtle,
+                      color: t.textPrimary,
                     },
                   })}
                 >
@@ -91,9 +93,9 @@ export const HistoryMinimap = memo(function HistoryMinimap({ events, onSelect }:
                     >
                       {event.preview}
                     </div>
-                    <LabelXSmall color={theme.colors.contentTertiary}>{event.sessionName}</LabelXSmall>
+                    <LabelXSmall color={t.textTertiary}>{event.sessionName}</LabelXSmall>
                   </div>
-                  <LabelXSmall color={theme.colors.contentTertiary}>{formatMessageTimestamp(event.createdAtMs)}</LabelXSmall>
+                  <LabelXSmall color={t.textTertiary}>{formatMessageTimestamp(event.createdAtMs)}</LabelXSmall>
                 </button>
               );
             })}
@@ -119,7 +121,7 @@ export const HistoryMinimap = memo(function HistoryMinimap({ events, onSelect }:
               className={css({
                 height: "3px",
                 borderRadius: "999px",
-                backgroundColor: isActive ? "#ff4f00" : "rgba(255, 255, 255, 0.22)",
+                backgroundColor: isActive ? t.accent : t.textMuted,
                 opacity: isActive ? 1 : 0.75,
                 transition: "background 160ms ease, opacity 160ms ease",
               })}

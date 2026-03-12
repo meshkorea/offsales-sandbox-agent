@@ -21,6 +21,8 @@ import {
 import { formatRelativeAge, type Task, type ProjectSection } from "./view-model";
 import { ContextMenuOverlay, TaskIndicator, PanelHeaderBar, SPanel, ScrollBody, useContextMenu } from "./ui";
 import { activeMockOrganization, eligibleOrganizations, useMockAppClient, useMockAppSnapshot } from "../../lib/mock-app";
+import { useFoundryTokens } from "../../app/theme";
+import type { FoundryTokens } from "../../styles/tokens";
 
 const PROJECT_COLORS = ["#6366f1", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316"];
 
@@ -65,7 +67,8 @@ export const Sidebar = memo(function Sidebar({
   onReorderProjects: (fromIndex: number, toIndex: number) => void;
   onToggleSidebar?: () => void;
 }) {
-  const [css, theme] = useStyletron();
+  const [css] = useStyletron();
+  const t = useFoundryTokens();
   const contextMenu = useContextMenu();
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
   const dragIndexRef = useRef<number | null>(null);
@@ -106,13 +109,13 @@ export const Sidebar = memo(function Sidebar({
                 width: "26px",
                 height: "26px",
                 borderRadius: "6px",
-                color: "#71717a",
+                color: t.textTertiary,
                 cursor: "pointer",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 flexShrink: 0,
-                ":hover": { color: "#a1a1aa", backgroundColor: "rgba(255, 255, 255, 0.06)" },
+                ":hover": { color: t.textSecondary, backgroundColor: t.interactiveHover },
               })}
             >
               <PanelLeft size={14} />
@@ -122,7 +125,7 @@ export const Sidebar = memo(function Sidebar({
       ) : null}
       <PanelHeaderBar $style={{ backgroundColor: "transparent", borderBottom: "none" }}>
         <LabelSmall
-          color={theme.colors.contentPrimary}
+          color={t.textPrimary}
           $style={{ fontWeight: 500, flex: 1, fontSize: "13px", display: "flex", alignItems: "center", gap: "6px", lineHeight: 1 }}
         >
           <ListChecks size={14} />
@@ -140,13 +143,13 @@ export const Sidebar = memo(function Sidebar({
               width: "26px",
               height: "26px",
               borderRadius: "6px",
-              color: "#71717a",
+              color: t.textTertiary,
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               flexShrink: 0,
-              ":hover": { color: "#a1a1aa", backgroundColor: "rgba(255, 255, 255, 0.06)" },
+              ":hover": { color: t.textSecondary, backgroundColor: t.interactiveHover },
             })}
           >
             <PanelLeft size={14} />
@@ -172,8 +175,8 @@ export const Sidebar = memo(function Sidebar({
             width: "26px",
             height: "26px",
             borderRadius: "8px",
-            backgroundColor: newTaskRepos.length > 0 ? "rgba(255, 255, 255, 0.12)" : "rgba(255, 255, 255, 0.06)",
-            color: "#e4e4e7",
+            backgroundColor: newTaskRepos.length > 0 ? t.borderMedium : t.interactiveHover,
+            color: t.textPrimary,
             cursor: newTaskRepos.length > 0 ? "pointer" : "not-allowed",
             display: "flex",
             alignItems: "center",
@@ -188,7 +191,7 @@ export const Sidebar = memo(function Sidebar({
         </div>
       </PanelHeaderBar>
       <div className={css({ padding: "0 8px 8px", display: "flex", flexDirection: "column", gap: "6px" })}>
-        <LabelXSmall color={theme.colors.contentTertiary} $style={{ textTransform: "uppercase", letterSpacing: "0.04em" }}>
+        <LabelXSmall color={t.textTertiary} $style={{ textTransform: "uppercase", letterSpacing: "0.04em" }}>
           Repo
         </LabelXSmall>
         <select
@@ -200,9 +203,9 @@ export const Sidebar = memo(function Sidebar({
           className={css({
             width: "100%",
             borderRadius: "8px",
-            border: "1px solid rgba(255, 255, 255, 0.10)",
-            backgroundColor: "rgba(255, 255, 255, 0.05)",
-            color: "#f4f4f5",
+            border: `1px solid ${t.borderDefault}`,
+            backgroundColor: t.interactiveHover,
+            color: t.textPrimary,
             fontSize: "12px",
             padding: "8px 10px",
             outline: "none",
@@ -258,7 +261,7 @@ export const Sidebar = memo(function Sidebar({
                   display: "flex",
                   flexDirection: "column",
                   gap: "4px",
-                  borderTop: isDragOver ? "2px solid #ff4f00" : "2px solid transparent",
+                  borderTop: isDragOver ? `2px solid ${t.accent}` : "2px solid transparent",
                   transition: "border-color 150ms ease",
                 })}
               >
@@ -294,7 +297,7 @@ export const Sidebar = memo(function Sidebar({
                           fontSize: "9px",
                           fontWeight: 700,
                           lineHeight: 1,
-                          color: "#fff",
+                          color: t.textOnAccent,
                           backgroundColor: projectIconColor(project.label),
                         })}
                         data-project-icon
@@ -302,15 +305,11 @@ export const Sidebar = memo(function Sidebar({
                         {projectInitial(project.label)}
                       </span>
                       <span className={css({ position: "absolute", inset: 0, display: "none", alignItems: "center", justifyContent: "center" })} data-chevron>
-                        {isCollapsed ? (
-                          <ChevronDown size={12} color={theme.colors.contentTertiary} />
-                        ) : (
-                          <ChevronUp size={12} color={theme.colors.contentTertiary} />
-                        )}
+                        {isCollapsed ? <ChevronDown size={12} color={t.textTertiary} /> : <ChevronUp size={12} color={t.textTertiary} />}
                       </span>
                     </div>
                     <LabelSmall
-                      color={theme.colors.contentSecondary}
+                      color={t.textSecondary}
                       $style={{
                         fontSize: "11px",
                         fontWeight: 700,
@@ -324,7 +323,7 @@ export const Sidebar = memo(function Sidebar({
                       {project.label}
                     </LabelSmall>
                   </div>
-                  {isCollapsed ? <LabelXSmall color={theme.colors.contentTertiary}>{formatRelativeAge(project.updatedAtMs)}</LabelXSmall> : null}
+                  {isCollapsed ? <LabelXSmall color={t.textTertiary}>{formatRelativeAge(project.updatedAtMs)}</LabelXSmall> : null}
                 </div>
 
                 {!isCollapsed &&
@@ -353,11 +352,11 @@ export const Sidebar = memo(function Sidebar({
                           padding: "8px 12px",
                           borderRadius: "8px",
                           border: "1px solid transparent",
-                          backgroundColor: isActive ? "rgba(255, 255, 255, 0.06)" : "transparent",
+                          backgroundColor: isActive ? t.interactiveHover : "transparent",
                           cursor: "pointer",
                           transition: "all 200ms ease",
                           ":hover": {
-                            backgroundColor: "rgba(255, 255, 255, 0.06)",
+                            backgroundColor: t.interactiveHover,
                           },
                         })}
                       >
@@ -384,27 +383,27 @@ export const Sidebar = memo(function Sidebar({
                               minWidth: 0,
                               flexShrink: 1,
                             }}
-                            color={hasUnread ? "#ffffff" : theme.colors.contentSecondary}
+                            color={hasUnread ? t.textPrimary : t.textSecondary}
                           >
                             {task.title}
                           </LabelSmall>
                           {task.pullRequest != null ? (
                             <span className={css({ display: "inline-flex", alignItems: "center", gap: "4px", flexShrink: 0 })}>
-                              <LabelXSmall color={theme.colors.contentSecondary} $style={{ fontWeight: 600 }}>
+                              <LabelXSmall color={t.textSecondary} $style={{ fontWeight: 600 }}>
                                 #{task.pullRequest.number}
                               </LabelXSmall>
-                              {task.pullRequest.status === "draft" ? <CloudUpload size={11} color="#ff4f00" /> : null}
+                              {task.pullRequest.status === "draft" ? <CloudUpload size={11} color={t.accent} /> : null}
                             </span>
                           ) : (
-                            <GitPullRequestDraft size={11} color={theme.colors.contentTertiary} />
+                            <GitPullRequestDraft size={11} color={t.textTertiary} />
                           )}
                           {hasDiffs ? (
                             <div className={css({ display: "flex", gap: "4px", flexShrink: 0, marginLeft: "auto" })}>
-                              <span className={css({ fontSize: "11px", color: "#7ee787" })}>+{totalAdded}</span>
-                              <span className={css({ fontSize: "11px", color: "#ffa198" })}>-{totalRemoved}</span>
+                              <span className={css({ fontSize: "11px", color: t.statusSuccess })}>+{totalAdded}</span>
+                              <span className={css({ fontSize: "11px", color: t.statusError })}>-{totalRemoved}</span>
                             </div>
                           ) : null}
-                          <LabelXSmall color={theme.colors.contentTertiary} $style={{ flexShrink: 0, marginLeft: hasDiffs ? undefined : "auto" }}>
+                          <LabelXSmall color={t.textTertiary} $style={{ flexShrink: 0, marginLeft: hasDiffs ? undefined : "auto" }}>
                             {formatRelativeAge(task.updatedAtMs)}
                           </LabelXSmall>
                         </div>
@@ -422,7 +421,7 @@ export const Sidebar = memo(function Sidebar({
   );
 });
 
-const menuButtonStyle = (highlight: boolean) =>
+const menuButtonStyle = (highlight: boolean, tokens: FoundryTokens) =>
   ({
     display: "flex",
     alignItems: "center",
@@ -431,8 +430,8 @@ const menuButtonStyle = (highlight: boolean) =>
     padding: "8px 12px",
     borderRadius: "6px",
     border: "none",
-    background: highlight ? "rgba(255, 255, 255, 0.06)" : "transparent",
-    color: "rgba(255, 255, 255, 0.75)",
+    background: highlight ? tokens.interactiveHover : "transparent",
+    color: tokens.textSecondary,
     cursor: "pointer",
     fontSize: "13px",
     fontWeight: 400 as const,
@@ -442,6 +441,7 @@ const menuButtonStyle = (highlight: boolean) =>
 
 function SidebarFooter() {
   const [css] = useStyletron();
+  const t = useFoundryTokens();
   const navigate = useNavigate();
   const client = useMockAppClient();
   const snapshot = useMockAppSnapshot();
@@ -547,9 +547,9 @@ function SidebarFooter() {
 
   const popoverStyle = css({
     borderRadius: "10px",
-    border: "1px solid rgba(255, 255, 255, 0.10)",
-    backgroundColor: "#18181b",
-    boxShadow: "0 12px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04)",
+    border: `1px solid ${t.borderDefault}`,
+    backgroundColor: t.surfaceElevated,
+    boxShadow: `${t.shadow}, 0 0 0 1px ${t.interactiveSubtle}`,
     padding: "4px",
     display: "flex",
     flexDirection: "column",
@@ -591,11 +591,11 @@ function SidebarFooter() {
                   type="button"
                   onClick={() => setWorkspaceFlyoutOpen((prev) => !prev)}
                   className={css({
-                    ...menuButtonStyle(workspaceFlyoutOpen),
+                    ...menuButtonStyle(workspaceFlyoutOpen, t),
                     fontWeight: 500,
                     ":hover": {
-                      backgroundColor: "rgba(255, 255, 255, 0.06)",
-                      color: "#ffffff",
+                      backgroundColor: t.interactiveHover,
+                      color: t.textPrimary,
                     },
                   })}
                 >
@@ -610,7 +610,7 @@ function SidebarFooter() {
                       justifyContent: "center",
                       fontSize: "9px",
                       fontWeight: 700,
-                      color: "#ffffff",
+                      color: t.textOnAccent,
                       flexShrink: 0,
                     })}
                   >
@@ -619,7 +619,7 @@ function SidebarFooter() {
                   <span className={css({ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" })}>
                     {organization.settings.displayName}
                   </span>
-                  <ChevronRight size={12} className={css({ flexShrink: 0, color: "rgba(255, 255, 255, 0.35)" })} />
+                  <ChevronRight size={12} className={css({ flexShrink: 0, color: t.textMuted })} />
                 </button>
               </div>
             ) : null}
@@ -663,12 +663,12 @@ function SidebarFooter() {
                               }
                             }}
                             className={css({
-                              ...menuButtonStyle(isActive),
+                              ...menuButtonStyle(isActive, t),
                               fontWeight: isActive ? 600 : 400,
-                              color: isActive ? "#ffffff" : "rgba(255, 255, 255, 0.65)",
+                              color: isActive ? t.textPrimary : t.textTertiary,
                               ":hover": {
-                                backgroundColor: "rgba(255, 255, 255, 0.06)",
-                                color: "#ffffff",
+                                backgroundColor: t.interactiveHover,
+                                color: t.textPrimary,
                               },
                             })}
                           >
@@ -683,7 +683,7 @@ function SidebarFooter() {
                                 justifyContent: "center",
                                 fontSize: "9px",
                                 fontWeight: 700,
-                                color: "#ffffff",
+                                color: t.textOnAccent,
                                 flexShrink: 0,
                               })}
                             >
@@ -707,11 +707,11 @@ function SidebarFooter() {
                 type="button"
                 onClick={item.onClick}
                 className={css({
-                  ...menuButtonStyle(false),
-                  color: item.danger ? "#ffa198" : "rgba(255, 255, 255, 0.75)",
+                  ...menuButtonStyle(false, t),
+                  color: item.danger ? t.statusError : t.textSecondary,
                   ":hover": {
-                    backgroundColor: "rgba(255, 255, 255, 0.06)",
-                    color: item.danger ? "#ff6b6b" : "#ffffff",
+                    backgroundColor: t.interactiveHover,
+                    color: item.danger ? t.statusError : t.textPrimary,
                   },
                 })}
               >
@@ -740,13 +740,13 @@ function SidebarFooter() {
             height: "28px",
             borderRadius: "6px",
             border: "none",
-            background: open ? "rgba(255, 255, 255, 0.06)" : "transparent",
-            color: open ? "#ffffff" : "#71717a",
+            background: open ? t.interactiveHover : "transparent",
+            color: open ? t.textPrimary : t.textTertiary,
             cursor: "pointer",
             transition: "all 160ms ease",
             ":hover": {
-              backgroundColor: "rgba(255, 255, 255, 0.06)",
-              color: "#a1a1aa",
+              backgroundColor: t.interactiveHover,
+              color: t.textSecondary,
             },
           })}
         >

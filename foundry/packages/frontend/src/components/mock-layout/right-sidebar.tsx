@@ -3,6 +3,7 @@ import { useStyletron } from "baseui";
 import { LabelSmall } from "baseui/typography";
 import { Archive, ArrowUpFromLine, ChevronRight, FileCode, FilePlus, FileX, FolderOpen, GitPullRequest, PanelRight } from "lucide-react";
 
+import { useFoundryTokens } from "../../app/theme";
 import { type ContextMenuItem, ContextMenuOverlay, PanelHeaderBar, SPanel, ScrollBody, useContextMenu } from "./ui";
 import { type FileTreeNode, type Task, diffTabId } from "./view-model";
 
@@ -19,7 +20,8 @@ const FileTree = memo(function FileTree({
   onFileContextMenu: (event: MouseEvent, path: string) => void;
   changedPaths: Set<string>;
 }) {
-  const [css, theme] = useStyletron();
+  const [css] = useStyletron();
+  const t = useFoundryTokens();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   return (
@@ -56,8 +58,8 @@ const FileTree = memo(function FileTree({
                 cursor: "pointer",
                 fontSize: "12px",
                 fontFamily: '"IBM Plex Mono", monospace',
-                color: isChanged ? theme.colors.contentPrimary : theme.colors.contentTertiary,
-                ":hover": { backgroundColor: "rgba(255, 255, 255, 0.06)" },
+                color: isChanged ? t.textPrimary : t.textTertiary,
+                ":hover": { backgroundColor: t.interactiveHover },
               })}
             >
               {node.isDir ? (
@@ -72,7 +74,7 @@ const FileTree = memo(function FileTree({
                   <FolderOpen size={13} />
                 </>
               ) : (
-                <FileCode size={13} color={isChanged ? theme.colors.contentPrimary : undefined} style={{ marginLeft: "16px" }} />
+                <FileCode size={13} color={isChanged ? t.textPrimary : undefined} style={{ marginLeft: "16px" }} />
               )}
               <span>{node.name}</span>
             </div>
@@ -103,7 +105,8 @@ export const RightSidebar = memo(function RightSidebar({
   onPublishPr: () => void;
   onToggleSidebar?: () => void;
 }) {
-  const [css, theme] = useStyletron();
+  const [css] = useStyletron();
+  const t = useFoundryTokens();
   const [rightTab, setRightTab] = useState<"changes" | "files">("changes");
   const contextMenu = useContextMenu();
   const changedPaths = useMemo(() => new Set(task.fileChanges.map((file) => file.path)), [task.fileChanges]);
@@ -147,8 +150,8 @@ export const RightSidebar = memo(function RightSidebar({
   );
 
   return (
-    <SPanel $style={{ backgroundColor: "#09090b", minWidth: 0 }}>
-      <PanelHeaderBar $style={{ backgroundColor: "#0f0f11", borderBottom: "none", overflow: "hidden" }}>
+    <SPanel $style={{ backgroundColor: t.surfacePrimary, minWidth: 0 }}>
+      <PanelHeaderBar $style={{ backgroundColor: t.surfaceSecondary, borderBottom: "none", overflow: "hidden" }}>
         <div ref={headerRef} className={css({ display: "flex", alignItems: "center", flex: 1, minWidth: 0, justifyContent: "flex-end", gap: "2px" })}>
           {!isTerminal ? (
             <div className={css({ display: "flex", alignItems: "center", gap: "2px", flexShrink: 1, minWidth: 0 })}>
@@ -178,10 +181,10 @@ export const RightSidebar = memo(function RightSidebar({
                   lineHeight: 1,
                   whiteSpace: "nowrap",
                   flexShrink: 0,
-                  color: theme.colors.contentSecondary,
+                  color: t.textSecondary,
                   cursor: "pointer",
                   transition: "all 200ms ease",
-                  ":hover": { backgroundColor: "rgba(255, 255, 255, 0.06)", color: theme.colors.contentPrimary },
+                  ":hover": { backgroundColor: t.interactiveHover, color: t.textPrimary },
                 })}
               >
                 <GitPullRequest size={12} style={{ flexShrink: 0 }} />
@@ -205,10 +208,10 @@ export const RightSidebar = memo(function RightSidebar({
                   lineHeight: 1,
                   whiteSpace: "nowrap",
                   flexShrink: 0,
-                  color: theme.colors.contentSecondary,
+                  color: t.textSecondary,
                   cursor: "pointer",
                   transition: "all 200ms ease",
-                  ":hover": { backgroundColor: "rgba(255, 255, 255, 0.06)", color: theme.colors.contentPrimary },
+                  ":hover": { backgroundColor: t.interactiveHover, color: t.textPrimary },
                 })}
               >
                 <ArrowUpFromLine size={12} style={{ flexShrink: 0 }} />
@@ -233,10 +236,10 @@ export const RightSidebar = memo(function RightSidebar({
                   lineHeight: 1,
                   whiteSpace: "nowrap",
                   flexShrink: 0,
-                  color: theme.colors.contentSecondary,
+                  color: t.textSecondary,
                   cursor: "pointer",
                   transition: "all 200ms ease",
-                  ":hover": { backgroundColor: "rgba(255, 255, 255, 0.06)", color: theme.colors.contentPrimary },
+                  ":hover": { backgroundColor: t.interactiveHover, color: t.textPrimary },
                 })}
               >
                 <Archive size={12} style={{ flexShrink: 0 }} />
@@ -256,13 +259,13 @@ export const RightSidebar = memo(function RightSidebar({
                 width: "26px",
                 height: "26px",
                 borderRadius: "6px",
-                color: "#71717a",
+                color: t.textTertiary,
                 cursor: "pointer",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 flexShrink: 0,
-                ":hover": { color: "#a1a1aa", backgroundColor: "rgba(255, 255, 255, 0.06)" },
+                ":hover": { color: t.textSecondary, backgroundColor: t.interactiveHover },
               })}
             >
               <PanelRight size={14} />
@@ -277,8 +280,8 @@ export const RightSidebar = memo(function RightSidebar({
           minHeight: 0,
           display: "flex",
           flexDirection: "column",
-          borderTop: "1px solid rgba(255, 255, 255, 0.10)",
-          borderRight: "1px solid rgba(255, 255, 255, 0.10)",
+          borderTop: `1px solid ${t.borderDefault}`,
+          borderRight: `1px solid ${t.borderDefault}`,
           borderTopRightRadius: "12px",
           overflow: "hidden",
         }}
@@ -288,8 +291,8 @@ export const RightSidebar = memo(function RightSidebar({
             display: "flex",
             alignItems: "stretch",
             gap: "4px",
-            borderBottom: `1px solid ${theme.colors.borderOpaque}`,
-            backgroundColor: "#09090b",
+            borderBottom: `1px solid ${t.borderDefault}`,
+            backgroundColor: t.surfacePrimary,
             height: "41px",
             minHeight: "41px",
             flexShrink: 0,
@@ -318,12 +321,12 @@ export const RightSidebar = memo(function RightSidebar({
               fontWeight: 500,
               lineHeight: 1,
               whiteSpace: "nowrap",
-              color: rightTab === "changes" ? theme.colors.contentPrimary : theme.colors.contentSecondary,
-              backgroundColor: rightTab === "changes" ? "rgba(255, 255, 255, 0.06)" : "transparent",
+              color: rightTab === "changes" ? t.textPrimary : t.textSecondary,
+              backgroundColor: rightTab === "changes" ? t.interactiveHover : "transparent",
               transitionProperty: "color, background-color",
               transitionDuration: "200ms",
               transitionTimingFunction: "ease",
-              ":hover": { color: "#e4e4e7", backgroundColor: rightTab === "changes" ? "rgba(255, 255, 255, 0.06)" : "rgba(255, 255, 255, 0.04)" },
+              ":hover": { color: t.textPrimary, backgroundColor: rightTab === "changes" ? t.interactiveHover : t.interactiveSubtle },
             })}
           >
             Changes
@@ -336,8 +339,8 @@ export const RightSidebar = memo(function RightSidebar({
                   minWidth: "16px",
                   height: "16px",
                   padding: "0 5px",
-                  background: "#3f3f46",
-                  color: "#a1a1aa",
+                  background: t.surfaceElevated,
+                  color: t.textSecondary,
                   fontSize: "9px",
                   fontWeight: 700,
                   borderRadius: "8px",
@@ -367,12 +370,12 @@ export const RightSidebar = memo(function RightSidebar({
               fontWeight: 500,
               lineHeight: 1,
               whiteSpace: "nowrap",
-              color: rightTab === "files" ? theme.colors.contentPrimary : theme.colors.contentSecondary,
-              backgroundColor: rightTab === "files" ? "rgba(255, 255, 255, 0.06)" : "transparent",
+              color: rightTab === "files" ? t.textPrimary : t.textSecondary,
+              backgroundColor: rightTab === "files" ? t.interactiveHover : "transparent",
               transitionProperty: "color, background-color",
               transitionDuration: "200ms",
               transitionTimingFunction: "ease",
-              ":hover": { color: "#e4e4e7", backgroundColor: rightTab === "files" ? "rgba(255, 255, 255, 0.06)" : "rgba(255, 255, 255, 0.04)" },
+              ":hover": { color: t.textPrimary, backgroundColor: rightTab === "files" ? t.interactiveHover : t.interactiveSubtle },
             })}
           >
             All Files
@@ -384,13 +387,13 @@ export const RightSidebar = memo(function RightSidebar({
             <div className={css({ padding: "10px 14px", display: "flex", flexDirection: "column", gap: "2px" })}>
               {task.fileChanges.length === 0 ? (
                 <div className={css({ padding: "20px 0", textAlign: "center" })}>
-                  <LabelSmall color={theme.colors.contentTertiary}>No changes yet</LabelSmall>
+                  <LabelSmall color={t.textTertiary}>No changes yet</LabelSmall>
                 </div>
               ) : null}
               {task.fileChanges.map((file) => {
                 const isActive = activeTabId === diffTabId(file.path);
                 const TypeIcon = file.type === "A" ? FilePlus : file.type === "D" ? FileX : FileCode;
-                const iconColor = file.type === "A" ? "#7ee787" : file.type === "D" ? "#ffa198" : theme.colors.contentTertiary;
+                const iconColor = file.type === "A" ? t.statusSuccess : file.type === "D" ? t.statusError : t.textTertiary;
                 return (
                   <div
                     key={file.path}
@@ -402,9 +405,9 @@ export const RightSidebar = memo(function RightSidebar({
                       gap: "8px",
                       padding: "6px 10px",
                       borderRadius: "6px",
-                      backgroundColor: isActive ? "rgba(255, 255, 255, 0.06)" : "transparent",
+                      backgroundColor: isActive ? t.interactiveHover : "transparent",
                       cursor: "pointer",
-                      ":hover": { backgroundColor: "rgba(255, 255, 255, 0.06)" },
+                      ":hover": { backgroundColor: t.interactiveHover },
                     })}
                   >
                     <TypeIcon size={14} color={iconColor} style={{ flexShrink: 0 }} />
@@ -414,7 +417,7 @@ export const RightSidebar = memo(function RightSidebar({
                         minWidth: 0,
                         fontFamily: '"IBM Plex Mono", monospace',
                         fontSize: "12px",
-                        color: isActive ? theme.colors.contentPrimary : theme.colors.contentSecondary,
+                        color: isActive ? t.textPrimary : t.textSecondary,
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
@@ -432,8 +435,8 @@ export const RightSidebar = memo(function RightSidebar({
                         fontFamily: '"IBM Plex Mono", monospace',
                       })}
                     >
-                      <span className={css({ color: "#7ee787" })}>+{file.added}</span>
-                      <span className={css({ color: "#ffa198" })}>-{file.removed}</span>
+                      <span className={css({ color: t.statusSuccess })}>+{file.added}</span>
+                      <span className={css({ color: t.statusError })}>-{file.removed}</span>
                       <span className={css({ color: iconColor, fontWeight: 600, width: "10px", textAlign: "center" })}>{file.type}</span>
                     </div>
                   </div>
@@ -446,7 +449,7 @@ export const RightSidebar = memo(function RightSidebar({
                 <FileTree nodes={task.fileTree} depth={0} onSelectFile={onOpenDiff} onFileContextMenu={openFileMenu} changedPaths={changedPaths} />
               ) : (
                 <div className={css({ padding: "20px 0", textAlign: "center" })}>
-                  <LabelSmall color={theme.colors.contentTertiary}>No files yet</LabelSmall>
+                  <LabelSmall color={t.textTertiary}>No files yet</LabelSmall>
                 </div>
               )}
             </div>

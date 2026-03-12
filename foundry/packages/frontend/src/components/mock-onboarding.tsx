@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { type FoundryBillingPlanId, type FoundryOrganization, type FoundryOrganizationMember, type FoundryUser } from "@sandbox-agent/foundry-shared";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, Clock, CreditCard, FileText, Github, LogOut, Settings, Users } from "lucide-react";
+import { ArrowLeft, Clock, CreditCard, FileText, Github, LogOut, Moon, Settings, Sun, Users } from "lucide-react";
 import { activeMockUser, eligibleOrganizations, useMockAppClient, useMockAppSnapshot } from "../lib/mock-app";
 import { isMockFrontendClient } from "../lib/env";
+import { useColorMode, useFoundryTokens } from "../app/theme";
+import type { FoundryTokens } from "../styles/tokens";
+import { appSurfaceStyle, primaryButtonStyle, secondaryButtonStyle, subtleButtonStyle, cardStyle, badgeStyle, inputStyle } from "../styles/shared-styles";
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -49,17 +52,6 @@ const taskHourPackages = [
   { hours: 1000, price: 120 },
 ];
 
-function appSurfaceStyle(): React.CSSProperties {
-  return {
-    minHeight: "100dvh",
-    display: "flex",
-    flexDirection: "column",
-    background: "#09090b",
-    color: "#ffffff",
-    fontFamily: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
-  };
-}
-
 function DesktopDragRegion() {
   const isDesktop = !!import.meta.env.VITE_DESKTOP;
   const onDragMouseDown = useCallback((event: React.PointerEvent) => {
@@ -100,75 +92,6 @@ function DesktopDragRegion() {
   );
 }
 
-function primaryButtonStyle(): React.CSSProperties {
-  return {
-    border: 0,
-    borderRadius: "6px",
-    padding: "6px 12px",
-    background: "#ffffff",
-    color: "#09090b",
-    fontWeight: 500,
-    fontSize: "12px",
-    cursor: "pointer",
-    fontFamily: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
-    lineHeight: 1.4,
-  };
-}
-
-function secondaryButtonStyle(): React.CSSProperties {
-  return {
-    border: "1px solid rgba(255, 255, 255, 0.10)",
-    borderRadius: "6px",
-    padding: "5px 11px",
-    background: "rgba(255, 255, 255, 0.03)",
-    color: "#d4d4d8",
-    fontWeight: 500,
-    fontSize: "12px",
-    cursor: "pointer",
-    fontFamily: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
-    lineHeight: 1.4,
-  };
-}
-
-function subtleButtonStyle(): React.CSSProperties {
-  return {
-    border: 0,
-    borderRadius: "6px",
-    padding: "6px 10px",
-    background: "rgba(255, 255, 255, 0.05)",
-    color: "#a1a1aa",
-    fontWeight: 500,
-    fontSize: "12px",
-    cursor: "pointer",
-    fontFamily: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
-    lineHeight: 1.4,
-  };
-}
-
-function cardStyle(): React.CSSProperties {
-  return {
-    background: "#0f0f11",
-    border: "1px solid rgba(255, 255, 255, 0.08)",
-    borderRadius: "8px",
-  };
-}
-
-function badgeStyle(background: string, color = "#a1a1aa"): React.CSSProperties {
-  return {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "4px",
-    padding: "2px 6px",
-    borderRadius: "4px",
-    background,
-    color,
-    fontSize: "10px",
-    fontWeight: 500,
-    letterSpacing: "0.01em",
-    lineHeight: 1.4,
-  };
-}
-
 function formatDate(value: string | null): string {
   if (!value) {
     return "N/A";
@@ -192,42 +115,44 @@ function checkoutPath(organization: FoundryOrganization, planId: FoundryBillingP
   return `/organizations/${organization.id}/checkout/${planId}`;
 }
 
-function statusBadge(organization: FoundryOrganization) {
+function statusBadge(t: FoundryTokens, organization: FoundryOrganization) {
   if (organization.kind === "personal") {
-    return <span style={badgeStyle("rgba(24, 140, 255, 0.18)", "#b9d8ff")}>Personal workspace</span>;
+    return <span style={badgeStyle(t, "rgba(24, 140, 255, 0.18)", "#b9d8ff")}>Personal workspace</span>;
   }
-  return <span style={badgeStyle("rgba(255, 79, 0, 0.16)", "#ffd6c7")}>GitHub organization</span>;
+  return <span style={badgeStyle(t, "rgba(255, 79, 0, 0.16)", "#ffd6c7")}>GitHub organization</span>;
 }
 
-function githubBadge(organization: FoundryOrganization) {
+function githubBadge(t: FoundryTokens, organization: FoundryOrganization) {
   if (organization.github.installationStatus === "connected") {
-    return <span style={badgeStyle("rgba(46, 160, 67, 0.16)", "#b7f0c3")}>GitHub connected</span>;
+    return <span style={badgeStyle(t, "rgba(46, 160, 67, 0.16)", "#b7f0c3")}>GitHub connected</span>;
   }
   if (organization.github.installationStatus === "reconnect_required") {
-    return <span style={badgeStyle("rgba(255, 193, 7, 0.18)", "#ffe6a6")}>Reconnect required</span>;
+    return <span style={badgeStyle(t, "rgba(255, 193, 7, 0.18)", "#ffe6a6")}>Reconnect required</span>;
   }
-  return <span style={badgeStyle("rgba(255, 255, 255, 0.08)")}>Install GitHub App</span>;
+  return <span style={badgeStyle(t, t.borderSubtle)}>Install GitHub App</span>;
 }
 
 function StatCard({ label, value, caption }: { label: string; value: string; caption: string }) {
+  const t = useFoundryTokens();
   return (
     <div
       style={{
-        ...cardStyle(),
+        ...cardStyle(t),
         padding: "14px 16px",
         display: "flex",
         flexDirection: "column",
         gap: "6px",
       }}
     >
-      <div style={{ fontSize: "10px", color: "#71717a", textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</div>
+      <div style={{ fontSize: "10px", color: t.textTertiary, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</div>
       <div style={{ fontSize: "16px", fontWeight: 600 }}>{value}</div>
-      <div style={{ fontSize: "11px", color: "#71717a", lineHeight: 1.5 }}>{caption}</div>
+      <div style={{ fontSize: "11px", color: t.textTertiary, lineHeight: 1.5 }}>{caption}</div>
     </div>
   );
 }
 
 function MemberRow({ member }: { member: FoundryOrganizationMember }) {
+  const t = useFoundryTokens();
   return (
     <div
       style={{
@@ -235,18 +160,19 @@ function MemberRow({ member }: { member: FoundryOrganizationMember }) {
         gridTemplateColumns: "minmax(0, 1.4fr) minmax(0, 1fr) 100px",
         gap: "10px",
         padding: "8px 0",
-        borderTop: "1px solid rgba(255, 255, 255, 0.06)",
+        borderTop: `1px solid ${t.borderSubtle}`,
         alignItems: "center",
       }}
     >
       <div>
         <div style={{ fontWeight: 500, fontSize: "12px" }}>{member.name}</div>
-        <div style={{ color: "#a1a1aa", fontSize: "11px" }}>{member.email}</div>
+        <div style={{ color: t.textSecondary, fontSize: "11px" }}>{member.email}</div>
       </div>
-      <div style={{ color: "#a1a1aa", fontSize: "12px", textTransform: "capitalize" }}>{member.role}</div>
+      <div style={{ color: t.textSecondary, fontSize: "12px", textTransform: "capitalize" }}>{member.role}</div>
       <div>
         <span
           style={badgeStyle(
+            t,
             member.state === "active" ? "rgba(46, 160, 67, 0.16)" : "rgba(255, 193, 7, 0.18)",
             member.state === "active" ? "#b7f0c3" : "#ffe6a6",
           )}
@@ -261,6 +187,7 @@ function MemberRow({ member }: { member: FoundryOrganizationMember }) {
 export function MockSignInPage() {
   const client = useMockAppClient();
   const navigate = useNavigate();
+  const t = useFoundryTokens();
 
   return (
     <div
@@ -271,9 +198,9 @@ export function MockSignInPage() {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        background: "#09090b",
+        background: t.surfacePrimary,
         fontFamily: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
-        color: "#ffffff",
+        color: t.textPrimary,
       }}
     >
       <DesktopDragRegion />
@@ -302,7 +229,7 @@ export function MockSignInPage() {
           style={{
             fontSize: "20px",
             fontWeight: 600,
-            color: "#ffffff",
+            color: t.textPrimary,
             margin: "0 0 8px 0",
             letterSpacing: "-0.01em",
           }}
@@ -314,7 +241,7 @@ export function MockSignInPage() {
           style={{
             fontSize: "13px",
             fontWeight: 400,
-            color: "#71717a",
+            color: t.textTertiary,
             margin: "0 0 32px 0",
             lineHeight: 1.5,
           }}
@@ -341,8 +268,8 @@ export function MockSignInPage() {
             width: "100%",
             height: "44px",
             padding: "0 20px",
-            background: "#ffffff",
-            color: "#09090b",
+            background: t.textPrimary,
+            color: t.textOnPrimary,
             border: "none",
             borderRadius: "8px",
             fontFamily: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
@@ -363,7 +290,7 @@ export function MockSignInPage() {
           style={{
             marginTop: "32px",
             fontSize: "13px",
-            color: "#52525b",
+            color: t.textTertiary,
             textDecoration: "none",
           }}
         >
@@ -379,6 +306,7 @@ export function MockOrganizationSelectorPage() {
   const snapshot = useMockAppSnapshot();
   const organizations: FoundryOrganization[] = eligibleOrganizations(snapshot);
   const navigate = useNavigate();
+  const t = useFoundryTokens();
 
   return (
     <div
@@ -389,9 +317,9 @@ export function MockOrganizationSelectorPage() {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        background: "#09090b",
+        background: t.surfacePrimary,
         fontFamily: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
-        color: "#ffffff",
+        color: t.textPrimary,
       }}
     >
       <DesktopDragRegion />
@@ -416,7 +344,7 @@ export function MockOrganizationSelectorPage() {
             <rect x="19.25" y="18.25" width="91.5" height="91.5" rx="25.75" stroke="#F0F0F0" strokeWidth="8.5" />
           </svg>
           <h1 style={{ fontSize: "20px", fontWeight: 600, margin: "0 0 6px 0", letterSpacing: "-0.01em" }}>Select a workspace</h1>
-          <p style={{ fontSize: "13px", color: "#71717a", margin: 0 }}>Choose where you want to work.</p>
+          <p style={{ fontSize: "13px", color: t.textTertiary, margin: 0 }}>Choose where you want to work.</p>
         </div>
 
         {/* Workspace list */}
@@ -425,7 +353,7 @@ export function MockOrganizationSelectorPage() {
             display: "flex",
             flexDirection: "column",
             borderRadius: "12px",
-            border: "1px solid rgba(255, 255, 255, 0.08)",
+            border: `1px solid ${t.borderSubtle}`,
             overflow: "hidden",
           }}
         >
@@ -444,20 +372,20 @@ export function MockOrganizationSelectorPage() {
                 alignItems: "center",
                 gap: "14px",
                 padding: "16px 18px",
-                background: "#0f0f11",
+                background: t.surfaceSecondary,
                 border: "none",
-                borderTop: index > 0 ? "1px solid rgba(255, 255, 255, 0.06)" : "none",
-                color: "#ffffff",
+                borderTop: index > 0 ? `1px solid ${t.borderSubtle}` : "none",
+                color: t.textPrimary,
                 cursor: "pointer",
                 textAlign: "left",
                 fontFamily: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
                 transition: "background 150ms ease",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = "rgba(255, 255, 255, 0.04)";
+                e.currentTarget.style.background = t.interactiveSubtle;
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = "#0f0f11";
+                e.currentTarget.style.background = t.surfaceSecondary;
               }}
             >
               {/* Avatar */}
@@ -481,7 +409,7 @@ export function MockOrganizationSelectorPage() {
               {/* Info */}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: "14px", fontWeight: 500, lineHeight: 1.3 }}>{organization.settings.displayName}</div>
-                <div style={{ fontSize: "12px", color: "#71717a", lineHeight: 1.3, marginTop: "1px" }}>
+                <div style={{ fontSize: "12px", color: t.textTertiary, lineHeight: 1.3, marginTop: "1px" }}>
                   {organization.kind === "personal" ? "Personal" : "Organization"} · {planCatalog[organization.billing.planId]!.label} ·{" "}
                   {organization.members.length} member{organization.members.length !== 1 ? "s" : ""}
                 </div>
@@ -493,7 +421,7 @@ export function MockOrganizationSelectorPage() {
                 height="16"
                 viewBox="0 0 24 24"
                 fill="none"
-                stroke="#52525b"
+                stroke={t.textTertiary}
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -518,7 +446,7 @@ export function MockOrganizationSelectorPage() {
             style={{
               background: "none",
               border: "none",
-              color: "#52525b",
+              color: t.textTertiary,
               fontSize: "13px",
               cursor: "pointer",
               fontFamily: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
@@ -536,6 +464,7 @@ export function MockOrganizationSelectorPage() {
 type SettingsSection = "settings" | "members" | "billing" | "docs";
 
 function SettingsNavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
+  const t = useFoundryTokens();
   return (
     <button
       type="button"
@@ -548,8 +477,8 @@ function SettingsNavItem({ icon, label, active, onClick }: { icon: React.ReactNo
         padding: "5px 10px",
         borderRadius: "6px",
         border: "none",
-        background: active ? "rgba(255, 255, 255, 0.06)" : "transparent",
-        color: active ? "#ffffff" : "rgba(255, 255, 255, 0.50)",
+        background: active ? t.interactiveHover : "transparent",
+        color: active ? t.textPrimary : t.textMuted,
         cursor: "pointer",
         fontSize: "12px",
         fontWeight: active ? 500 : 400,
@@ -559,7 +488,7 @@ function SettingsNavItem({ icon, label, active, onClick }: { icon: React.ReactNo
         lineHeight: 1.4,
       }}
       onMouseEnter={(event) => {
-        if (!active) event.currentTarget.style.backgroundColor = "rgba(255, 255, 255, 0.04)";
+        if (!active) event.currentTarget.style.backgroundColor = t.interactiveSubtle;
       }}
       onMouseLeave={(event) => {
         if (!active) event.currentTarget.style.backgroundColor = "transparent";
@@ -572,16 +501,18 @@ function SettingsNavItem({ icon, label, active, onClick }: { icon: React.ReactNo
 }
 
 function SettingsContentSection({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+  const t = useFoundryTokens();
   return (
     <div>
-      <h2 style={{ margin: "0 0 2px", fontSize: "13px", fontWeight: 600, color: "#e4e4e7" }}>{title}</h2>
-      {description ? <p style={{ margin: "0 0 12px", fontSize: "11px", color: "rgba(255, 255, 255, 0.40)", lineHeight: 1.5 }}>{description}</p> : null}
+      <h2 style={{ margin: "0 0 2px", fontSize: "13px", fontWeight: 600, color: t.textPrimary }}>{title}</h2>
+      {description ? <p style={{ margin: "0 0 12px", fontSize: "11px", color: t.textMuted, lineHeight: 1.5 }}>{description}</p> : null}
       <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>{children}</div>
     </div>
   );
 }
 
 function SettingsRow({ label, description, action }: { label: string; description?: string; action?: React.ReactNode }) {
+  const t = useFoundryTokens();
   return (
     <div
       style={{
@@ -591,13 +522,13 @@ function SettingsRow({ label, description, action }: { label: string; descriptio
         gap: "12px",
         padding: "10px 12px",
         borderRadius: "6px",
-        border: "1px solid rgba(255, 255, 255, 0.06)",
-        background: "rgba(255, 255, 255, 0.02)",
+        border: `1px solid ${t.borderSubtle}`,
+        background: t.interactiveSubtle,
       }}
     >
       <div>
         <div style={{ fontSize: "12px", fontWeight: 500 }}>{label}</div>
-        {description ? <div style={{ fontSize: "11px", color: "rgba(255, 255, 255, 0.40)", marginTop: "1px" }}>{description}</div> : null}
+        {description ? <div style={{ fontSize: "11px", color: t.textMuted, marginTop: "1px" }}>{description}</div> : null}
       </div>
       {action ?? null}
     </div>
@@ -619,6 +550,7 @@ function SettingsLayout({
   const snapshot = useMockAppSnapshot();
   const user = activeMockUser(snapshot);
   const navigate = useNavigate();
+  const t = useFoundryTokens();
 
   const navSections: Array<{ section: SettingsSection; icon: React.ReactNode; label: string }> = [
     { section: "settings", icon: <Settings size={13} />, label: "Settings" },
@@ -628,7 +560,7 @@ function SettingsLayout({
   ];
 
   return (
-    <div style={appSurfaceStyle()}>
+    <div style={appSurfaceStyle(t)}>
       <DesktopDragRegion />
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
         {/* Left nav */}
@@ -636,7 +568,7 @@ function SettingsLayout({
           style={{
             width: "200px",
             flexShrink: 0,
-            borderRight: "1px solid rgba(255, 255, 255, 0.06)",
+            borderRight: `1px solid ${t.borderSubtle}`,
             padding: "44px 10px 16px",
             display: "flex",
             flexDirection: "column",
@@ -654,7 +586,7 @@ function SettingsLayout({
               })();
             }}
             style={{
-              ...subtleButtonStyle(),
+              ...subtleButtonStyle(t),
               display: "flex",
               alignItems: "center",
               gap: "5px",
@@ -669,7 +601,7 @@ function SettingsLayout({
           {/* User header */}
           <div style={{ padding: "2px 10px 12px", display: "flex", flexDirection: "column", gap: "1px" }}>
             <span style={{ fontSize: "12px", fontWeight: 600 }}>{user?.name ?? "User"}</span>
-            <span style={{ fontSize: "10px", color: "rgba(255, 255, 255, 0.38)" }}>
+            <span style={{ fontSize: "10px", color: t.textMuted }}>
               {planCatalog[organization.billing.planId]?.label ?? "Free"} Plan · {user?.email ?? ""}
             </span>
           </div>
@@ -705,6 +637,7 @@ function SettingsLayout({
 export function MockOrganizationSettingsPage({ organization }: { organization: FoundryOrganization }) {
   const client = useMockAppClient();
   const navigate = useNavigate();
+  const t = useFoundryTokens();
   const [section, setSection] = useState<SettingsSection>("settings");
   const [displayName, setDisplayName] = useState(organization.settings.displayName);
   const [slug, setSlug] = useState(organization.settings.slug);
@@ -726,17 +659,17 @@ export function MockOrganizationSettingsPage({ organization }: { organization: F
 
           <SettingsContentSection title="Organization Profile">
             <label style={{ display: "grid", gap: "4px" }}>
-              <span style={{ fontSize: "11px", fontWeight: 500, color: "rgba(255, 255, 255, 0.55)" }}>Display name</span>
-              <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} style={inputStyle()} />
+              <span style={{ fontSize: "11px", fontWeight: 500, color: t.textMuted }}>Display name</span>
+              <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} style={inputStyle(t)} />
             </label>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
               <label style={{ display: "grid", gap: "4px" }}>
-                <span style={{ fontSize: "11px", fontWeight: 500, color: "rgba(255, 255, 255, 0.55)" }}>Slug</span>
-                <input value={slug} onChange={(event) => setSlug(event.target.value)} style={inputStyle()} />
+                <span style={{ fontSize: "11px", fontWeight: 500, color: t.textMuted }}>Slug</span>
+                <input value={slug} onChange={(event) => setSlug(event.target.value)} style={inputStyle(t)} />
               </label>
               <label style={{ display: "grid", gap: "4px" }}>
-                <span style={{ fontSize: "11px", fontWeight: 500, color: "rgba(255, 255, 255, 0.55)" }}>Primary domain</span>
-                <input value={primaryDomain} onChange={(event) => setPrimaryDomain(event.target.value)} style={inputStyle()} />
+                <span style={{ fontSize: "11px", fontWeight: 500, color: t.textMuted }}>Primary domain</span>
+                <input value={primaryDomain} onChange={(event) => setPrimaryDomain(event.target.value)} style={inputStyle(t)} />
               </label>
             </div>
             <div>
@@ -750,23 +683,25 @@ export function MockOrganizationSettingsPage({ organization }: { organization: F
                     primaryDomain,
                   })
                 }
-                style={primaryButtonStyle()}
+                style={primaryButtonStyle(t)}
               >
                 Save changes
               </button>
             </div>
           </SettingsContentSection>
 
+          <AppearanceSection />
+
           <SettingsContentSection
             title="GitHub"
             description={`Connected as ${organization.github.connectedAccount}. ${organization.github.importedRepoCount} repos imported.`}
           >
-            <SettingsRow label="Installation status" description={`Last sync: ${organization.github.lastSyncLabel}`} action={githubBadge(organization)} />
+            <SettingsRow label="Installation status" description={`Last sync: ${organization.github.lastSyncLabel}`} action={githubBadge(t, organization)} />
             <div style={{ display: "flex", gap: "8px" }}>
-              <button type="button" onClick={() => void client.reconnectGithub(organization.id)} style={secondaryButtonStyle()}>
+              <button type="button" onClick={() => void client.reconnectGithub(organization.id)} style={secondaryButtonStyle(t)}>
                 Reconnect GitHub
               </button>
-              <button type="button" onClick={() => void client.triggerGithubSync(organization.id)} style={subtleButtonStyle()}>
+              <button type="button" onClick={() => void client.triggerGithubSync(organization.id)} style={subtleButtonStyle(t)}>
                 Sync repos
               </button>
             </div>
@@ -777,7 +712,7 @@ export function MockOrganizationSettingsPage({ organization }: { organization: F
               label="Sandbox Agent connection"
               description="Manage your Sandbox Agent integration and API keys."
               action={
-                <button type="button" onClick={() => window.open("https://sandbox-agent.dev", "_blank", "noopener,noreferrer")} style={secondaryButtonStyle()}>
+                <button type="button" onClick={() => window.open("https://sandbox-agent.dev", "_blank", "noopener,noreferrer")} style={secondaryButtonStyle(t)}>
                   Configure
                 </button>
               }
@@ -792,9 +727,9 @@ export function MockOrganizationSettingsPage({ organization }: { organization: F
                 <button
                   type="button"
                   style={{
-                    ...secondaryButtonStyle(),
+                    ...secondaryButtonStyle(t),
                     borderColor: "rgba(255, 110, 110, 0.24)",
-                    color: "#ffa198",
+                    color: t.statusError,
                   }}
                 >
                   Delete
@@ -809,7 +744,7 @@ export function MockOrganizationSettingsPage({ organization }: { organization: F
         <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
           <div>
             <h1 style={{ margin: "0 0 2px", fontSize: "15px", fontWeight: 600 }}>Members</h1>
-            <p style={{ margin: 0, fontSize: "11px", color: "rgba(255, 255, 255, 0.40)" }}>
+            <p style={{ margin: 0, fontSize: "11px", color: t.textMuted }}>
               {organization.members.length} member{organization.members.length !== 1 ? "s" : ""}
             </p>
           </div>
@@ -823,14 +758,14 @@ export function MockOrganizationSettingsPage({ organization }: { organization: F
           {!organization.billing.stripeCustomerId.trim() ? (
             <div
               style={{
-                ...cardStyle(),
+                ...cardStyle(t),
                 padding: "20px",
                 border: "1px solid rgba(99, 102, 241, 0.3)",
                 background: "linear-gradient(135deg, rgba(99, 102, 241, 0.06) 0%, rgba(139, 92, 246, 0.04) 100%)",
               }}
             >
               <div style={{ fontSize: "14px", fontWeight: 600, marginBottom: "4px" }}>Invite your team</div>
-              <div style={{ fontSize: "11px", color: "#a1a1aa", lineHeight: 1.6, marginBottom: "14px" }}>
+              <div style={{ fontSize: "11px", color: t.textSecondary, lineHeight: 1.6, marginBottom: "14px" }}>
                 Upgrade to Pro to add team members and unlock collaboration features:
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "16px" }}>
@@ -842,11 +777,11 @@ export function MockOrganizationSettingsPage({ organization }: { organization: F
                 ].map((feature) => (
                   <div key={feature} style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
                     <span style={{ color: "#6366f1", fontSize: "14px", lineHeight: 1.2, flexShrink: 0 }}>+</span>
-                    <span style={{ fontSize: "11px", color: "#d4d4d8", lineHeight: 1.5 }}>{feature}</span>
+                    <span style={{ fontSize: "11px", color: t.textSecondary, lineHeight: 1.5 }}>{feature}</span>
                   </div>
                 ))}
               </div>
-              <button type="button" onClick={() => void navigate({ to: checkoutPath(organization, "team") })} style={primaryButtonStyle()}>
+              <button type="button" onClick={() => void navigate({ to: checkoutPath(organization, "team") })} style={primaryButtonStyle(t)}>
                 Upgrade to Pro — $25/mo per seat
               </button>
             </div>
@@ -858,13 +793,13 @@ export function MockOrganizationSettingsPage({ organization }: { organization: F
         <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
           <div>
             <h1 style={{ margin: "0 0 2px", fontSize: "15px", fontWeight: 600 }}>Docs</h1>
-            <p style={{ margin: 0, fontSize: "11px", color: "rgba(255, 255, 255, 0.40)" }}>Documentation and resources.</p>
+            <p style={{ margin: 0, fontSize: "11px", color: t.textMuted }}>Documentation and resources.</p>
           </div>
           <SettingsRow
             label="Sandbox Agent Documentation"
             description="Learn about Sandbox Agent features, APIs, and integrations."
             action={
-              <button type="button" onClick={() => window.open("https://sandbox-agent.dev", "_blank", "noopener,noreferrer")} style={secondaryButtonStyle()}>
+              <button type="button" onClick={() => window.open("https://sandbox-agent.dev", "_blank", "noopener,noreferrer")} style={secondaryButtonStyle(t)}>
                 Open docs
               </button>
             }
@@ -878,6 +813,7 @@ export function MockOrganizationSettingsPage({ organization }: { organization: F
 export function MockOrganizationBillingPage({ organization }: { organization: FoundryOrganization }) {
   const client = useMockAppClient();
   const navigate = useNavigate();
+  const t = useFoundryTokens();
   const hasStripeCustomer = organization.billing.stripeCustomerId.trim().length > 0;
   const effectivePlanId: FoundryBillingPlanId = hasStripeCustomer ? organization.billing.planId : "free";
   const currentPlan = planCatalog[effectivePlanId]!;
@@ -894,7 +830,7 @@ export function MockOrganizationBillingPage({ organization }: { organization: Fo
       <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
         <div>
           <h1 style={{ margin: "0 0 2px", fontSize: "15px", fontWeight: 600 }}>Billing & Invoices</h1>
-          <p style={{ margin: 0, fontSize: "11px", color: "rgba(255, 255, 255, 0.40)" }}>Manage your plan, task hours, and invoices.</p>
+          <p style={{ margin: 0, fontSize: "11px", color: t.textMuted }}>Manage your plan, task hours, and invoices.</p>
         </div>
 
         {/* Overview stats */}
@@ -909,17 +845,17 @@ export function MockOrganizationBillingPage({ organization }: { organization: Fo
         </div>
 
         {/* Task hours usage bar */}
-        <div style={{ ...cardStyle(), padding: "16px" }}>
+        <div style={{ ...cardStyle(t), padding: "16px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <Clock size={13} style={{ color: "#a1a1aa" }} />
+              <Clock size={13} style={{ color: t.textSecondary }} />
               <span style={{ fontSize: "12px", fontWeight: 600 }}>Task Hours</span>
             </div>
-            <span style={{ fontSize: "11px", color: "#a1a1aa" }}>
+            <span style={{ fontSize: "11px", color: t.textSecondary }}>
               {taskHoursUsed.toFixed(1)} / {taskHoursIncluded}h used
             </span>
           </div>
-          <div style={{ height: "6px", borderRadius: "3px", backgroundColor: "rgba(255, 255, 255, 0.08)", overflow: "hidden" }}>
+          <div style={{ height: "6px", borderRadius: "3px", backgroundColor: t.borderSubtle, overflow: "hidden" }}>
             <div
               style={{
                 height: "100%",
@@ -931,8 +867,8 @@ export function MockOrganizationBillingPage({ organization }: { organization: Fo
             />
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: "6px" }}>
-            <span style={{ fontSize: "10px", color: "#71717a" }}>Metered by the minute</span>
-            <span style={{ fontSize: "10px", color: "#71717a" }}>$0.12 / task hour overage</span>
+            <span style={{ fontSize: "10px", color: t.textTertiary }}>Metered by the minute</span>
+            <span style={{ fontSize: "10px", color: t.textTertiary }}>$0.12 / task hour overage</span>
           </div>
         </div>
 
@@ -940,7 +876,7 @@ export function MockOrganizationBillingPage({ organization }: { organization: Fo
         {isFree ? (
           <div
             style={{
-              ...cardStyle(),
+              ...cardStyle(t),
               padding: "18px",
               border: "1px solid rgba(99, 102, 241, 0.3)",
               background: "linear-gradient(135deg, rgba(99, 102, 241, 0.06) 0%, rgba(139, 92, 246, 0.04) 100%)",
@@ -949,7 +885,7 @@ export function MockOrganizationBillingPage({ organization }: { organization: Fo
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "16px" }}>
               <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                 <div style={{ fontSize: "14px", fontWeight: 600 }}>Upgrade to Pro</div>
-                <div style={{ fontSize: "11px", color: "#a1a1aa", lineHeight: 1.5 }}>
+                <div style={{ fontSize: "11px", color: t.textSecondary, lineHeight: 1.5 }}>
                   Get 200 task hours per month, plus the ability to purchase additional hours in bulk. Currently limited to {currentPlan.taskHours} hours on the
                   Free plan.
                 </div>
@@ -957,7 +893,7 @@ export function MockOrganizationBillingPage({ organization }: { organization: Fo
               <button
                 type="button"
                 onClick={() => void navigate({ to: checkoutPath(organization, "team") })}
-                style={{ ...primaryButtonStyle(), whiteSpace: "nowrap", flexShrink: 0 }}
+                style={{ ...primaryButtonStyle(t), whiteSpace: "nowrap", flexShrink: 0 }}
               >
                 Upgrade — $25/mo
               </button>
@@ -976,7 +912,7 @@ export function MockOrganizationBillingPage({ organization }: { organization: Fo
                 <div
                   key={pkg.hours}
                   style={{
-                    ...cardStyle(),
+                    ...cardStyle(t),
                     padding: "14px",
                     display: "flex",
                     flexDirection: "column",
@@ -985,15 +921,15 @@ export function MockOrganizationBillingPage({ organization }: { organization: Fo
                     transition: "border-color 150ms ease",
                   }}
                   onMouseEnter={(event) => {
-                    (event.currentTarget as HTMLDivElement).style.borderColor = "rgba(255, 255, 255, 0.20)";
+                    (event.currentTarget as HTMLDivElement).style.borderColor = t.borderMedium;
                   }}
                   onMouseLeave={(event) => {
-                    (event.currentTarget as HTMLDivElement).style.borderColor = "rgba(255, 255, 255, 0.08)";
+                    (event.currentTarget as HTMLDivElement).style.borderColor = t.borderSubtle;
                   }}
                 >
                   <div style={{ fontSize: "16px", fontWeight: 700 }}>{pkg.hours}h</div>
-                  <div style={{ fontSize: "11px", color: "#a1a1aa" }}>${((pkg.price / pkg.hours) * 60).toFixed(1)}¢/min</div>
-                  <button type="button" style={{ ...secondaryButtonStyle(), width: "100%", textAlign: "center", marginTop: "auto" }}>
+                  <div style={{ fontSize: "11px", color: t.textSecondary }}>${((pkg.price / pkg.hours) * 60).toFixed(1)}¢/min</div>
+                  <button type="button" style={{ ...secondaryButtonStyle(t), width: "100%", textAlign: "center", marginTop: "auto" }}>
                     ${pkg.price}
                   </button>
                 </div>
@@ -1011,16 +947,16 @@ export function MockOrganizationBillingPage({ organization }: { organization: Fo
                 onClick={() =>
                   void (isMockFrontendClient ? navigate({ to: checkoutPath(organization, effectivePlanId) }) : client.openBillingPortal(organization.id))
                 }
-                style={secondaryButtonStyle()}
+                style={secondaryButtonStyle(t)}
               >
                 {isMockFrontendClient ? "Open hosted checkout mock" : "Manage in Stripe"}
               </button>
               {organization.billing.status === "scheduled_cancel" ? (
-                <button type="button" onClick={() => void client.resumeSubscription(organization.id)} style={primaryButtonStyle()}>
+                <button type="button" onClick={() => void client.resumeSubscription(organization.id)} style={primaryButtonStyle(t)}>
                   Resume subscription
                 </button>
               ) : (
-                <button type="button" onClick={() => void client.cancelScheduledRenewal(organization.id)} style={subtleButtonStyle()}>
+                <button type="button" onClick={() => void client.cancelScheduledRenewal(organization.id)} style={subtleButtonStyle(t)}>
                   Cancel at period end
                 </button>
               )}
@@ -1031,7 +967,7 @@ export function MockOrganizationBillingPage({ organization }: { organization: Fo
         {/* Invoices */}
         <SettingsContentSection title="Invoices" description="Recent billing activity.">
           {organization.billing.invoices.length === 0 ? (
-            <div style={{ color: "#a1a1aa", fontSize: "11px" }}>No invoices yet.</div>
+            <div style={{ color: t.textSecondary, fontSize: "11px" }}>No invoices yet.</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column" }}>
               {organization.billing.invoices.map((invoice) => (
@@ -1043,17 +979,18 @@ export function MockOrganizationBillingPage({ organization }: { organization: Fo
                     gap: "10px",
                     alignItems: "center",
                     padding: "8px 0",
-                    borderTop: "1px solid rgba(255, 255, 255, 0.06)",
+                    borderTop: `1px solid ${t.borderSubtle}`,
                   }}
                 >
                   <div>
                     <div style={{ fontSize: "12px", fontWeight: 500 }}>{invoice.label}</div>
-                    <div style={{ fontSize: "10px", color: "#a1a1aa" }}>{invoice.issuedAt}</div>
+                    <div style={{ fontSize: "10px", color: t.textSecondary }}>{invoice.issuedAt}</div>
                   </div>
                   <div style={{ fontSize: "12px", fontWeight: 500 }}>${invoice.amountUsd}</div>
                   <div>
                     <span
                       style={badgeStyle(
+                        t,
                         invoice.status === "paid" ? "rgba(46, 160, 67, 0.16)" : "rgba(255, 193, 7, 0.18)",
                         invoice.status === "paid" ? "#b7f0c3" : "#ffe6a6",
                       )}
@@ -1074,6 +1011,7 @@ export function MockOrganizationBillingPage({ organization }: { organization: Fo
 export function MockHostedCheckoutPage({ organization, planId }: { organization: FoundryOrganization; planId: FoundryBillingPlanId }) {
   const client = useMockAppClient();
   const navigate = useNavigate();
+  const t = useFoundryTokens();
   const plan = planCatalog[planId]!;
 
   return (
@@ -1081,7 +1019,7 @@ export function MockHostedCheckoutPage({ organization, planId }: { organization:
       <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
         <div>
           <h1 style={{ margin: "0 0 2px", fontSize: "15px", fontWeight: 600 }}>Checkout {plan.label}</h1>
-          <p style={{ margin: 0, fontSize: "11px", color: "rgba(255, 255, 255, 0.40)" }}>Complete payment to activate the {plan.label} plan.</p>
+          <p style={{ margin: 0, fontSize: "11px", color: t.textMuted }}>Complete payment to activate the {plan.label} plan.</p>
         </div>
 
         <SettingsContentSection title="Order summary" description={`${organization.settings.displayName} — ${plan.label} plan.`}>
@@ -1095,12 +1033,12 @@ export function MockHostedCheckoutPage({ organization, planId }: { organization:
 
         <SettingsContentSection title="Card details">
           <label style={{ display: "grid", gap: "4px" }}>
-            <span style={{ fontSize: "11px", fontWeight: 500, color: "rgba(255, 255, 255, 0.55)" }}>Cardholder</span>
-            <input value={organization.settings.displayName} readOnly style={inputStyle()} />
+            <span style={{ fontSize: "11px", fontWeight: 500, color: t.textMuted }}>Cardholder</span>
+            <input value={organization.settings.displayName} readOnly style={inputStyle(t)} />
           </label>
           <label style={{ display: "grid", gap: "4px" }}>
-            <span style={{ fontSize: "11px", fontWeight: 500, color: "rgba(255, 255, 255, 0.55)" }}>Card number</span>
-            <input value="4242 4242 4242 4242" readOnly style={inputStyle()} />
+            <span style={{ fontSize: "11px", fontWeight: 500, color: t.textMuted }}>Card number</span>
+            <input value="4242 4242 4242 4242" readOnly style={inputStyle(t)} />
           </label>
           <div style={{ display: "flex", gap: "8px" }}>
             <button
@@ -1113,11 +1051,11 @@ export function MockHostedCheckoutPage({ organization, planId }: { organization:
                   }
                 })();
               }}
-              style={primaryButtonStyle()}
+              style={primaryButtonStyle(t)}
             >
               {isMockFrontendClient ? "Complete checkout" : "Continue to Stripe"}
             </button>
-            <button type="button" onClick={() => void navigate({ to: billingPath(organization) })} style={subtleButtonStyle()}>
+            <button type="button" onClick={() => void navigate({ to: billingPath(organization) })} style={subtleButtonStyle(t)}>
               Cancel
             </button>
           </div>
@@ -1128,6 +1066,7 @@ export function MockHostedCheckoutPage({ organization, planId }: { organization:
 }
 
 function CheckoutLine({ label, value }: { label: string; value: string }) {
+  const t = useFoundryTokens();
   return (
     <div
       style={{
@@ -1136,10 +1075,10 @@ function CheckoutLine({ label, value }: { label: string; value: string }) {
         justifyContent: "space-between",
         gap: "10px",
         padding: "7px 0",
-        borderTop: "1px solid rgba(255, 255, 255, 0.06)",
+        borderTop: `1px solid ${t.borderSubtle}`,
       }}
     >
-      <div style={{ color: "#a1a1aa", fontSize: "11px" }}>{label}</div>
+      <div style={{ color: t.textSecondary, fontSize: "11px" }}>{label}</div>
       <div style={{ fontSize: "12px", fontWeight: 500 }}>{value}</div>
     </div>
   );
@@ -1150,6 +1089,7 @@ export function MockAccountSettingsPage() {
   const snapshot = useMockAppSnapshot();
   const user = activeMockUser(snapshot);
   const navigate = useNavigate();
+  const t = useFoundryTokens();
   const [name, setName] = useState(user?.name ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
 
@@ -1159,7 +1099,7 @@ export function MockAccountSettingsPage() {
   }, [user?.name, user?.email]);
 
   return (
-    <div style={appSurfaceStyle()}>
+    <div style={appSurfaceStyle(t)}>
       <DesktopDragRegion />
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
         {/* Left nav */}
@@ -1167,7 +1107,7 @@ export function MockAccountSettingsPage() {
           style={{
             width: "200px",
             flexShrink: 0,
-            borderRight: "1px solid rgba(255, 255, 255, 0.06)",
+            borderRight: `1px solid ${t.borderSubtle}`,
             padding: "44px 10px 16px",
             display: "flex",
             flexDirection: "column",
@@ -1179,7 +1119,7 @@ export function MockAccountSettingsPage() {
             type="button"
             onClick={() => void navigate({ to: "/" })}
             style={{
-              ...subtleButtonStyle(),
+              ...subtleButtonStyle(t),
               display: "flex",
               alignItems: "center",
               gap: "5px",
@@ -1193,7 +1133,7 @@ export function MockAccountSettingsPage() {
 
           <div style={{ padding: "2px 10px 12px", display: "flex", flexDirection: "column", gap: "1px" }}>
             <span style={{ fontSize: "12px", fontWeight: 600 }}>{user?.name ?? "User"}</span>
-            <span style={{ fontSize: "10px", color: "rgba(255, 255, 255, 0.38)" }}>{user?.email ?? ""}</span>
+            <span style={{ fontSize: "10px", color: t.textMuted }}>{user?.email ?? ""}</span>
           </div>
 
           <SettingsNavItem icon={<Settings size={13} />} label="General" active onClick={() => {}} />
@@ -1205,24 +1145,24 @@ export function MockAccountSettingsPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
               <div>
                 <h1 style={{ margin: "0 0 2px", fontSize: "15px", fontWeight: 600 }}>Account</h1>
-                <p style={{ margin: 0, fontSize: "11px", color: "rgba(255, 255, 255, 0.40)" }}>Manage your personal account settings.</p>
+                <p style={{ margin: 0, fontSize: "11px", color: t.textMuted }}>Manage your personal account settings.</p>
               </div>
 
               <SettingsContentSection title="Profile">
                 <label style={{ display: "grid", gap: "4px" }}>
-                  <span style={{ fontSize: "11px", fontWeight: 500, color: "rgba(255, 255, 255, 0.55)" }}>Display name</span>
-                  <input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle()} />
+                  <span style={{ fontSize: "11px", fontWeight: 500, color: t.textMuted }}>Display name</span>
+                  <input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle(t)} />
                 </label>
                 <label style={{ display: "grid", gap: "4px" }}>
-                  <span style={{ fontSize: "11px", fontWeight: 500, color: "rgba(255, 255, 255, 0.55)" }}>Email</span>
-                  <input value={email} onChange={(e) => setEmail(e.target.value)} style={inputStyle()} />
+                  <span style={{ fontSize: "11px", fontWeight: 500, color: t.textMuted }}>Email</span>
+                  <input value={email} onChange={(e) => setEmail(e.target.value)} style={inputStyle(t)} />
                 </label>
                 <label style={{ display: "grid", gap: "4px" }}>
-                  <span style={{ fontSize: "11px", fontWeight: 500, color: "rgba(255, 255, 255, 0.55)" }}>GitHub</span>
-                  <input value={`@${user?.githubLogin ?? ""}`} readOnly style={{ ...inputStyle(), color: "rgba(255, 255, 255, 0.40)" }} />
+                  <span style={{ fontSize: "11px", fontWeight: 500, color: t.textMuted }}>GitHub</span>
+                  <input value={`@${user?.githubLogin ?? ""}`} readOnly style={{ ...inputStyle(t), color: t.textMuted }} />
                 </label>
                 <div>
-                  <button type="button" style={primaryButtonStyle()}>
+                  <button type="button" style={primaryButtonStyle(t)}>
                     Save changes
                   </button>
                 </div>
@@ -1242,7 +1182,7 @@ export function MockAccountSettingsPage() {
                         await navigate({ to: "/signin" });
                       })();
                     }}
-                    style={{ ...secondaryButtonStyle(), display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    style={{ ...secondaryButtonStyle(t), display: "inline-flex", alignItems: "center", gap: "6px" }}
                   >
                     <LogOut size={12} />
                     Sign out
@@ -1258,9 +1198,9 @@ export function MockAccountSettingsPage() {
                     <button
                       type="button"
                       style={{
-                        ...secondaryButtonStyle(),
+                        ...secondaryButtonStyle(t),
                         borderColor: "rgba(255, 110, 110, 0.24)",
-                        color: "#ffa198",
+                        color: t.statusError,
                         whiteSpace: "nowrap",
                         flexShrink: 0,
                       }}
@@ -1278,17 +1218,53 @@ export function MockAccountSettingsPage() {
   );
 }
 
-function inputStyle(): React.CSSProperties {
-  return {
-    width: "100%",
-    borderRadius: "6px",
-    border: "1px solid rgba(255, 255, 255, 0.10)",
-    background: "rgba(255, 255, 255, 0.04)",
-    color: "#ffffff",
-    padding: "6px 10px",
-    fontSize: "12px",
-    fontFamily: "'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif",
-    outline: "none",
-    lineHeight: 1.5,
-  };
+function AppearanceSection() {
+  const { colorMode, setColorMode } = useColorMode();
+  const t = useFoundryTokens();
+  const isDark = colorMode === "dark";
+
+  return (
+    <SettingsContentSection title="Appearance" description="Customize how Foundry looks.">
+      <SettingsRow
+        label="Light mode"
+        description={isDark ? "Currently using dark mode." : "Currently using light mode."}
+        action={
+          <button
+            type="button"
+            onClick={() => setColorMode(isDark ? "light" : "dark")}
+            style={{
+              position: "relative",
+              width: "36px",
+              height: "20px",
+              borderRadius: "10px",
+              border: "1px solid rgba(128, 128, 128, 0.3)",
+              background: isDark ? t.borderDefault : t.accent,
+              cursor: "pointer",
+              padding: 0,
+              transition: "background 0.2s",
+              flexShrink: 0,
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                top: "2px",
+                left: isDark ? "2px" : "16px",
+                width: "14px",
+                height: "14px",
+                borderRadius: "50%",
+                background: isDark ? t.textTertiary : "#ffffff",
+                transition: "left 0.2s, background 0.2s",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {isDark ? <Moon size={8} /> : <Sun size={8} color={t.accent} />}
+            </div>
+          </button>
+        }
+      />
+    </SettingsContentSection>
+  );
 }

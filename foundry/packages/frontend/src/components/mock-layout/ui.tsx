@@ -2,6 +2,8 @@ import { memo, useCallback, useEffect, useState, type MouseEvent } from "react";
 import { styled, useStyletron } from "baseui";
 import { GitPullRequest, GitPullRequestDraft } from "lucide-react";
 
+import { useFoundryTokens } from "../../app/theme";
+import { getFoundryTokens } from "../../styles/tokens";
 import type { AgentKind, AgentTab } from "./view-model";
 
 export interface ContextMenuItem {
@@ -43,6 +45,7 @@ export const ContextMenuOverlay = memo(function ContextMenuOverlay({
   onClose: () => void;
 }) {
   const [css] = useStyletron();
+  const t = useFoundryTokens();
 
   return (
     <div
@@ -51,12 +54,12 @@ export const ContextMenuOverlay = memo(function ContextMenuOverlay({
         zIndex: 9999,
         top: `${menu.y}px`,
         left: `${menu.x}px`,
-        backgroundColor: "#1a1a1d",
-        border: "1px solid rgba(255, 255, 255, 0.18)",
+        backgroundColor: t.surfaceElevated,
+        border: `1px solid ${t.borderMedium}`,
         borderRadius: "8px",
         padding: "4px 0",
         minWidth: "160px",
-        boxShadow: "0 8px 24px rgba(0, 0, 0, 0.6)",
+        boxShadow: t.shadow,
       })}
     >
       {menu.items.map((item, index) => (
@@ -69,9 +72,9 @@ export const ContextMenuOverlay = memo(function ContextMenuOverlay({
           className={css({
             padding: "8px 14px",
             fontSize: "12px",
-            color: "#e4e4e7",
+            color: t.textPrimary,
             cursor: "pointer",
-            ":hover": { backgroundColor: "rgba(255, 255, 255, 0.08)" },
+            ":hover": { backgroundColor: t.interactiveHover },
           })}
         >
           {item.label}
@@ -82,14 +85,16 @@ export const ContextMenuOverlay = memo(function ContextMenuOverlay({
 });
 
 export const SpinnerDot = memo(function SpinnerDot({ size = 10 }: { size?: number }) {
+  const t = useFoundryTokens();
+
   return (
     <div
       style={{
         width: size,
         height: size,
         borderRadius: "50%",
-        border: "2px solid rgba(255, 79, 0, 0.25)",
-        borderTopColor: "#ff4f00",
+        border: `2px solid ${t.accentSubtle}`,
+        borderTopColor: t.accent,
         animation: "hf-spin 0.8s linear infinite",
         flexShrink: 0,
       }}
@@ -98,13 +103,15 @@ export const SpinnerDot = memo(function SpinnerDot({ size = 10 }: { size?: numbe
 });
 
 export const UnreadDot = memo(function UnreadDot() {
+  const t = useFoundryTokens();
+
   return (
     <div
       style={{
         width: 7,
         height: 7,
         borderRadius: "50%",
-        backgroundColor: "#ff4f00",
+        backgroundColor: t.accent,
         flexShrink: 0,
       }}
     />
@@ -112,10 +119,12 @@ export const UnreadDot = memo(function UnreadDot() {
 });
 
 export const TaskIndicator = memo(function TaskIndicator({ isRunning, hasUnread, isDraft }: { isRunning: boolean; hasUnread: boolean; isDraft: boolean }) {
+  const t = useFoundryTokens();
+
   if (isRunning) return <SpinnerDot size={8} />;
   if (hasUnread) return <UnreadDot />;
-  if (isDraft) return <GitPullRequestDraft size={12} color="#a1a1aa" />;
-  return <GitPullRequest size={12} color="#7ee787" />;
+  if (isDraft) return <GitPullRequestDraft size={12} color={t.textSecondary} />;
+  return <GitPullRequest size={12} color={t.statusSuccess} />;
 });
 
 const ClaudeIcon = memo(function ClaudeIcon({ size = 14 }: { size?: number }) {
@@ -130,21 +139,25 @@ const ClaudeIcon = memo(function ClaudeIcon({ size = 14 }: { size?: number }) {
 });
 
 const OpenAIIcon = memo(function OpenAIIcon({ size = 14 }: { size?: number }) {
+  const t = useFoundryTokens();
+
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
       <path
         d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364l2.0153-1.1639a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"
-        fill="#ffffff"
+        fill={t.textPrimary}
       />
     </svg>
   );
 });
 
 const CursorIcon = memo(function CursorIcon({ size = 14 }: { size?: number }) {
+  const t = useFoundryTokens();
+
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-      <rect x="3" y="3" width="18" height="18" rx="4" stroke="#A1A1AA" strokeWidth="1.5" />
-      <path d="M8 12h8M12 8v8" stroke="#A1A1AA" strokeWidth="1.5" strokeLinecap="round" />
+      <rect x="3" y="3" width="18" height="18" rx="4" stroke={t.textSecondary} strokeWidth="1.5" />
+      <path d="M8 12h8M12 8v8" stroke={t.textSecondary} strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 });
@@ -166,21 +179,27 @@ export const TabAvatar = memo(function TabAvatar({ tab }: { tab: AgentTab }) {
   return <AgentIcon agent={tab.agent} size={13} />;
 });
 
-export const Shell = styled("div", ({ $theme }) => ({
-  display: "flex",
-  height: "100dvh",
-  backgroundColor: $theme.colors.backgroundSecondary,
-  overflow: "hidden",
-}));
+export const Shell = styled("div", ({ $theme }) => {
+  const t = getFoundryTokens($theme);
+  return {
+    display: "flex",
+    height: "100dvh",
+    backgroundColor: t.surfaceSecondary,
+    overflow: "hidden",
+  };
+});
 
-export const SPanel = styled("section", ({ $theme }) => ({
-  minHeight: 0,
-  flex: 1,
-  display: "flex",
-  flexDirection: "column" as const,
-  backgroundColor: $theme.colors.backgroundSecondary,
-  overflow: "hidden",
-}));
+export const SPanel = styled("section", ({ $theme }) => {
+  const t = getFoundryTokens($theme);
+  return {
+    minHeight: 0,
+    flex: 1,
+    display: "flex",
+    flexDirection: "column" as const,
+    backgroundColor: t.surfaceSecondary,
+    overflow: "hidden",
+  };
+});
 
 export const ScrollBody = styled("div", () => ({
   minHeight: 0,
@@ -195,16 +214,19 @@ export const HEADER_HEIGHT = "42px";
 export const PROMPT_TEXTAREA_MIN_HEIGHT = 56;
 export const PROMPT_TEXTAREA_MAX_HEIGHT = 100;
 
-export const PanelHeaderBar = styled("div", ({ $theme }) => ({
-  display: "flex",
-  alignItems: "center",
-  minHeight: HEADER_HEIGHT,
-  maxHeight: HEADER_HEIGHT,
-  padding: "0 14px",
-  borderBottom: `1px solid ${$theme.colors.borderOpaque}`,
-  backgroundColor: $theme.colors.backgroundTertiary,
-  gap: "8px",
-  flexShrink: 0,
-  position: "relative" as const,
-  zIndex: 9999,
-}));
+export const PanelHeaderBar = styled("div", ({ $theme }) => {
+  const t = getFoundryTokens($theme);
+  return {
+    display: "flex",
+    alignItems: "center",
+    minHeight: HEADER_HEIGHT,
+    maxHeight: HEADER_HEIGHT,
+    padding: "0 14px",
+    borderBottom: `1px solid ${t.borderDefault}`,
+    backgroundColor: t.surfaceTertiary,
+    gap: "8px",
+    flexShrink: 0,
+    position: "relative" as const,
+    zIndex: 9999,
+  };
+});
