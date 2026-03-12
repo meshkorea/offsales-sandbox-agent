@@ -434,6 +434,7 @@ export function buildInitialTasks(): Task[] {
           ],
         },
       ],
+      minutesUsed: 42,
     },
     {
       id: "h2",
@@ -533,6 +534,7 @@ export function buildInitialTasks(): Task[] {
           ],
         },
       ],
+      minutesUsed: 187,
     },
     {
       id: "h3",
@@ -606,6 +608,7 @@ export function buildInitialTasks(): Task[] {
           ],
         },
       ],
+      minutesUsed: 23,
     },
     // ── rivet-dev/rivet ──
     {
@@ -740,6 +743,7 @@ export function buildInitialTasks(): Task[] {
           ],
         },
       ],
+      minutesUsed: 5,
     },
     {
       id: "h5",
@@ -795,6 +799,7 @@ export function buildInitialTasks(): Task[] {
       ],
       diffs: {},
       fileTree: [],
+      minutesUsed: 312,
     },
     // ── rivet-dev/cloud ──
     {
@@ -903,6 +908,7 @@ export function buildInitialTasks(): Task[] {
           ],
         },
       ],
+      minutesUsed: 0,
     },
     // ── rivet-dev/engine-ee ──
     {
@@ -1016,6 +1022,7 @@ export function buildInitialTasks(): Task[] {
           ],
         },
       ],
+      minutesUsed: 78,
     },
     // ── rivet-dev/engine-ee (archived) ──
     {
@@ -1057,6 +1064,7 @@ export function buildInitialTasks(): Task[] {
       ],
       diffs: {},
       fileTree: [],
+      minutesUsed: 15,
     },
     // ── rivet-dev/secure-exec ──
     {
@@ -1109,6 +1117,7 @@ export function buildInitialTasks(): Task[] {
       ],
       diffs: {},
       fileTree: [],
+      minutesUsed: 3,
     },
   ];
 }

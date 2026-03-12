@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { useStyletron } from "baseui";
 import { LabelSmall } from "baseui/typography";
-import { Clock, MailOpen, PanelLeft, PanelRight } from "lucide-react";
+import { Clock, PanelLeft, PanelRight } from "lucide-react";
 
 import { useFoundryTokens } from "../../app/theme";
 import { PanelHeaderBar } from "./ui";
@@ -23,6 +23,7 @@ export const TranscriptHeader = memo(function TranscriptHeader({
   onSidebarPeekEnd,
   rightSidebarCollapsed,
   onToggleRightSidebar,
+  onNavigateToUsage,
 }: {
   task: Task;
   activeTab: AgentTab | null | undefined;
@@ -39,6 +40,7 @@ export const TranscriptHeader = memo(function TranscriptHeader({
   onSidebarPeekEnd?: () => void;
   rightSidebarCollapsed?: boolean;
   onToggleRightSidebar?: () => void;
+  onNavigateToUsage?: () => void;
 }) {
   const [css] = useStyletron();
   const t = useFoundryTokens();
@@ -161,52 +163,32 @@ export const TranscriptHeader = memo(function TranscriptHeader({
       ) : null}
       <div className={css({ flex: 1 })} />
       <div
+        role="button"
+        tabIndex={0}
+        onClick={onNavigateToUsage}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") onNavigateToUsage?.();
+        }}
         className={css({
           display: "inline-flex",
           alignItems: "center",
           gap: "5px",
-          padding: "3px 10px",
+          padding: "4px 12px",
           borderRadius: "6px",
-          backgroundColor: t.interactiveHover,
-          border: `1px solid ${t.borderSubtle}`,
+          backgroundColor: "transparent",
           fontSize: "11px",
           fontWeight: 500,
           lineHeight: 1,
-          color: t.textSecondary,
+          color: t.textTertiary,
           whiteSpace: "nowrap",
+          cursor: "pointer",
+          transition: "background 200ms ease, color 200ms ease",
+          ":hover": { backgroundColor: t.interactiveHover, color: t.textSecondary },
         })}
       >
         <Clock size={11} style={{ flexShrink: 0 }} />
-        <span>847 min used</span>
+        <span>{task.minutesUsed ?? 0} min used</span>
       </div>
-      {activeTab ? (
-        <button
-          onClick={() => onSetActiveTabUnread(!activeTab.unread)}
-          className={css({
-            appearance: "none",
-            WebkitAppearance: "none",
-            background: "none",
-            border: "none",
-            margin: "0",
-            boxSizing: "border-box",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "5px",
-            padding: "4px 10px",
-            borderRadius: "6px",
-            fontSize: "11px",
-            fontWeight: 500,
-            lineHeight: 1,
-            color: t.textSecondary,
-            cursor: "pointer",
-            transition: "all 200ms ease",
-            ":hover": { backgroundColor: t.interactiveHover, color: t.textPrimary },
-          })}
-        >
-          <MailOpen size={12} style={{ flexShrink: 0 }} />{" "}
-          <span className={css({ "@media screen and (max-width: 768px)": { display: "none" } })}>{activeTab.unread ? "Mark read" : "Mark unread"}</span>
-        </button>
-      ) : null}
       {rightSidebarCollapsed && onToggleRightSidebar ? (
         <div
           className={css({

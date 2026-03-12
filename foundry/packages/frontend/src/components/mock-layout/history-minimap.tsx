@@ -1,6 +1,7 @@
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { useStyletron } from "baseui";
 import { LabelXSmall } from "baseui/typography";
+import { History } from "lucide-react";
 
 import { useFoundryTokens } from "../../app/theme";
 import { formatMessageTimestamp, type HistoryEvent } from "./view-model";
@@ -9,13 +10,18 @@ export const HistoryMinimap = memo(function HistoryMinimap({ events, onSelect }:
   const [css] = useStyletron();
   const t = useFoundryTokens();
   const [open, setOpen] = useState(false);
-  const [activeEventId, setActiveEventId] = useState<string | null>(events[events.length - 1]?.id ?? null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!events.some((event) => event.id === activeEventId)) {
-      setActiveEventId(events[events.length - 1]?.id ?? null);
-    }
-  }, [activeEventId, events]);
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
 
   if (events.length === 0) {
     return null;
@@ -23,112 +29,100 @@ export const HistoryMinimap = memo(function HistoryMinimap({ events, onSelect }:
 
   return (
     <div
+      ref={containerRef}
       className={css({
         position: "absolute",
         top: "20px",
         right: "16px",
         zIndex: 3,
         display: "flex",
-        alignItems: "flex-start",
-        gap: "12px",
+        flexDirection: "column",
+        alignItems: "flex-end",
+        gap: "6px",
       })}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
     >
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setOpen((prev) => !prev)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") setOpen((prev) => !prev);
+        }}
+        className={css({
+          width: "26px",
+          height: "26px",
+          borderRadius: "6px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+          color: open ? t.textSecondary : t.textTertiary,
+          backgroundColor: open ? t.interactiveHover : "transparent",
+          transition: "background 200ms ease, color 200ms ease",
+          ":hover": { color: t.textSecondary, backgroundColor: t.interactiveHover },
+        })}
+      >
+        <History size={14} />
+      </div>
+
       {open ? (
         <div
           className={css({
-            width: "220px",
+            width: "240px",
             maxHeight: "320px",
             overflowY: "auto",
+            padding: "8px",
+            borderRadius: "10px",
+            backgroundColor: "rgba(32, 32, 32, 0.98)",
+            backdropFilter: "blur(12px)",
+            border: `1px solid ${t.borderDefault}`,
+            boxShadow: `0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px ${t.interactiveSubtle}`,
           })}
         >
-          <div className={css({ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" })}>
-            <LabelXSmall color={t.textTertiary} $style={{ letterSpacing: "0.08em", textTransform: "uppercase" }}>
-              Task Events
+          <div className={css({ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px", padding: "0 4px" })}>
+            <LabelXSmall color={t.textTertiary} $style={{ letterSpacing: "0.02em" }}>
+              Task events
             </LabelXSmall>
             <LabelXSmall color={t.textTertiary}>{events.length}</LabelXSmall>
           </div>
-          <div className={css({ display: "flex", flexDirection: "column", gap: "6px" })}>
-            {events.map((event) => {
-              const isActive = event.id === activeEventId;
-              return (
-                <button
-                  key={event.id}
-                  type="button"
-                  onMouseEnter={() => setActiveEventId(event.id)}
-                  onFocus={() => setActiveEventId(event.id)}
-                  onClick={() => onSelect(event)}
-                  className={css({
-                    appearance: "none",
-                    WebkitAppearance: "none",
-                    background: "none",
-                    border: "none",
-                    margin: "0",
-                    display: "grid",
-                    gridTemplateColumns: "1fr auto",
-                    gap: "10px",
-                    alignItems: "center",
-                    padding: "9px 10px",
-                    borderRadius: "12px",
-                    cursor: "pointer",
-                    backgroundColor: isActive ? t.borderSubtle : "transparent",
-                    color: isActive ? t.textPrimary : t.textSecondary,
-                    transition: "background 160ms ease, color 160ms ease",
-                    ":hover": {
-                      backgroundColor: t.borderSubtle,
-                      color: t.textPrimary,
-                    },
-                  })}
-                >
-                  <div className={css({ minWidth: 0, display: "flex", flexDirection: "column", gap: "4px" })}>
-                    <div
-                      className={css({
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      })}
-                    >
-                      {event.preview}
-                    </div>
-                    <LabelXSmall color={t.textTertiary}>{event.sessionName}</LabelXSmall>
-                  </div>
-                  <LabelXSmall color={t.textTertiary}>{formatMessageTimestamp(event.createdAtMs)}</LabelXSmall>
-                </button>
-              );
-            })}
+          <div className={css({ display: "flex", flexDirection: "column", gap: "2px" })}>
+            {events.map((event) => (
+              <button
+                key={event.id}
+                type="button"
+                onClick={() => {
+                  onSelect(event);
+                  setOpen(false);
+                }}
+                className={css({
+                  appearance: "none",
+                  WebkitAppearance: "none",
+                  background: "none",
+                  border: "none",
+                  margin: "0",
+                  padding: "6px 8px",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                  color: t.textSecondary,
+                  fontSize: "12px",
+                  fontWeight: 500,
+                  textAlign: "left",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  transition: "background 160ms ease, color 160ms ease",
+                  ":hover": {
+                    backgroundColor: t.interactiveHover,
+                    color: t.textPrimary,
+                  },
+                })}
+              >
+                {event.preview}
+              </button>
+            ))}
           </div>
         </div>
       ) : null}
-
-      <div
-        className={css({
-          width: "18px",
-          padding: "4px 0",
-          display: "flex",
-          flexDirection: "column",
-          gap: "5px",
-          alignItems: "stretch",
-        })}
-      >
-        {events.map((event) => {
-          const isActive = event.id === activeEventId;
-          return (
-            <div
-              key={event.id}
-              className={css({
-                height: "3px",
-                borderRadius: "999px",
-                backgroundColor: isActive ? t.accent : t.textMuted,
-                opacity: isActive ? 1 : 0.75,
-                transition: "background 160ms ease, opacity 160ms ease",
-              })}
-            />
-          );
-        })}
-      </div>
     </div>
   );
 });
