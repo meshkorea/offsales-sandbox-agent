@@ -282,6 +282,15 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
   });
 
   const handleGithubAuthCallback = async (c: any) => {
+    // TEMPORARY: dump all request headers to diagnose duplicate callback requests
+    // (Railway nginx proxy_next_upstream? Cloudflare retry? browser?)
+    // Remove once root cause is identified.
+    const allHeaders: Record<string, string> = {};
+    c.req.raw.headers.forEach((value: string, key: string) => {
+      allHeaders[key] = value;
+    });
+    logger.info({ headers: allHeaders, url: c.req.url }, "github_callback_headers");
+
     const code = c.req.query("code");
     const state = c.req.query("state");
     if (!code || !state) {
