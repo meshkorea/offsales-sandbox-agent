@@ -17,6 +17,11 @@ export interface BackendStartOptions {
   port?: number;
 }
 
+function isRivetRequest(request: Request): boolean {
+  const { pathname } = new URL(request.url);
+  return pathname === "/v1/rivet" || pathname.startsWith("/v1/rivet/");
+}
+
 function isRetryableAppActorError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes("Actor not ready") || message.includes("socket connection was closed unexpectedly");
@@ -325,11 +330,13 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     return c.json({ ok: true });
   });
 
-  app.all("/v1/rivet", (c) => registry.handler(c.req.raw));
-  app.all("/v1/rivet/*", (c) => registry.handler(c.req.raw));
-
   const server = Bun.serve({
-    fetch: app.fetch,
+    fetch: (request) => {
+      if (isRivetRequest(request)) {
+        return registry.handler(request);
+      }
+      return app.fetch(request);
+    },
     hostname: config.backend.host,
     port: config.backend.port,
   });
