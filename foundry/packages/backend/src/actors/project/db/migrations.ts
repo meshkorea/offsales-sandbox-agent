@@ -6,32 +6,8 @@ const journal = {
   entries: [
     {
       idx: 0,
-      when: 1770924376062,
-      tag: "0000_stormy_the_hunter",
-      breakpoints: true,
-    },
-    {
-      idx: 1,
-      when: 1770947252449,
-      tag: "0001_wild_carlie_cooper",
-      breakpoints: true,
-    },
-    {
-      idx: 2,
-      when: 1771276338465,
-      tag: "0002_far_war_machine",
-      breakpoints: true,
-    },
-    {
-      idx: 3,
-      when: 1771369000000,
-      tag: "0003_busy_legacy",
-      breakpoints: true,
-    },
-    {
-      idx: 4,
-      when: 1773375722282,
-      tag: "0004_slimy_proteus",
+      when: 1773376221848,
+      tag: "0000_useful_la_nuit",
       breakpoints: true,
     },
   ],
@@ -41,51 +17,6 @@ export default {
   journal,
   migrations: {
     m0000: `CREATE TABLE \`branches\` (
-	\`branch_name\` text PRIMARY KEY NOT NULL,
-	\`commit_sha\` text NOT NULL,
-	\`worktree_path\` text,
-	\`parent_branch\` text,
-	\`diff_stat\` text,
-	\`has_unpushed\` integer,
-	\`conflicts_with_main\` integer,
-	\`first_seen_at\` integer,
-	\`last_seen_at\` integer,
-	\`updated_at\` integer NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE \`pr_cache\` (
-	\`branch_name\` text PRIMARY KEY NOT NULL,
-	\`pr_number\` integer NOT NULL,
-	\`state\` text NOT NULL,
-	\`title\` text NOT NULL,
-	\`pr_url\` text,
-	\`pr_author\` text,
-	\`is_draft\` integer,
-	\`ci_status\` text,
-	\`review_status\` text,
-	\`reviewer\` text,
-	\`fetched_at\` integer,
-	\`updated_at\` integer NOT NULL
-);
-`,
-    m0001: `CREATE TABLE \`repo_meta\` (
-	\`id\` integer PRIMARY KEY NOT NULL,
-	\`remote_url\` text NOT NULL,
-	\`updated_at\` integer NOT NULL
-);
---> statement-breakpoint
-ALTER TABLE \`branches\` DROP COLUMN \`worktree_path\`;`,
-    m0002: `CREATE TABLE \`task_index\` (
-	\`task_id\` text PRIMARY KEY NOT NULL,
-	\`branch_name\` text,
-	\`created_at\` integer NOT NULL,
-	\`updated_at\` integer NOT NULL
-);
-`,
-    m0003: `ALTER TABLE \`branches\` ADD \`tracked_in_stack\` integer;
-`,
-    m0004: `PRAGMA foreign_keys=OFF;--> statement-breakpoint
-CREATE TABLE \`__new_branches\` (
 	\`branch_name\` text PRIMARY KEY NOT NULL,
 	\`commit_sha\` text NOT NULL,
 	\`parent_branch\` text,
@@ -98,11 +29,7 @@ CREATE TABLE \`__new_branches\` (
 	\`updated_at\` integer NOT NULL
 );
 --> statement-breakpoint
-INSERT INTO \`__new_branches\`("branch_name", "commit_sha", "parent_branch", "tracked_in_stack", "diff_stat", "has_unpushed", "conflicts_with_main", "first_seen_at", "last_seen_at", "updated_at") SELECT "branch_name", "commit_sha", "parent_branch", "tracked_in_stack", "diff_stat", "has_unpushed", "conflicts_with_main", "first_seen_at", "last_seen_at", "updated_at" FROM \`branches\`;--> statement-breakpoint
-DROP TABLE \`branches\`;--> statement-breakpoint
-ALTER TABLE \`__new_branches\` RENAME TO \`branches\`;--> statement-breakpoint
-PRAGMA foreign_keys=ON;--> statement-breakpoint
-CREATE TABLE \`__new_pr_cache\` (
+CREATE TABLE \`pr_cache\` (
 	\`branch_name\` text PRIMARY KEY NOT NULL,
 	\`pr_number\` integer NOT NULL,
 	\`state\` text NOT NULL,
@@ -117,8 +44,18 @@ CREATE TABLE \`__new_pr_cache\` (
 	\`updated_at\` integer NOT NULL
 );
 --> statement-breakpoint
-INSERT INTO \`__new_pr_cache\`("branch_name", "pr_number", "state", "title", "pr_url", "pr_author", "is_draft", "ci_status", "review_status", "reviewer", "fetched_at", "updated_at") SELECT "branch_name", "pr_number", "state", "title", "pr_url", "pr_author", "is_draft", "ci_status", "review_status", "reviewer", "fetched_at", "updated_at" FROM \`pr_cache\`;--> statement-breakpoint
-DROP TABLE \`pr_cache\`;--> statement-breakpoint
-ALTER TABLE \`__new_pr_cache\` RENAME TO \`pr_cache\`;`,
+CREATE TABLE \`repo_meta\` (
+	\`id\` integer PRIMARY KEY NOT NULL,
+	\`remote_url\` text NOT NULL,
+	\`updated_at\` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE \`task_index\` (
+	\`task_id\` text PRIMARY KEY NOT NULL,
+	\`branch_name\` text,
+	\`created_at\` integer NOT NULL,
+	\`updated_at\` integer NOT NULL
+);
+`,
   } as const,
 };

@@ -6,26 +6,8 @@ const journal = {
   entries: [
     {
       idx: 0,
-      when: 1770924376525,
-      tag: "0000_rare_iron_man",
-      breakpoints: true,
-    },
-    {
-      idx: 1,
-      when: 1770947252912,
-      tag: "0001_sleepy_lady_deathstrike",
-      breakpoints: true,
-    },
-    {
-      idx: 2,
-      when: 1772668800000,
-      tag: "0002_tiny_silver_surfer",
-      breakpoints: true,
-    },
-    {
-      idx: 3,
-      when: 1773375721168,
-      tag: "0003_mushy_rictor",
+      when: 1773376221152,
+      tag: "0000_melted_viper",
       breakpoints: true,
     },
   ],
@@ -34,25 +16,7 @@ const journal = {
 export default {
   journal,
   migrations: {
-    m0000: `CREATE TABLE \`provider_profiles\` (
-	\`provider_id\` text PRIMARY KEY NOT NULL,
-	\`profile_json\` text NOT NULL,
-	\`updated_at\` integer NOT NULL
-);
-`,
-    m0001: `CREATE TABLE \`repos\` (
-	\`repo_id\` text PRIMARY KEY NOT NULL,
-	\`remote_url\` text NOT NULL,
-	\`created_at\` integer NOT NULL,
-	\`updated_at\` integer NOT NULL
-);
-`,
-    m0002: `CREATE TABLE \`task_lookup\` (
-	\`task_id\` text PRIMARY KEY NOT NULL,
-	\`repo_id\` text NOT NULL
-);
-`,
-    m0003: `CREATE TABLE \`app_sessions\` (
+    m0000: `CREATE TABLE \`app_sessions\` (
 	\`id\` text PRIMARY KEY NOT NULL,
 	\`current_user_id\` text,
 	\`current_user_name\` text,
@@ -117,6 +81,19 @@ CREATE TABLE \`organization_profile\` (
 	\`billing_trial_ends_at\` text,
 	\`billing_renewal_at\` text,
 	\`billing_payment_method_label\` text NOT NULL,
+	\`created_at\` integer NOT NULL,
+	\`updated_at\` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE \`provider_profiles\` (
+	\`provider_id\` text PRIMARY KEY NOT NULL,
+	\`profile_json\` text NOT NULL,
+	\`updated_at\` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE \`repos\` (
+	\`repo_id\` text PRIMARY KEY NOT NULL,
+	\`remote_url\` text NOT NULL,
 	\`created_at\` integer NOT NULL,
 	\`updated_at\` integer NOT NULL
 );

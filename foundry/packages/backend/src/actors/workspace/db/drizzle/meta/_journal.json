@@ -5,29 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1770924376525,
-      "tag": "0000_rare_iron_man",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1770947252912,
-      "tag": "0001_sleepy_lady_deathstrike",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1772668800000,
-      "tag": "0002_tiny_silver_surfer",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1773375721168,
-      "tag": "0003_mushy_rictor",
+      "when": 1773376221152,
+      "tag": "0000_melted_viper",
       "breakpoints": true
     }
   ]

@@ -67,6 +67,19 @@ CREATE TABLE `organization_profile` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE `provider_profiles` (
+	`provider_id` text PRIMARY KEY NOT NULL,
+	`profile_json` text NOT NULL,
+	`updated_at` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `repos` (
+	`repo_id` text PRIMARY KEY NOT NULL,
+	`remote_url` text NOT NULL,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE `seat_assignments` (
 	`email` text PRIMARY KEY NOT NULL,
 	`created_at` integer NOT NULL
