@@ -22,6 +22,13 @@
       "when": 1772668800000,
       "tag": "0002_tiny_silver_surfer",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1773375721168,
+      "tag": "0003_mushy_rictor",
+      "breakpoints": true
     }
   ]
 }

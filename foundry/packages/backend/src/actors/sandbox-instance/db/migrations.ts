@@ -16,6 +16,12 @@ const journal = {
       tag: "0001_sandbox_sessions",
       breakpoints: true,
     },
+    {
+      idx: 2,
+      when: 1773375724623,
+      tag: "0002_common_betty_ross",
+      breakpoints: true,
+    },
   ],
 } as const;
 
@@ -56,6 +62,27 @@ CREATE INDEX \`sandbox_sessions_created_at_idx\` ON \`sandbox_sessions\` (\`crea
 CREATE INDEX \`sandbox_session_events_session_id_event_index_idx\` ON \`sandbox_session_events\` (\`session_id\`,\`event_index\`);
 --> statement-breakpoint
 CREATE INDEX \`sandbox_session_events_session_id_created_at_idx\` ON \`sandbox_session_events\` (\`session_id\`,\`created_at\`);
+`,
+    m0002: `CREATE TABLE \`sandbox_session_events\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`session_id\` text NOT NULL,
+	\`event_index\` integer NOT NULL,
+	\`created_at\` integer NOT NULL,
+	\`connection_id\` text NOT NULL,
+	\`sender\` text NOT NULL,
+	\`payload_json\` text NOT NULL
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX \`sandbox_session_events_session_id_event_index_unique\` ON \`sandbox_session_events\` (\`session_id\`,\`event_index\`);--> statement-breakpoint
+CREATE TABLE \`sandbox_sessions\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`agent\` text NOT NULL,
+	\`agent_session_id\` text NOT NULL,
+	\`last_connection_id\` text NOT NULL,
+	\`created_at\` integer NOT NULL,
+	\`destroyed_at\` integer,
+	\`session_init_json\` text
+);
 `,
   } as const,
 };

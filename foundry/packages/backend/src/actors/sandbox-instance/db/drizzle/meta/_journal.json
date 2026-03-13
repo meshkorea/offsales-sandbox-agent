@@ -15,6 +15,13 @@
       "when": 1776482400000,
       "tag": "0001_sandbox_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1773375724623,
+      "tag": "0002_common_betty_ross",
+      "breakpoints": true
     }
   ]
 }
