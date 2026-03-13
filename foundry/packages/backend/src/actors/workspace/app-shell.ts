@@ -14,9 +14,14 @@ import { getActorRuntimeContext } from "../context.js";
 import { getOrCreateWorkspace } from "../handles.js";
 import { GitHubAppError } from "../../services/app-github.js";
 import { repoIdFromRemote, repoLabelFromRemote } from "../../services/repo.js";
+import { logger } from "../../logging.js";
 import { appSessions, invoices, organizationMembers, organizationProfile, repos, seatAssignments, stripeLookup } from "./db/schema.js";
 
 export const APP_SHELL_WORKSPACE_ID = "app";
+
+const githubWebhookLogger = logger.child({
+  scope: "github-webhook",
+});
 
 const PROFILE_ROW_ID = "profile";
 const OAUTH_TTL_MS = 10 * 60_000;
@@ -621,6 +626,20 @@ export const workspaceAppActions = {
       throw new Error("GitHub OAuth state is invalid or expired");
     }
 
+    // HACK: Clear the oauth state before exchangeCode so that duplicate
+    // callback requests (e.g. user refresh during the slow sync) fail the
+    // state check above instead of attempting a second code exchange.
+    // GitHub OAuth codes are single-use; a second exchangeCode always
+    // returns bad_verification_code. The root cause of duplicate requests
+    // is unknown — actor RPCs serialize, appWorkspaceAction does not retry,
+    // yet production logs show two HTTP requests with different request IDs
+    // hitting /v1/auth/github/callback with the same code+state ~9s apart.
+    // See research/friction/general.mdx 2026-03-13 entry.
+    await updateAppSession(c, session.id, {
+      oauthState: null,
+      oauthStateExpiresAt: null,
+    });
+
     const token = await appShell.github.exchangeCode(input.code);
     await updateAppSession(c, session.id, {
       githubScope: token.scopes.join(","),
@@ -1014,7 +1033,14 @@ export const workspaceAppActions = {
     const accountLogin = body.installation?.account?.login;
     const accountType = body.installation?.account?.type;
     if (!accountLogin) {
-      console.log(`[github-webhook] Ignoring ${event}.${body.action ?? ""}: no installation account`);
+      githubWebhookLogger.info(
+        {
+          event,
+          action: body.action ?? null,
+          reason: "missing_installation_account",
+        },
+        "ignored",
+      );
       return { ok: true };
     }
 
@@ -1022,7 +1048,15 @@ export const workspaceAppActions = {
     const organizationId = organizationWorkspaceId(kind, accountLogin);
 
     if (event === "installation" && (body.action === "created" || body.action === "deleted" || body.action === "suspend" || body.action === "unsuspend")) {
-      console.log(`[github-webhook] ${event}.${body.action} for ${accountLogin} (org=${organizationId})`);
+      githubWebhookLogger.info(
+        {
+          event,
+          action: body.action,
+          accountLogin,
+          organizationId,
+        },
+        "installation_event",
+      );
       if (body.action === "deleted") {
         const workspace = await getOrCreateWorkspace(c, organizationId);
         await workspace.applyGithubInstallationRemoved({});
@@ -1036,8 +1070,16 @@ export const workspaceAppActions = {
     }
 
     if (event === "installation_repositories") {
-      console.log(
-        `[github-webhook] ${event}.${body.action} for ${accountLogin}: +${body.repositories_added?.length ?? 0} -${body.repositories_removed?.length ?? 0}`,
+      githubWebhookLogger.info(
+        {
+          event,
+          action: body.action ?? null,
+          accountLogin,
+          organizationId,
+          repositoriesAdded: body.repositories_added?.length ?? 0,
+          repositoriesRemoved: body.repositories_removed?.length ?? 0,
+        },
+        "repository_membership_changed",
       );
       const workspace = await getOrCreateWorkspace(c, organizationId);
       await workspace.applyGithubRepositoryChanges({
@@ -1063,13 +1105,30 @@ export const workspaceAppActions = {
     ) {
       const repoFullName = body.repository?.full_name;
       if (repoFullName) {
-        console.log(`[github-webhook] ${event}.${body.action ?? ""} for ${repoFullName}`);
+        githubWebhookLogger.info(
+          {
+            event,
+            action: body.action ?? null,
+            accountLogin,
+            organizationId,
+            repoFullName,
+          },
+          "repository_event",
+        );
         // TODO: Dispatch to GitHubStateActor / downstream actors
       }
       return { ok: true };
     }
 
-    console.log(`[github-webhook] Unhandled event: ${event}.${body.action ?? ""}`);
+    githubWebhookLogger.info(
+      {
+        event,
+        action: body.action ?? null,
+        accountLogin,
+        organizationId,
+      },
+      "unhandled_event",
+    );
     return { ok: true };
   },
 

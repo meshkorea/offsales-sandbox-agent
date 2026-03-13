@@ -1,5 +1,28 @@
 # General Friction Log
 
+## 2026-03-13 - uncommitted
+
+### What I Was Working On
+
+Debugging slow GitHub OAuth sign-in in production after deploying backend request logging (d0ed0a4).
+
+### Friction / Issue
+
+Production logs showed two separate HTTP requests (different request IDs, ~9s apart) hitting `GET /v1/auth/github/callback` with the same `code` and `state` parameters. The first request succeeded (`exchangeCode` returned a token) but took ~18s total due to `syncGithubSessionFromToken` making multiple sequential GitHub API calls. The second request arrived while the first was still syncing, passed the oauth state validation (state was never cleared), and attempted `exchangeCode` with the already-consumed code, which GitHub rejected with `bad_verification_code`.
+
+The root cause of the duplicate HTTP request is unknown. It is not `appWorkspaceAction` (no retry logic in the current version), not Railway proxy retry (no such config), and not a frontend double-navigation (the SPA is not involved during the OAuth redirect chain). Best hypothesis is the user refreshing during the ~18s blank page wait, but unconfirmed.
+
+### Attempted Fix / Workaround
+
+1. Made `completeAppGithubAuth` clear `oauthState`/`oauthStateExpiresAt` immediately after validation and before `exchangeCode`, so any duplicate request fails the state check instead of hitting GitHub with a consumed code.
+2. Marked the fix as a HACK since the root cause of the duplicate request is not identified.
+
+### Outcome
+
+- Duplicate callback requests now fail fast with "GitHub OAuth state is invalid or expired" instead of producing a `bad_verification_code` error from GitHub.
+- The first request completes normally and the user lands on `/organizations`.
+- Root cause of the duplicate HTTP request remains uninvestigated.
+
 ## 2026-03-05 - uncommitted
 
 ### What I Was Working On
