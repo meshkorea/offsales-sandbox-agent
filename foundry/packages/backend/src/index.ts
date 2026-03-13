@@ -118,15 +118,30 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     }),
   );
 
-  const appWorkspace = async () =>
-    await withRetries(
+  let cachedAppWorkspace: any | null = null;
+
+  const appWorkspace = async () => {
+    if (cachedAppWorkspace) return cachedAppWorkspace;
+    const handle = await withRetries(
       async () =>
         await actorClient.workspace.getOrCreate(workspaceKey(APP_SHELL_WORKSPACE_ID), {
           createWithInput: APP_SHELL_WORKSPACE_ID,
         }),
     );
+    cachedAppWorkspace = handle;
+    return handle;
+  };
 
-  const appWorkspaceAction = async <T>(run: (workspace: any) => Promise<T>): Promise<T> => await withRetries(async () => await run(await appWorkspace()));
+  const appWorkspaceAction = async <T>(run: (workspace: any) => Promise<T>): Promise<T> =>
+    await withRetries(async () => {
+      try {
+        return await run(await appWorkspace());
+      } catch (error) {
+        // Invalidate cache on connection/actor errors so next retry re-resolves
+        cachedAppWorkspace = null;
+        throw error;
+      }
+    });
 
   const resolveSessionId = async (c: any): Promise<string> => {
     const requested = c.req.header("x-foundry-session");
