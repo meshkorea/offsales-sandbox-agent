@@ -161,21 +161,34 @@ export class GitHubAppClient {
       throw new GitHubAppError("GitHub OAuth is not configured", 500);
     }
 
+    const exchangeBody = {
+      client_id: this.clientId,
+      client_secret: this.clientSecret,
+      code,
+      redirect_uri: this.redirectUri,
+    };
+    console.log("[github-oauth] exchangeCode request", {
+      url: `${this.authBaseUrl}/login/oauth/access_token`,
+      client_id: this.clientId,
+      redirect_uri: this.redirectUri,
+      code_length: code.length,
+      code_prefix: code.slice(0, 6),
+    });
+
     const response = await fetch(`${this.authBaseUrl}/login/oauth/access_token`, {
       method: "POST",
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        client_id: this.clientId,
-        client_secret: this.clientSecret,
-        code,
-        redirect_uri: this.redirectUri,
-      }),
+      body: JSON.stringify(exchangeBody),
     });
 
     const responseText = await response.text();
+    console.log("[github-oauth] exchangeCode response", {
+      status: response.status,
+      body: responseText.slice(0, 300),
+    });
     let payload: GitHubTokenResponse;
     try {
       payload = JSON.parse(responseText) as GitHubTokenResponse;
