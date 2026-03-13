@@ -1,4 +1,4 @@
-CREATE TABLE `app_sessions` (
+CREATE TABLE IF NOT EXISTS `app_sessions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`current_user_id` text,
 	`current_user_name` text,
@@ -18,7 +18,7 @@ CREATE TABLE `app_sessions` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `invoices` (
+CREATE TABLE IF NOT EXISTS `invoices` (
 	`id` text PRIMARY KEY NOT NULL,
 	`label` text NOT NULL,
 	`issued_at` text NOT NULL,
@@ -27,7 +27,7 @@ CREATE TABLE `invoices` (
 	`created_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `organization_members` (
+CREATE TABLE IF NOT EXISTS `organization_members` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
 	`email` text NOT NULL,
@@ -36,7 +36,7 @@ CREATE TABLE `organization_members` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `organization_profile` (
+CREATE TABLE IF NOT EXISTS `organization_profile` (
 	`id` text PRIMARY KEY NOT NULL,
 	`kind` text NOT NULL,
 	`github_account_id` text NOT NULL,
@@ -67,31 +67,31 @@ CREATE TABLE `organization_profile` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `provider_profiles` (
+CREATE TABLE IF NOT EXISTS `provider_profiles` (
 	`provider_id` text PRIMARY KEY NOT NULL,
 	`profile_json` text NOT NULL,
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `repos` (
+CREATE TABLE IF NOT EXISTS `repos` (
 	`repo_id` text PRIMARY KEY NOT NULL,
 	`remote_url` text NOT NULL,
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `seat_assignments` (
+CREATE TABLE IF NOT EXISTS `seat_assignments` (
 	`email` text PRIMARY KEY NOT NULL,
 	`created_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `stripe_lookup` (
+CREATE TABLE IF NOT EXISTS `stripe_lookup` (
 	`lookup_key` text PRIMARY KEY NOT NULL,
 	`organization_id` text NOT NULL,
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `task_lookup` (
+CREATE TABLE IF NOT EXISTS `task_lookup` (
 	`task_id` text PRIMARY KEY NOT NULL,
 	`repo_id` text NOT NULL
 );

@@ -1,4 +1,4 @@
-CREATE TABLE `task` (
+CREATE TABLE IF NOT EXISTS `task` (
 	`id` integer PRIMARY KEY NOT NULL,
 	`branch_name` text,
 	`title` text,
@@ -12,7 +12,7 @@ CREATE TABLE `task` (
 	CONSTRAINT "task_singleton_id_check" CHECK("task"."id" = 1)
 );
 --> statement-breakpoint
-CREATE TABLE `task_runtime` (
+CREATE TABLE IF NOT EXISTS `task_runtime` (
 	`id` integer PRIMARY KEY NOT NULL,
 	`active_sandbox_id` text,
 	`active_session_id` text,
@@ -23,7 +23,7 @@ CREATE TABLE `task_runtime` (
 	CONSTRAINT "task_runtime_singleton_id_check" CHECK("task_runtime"."id" = 1)
 );
 --> statement-breakpoint
-CREATE TABLE `task_sandboxes` (
+CREATE TABLE IF NOT EXISTS `task_sandboxes` (
 	`sandbox_id` text PRIMARY KEY NOT NULL,
 	`provider_id` text NOT NULL,
 	`sandbox_actor_id` text,
@@ -34,7 +34,7 @@ CREATE TABLE `task_sandboxes` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `task_workbench_sessions` (
+CREATE TABLE IF NOT EXISTS `task_workbench_sessions` (
 	`session_id` text PRIMARY KEY NOT NULL,
 	`session_name` text NOT NULL,
 	`model` text NOT NULL,

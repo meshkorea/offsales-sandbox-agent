@@ -1,11 +1,11 @@
-CREATE TABLE `sandbox_instance` (
+CREATE TABLE IF NOT EXISTS `sandbox_instance` (
 	`id` integer PRIMARY KEY NOT NULL,
 	`metadata_json` text NOT NULL,
 	`status` text NOT NULL,
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `sandbox_session_events` (
+CREATE TABLE IF NOT EXISTS `sandbox_session_events` (
 	`id` text PRIMARY KEY NOT NULL,
 	`session_id` text NOT NULL,
 	`event_index` integer NOT NULL,
@@ -15,8 +15,8 @@ CREATE TABLE `sandbox_session_events` (
 	`payload_json` text NOT NULL
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `sandbox_session_events_session_id_event_index_unique` ON `sandbox_session_events` (`session_id`,`event_index`);--> statement-breakpoint
-CREATE TABLE `sandbox_sessions` (
+CREATE UNIQUE INDEX IF NOT EXISTS `sandbox_session_events_session_id_event_index_unique` ON `sandbox_session_events` (`session_id`,`event_index`);--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `sandbox_sessions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`agent` text NOT NULL,
 	`agent_session_id` text NOT NULL,

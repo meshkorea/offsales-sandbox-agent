@@ -1,4 +1,4 @@
-CREATE TABLE `branches` (
+CREATE TABLE IF NOT EXISTS `branches` (
 	`branch_name` text PRIMARY KEY NOT NULL,
 	`commit_sha` text NOT NULL,
 	`parent_branch` text,
@@ -11,7 +11,7 @@ CREATE TABLE `branches` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `pr_cache` (
+CREATE TABLE IF NOT EXISTS `pr_cache` (
 	`branch_name` text PRIMARY KEY NOT NULL,
 	`pr_number` integer NOT NULL,
 	`state` text NOT NULL,
@@ -26,13 +26,13 @@ CREATE TABLE `pr_cache` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `repo_meta` (
+CREATE TABLE IF NOT EXISTS `repo_meta` (
 	`id` integer PRIMARY KEY NOT NULL,
 	`remote_url` text NOT NULL,
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `task_index` (
+CREATE TABLE IF NOT EXISTS `task_index` (
 	`task_id` text PRIMARY KEY NOT NULL,
 	`branch_name` text,
 	`created_at` integer NOT NULL,
