@@ -26,6 +26,10 @@ const githubWebhookLogger = logger.child({
 const PROFILE_ROW_ID = "profile";
 const OAUTH_TTL_MS = 10 * 60_000;
 
+function roundDurationMs(start: number): number {
+  return Math.round((performance.now() - start) * 100) / 100;
+}
+
 function assertAppWorkspace(c: any): void {
   if (c.state.workspaceId !== APP_SHELL_WORKSPACE_ID) {
     throw new Error(`App shell action requires workspace ${APP_SHELL_WORKSPACE_ID}, got ${c.state.workspaceId}`);
@@ -227,21 +231,62 @@ async function getOrganizationState(workspace: any) {
 
 async function buildAppSnapshot(c: any, sessionId: string): Promise<FoundryAppSnapshot> {
   assertAppWorkspace(c);
+  const startedAt = performance.now();
   const session = await requireAppSessionRow(c, sessionId);
   const eligibleOrganizationIds = parseEligibleOrganizationIds(session.eligibleOrganizationIdsJson);
+
+  logger.info(
+    {
+      sessionId,
+      workspaceId: c.state.workspaceId,
+      eligibleOrganizationCount: eligibleOrganizationIds.length,
+      eligibleOrganizationIds,
+    },
+    "build_app_snapshot_started",
+  );
 
   const organizations = (
     await Promise.all(
       eligibleOrganizationIds.map(async (organizationId) => {
+        const organizationStartedAt = performance.now();
         try {
           const workspace = await getOrCreateWorkspace(c, organizationId);
           const organizationState = await getOrganizationState(workspace);
+          logger.info(
+            {
+              sessionId,
+              workspaceId: c.state.workspaceId,
+              organizationId,
+              durationMs: roundDurationMs(organizationStartedAt),
+            },
+            "build_app_snapshot_organization_completed",
+          );
           return organizationState.snapshot;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           if (!message.includes("Actor not found")) {
+            logger.error(
+              {
+                sessionId,
+                workspaceId: c.state.workspaceId,
+                organizationId,
+                durationMs: roundDurationMs(organizationStartedAt),
+                errorMessage: message,
+                errorStack: error instanceof Error ? error.stack : undefined,
+              },
+              "build_app_snapshot_organization_failed",
+            );
             throw error;
           }
+          logger.info(
+            {
+              sessionId,
+              workspaceId: c.state.workspaceId,
+              organizationId,
+              durationMs: roundDurationMs(organizationStartedAt),
+            },
+            "build_app_snapshot_organization_missing",
+          );
           return null;
         }
       }),
@@ -266,7 +311,7 @@ async function buildAppSnapshot(c: any, sessionId: string): Promise<FoundryAppSn
         ? (organizations[0]?.id ?? null)
         : null;
 
-  return {
+  const snapshot = {
     auth: {
       status: currentUser ? "signed_in" : "signed_out",
       currentUserId: currentUser?.id ?? null,
@@ -284,6 +329,19 @@ async function buildAppSnapshot(c: any, sessionId: string): Promise<FoundryAppSn
     users: currentUser ? [currentUser] : [],
     organizations,
   };
+
+  logger.info(
+    {
+      sessionId,
+      workspaceId: c.state.workspaceId,
+      eligibleOrganizationCount: eligibleOrganizationIds.length,
+      organizationCount: organizations.length,
+      durationMs: roundDurationMs(startedAt),
+    },
+    "build_app_snapshot_completed",
+  );
+
+  return snapshot;
 }
 
 async function requireSignedInSession(c: any, sessionId: string) {
@@ -588,13 +646,14 @@ async function listOrganizationRepoCatalog(c: any): Promise<string[]> {
 }
 
 async function buildOrganizationState(c: any) {
+  const startedAt = performance.now();
   const row = await requireOrganizationProfileRow(c);
   const repoCatalog = await listOrganizationRepoCatalog(c);
   const members = await listOrganizationMembers(c);
   const seatAssignmentEmails = await listOrganizationSeatAssignments(c);
   const invoiceRows = await listOrganizationInvoices(c);
 
-  return {
+  const state = {
     id: c.state.workspaceId,
     workspaceId: c.state.workspaceId,
     kind: row.kind,
@@ -639,6 +698,21 @@ async function buildOrganizationState(c: any) {
       repoCatalog,
     },
   };
+
+  logger.info(
+    {
+      workspaceId: c.state.workspaceId,
+      githubLogin: row.githubLogin,
+      repoCount: repoCatalog.length,
+      memberCount: members.length,
+      seatAssignmentCount: seatAssignmentEmails.length,
+      invoiceCount: invoiceRows.length,
+      durationMs: roundDurationMs(startedAt),
+    },
+    "build_organization_state_completed",
+  );
+
+  return state;
 }
 
 async function applySubscriptionState(
