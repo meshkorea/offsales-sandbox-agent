@@ -182,7 +182,7 @@ foundry-hf *ARGS:
 
 [group('foundry')]
 foundry-docker-build tag='foundry:local':
-	docker build -f foundry/Dockerfile -t {{tag}} .
+	docker build -f foundry/docker/backend.Dockerfile -t {{tag}} .
 
 [group('foundry')]
 foundry-desktop-dev:
