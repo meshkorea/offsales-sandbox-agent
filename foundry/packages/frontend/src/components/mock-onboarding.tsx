@@ -319,7 +319,7 @@ export function MockSignInPage() {
 
         {/* Footer */}
         <a
-          href="https://sandbox-agent.dev"
+          href="https://sandboxagent.dev/"
           target="_blank"
           rel="noopener noreferrer"
           style={{
