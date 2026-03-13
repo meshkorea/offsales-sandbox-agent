@@ -9,6 +9,9 @@ import { sandboxInstance } from "./sandbox-instance/index.js";
 import { workspace } from "./workspace/index.js";
 
 export const registry = setup({
+  serverless: {
+    basePath: "/v1/rivet",
+  },
   use: {
     workspace,
     project,

@@ -273,8 +273,16 @@ function stripTrailingSlash(value: string): string {
   return value.replace(/\/$/, "");
 }
 
-function deriveBackendEndpoints(endpoint: string): { appEndpoint: string; rivetEndpoint: string } {
+function normalizeLegacyBackendEndpoint(endpoint: string): string {
   const normalized = stripTrailingSlash(endpoint);
+  if (normalized.endsWith("/api/rivet")) {
+    return `${normalized.slice(0, -"/api/rivet".length)}/v1/rivet`;
+  }
+  return normalized;
+}
+
+function deriveBackendEndpoints(endpoint: string): { appEndpoint: string; rivetEndpoint: string } {
+  const normalized = normalizeLegacyBackendEndpoint(endpoint);
   if (normalized.endsWith("/rivet")) {
     return {
       appEndpoint: normalized.slice(0, -"/rivet".length),
