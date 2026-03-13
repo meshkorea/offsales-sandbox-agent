@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS `app_sessions` (
+CREATE TABLE `app_sessions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`current_user_id` text,
 	`current_user_name` text,
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS `app_sessions` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS `invoices` (
+CREATE TABLE `invoices` (
 	`id` text PRIMARY KEY NOT NULL,
 	`label` text NOT NULL,
 	`issued_at` text NOT NULL,
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS `invoices` (
 	`created_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS `organization_members` (
+CREATE TABLE `organization_members` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
 	`email` text NOT NULL,
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS `organization_members` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS `organization_profile` (
+CREATE TABLE `organization_profile` (
 	`id` text PRIMARY KEY NOT NULL,
 	`kind` text NOT NULL,
 	`github_account_id` text NOT NULL,
@@ -67,31 +67,31 @@ CREATE TABLE IF NOT EXISTS `organization_profile` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS `provider_profiles` (
+CREATE TABLE `provider_profiles` (
 	`provider_id` text PRIMARY KEY NOT NULL,
 	`profile_json` text NOT NULL,
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS `repos` (
+CREATE TABLE `repos` (
 	`repo_id` text PRIMARY KEY NOT NULL,
 	`remote_url` text NOT NULL,
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS `seat_assignments` (
+CREATE TABLE `seat_assignments` (
 	`email` text PRIMARY KEY NOT NULL,
 	`created_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS `stripe_lookup` (
+CREATE TABLE `stripe_lookup` (
 	`lookup_key` text PRIMARY KEY NOT NULL,
 	`organization_id` text NOT NULL,
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS `task_lookup` (
+CREATE TABLE `task_lookup` (
 	`task_id` text PRIMARY KEY NOT NULL,
 	`repo_id` text NOT NULL
 );

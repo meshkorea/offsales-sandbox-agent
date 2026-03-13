@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS `events` (
+CREATE TABLE `events` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`task_id` text,
 	`branch_name` text,
