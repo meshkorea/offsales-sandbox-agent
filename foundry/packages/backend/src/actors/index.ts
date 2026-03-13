@@ -7,6 +7,7 @@ import { projectPrSync } from "./project-pr-sync/index.js";
 import { project } from "./project/index.js";
 import { sandboxInstance } from "./sandbox-instance/index.js";
 import { workspace } from "./workspace/index.js";
+import { logger } from "../logging.js";
 
 export const registry = setup({
   serverless: {
@@ -14,6 +15,9 @@ export const registry = setup({
   },
   runner: {
     version: Date.now(),
+  },
+  logging: {
+    baseLogger: logger,
   },
   use: {
     workspace,

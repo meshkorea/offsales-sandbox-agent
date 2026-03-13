@@ -44,6 +44,7 @@ Use `pnpm` workspaces and Turborepo.
 - Tail compose logs: `just foundry-dev-logs`
 - Stop the preview stack: `just foundry-preview-down`
 - Tail preview logs: `just foundry-preview-logs`
+- Production deploys should go through `git push` to the deployment branch/workflow. Do not use `railway up` for Foundry deploys.
 
 ## Railway Logs
 
@@ -117,6 +118,8 @@ For all Rivet/RivetKit implementation:
 - Every actor key must be prefixed with workspace namespace (`["ws", workspaceId, ...]`).
 - CLI/TUI/GUI must use `@sandbox-agent/foundry-client` (`packages/client`) for backend access; `rivetkit/client` imports are only allowed inside `packages/client`.
 - Do not add custom backend REST endpoints (no `/v1/*` shim layer).
+- Do not build blocking flows that wait on external systems to become ready or complete. Prefer push-based progression driven by actor messages, events, webhooks, or queue/workflow state changes.
+- Do not rely on retries for correctness or normal control flow. If a queue/workflow/external dependency is not ready yet, model that explicitly and resume from a push/event, instead of polling or retry loops.
 - We own the sandbox-agent project; treat sandbox-agent defects as first-party bugs and fix them instead of working around them.
 - Keep strict single-writer ownership: each table/row has exactly one actor writer.
 - Parent actors (`workspace`, `project`, `task`, `history`, `sandbox-instance`) use command-only loops with no timeout.
