@@ -73,7 +73,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     endpoint: `http://127.0.0.1:${config.backend.port}/api/rivet`,
   }) as any;
 
-  // Wrap RivetKit and app routes in a single Hono app mounted at /api/rivet.
+  // Serve custom Foundry HTTP APIs alongside the RivetKit registry.
   const app = new Hono();
   const allowHeaders = [
     "Content-Type",
@@ -93,7 +93,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
   ];
   const exposeHeaders = ["Content-Type", "x-foundry-session", "x-rivet-ray-id"];
   app.use(
-    "/api/rivet/*",
+    "/api/*",
     cors({
       origin: (origin) => origin ?? "*",
       credentials: true,
@@ -103,7 +103,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     }),
   );
   app.use(
-    "/api/rivet",
+    "/api",
     cors({
       origin: (origin) => origin ?? "*",
       credentials: true,
@@ -132,12 +132,12 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     return sessionId;
   };
 
-  app.get("/api/rivet/app/snapshot", async (c) => {
+  app.get("/api/app/snapshot", async (c) => {
     const sessionId = await resolveSessionId(c);
     return c.json(await appWorkspaceAction(async (workspace) => await workspace.getAppSnapshot({ sessionId })));
   });
 
-  app.get("/api/rivet/app/auth/github/start", async (c) => {
+  app.get("/api/auth/github/start", async (c) => {
     const sessionId = await resolveSessionId(c);
     const result = await appWorkspaceAction(async (workspace) => await workspace.startAppGithubAuth({ sessionId }));
     return Response.redirect(result.url, 302);
@@ -154,20 +154,20 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     return Response.redirect(result.redirectTo, 302);
   };
 
-  app.get("/api/rivet/app/auth/github/callback", handleGithubAuthCallback);
+  app.get("/api/auth/github/callback", handleGithubAuthCallback);
   app.get("/api/auth/callback/github", handleGithubAuthCallback);
 
-  app.post("/api/rivet/app/sign-out", async (c) => {
+  app.post("/api/app/sign-out", async (c) => {
     const sessionId = await resolveSessionId(c);
     return c.json(await appWorkspaceAction(async (workspace) => await workspace.signOutApp({ sessionId })));
   });
 
-  app.post("/api/rivet/app/onboarding/starter-repo/skip", async (c) => {
+  app.post("/api/app/onboarding/starter-repo/skip", async (c) => {
     const sessionId = await resolveSessionId(c);
     return c.json(await appWorkspaceAction(async (workspace) => await workspace.skipAppStarterRepo({ sessionId })));
   });
 
-  app.post("/api/rivet/app/organizations/:organizationId/starter-repo/star", async (c) => {
+  app.post("/api/app/organizations/:organizationId/starter-repo/star", async (c) => {
     const sessionId = await resolveSessionId(c);
     return c.json(
       await appWorkspaceAction(
@@ -180,7 +180,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     );
   });
 
-  app.post("/api/rivet/app/organizations/:organizationId/select", async (c) => {
+  app.post("/api/app/organizations/:organizationId/select", async (c) => {
     const sessionId = await resolveSessionId(c);
     return c.json(
       await appWorkspaceAction(
@@ -193,7 +193,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     );
   });
 
-  app.patch("/api/rivet/app/organizations/:organizationId/profile", async (c) => {
+  app.patch("/api/app/organizations/:organizationId/profile", async (c) => {
     const sessionId = await resolveSessionId(c);
     const body = await c.req.json();
     return c.json(
@@ -210,7 +210,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     );
   });
 
-  app.post("/api/rivet/app/organizations/:organizationId/import", async (c) => {
+  app.post("/api/app/organizations/:organizationId/import", async (c) => {
     const sessionId = await resolveSessionId(c);
     return c.json(
       await appWorkspaceAction(
@@ -223,7 +223,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     );
   });
 
-  app.post("/api/rivet/app/organizations/:organizationId/reconnect", async (c) => {
+  app.post("/api/app/organizations/:organizationId/reconnect", async (c) => {
     const sessionId = await resolveSessionId(c);
     return c.json(
       await appWorkspaceAction(
@@ -236,7 +236,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     );
   });
 
-  app.post("/api/rivet/app/organizations/:organizationId/billing/checkout", async (c) => {
+  app.post("/api/app/organizations/:organizationId/billing/checkout", async (c) => {
     const sessionId = await resolveSessionId(c);
     const body = await c.req.json().catch(() => ({}));
     const planId = body?.planId === "free" || body?.planId === "team" ? (body.planId as FoundryBillingPlanId) : "team";
@@ -249,7 +249,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     );
   });
 
-  app.get("/api/rivet/app/billing/checkout/complete", async (c) => {
+  app.get("/api/billing/checkout/complete", async (c) => {
     const organizationId = c.req.query("organizationId");
     const sessionId = c.req.query("foundrySession");
     const checkoutSessionId = c.req.query("session_id");
@@ -264,7 +264,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     return Response.redirect(result.redirectTo, 302);
   });
 
-  app.post("/api/rivet/app/organizations/:organizationId/billing/portal", async (c) => {
+  app.post("/api/app/organizations/:organizationId/billing/portal", async (c) => {
     const sessionId = await resolveSessionId(c);
     return c.json(
       await (await appWorkspace()).createAppBillingPortalSession({
@@ -274,7 +274,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     );
   });
 
-  app.post("/api/rivet/app/organizations/:organizationId/billing/cancel", async (c) => {
+  app.post("/api/app/organizations/:organizationId/billing/cancel", async (c) => {
     const sessionId = await resolveSessionId(c);
     return c.json(
       await (await appWorkspace()).cancelAppScheduledRenewal({
@@ -284,7 +284,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     );
   });
 
-  app.post("/api/rivet/app/organizations/:organizationId/billing/resume", async (c) => {
+  app.post("/api/app/organizations/:organizationId/billing/resume", async (c) => {
     const sessionId = await resolveSessionId(c);
     return c.json(
       await (await appWorkspace()).resumeAppSubscription({
@@ -294,7 +294,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     );
   });
 
-  app.post("/api/rivet/app/workspaces/:workspaceId/seat-usage", async (c) => {
+  app.post("/api/app/workspaces/:workspaceId/seat-usage", async (c) => {
     const sessionId = await resolveSessionId(c);
     return c.json(
       await (await appWorkspace()).recordAppSeatUsage({
@@ -313,10 +313,9 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     return c.json({ ok: true });
   };
 
-  app.post("/api/rivet/app/webhooks/stripe", handleStripeWebhook);
-  app.post("/api/rivet/app/stripe/webhook", handleStripeWebhook);
+  app.post("/api/webhooks/stripe", handleStripeWebhook);
 
-  app.post("/api/rivet/app/webhooks/github", async (c) => {
+  app.post("/api/webhooks/github", async (c) => {
     const payload = await c.req.text();
     await (await appWorkspace()).handleAppGithubWebhook({
       payload,

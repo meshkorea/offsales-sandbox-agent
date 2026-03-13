@@ -19,7 +19,7 @@ export default defineConfig({
   server: {
     port: 4173,
     proxy: {
-      "/api/rivet": {
+      "/api": {
         target: backendProxyTarget,
         changeOrigin: true,
       },

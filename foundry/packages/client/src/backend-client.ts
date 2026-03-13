@@ -269,6 +269,14 @@ export function createBackendClientFromConfig(config: AppConfig): BackendClient 
   });
 }
 
+function stripTrailingSlash(value: string): string {
+  return value.replace(/\/$/, "");
+}
+
+function deriveAppApiEndpoint(endpoint: string): string {
+  return stripTrailingSlash(endpoint).replace(/\/api\/rivet$/, "/api");
+}
+
 function isLoopbackHost(hostname: string): boolean {
   const h = hostname.toLowerCase();
   return h === "127.0.0.1" || h === "localhost" || h === "0.0.0.0" || h === "::1";
@@ -386,6 +394,8 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     return createMockBackendClient(options.defaultWorkspaceId);
   }
 
+  const rivetApiEndpoint = stripTrailingSlash(options.endpoint);
+  const appApiEndpoint = deriveAppApiEndpoint(options.endpoint);
   let clientPromise: Promise<RivetClient> | null = null;
   let appSessionId = typeof window !== "undefined" ? window.localStorage.getItem("sandbox-agent-foundry:remote-app-session") : null;
   const workbenchSubscriptions = new Map<
@@ -434,7 +444,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       headers.set("Content-Type", "application/json");
     }
 
-    const res = await fetch(`${options.endpoint.replace(/\/$/, "")}${path}`, {
+    const res = await fetch(`${appApiEndpoint}${path}`, {
       ...init,
       headers,
       credentials: "include",
@@ -465,22 +475,22 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       // Use the serverless /metadata endpoint to discover the manager endpoint.
       // If the server reports a loopback clientEndpoint (127.0.0.1), rewrite to the same host
       // as the configured endpoint so remote browsers/clients can connect.
-      const configured = new URL(options.endpoint);
+      const configured = new URL(rivetApiEndpoint);
       const configuredOrigin = `${configured.protocol}//${configured.host}`;
 
       const initialNamespace = undefined;
-      const metadata = await fetchMetadataWithRetry(options.endpoint, initialNamespace, {
+      const metadata = await fetchMetadataWithRetry(rivetApiEndpoint, initialNamespace, {
         timeoutMs: 30_000,
         requestTimeoutMs: 8_000,
       });
 
       // Candidate endpoint: manager endpoint if provided, otherwise stick to the configured endpoint.
-      const candidateEndpoint = metadata.clientEndpoint ? rewriteLoopbackClientEndpoint(metadata.clientEndpoint, configuredOrigin) : options.endpoint;
+      const candidateEndpoint = metadata.clientEndpoint ? rewriteLoopbackClientEndpoint(metadata.clientEndpoint, configuredOrigin) : rivetApiEndpoint;
 
       // If the manager port isn't reachable from this client (common behind reverse proxies),
       // fall back to the configured serverless endpoint to avoid hanging requests.
       const shouldUseCandidate = metadata.clientEndpoint ? await probeMetadataEndpoint(candidateEndpoint, metadata.clientNamespace, 1_500) : true;
-      const resolvedEndpoint = shouldUseCandidate ? candidateEndpoint : options.endpoint;
+      const resolvedEndpoint = shouldUseCandidate ? candidateEndpoint : rivetApiEndpoint;
 
       return createClient({
         endpoint: resolvedEndpoint,
@@ -676,10 +686,10 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 
     async signInWithGithub(): Promise<void> {
       if (typeof window !== "undefined") {
-        window.location.assign(`${options.endpoint.replace(/\/$/, "")}/app/auth/github/start`);
+        window.location.assign(`${appApiEndpoint}/auth/github/start`);
         return;
       }
-      await redirectTo("/app/auth/github/start");
+      await redirectTo("/auth/github/start");
     },
 
     async signOutApp(): Promise<FoundryAppSnapshot> {
