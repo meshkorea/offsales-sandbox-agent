@@ -218,6 +218,16 @@ Update this file continuously during the migration.
 - Status: resolved
 - Links: `server/packages/sandbox-agent/src/router.rs`, `server/packages/sandbox-agent/src/acp_runtime/mod.rs`, `server/packages/sandbox-agent/tests/v1_api/acp_transport.rs`, `docs/advanced/acp-http-client.mdx`
 
+- Date: 2026-03-12
+- Area: Foundry RivetKit serverless routing on Railway
+- Issue: Moving Foundry from `/api/rivet` to `/v1/rivet` exposed three RivetKit deployment couplings: `serverless.basePath` had to be updated explicitly for metadata/start routes, `configureRunnerPool` could not be used in production because the current Rivet token lacked permission to list datacenters, and wrapping `registry.handler(c.req.raw)` inside Hono route handlers produced unstable serverless runner startup under Railway until `/v1/rivet` was dispatched directly from `Bun.serve`.
+- Impact: `GET /v1/rivet/metadata` initially returned 404, app-shell actor creation failed during OAuth/session bootstrap, and Foundry sign-in blocked on `500` from `/v1/app/snapshot` and `/v1/auth/github/start`.
+- Proposed direction: Treat RivetKit serverless base path as an explicit deployment config when versioning routes, avoid relying on runner-pool auto-configuration unless the production token has the required Rivet control-plane permissions, and prefer direct top-level dispatch for RivetKit serverless routes instead of routing them through higher-level Hono middleware.
+- Decision: Accepted and implemented for Foundry. The backend now sets `serverless.basePath` to `/v1/rivet`, leaves runner-pool config to infrastructure, and serves RivetKit directly from the Bun server for `/v1/rivet`.
+- Owner: Unassigned.
+- Status: resolved
+- Links: `foundry/packages/backend/src/actors/index.ts`, `foundry/packages/backend/src/index.ts`
+
 - Date: 2026-02-10
 - Area: Agent selection contract for ACP bootstrap/session creation
 - Issue: `x-acp-agent` bound agent selection to transport bootstrap, which conflicted with Sandbox Agent meta-session goals where one client can manage sessions across multiple agents.
