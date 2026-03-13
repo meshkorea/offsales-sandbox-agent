@@ -8,6 +8,7 @@ import {
   initCompleteActivity,
   initCreateSandboxActivity,
   initCreateSessionActivity,
+  initEnqueueProvisionActivity,
   initEnsureAgentActivity,
   initEnsureNameActivity,
   initExposeSandboxActivity,
@@ -32,6 +33,9 @@ import {
   changeWorkbenchModel,
   closeWorkbenchSession,
   createWorkbenchSession,
+  ensureWorkbenchSession,
+  refreshWorkbenchDerivedState,
+  refreshWorkbenchSessionTranscript,
   markWorkbenchUnread,
   publishWorkbenchPr,
   renameWorkbenchBranch,
@@ -56,7 +60,7 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
     const body = msg.body;
 
     await loopCtx.step("init-bootstrap-db", async () => initBootstrapDbActivity(loopCtx, body));
-    await loopCtx.removed("init-enqueue-provision", "step");
+    await loopCtx.step("init-enqueue-provision", async () => initEnqueueProvisionActivity(loopCtx, body));
     await loopCtx.removed("init-dispatch-provision-v2", "step");
     const currentRecord = await loopCtx.step("init-read-current-record", async () => getCurrentRecord(loopCtx));
 
@@ -166,10 +170,19 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
   "task.command.workbench.create_session": async (loopCtx, msg) => {
     const created = await loopCtx.step({
       name: "workbench-create-session",
-      timeout: 5 * 60_000,
+      timeout: 30_000,
       run: async () => createWorkbenchSession(loopCtx, msg.body?.model),
     });
     await msg.complete(created);
+  },
+
+  "task.command.workbench.ensure_session": async (loopCtx, msg) => {
+    await loopCtx.step({
+      name: "workbench-ensure-session",
+      timeout: 5 * 60_000,
+      run: async () => ensureWorkbenchSession(loopCtx, msg.body.tabId, msg.body?.model),
+    });
+    await msg.complete({ ok: true });
   },
 
   "task.command.workbench.rename_session": async (loopCtx, msg) => {
@@ -212,6 +225,24 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
 
   "task.command.workbench.sync_session_status": async (loopCtx, msg) => {
     await loopCtx.step("workbench-sync-session-status", async () => syncWorkbenchSessionStatus(loopCtx, msg.body.sessionId, msg.body.status, msg.body.at));
+    await msg.complete({ ok: true });
+  },
+
+  "task.command.workbench.refresh_derived": async (loopCtx, msg) => {
+    await loopCtx.step({
+      name: "workbench-refresh-derived",
+      timeout: 5 * 60_000,
+      run: async () => refreshWorkbenchDerivedState(loopCtx),
+    });
+    await msg.complete({ ok: true });
+  },
+
+  "task.command.workbench.refresh_session_transcript": async (loopCtx, msg) => {
+    await loopCtx.step({
+      name: "workbench-refresh-session-transcript",
+      timeout: 60_000,
+      run: async () => refreshWorkbenchSessionTranscript(loopCtx, msg.body.sessionId),
+    });
     await msg.complete({ ok: true });
   },
 

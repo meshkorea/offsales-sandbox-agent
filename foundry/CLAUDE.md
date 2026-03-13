@@ -126,7 +126,7 @@ For all Rivet/RivetKit implementation:
 - Request/action contract: wait only until the minimum resource needed for the client's next step exists. Example: task creation may wait for task actor creation/identity, but not for sandbox provisioning or session bootstrap.
 - Read paths must not force refresh/sync work inline. Serve the latest cached projection, mark staleness explicitly, and trigger background refresh separately when needed.
 - If a workflow needs to resume after some external work completes, model that as workflow state plus follow-up messages/events instead of holding the original request open.
-- Do not rely on retries for correctness or normal control flow. If a queue/workflow/external dependency is not ready yet, model that explicitly and resume from a push/event, instead of polling or retry loops.
+- No retries: never add retry loops (`withRetries`, `setTimeout` retry, exponential backoff) anywhere in the codebase. If an operation fails, surface the error immediately. If a dependency is not ready yet, model that explicitly with workflow state and resume from a push/event instead of polling or retry loops.
 - Actor handle policy:
 - Prefer explicit `get` or explicit `create` based on workflow intent; do not default to `getOrCreate`.
 - Use `get`/`getForId` when the actor is expected to already exist; if missing, surface an explicit `Actor not found` error with recovery context.

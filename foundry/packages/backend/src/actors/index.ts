@@ -1,3 +1,4 @@
+import { authUser } from "./auth-user/index.js";
 import { setup } from "rivetkit";
 import { taskStatusSync } from "./task-status-sync/index.js";
 import { task } from "./task/index.js";
@@ -22,6 +23,7 @@ export const registry = setup({
     baseLogger: logger,
   },
   use: {
+    authUser,
     workspace,
     project,
     task,
@@ -35,6 +37,7 @@ export const registry = setup({
 
 export * from "./context.js";
 export * from "./events.js";
+export * from "./auth-user/index.js";
 export * from "./task-status-sync/index.js";
 export * from "./task/index.js";
 export * from "./history/index.js";

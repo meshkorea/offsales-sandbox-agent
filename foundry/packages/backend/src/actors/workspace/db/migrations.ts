@@ -10,6 +10,12 @@ const journal = {
       tag: "0000_melted_viper",
       breakpoints: true,
     },
+    {
+      idx: 1,
+      when: 1773638400000,
+      tag: "0001_auth_index_tables",
+      breakpoints: true,
+    },
   ],
 } as const;
 
@@ -112,6 +118,37 @@ CREATE TABLE \`stripe_lookup\` (
 CREATE TABLE \`task_lookup\` (
 	\`task_id\` text PRIMARY KEY NOT NULL,
 	\`repo_id\` text NOT NULL
+);
+`,
+    m0001: `CREATE TABLE IF NOT EXISTS \`auth_session_index\` (
+	\`session_id\` text PRIMARY KEY NOT NULL,
+	\`session_token\` text NOT NULL,
+	\`user_id\` text NOT NULL,
+	\`created_at\` integer NOT NULL,
+	\`updated_at\` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS \`auth_email_index\` (
+	\`email\` text PRIMARY KEY NOT NULL,
+	\`user_id\` text NOT NULL,
+	\`updated_at\` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS \`auth_account_index\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`provider_id\` text NOT NULL,
+	\`account_id\` text NOT NULL,
+	\`user_id\` text NOT NULL,
+	\`updated_at\` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS \`auth_verification\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`identifier\` text NOT NULL,
+	\`value\` text NOT NULL,
+	\`expires_at\` integer NOT NULL,
+	\`created_at\` integer NOT NULL,
+	\`updated_at\` integer NOT NULL
 );
 `,
   } as const,

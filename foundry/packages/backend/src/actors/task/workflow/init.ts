@@ -8,6 +8,7 @@ import { logActorWarning, resolveErrorMessage } from "../../logging.js";
 import { task as taskTable, taskRuntime, taskSandboxes } from "../db/schema.js";
 import { TASK_ROW_ID, appendHistory, buildAgentPrompt, collectErrorMessages, resolveErrorDetail, setTaskState } from "./common.js";
 import { taskWorkflowQueueName } from "./queue.js";
+import { enqueuePendingWorkbenchSessions } from "../workbench.js";
 
 const DEFAULT_INIT_CREATE_SANDBOX_ACTIVITY_TIMEOUT_MS = 180_000;
 
@@ -96,6 +97,10 @@ export async function initBootstrapDbActivity(loopCtx: any, body: any): Promise<
         activeSwitchTarget: null,
         activeCwd: null,
         statusMessage: initialStatusMessage,
+        gitStateJson: null,
+        gitStateUpdatedAt: null,
+        provisionStage: "queued",
+        provisionStageUpdatedAt: now,
         updatedAt: now,
       })
       .onConflictDoUpdate({
@@ -106,6 +111,8 @@ export async function initBootstrapDbActivity(loopCtx: any, body: any): Promise<
           activeSwitchTarget: null,
           activeCwd: null,
           statusMessage: initialStatusMessage,
+          provisionStage: "queued",
+          provisionStageUpdatedAt: now,
           updatedAt: now,
         },
       })
@@ -118,19 +125,29 @@ export async function initBootstrapDbActivity(loopCtx: any, body: any): Promise<
 
 export async function initEnqueueProvisionActivity(loopCtx: any, body: any): Promise<void> {
   await setTaskState(loopCtx, "init_enqueue_provision", "provision queued");
-  const self = selfTask(loopCtx);
-  void self
-    .send(taskWorkflowQueueName("task.command.provision"), body, {
-      wait: false,
+  await loopCtx.db
+    .update(taskRuntime)
+    .set({
+      provisionStage: "queued",
+      provisionStageUpdatedAt: Date.now(),
+      updatedAt: Date.now(),
     })
-    .catch((error: unknown) => {
-      logActorWarning("task.init", "background provision command failed", {
-        workspaceId: loopCtx.state.workspaceId,
-        repoId: loopCtx.state.repoId,
-        taskId: loopCtx.state.taskId,
-        error: resolveErrorMessage(error),
-      });
+    .where(eq(taskRuntime.id, TASK_ROW_ID))
+    .run();
+  const self = selfTask(loopCtx);
+  try {
+    await self.send(taskWorkflowQueueName("task.command.provision"), body, {
+      wait: false,
     });
+  } catch (error: unknown) {
+    logActorWarning("task.init", "background provision command failed", {
+      workspaceId: loopCtx.state.workspaceId,
+      repoId: loopCtx.state.repoId,
+      taskId: loopCtx.state.taskId,
+      error: resolveErrorMessage(error),
+    });
+    throw error;
+  }
 }
 
 export async function initEnsureNameActivity(loopCtx: any): Promise<void> {
@@ -197,6 +214,8 @@ export async function initEnsureNameActivity(loopCtx: any): Promise<void> {
     .update(taskRuntime)
     .set({
       statusMessage: "provisioning",
+      provisionStage: "repo_prepared",
+      provisionStageUpdatedAt: now,
       updatedAt: now,
     })
     .where(eq(taskRuntime.id, TASK_ROW_ID))
@@ -222,6 +241,15 @@ export async function initAssertNameActivity(loopCtx: any): Promise<void> {
 
 export async function initCreateSandboxActivity(loopCtx: any, body: any): Promise<any> {
   await setTaskState(loopCtx, "init_create_sandbox", "creating sandbox");
+  await loopCtx.db
+    .update(taskRuntime)
+    .set({
+      provisionStage: "sandbox_allocated",
+      provisionStageUpdatedAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+    .where(eq(taskRuntime.id, TASK_ROW_ID))
+    .run();
   const { providers } = getActorRuntimeContext();
   const providerId = body?.providerId ?? loopCtx.state.providerId;
   const provider = providers.get(providerId);
@@ -307,6 +335,15 @@ export async function initCreateSandboxActivity(loopCtx: any, body: any): Promis
 
 export async function initEnsureAgentActivity(loopCtx: any, body: any, sandbox: any): Promise<any> {
   await setTaskState(loopCtx, "init_ensure_agent", "ensuring sandbox agent");
+  await loopCtx.db
+    .update(taskRuntime)
+    .set({
+      provisionStage: "agent_installing",
+      provisionStageUpdatedAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+    .where(eq(taskRuntime.id, TASK_ROW_ID))
+    .run();
   const { providers } = getActorRuntimeContext();
   const providerId = body?.providerId ?? loopCtx.state.providerId;
   const provider = providers.get(providerId);
@@ -318,6 +355,15 @@ export async function initEnsureAgentActivity(loopCtx: any, body: any, sandbox: 
 
 export async function initStartSandboxInstanceActivity(loopCtx: any, body: any, sandbox: any, agent: any): Promise<any> {
   await setTaskState(loopCtx, "init_start_sandbox_instance", "starting sandbox runtime");
+  await loopCtx.db
+    .update(taskRuntime)
+    .set({
+      provisionStage: "agent_starting",
+      provisionStageUpdatedAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+    .where(eq(taskRuntime.id, TASK_ROW_ID))
+    .run();
   try {
     const providerId = body?.providerId ?? loopCtx.state.providerId;
     const sandboxInstance = await getOrCreateSandboxInstance(loopCtx, loopCtx.state.workspaceId, providerId, sandbox.sandboxId, {
@@ -350,6 +396,15 @@ export async function initStartSandboxInstanceActivity(loopCtx: any, body: any, 
 
 export async function initCreateSessionActivity(loopCtx: any, body: any, sandbox: any, sandboxInstanceReady: any): Promise<any> {
   await setTaskState(loopCtx, "init_create_session", "creating agent session");
+  await loopCtx.db
+    .update(taskRuntime)
+    .set({
+      provisionStage: "session_creating",
+      provisionStageUpdatedAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+    .where(eq(taskRuntime.id, TASK_ROW_ID))
+    .run();
   if (!sandboxInstanceReady.ok) {
     return {
       id: null,
@@ -481,6 +536,8 @@ export async function initWriteDbActivity(
       activeSwitchTarget: sandbox.switchTarget,
       activeCwd,
       statusMessage,
+      provisionStage: sessionHealthy ? "ready" : "error",
+      provisionStageUpdatedAt: now,
       updatedAt: now,
     })
     .onConflictDoUpdate({
@@ -491,6 +548,8 @@ export async function initWriteDbActivity(
         activeSwitchTarget: sandbox.switchTarget,
         activeCwd,
         statusMessage,
+        provisionStage: sessionHealthy ? "ready" : "error",
+        provisionStageUpdatedAt: now,
         updatedAt: now,
       },
     })
@@ -535,6 +594,12 @@ export async function initCompleteActivity(loopCtx: any, body: any, sandbox: any
     });
 
     loopCtx.state.initialized = true;
+    await enqueuePendingWorkbenchSessions(loopCtx);
+    const self = selfTask(loopCtx);
+    await self.send(taskWorkflowQueueName("task.command.workbench.refresh_derived"), {}, { wait: false });
+    if (sessionId) {
+      await self.send(taskWorkflowQueueName("task.command.workbench.refresh_session_transcript"), { sessionId }, { wait: false });
+    }
     return;
   }
 
@@ -591,6 +656,8 @@ export async function initFailedActivity(loopCtx: any, error: unknown): Promise<
       activeSwitchTarget: null,
       activeCwd: null,
       statusMessage: detail,
+      provisionStage: "error",
+      provisionStageUpdatedAt: now,
       updatedAt: now,
     })
     .onConflictDoUpdate({
@@ -601,6 +668,8 @@ export async function initFailedActivity(loopCtx: any, error: unknown): Promise<
         activeSwitchTarget: null,
         activeCwd: null,
         statusMessage: detail,
+        provisionStage: "error",
+        provisionStageUpdatedAt: now,
         updatedAt: now,
       },
     })

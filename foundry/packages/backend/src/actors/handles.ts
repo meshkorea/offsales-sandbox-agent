@@ -1,4 +1,14 @@
-import { taskKey, taskStatusSyncKey, historyKey, projectBranchSyncKey, projectKey, projectPrSyncKey, sandboxInstanceKey, workspaceKey } from "./keys.js";
+import {
+  authUserKey,
+  taskKey,
+  taskStatusSyncKey,
+  historyKey,
+  projectBranchSyncKey,
+  projectKey,
+  projectPrSyncKey,
+  sandboxInstanceKey,
+  workspaceKey,
+} from "./keys.js";
 import type { ProviderId } from "@sandbox-agent/foundry-shared";
 
 export function actorClient(c: any) {
@@ -9,6 +19,16 @@ export async function getOrCreateWorkspace(c: any, workspaceId: string) {
   return await actorClient(c).workspace.getOrCreate(workspaceKey(workspaceId), {
     createWithInput: workspaceId,
   });
+}
+
+export async function getOrCreateAuthUser(c: any, userId: string) {
+  return await actorClient(c).authUser.getOrCreate(authUserKey(userId), {
+    createWithInput: { userId },
+  });
+}
+
+export function getAuthUser(c: any, userId: string) {
+  return actorClient(c).authUser.get(authUserKey(userId));
 }
 
 export async function getOrCreateProject(c: any, workspaceId: string, repoId: string, remoteUrl: string) {
@@ -124,4 +144,8 @@ export function selfProject(c: any) {
 
 export function selfSandboxInstance(c: any) {
   return actorClient(c).sandboxInstance.getForId(c.actorId);
+}
+
+export function selfAuthUser(c: any) {
+  return actorClient(c).authUser.getForId(c.actorId);
 }

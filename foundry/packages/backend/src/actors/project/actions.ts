@@ -10,7 +10,7 @@ import { foundryRepoClonePath } from "../../services/foundry-paths.js";
 import { resolveWorkspaceGithubAuth } from "../../services/github-auth.js";
 import { expectQueueResponse } from "../../services/queue.js";
 import { withRepoGitLock } from "../../services/repo-git-lock.js";
-import { branches, taskIndex, prCache, repoMeta } from "./db/schema.js";
+import { branches, taskIndex, prCache, repoActionJobs, repoMeta } from "./db/schema.js";
 import { deriveFallbackTitle } from "../../services/create-flow.js";
 import { normalizeBaseBranchName } from "../../integrations/git-spice/index.js";
 import { sortBranchesForOverview } from "./stack-model.js";
@@ -87,6 +87,7 @@ interface BranchSyncResult {
 interface RepoOverviewCommand {}
 
 interface RunRepoStackActionCommand {
+  jobId?: string;
   action: RepoStackAction;
   branchName?: string;
   parentBranch?: string;
@@ -131,6 +132,90 @@ async function ensureProjectSyncActors(c: any, localPath: string): Promise<void>
   await branchSync.start();
 
   c.state.syncActorsStarted = true;
+}
+
+async function ensureRepoActionJobsTable(c: any): Promise<void> {
+  await c.db.execute(`
+    CREATE TABLE IF NOT EXISTS repo_action_jobs (
+      job_id text PRIMARY KEY NOT NULL,
+      action text NOT NULL,
+      branch_name text,
+      parent_branch text,
+      status text NOT NULL,
+      message text NOT NULL,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL,
+      completed_at integer
+    )
+  `);
+}
+
+async function writeRepoActionJob(
+  c: any,
+  input: {
+    jobId: string;
+    action: RepoStackAction;
+    branchName: string | null;
+    parentBranch: string | null;
+    status: "queued" | "running" | "completed" | "error";
+    message: string;
+    createdAt?: number;
+    completedAt?: number | null;
+  },
+): Promise<void> {
+  await ensureRepoActionJobsTable(c);
+  const now = Date.now();
+  await c.db
+    .insert(repoActionJobs)
+    .values({
+      jobId: input.jobId,
+      action: input.action,
+      branchName: input.branchName,
+      parentBranch: input.parentBranch,
+      status: input.status,
+      message: input.message,
+      createdAt: input.createdAt ?? now,
+      updatedAt: now,
+      completedAt: input.completedAt ?? null,
+    })
+    .onConflictDoUpdate({
+      target: repoActionJobs.jobId,
+      set: {
+        status: input.status,
+        message: input.message,
+        updatedAt: now,
+        completedAt: input.completedAt ?? null,
+      },
+    })
+    .run();
+}
+
+async function listRepoActionJobRows(c: any): Promise<
+  Array<{
+    jobId: string;
+    action: RepoStackAction;
+    branchName: string | null;
+    parentBranch: string | null;
+    status: "queued" | "running" | "completed" | "error";
+    message: string;
+    createdAt: number;
+    updatedAt: number;
+    completedAt: number | null;
+  }>
+> {
+  await ensureRepoActionJobsTable(c);
+  const rows = await c.db.select().from(repoActionJobs).orderBy(desc(repoActionJobs.updatedAt)).limit(20).all();
+  return rows.map((row: any) => ({
+    jobId: row.jobId,
+    action: row.action,
+    branchName: row.branchName ?? null,
+    parentBranch: row.parentBranch ?? null,
+    status: row.status,
+    message: row.message,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    completedAt: row.completedAt ?? null,
+  }));
 }
 
 async function deleteStaleTaskIndexRow(c: any, taskId: string): Promise<void> {
@@ -359,8 +444,6 @@ async function createTaskMutation(c: any, cmd: CreateTaskCommand): Promise<TaskR
   const taskId = randomUUID();
 
   if (onBranch) {
-    await forceProjectSync(c, localPath);
-
     const branchRow = await c.db.select({ branchName: branches.branchName }).from(branches).where(eq(branches.branchName, onBranch)).get();
     if (!branchRow) {
       throw new Error(`Branch not found in repo snapshot: ${onBranch}`);
@@ -573,14 +656,37 @@ async function runRepoStackActionMutation(c: any, cmd: RunRepoStackActionCommand
 
   const { driver } = getActorRuntimeContext();
   const at = Date.now();
+  const jobId = cmd.jobId ?? randomUUID();
   const action = cmd.action;
   const branchName = cmd.branchName?.trim() || null;
   const parentBranch = cmd.parentBranch?.trim() || null;
 
+  await writeRepoActionJob(c, {
+    jobId,
+    action,
+    branchName,
+    parentBranch,
+    status: "running",
+    message: `Running ${action}`,
+    createdAt: at,
+  });
+
   if (!(await driver.stack.available(localPath).catch(() => false))) {
+    await writeRepoActionJob(c, {
+      jobId,
+      action,
+      branchName,
+      parentBranch,
+      status: "error",
+      message: "git-spice is not available for this repo",
+      createdAt: at,
+      completedAt: Date.now(),
+    });
     return {
+      jobId,
       action,
       executed: false,
+      status: "error",
       message: "git-spice is not available for this repo",
       at,
     };
@@ -615,48 +721,77 @@ async function runRepoStackActionMutation(c: any, cmd: RunRepoStackActionCommand
     }
   }
 
-  await withRepoGitLock(localPath, async () => {
-    if (action === "sync_repo") {
-      await driver.stack.syncRepo(localPath);
-    } else if (action === "restack_repo") {
-      await driver.stack.restackRepo(localPath);
-    } else if (action === "restack_subtree") {
-      await driver.stack.restackSubtree(localPath, branchName!);
-    } else if (action === "rebase_branch") {
-      await driver.stack.rebaseBranch(localPath, branchName!);
-    } else if (action === "reparent_branch") {
-      await driver.stack.reparentBranch(localPath, branchName!, parentBranch!);
-    } else {
-      throw new Error(`Unsupported repo stack action: ${action}`);
-    }
-  });
-
-  await forceProjectSync(c, localPath);
-
   try {
-    const history = await getOrCreateHistory(c, c.state.workspaceId, c.state.repoId);
-    await history.append({
-      kind: "repo.stack_action",
-      branchName: branchName ?? null,
-      payload: {
-        action,
+    await withRepoGitLock(localPath, async () => {
+      if (action === "sync_repo") {
+        await driver.stack.syncRepo(localPath);
+      } else if (action === "restack_repo") {
+        await driver.stack.restackRepo(localPath);
+      } else if (action === "restack_subtree") {
+        await driver.stack.restackSubtree(localPath, branchName!);
+      } else if (action === "rebase_branch") {
+        await driver.stack.rebaseBranch(localPath, branchName!);
+      } else if (action === "reparent_branch") {
+        await driver.stack.reparentBranch(localPath, branchName!, parentBranch!);
+      } else {
+        throw new Error(`Unsupported repo stack action: ${action}`);
+      }
+    });
+
+    try {
+      const history = await getOrCreateHistory(c, c.state.workspaceId, c.state.repoId);
+      await history.append({
+        kind: "repo.stack_action",
         branchName: branchName ?? null,
-        parentBranch: parentBranch ?? null,
-      },
+        payload: {
+          action,
+          branchName: branchName ?? null,
+          parentBranch: parentBranch ?? null,
+          jobId,
+        },
+      });
+    } catch (error) {
+      logActorWarning("project", "failed appending repo stack history event", {
+        workspaceId: c.state.workspaceId,
+        repoId: c.state.repoId,
+        action,
+        error: resolveErrorMessage(error),
+      });
+    }
+
+    await forceProjectSync(c, localPath);
+
+    await writeRepoActionJob(c, {
+      jobId,
+      action,
+      branchName,
+      parentBranch,
+      status: "completed",
+      message: `Completed ${action}`,
+      createdAt: at,
+      completedAt: Date.now(),
     });
   } catch (error) {
-    logActorWarning("project", "failed appending repo stack history event", {
-      workspaceId: c.state.workspaceId,
-      repoId: c.state.repoId,
+    const message = resolveErrorMessage(error);
+    await writeRepoActionJob(c, {
+      jobId,
       action,
-      error: resolveErrorMessage(error),
+      branchName,
+      parentBranch,
+      status: "error",
+      message,
+      createdAt: at,
+      completedAt: Date.now(),
     });
+    throw error;
   }
 
   return {
+    jobId,
     action,
     executed: true,
-    message: `stack action executed: ${action}`,
+    status: "completed",
+    message: `Completed ${action}`,
     at,
   };
 }
@@ -999,7 +1134,6 @@ export const projectActions = {
   async getRepoOverview(c: any, _cmd?: RepoOverviewCommand): Promise<RepoOverview> {
     const localPath = await ensureProjectReadyForRead(c);
     await ensureTaskIndexHydratedForRead(c);
-    await forceProjectSync(c, localPath);
 
     const { driver } = getActorRuntimeContext();
     const now = Date.now();
@@ -1118,6 +1252,9 @@ export const projectActions = {
       };
     });
 
+    const latestBranchSync = await c.db.select({ updatedAt: branches.updatedAt }).from(branches).orderBy(desc(branches.updatedAt)).limit(1).get();
+    const latestPrSync = await c.db.select({ updatedAt: prCache.updatedAt }).from(prCache).orderBy(desc(prCache.updatedAt)).limit(1).get();
+
     return {
       workspaceId: c.state.workspaceId,
       repoId: c.state.repoId,
@@ -1125,6 +1262,11 @@ export const projectActions = {
       baseRef,
       stackAvailable,
       fetchedAt: now,
+      branchSyncAt: latestBranchSync?.updatedAt ?? null,
+      prSyncAt: latestPrSync?.updatedAt ?? null,
+      branchSyncStatus: latestBranchSync ? "synced" : "pending",
+      prSyncStatus: latestPrSync ? "synced" : "pending",
+      repoActionJobs: await listRepoActionJobRows(c),
       branches: branchRows,
     };
   },
@@ -1156,12 +1298,41 @@ export const projectActions = {
 
   async runRepoStackAction(c: any, cmd: RunRepoStackActionCommand): Promise<RepoStackActionResult> {
     const self = selfProject(c);
-    return expectQueueResponse<RepoStackActionResult>(
-      await self.send(projectWorkflowQueueName("project.command.runRepoStackAction"), cmd, {
-        wait: true,
-        timeout: 12 * 60_000,
-      }),
+    const jobId = randomUUID();
+    const at = Date.now();
+    const action = cmd.action;
+    const branchName = cmd.branchName?.trim() || null;
+    const parentBranch = cmd.parentBranch?.trim() || null;
+
+    await writeRepoActionJob(c, {
+      jobId,
+      action,
+      branchName,
+      parentBranch,
+      status: "queued",
+      message: `Queued ${action}`,
+      createdAt: at,
+    });
+
+    await self.send(
+      projectWorkflowQueueName("project.command.runRepoStackAction"),
+      {
+        ...cmd,
+        jobId,
+      },
+      {
+        wait: false,
+      },
     );
+
+    return {
+      jobId,
+      action,
+      executed: true,
+      status: "queued",
+      message: `Queued ${action}`,
+      at,
+    };
   },
 
   async applyPrSyncResult(c: any, body: PrSyncResult): Promise<void> {

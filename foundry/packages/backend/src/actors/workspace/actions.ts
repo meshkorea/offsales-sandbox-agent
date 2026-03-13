@@ -306,9 +306,6 @@ async function createTaskMutation(c: any, input: CreateTaskInput): Promise<TaskR
     })
     .run();
 
-  const task = getTask(c, c.state.workspaceId, repoId, created.taskId);
-  await task.provision({ providerId });
-
   await workspaceActions.notifyWorkbenchUpdated(c);
   return created;
 }
@@ -483,11 +480,8 @@ export const workspaceActions = {
       ...(input.branch ? { explicitBranchName: input.branch } : {}),
       ...(input.model ? { agentType: agentTypeForModel(input.model) } : {}),
     });
-    const task = await requireWorkbenchTask(c, created.taskId);
-    const snapshot = await task.getWorkbench({});
     return {
       taskId: created.taskId,
-      tabId: snapshot.tabs[0]?.id,
     };
   },
 

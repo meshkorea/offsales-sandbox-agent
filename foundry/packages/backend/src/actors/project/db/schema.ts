@@ -42,3 +42,15 @@ export const taskIndex = sqliteTable("task_index", {
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });
+
+export const repoActionJobs = sqliteTable("repo_action_jobs", {
+  jobId: text("job_id").notNull().primaryKey(),
+  action: text("action").notNull(),
+  branchName: text("branch_name"),
+  parentBranch: text("parent_branch"),
+  status: text("status").notNull(),
+  message: text("message").notNull(),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+  completedAt: integer("completed_at"),
+});

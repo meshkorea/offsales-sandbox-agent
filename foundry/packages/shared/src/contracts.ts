@@ -172,6 +172,23 @@ export const RepoOverviewSchema = z.object({
   baseRef: z.string().nullable(),
   stackAvailable: z.boolean(),
   fetchedAt: z.number().int(),
+  branchSyncAt: z.number().int().nullable(),
+  prSyncAt: z.number().int().nullable(),
+  branchSyncStatus: z.enum(["pending", "syncing", "synced", "error"]),
+  prSyncStatus: z.enum(["pending", "syncing", "synced", "error"]),
+  repoActionJobs: z.array(
+    z.object({
+      jobId: z.string().min(1),
+      action: z.enum(["sync_repo", "restack_repo", "restack_subtree", "rebase_branch", "reparent_branch"]),
+      branchName: z.string().nullable(),
+      parentBranch: z.string().nullable(),
+      status: z.enum(["queued", "running", "completed", "error"]),
+      message: z.string().min(1),
+      createdAt: z.number().int(),
+      updatedAt: z.number().int(),
+      completedAt: z.number().int().nullable(),
+    }),
+  ),
   branches: z.array(RepoBranchRecordSchema),
 });
 export type RepoOverview = z.infer<typeof RepoOverviewSchema>;
@@ -189,8 +206,10 @@ export const RepoStackActionInputSchema = z.object({
 export type RepoStackActionInput = z.infer<typeof RepoStackActionInputSchema>;
 
 export const RepoStackActionResultSchema = z.object({
+  jobId: z.string().min(1).nullable().optional(),
   action: RepoStackActionSchema,
   executed: z.boolean(),
+  status: z.enum(["queued", "running", "completed", "error"]).optional(),
   message: z.string().min(1),
   at: z.number().int(),
 });

@@ -41,6 +41,7 @@ services:
       HF_DAYTONA_ENDPOINT: "${HF_DAYTONA_ENDPOINT:-}"
       HF_DAYTONA_API_KEY: "${HF_DAYTONA_API_KEY:-}"
     ports:
+      - "6420:6420"
       - "7741:7741"
     volumes:
       - "..:/app"

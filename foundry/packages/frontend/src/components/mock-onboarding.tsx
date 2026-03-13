@@ -56,7 +56,11 @@ function DesktopDragRegion() {
   const isDesktop = !!import.meta.env.VITE_DESKTOP;
   const onDragMouseDown = useCallback((event: React.PointerEvent) => {
     if (event.button !== 0) return;
-    const ipc = (window as Record<string, unknown>).__TAURI_INTERNALS__ as { invoke: (cmd: string, args?: unknown) => Promise<unknown> } | undefined;
+    const ipc = (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ as
+      | {
+          invoke: (cmd: string, args?: unknown) => Promise<unknown>;
+        }
+      | undefined;
     if (ipc?.invoke) {
       ipc.invoke("plugin:window|start_dragging").catch(() => {});
     }

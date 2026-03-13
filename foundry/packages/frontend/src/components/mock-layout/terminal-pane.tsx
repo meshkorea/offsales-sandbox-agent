@@ -135,6 +135,9 @@ export function TerminalPane({ workspaceId, taskId, isExpanded, onExpand, onColl
         setProcessTabs((prev) => {
           const next = [...prev];
           const [moved] = next.splice(d.fromIdx, 1);
+          if (!moved) {
+            return prev;
+          }
           next.splice(d.overIdx!, 0, moved);
           return next;
         });
