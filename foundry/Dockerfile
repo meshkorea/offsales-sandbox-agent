@@ -23,10 +23,10 @@ COPY --from=deps /pnpm/store /pnpm/store
 COPY . .
 RUN pnpm install --frozen-lockfile --prefer-offline --filter @sandbox-agent/foundry-backend...
 RUN pnpm --filter @sandbox-agent/foundry-shared build
-RUN pnpm --filter @sandbox-agent/persist-rivet build
 RUN pnpm --filter acp-http-client build
 RUN pnpm --filter @sandbox-agent/cli-shared build
 RUN SKIP_OPENAPI_GEN=1 pnpm --filter sandbox-agent build
+RUN pnpm --filter @sandbox-agent/persist-rivet build
 RUN pnpm --filter @sandbox-agent/foundry-backend build
 RUN pnpm --filter @sandbox-agent/foundry-backend deploy --prod /out
 
