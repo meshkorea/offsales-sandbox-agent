@@ -169,7 +169,11 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     if (!code || !state) {
       return c.text("Missing GitHub OAuth callback parameters", 400);
     }
-    const result = await appWorkspaceAction(async (workspace) => await workspace.completeAppGithubAuth({ code, state }));
+    // Do not use appWorkspaceAction here — OAuth codes are single-use,
+    // so retrying with the same code after a partial failure will always
+    // produce "bad_verification_code".
+    const workspace = await appWorkspace();
+    const result = await workspace.completeAppGithubAuth({ code, state });
     c.header("x-foundry-session", result.sessionId);
     return Response.redirect(result.redirectTo, 302);
   };
