@@ -12,6 +12,9 @@ export const registry = setup({
   serverless: {
     basePath: "/v1/rivet",
   },
+  runner: {
+    version: Date.now(),
+  },
   use: {
     workspace,
     project,
