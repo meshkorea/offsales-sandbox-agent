@@ -1,5 +1,7 @@
 # Daytona Provisioning Should Be A Staged Background Flow
 
+Read `00-end-to-end-async-realtime-plan.md` first for the governing migration order, runtime constraints, and realtime client model this brief assumes.
+
 ## Problem
 
 Daytona provisioning currently performs long-running setup inline:
@@ -13,6 +15,14 @@ Daytona provisioning currently performs long-running setup inline:
 - health wait loop
 
 This is acceptable inside a durable background workflow, but not as part of a user-facing action response.
+
+## Current Code Context
+
+- Daytona provider implementation: `foundry/packages/backend/src/providers/daytona/index.ts`
+- Task provisioning workflow: `foundry/packages/backend/src/actors/task/workflow/index.ts`
+- Task init activities: `foundry/packages/backend/src/actors/task/workflow/init.ts`
+- Sandbox-instance actor: `foundry/packages/backend/src/actors/sandbox-instance/index.ts`
+- Provider registry/runtime context: `foundry/packages/backend/src/providers/index.ts` and `foundry/packages/backend/src/actors/context.ts`
 
 ## Target Contract
 
@@ -39,6 +49,16 @@ This is acceptable inside a durable background workflow, but not as part of a us
    - follow-up workflow progression once the prior stage completes
 5. If sandbox-agent session creation is also slow, treat that as its own stage instead of folding it into request completion.
 
+## Files Likely To Change
+
+- `foundry/packages/backend/src/providers/daytona/index.ts`
+- `foundry/packages/backend/src/actors/task/workflow/index.ts`
+- `foundry/packages/backend/src/actors/task/workflow/init.ts`
+- `foundry/packages/backend/src/actors/task/db/schema.ts`
+- `foundry/packages/backend/src/actors/task/db/migrations.ts`
+- `foundry/packages/backend/src/actors/sandbox-instance/index.ts`
+- Potentially shared provider types in `foundry/packages/backend/src/providers/provider-api/index.ts`
+
 ## Client Impact
 
 - Users see staged progress instead of a long spinner.
@@ -49,3 +69,9 @@ This is acceptable inside a durable background workflow, but not as part of a us
 - No user-facing request waits for Daytona package installs, repo clone, sandbox-agent installation, or health polling.
 - Progress survives backend restarts because the stage is persisted.
 - The system can resume from the last completed stage instead of replaying the whole provisioning path blindly.
+
+## Implementation Notes
+
+- If this is implemented after item 1, much of the user-facing pain disappears immediately; this item then becomes about reliability and clearer progress reporting.
+- Keep the stage model provider-agnostic where possible so local and future providers can share the same task runtime semantics.
+- Fresh-agent check: decide whether stage ownership lives on the task actor, sandbox-instance actor, or both before changing schema.

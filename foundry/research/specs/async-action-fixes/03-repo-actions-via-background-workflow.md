@@ -1,10 +1,19 @@
 # Repo Sync And Stack Actions Should Run In Background Workflows
 
+Read `00-end-to-end-async-realtime-plan.md` first for the governing migration order, runtime constraints, and realtime client model this brief assumes.
+
 ## Problem
 
 Repo stack actions currently run inside a synchronous action and surround the action with forced sync before and after. Branch-backed task creation also forces repo sync inline before it can proceed.
 
 These flows depend on repo/network state and can take minutes. They should not hold an action open.
+
+## Current Code Context
+
+- Workspace repo action entry point: `foundry/packages/backend/src/actors/workspace/actions.ts`
+- Project repo action implementation: `foundry/packages/backend/src/actors/project/actions.ts`
+- Branch/task index state lives in the project actor SQLite DB.
+- Current forced sync uses the PR and branch polling actors before and after the action.
 
 ## Target Contract
 
@@ -38,6 +47,15 @@ These flows depend on repo/network state and can take minutes. They should not h
    - use the cached branch projection if present
    - if branch data is stale or missing, enqueue branch registration/refresh work and surface pending state instead of blocking create
 
+## Files Likely To Change
+
+- `foundry/packages/backend/src/actors/workspace/actions.ts`
+- `foundry/packages/backend/src/actors/project/actions.ts`
+- `foundry/packages/backend/src/actors/project/db/schema.ts`
+- `foundry/packages/backend/src/actors/project/db/migrations.ts`
+- `foundry/packages/frontend/src/components/workspace-dashboard.tsx`
+- Any shared types in `foundry/packages/shared/src`
+
 ## Client Impact
 
 - Repo action buttons should show queued/running/completed/error job state.
@@ -48,3 +66,9 @@ These flows depend on repo/network state and can take minutes. They should not h
 - No repo stack action waits for full git-spice execution inside the request.
 - No action forces branch sync or PR sync inline.
 - Action result state survives retries and backend restarts because the workflow status is persisted.
+
+## Implementation Notes
+
+- Keep validation cheap in the request path; expensive repo inspection belongs in the workflow.
+- If job rows are added, decide whether they are project-owned only or also mirrored into history events for UI consumption.
+- Fresh-agent check: branch-backed task creation and explicit repo stack actions should use the same background job/status vocabulary where possible.

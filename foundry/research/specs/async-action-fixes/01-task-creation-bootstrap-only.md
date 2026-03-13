@@ -1,10 +1,21 @@
 # Task Creation Should Return After Actor Bootstrap
 
+Read `00-end-to-end-async-realtime-plan.md` first for the governing migration order, runtime constraints, and realtime client model this brief assumes.
+
 ## Problem
 
 Task creation currently waits for full provisioning: naming, repo checks, sandbox creation/resume, sandbox-agent install/start, sandbox-instance wiring, and session creation.
 
 That makes a user-facing action depend on queue-backed and provider-backed work that can take minutes. The client only needs the task actor to exist so it can navigate to the task and observe progress.
+
+## Current Code Context
+
+- Workspace entry point: `foundry/packages/backend/src/actors/workspace/actions.ts`
+- Project task creation path: `foundry/packages/backend/src/actors/project/actions.ts`
+- Task action surface: `foundry/packages/backend/src/actors/task/index.ts`
+- Task workflow: `foundry/packages/backend/src/actors/task/workflow/index.ts`
+- Task init/provision steps: `foundry/packages/backend/src/actors/task/workflow/init.ts`
+- Provider-backed long steps currently happen inside the task provision workflow.
 
 ## Target Contract
 
@@ -38,6 +49,16 @@ That makes a user-facing action depend on queue-backed and provider-backed work 
    - `running`
    - `error`
 
+## Files Likely To Change
+
+- `foundry/packages/backend/src/actors/workspace/actions.ts`
+- `foundry/packages/backend/src/actors/project/actions.ts`
+- `foundry/packages/backend/src/actors/task/index.ts`
+- `foundry/packages/backend/src/actors/task/workflow/index.ts`
+- `foundry/packages/backend/src/actors/task/workflow/init.ts`
+- `foundry/packages/frontend/src/components/workspace-dashboard.tsx`
+- `foundry/packages/client/src/remote/workbench-client.ts`
+
 ## Client Impact
 
 - Task creation UI should navigate immediately to the task page.
@@ -49,3 +70,9 @@ That makes a user-facing action depend on queue-backed and provider-backed work 
 - Creating a task never waits on sandbox creation or session creation.
 - A timeout in provider setup does not make the original create request fail after several minutes.
 - After a backend restart, the task workflow can resume provisioning from durable state without requiring the client to retry create.
+
+## Implementation Notes
+
+- Preserve the existing task actor as the single writer for task runtime state.
+- Do not introduce a second creator path for task actors; keep one create/bootstrap path and one background provision path.
+- Fresh-agent check: verify that `createWorkbenchTask` and any dashboard create flow still have enough data to navigate immediately after this change.
