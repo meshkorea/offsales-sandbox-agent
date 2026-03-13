@@ -1,4 +1,5 @@
 import { createHmac, createPrivateKey, createSign, timingSafeEqual } from "node:crypto";
+import { logger } from "../logging.js";
 
 export class GitHubAppError extends Error {
   readonly status: number;
@@ -50,6 +51,10 @@ interface GitHubPageResponse<T> {
   items: T[];
   nextUrl: string | null;
 }
+
+const githubOAuthLogger = logger.child({
+  scope: "github-oauth",
+});
 
 export interface GitHubWebhookEvent {
   action?: string;
@@ -167,13 +172,16 @@ export class GitHubAppClient {
       code,
       redirect_uri: this.redirectUri,
     };
-    console.log("[github-oauth] exchangeCode request", {
-      url: `${this.authBaseUrl}/login/oauth/access_token`,
-      client_id: this.clientId,
-      redirect_uri: this.redirectUri,
-      code_length: code.length,
-      code_prefix: code.slice(0, 6),
-    });
+    githubOAuthLogger.debug(
+      {
+        url: `${this.authBaseUrl}/login/oauth/access_token`,
+        clientId: this.clientId,
+        redirectUri: this.redirectUri,
+        codeLength: code.length,
+        codePrefix: code.slice(0, 6),
+      },
+      "exchange_code_request",
+    );
 
     const response = await fetch(`${this.authBaseUrl}/login/oauth/access_token`, {
       method: "POST",
@@ -185,10 +193,13 @@ export class GitHubAppClient {
     });
 
     const responseText = await response.text();
-    console.log("[github-oauth] exchangeCode response", {
-      status: response.status,
-      body: responseText.slice(0, 300),
-    });
+    githubOAuthLogger.debug(
+      {
+        status: response.status,
+        bodyPreview: responseText.slice(0, 300),
+      },
+      "exchange_code_response",
+    );
     let payload: GitHubTokenResponse;
     try {
       payload = JSON.parse(responseText) as GitHubTokenResponse;

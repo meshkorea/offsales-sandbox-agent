@@ -1,9 +1,5 @@
 # Project Instructions
 
-## Breaking Changes
-
-Do not preserve legacy compatibility. Implement the best current architecture, even if breaking.
-
 ## Language Policy
 
 Use TypeScript for all source code.
@@ -44,14 +40,15 @@ Use `pnpm` workspaces and Turborepo.
 - Tail compose logs: `just foundry-dev-logs`
 - Stop the preview stack: `just foundry-preview-down`
 - Tail preview logs: `just foundry-preview-logs`
-- Production deploys should go through `git push` to the deployment branch/workflow. Do not use `railway up` for Foundry deploys.
 
 ## Railway Logs
 
 - Production Foundry Railway logs can be read from a linked workspace with `railway logs --deployment --lines 200` or `railway logs <deployment-id> --deployment --lines 200`.
+- Production deploys should go through `git push` to the deployment branch/workflow. Do not use `railway up` for Foundry deploys.
 - If Railway logs fail because the workspace is not linked to the correct project/service/environment, run:
   `railway link --project 33e3e2df-32c5-41c5-a4af-dca8654acb1d --environment cf387142-61fd-4668-8cf7-b3559e0983cb --service 91c7e450-d6d2-481a-b2a4-0a916f4160fc`
 - That links this directory to the `sandbox-agent` project, `production` environment, and `foundry-api` service.
+- Production proxy chain: `api.sandboxagent.dev` routes through Cloudflare → Fastly/Varnish → Railway. When debugging request duplication, timeouts, or retry behavior, check headers like `cf-ray`, `x-varnish`, `x-railway-edge`, and `cdn-loop` to identify which layer is involved.
 
 ## Frontend + Client Boundary
 
@@ -118,12 +115,18 @@ For all Rivet/RivetKit implementation:
 - Every actor key must be prefixed with workspace namespace (`["ws", workspaceId, ...]`).
 - CLI/TUI/GUI must use `@sandbox-agent/foundry-client` (`packages/client`) for backend access; `rivetkit/client` imports are only allowed inside `packages/client`.
 - Do not add custom backend REST endpoints (no `/v1/*` shim layer).
-- Do not build blocking flows that wait on external systems to become ready or complete. Prefer push-based progression driven by actor messages, events, webhooks, or queue/workflow state changes.
-- Do not rely on retries for correctness or normal control flow. If a queue/workflow/external dependency is not ready yet, model that explicitly and resume from a push/event, instead of polling or retry loops.
 - We own the sandbox-agent project; treat sandbox-agent defects as first-party bugs and fix them instead of working around them.
 - Keep strict single-writer ownership: each table/row has exactly one actor writer.
 - Parent actors (`workspace`, `project`, `task`, `history`, `sandbox-instance`) use command-only loops with no timeout.
 - Periodic syncing lives in dedicated child actors with one timeout cadence each.
+- Do not build blocking flows that wait on external systems to become ready or complete. Prefer push-based progression driven by actor messages, events, webhooks, or queue/workflow state changes.
+- Use workflows/background commands for any repo sync, sandbox provisioning, agent install, branch restack/rebase, or other multi-step external work. Do not keep user-facing actions/requests open while that work runs.
+- `send` policy: always `await` the `send(...)` call itself so enqueue failures surface immediately, but default to `wait: false`.
+- Only use `send(..., { wait: true })` for short, bounded mutations that should finish quickly and do not depend on external readiness, polling actors, provider setup, repo/network I/O, or long-running queue drains.
+- Request/action contract: wait only until the minimum resource needed for the client's next step exists. Example: task creation may wait for task actor creation/identity, but not for sandbox provisioning or session bootstrap.
+- Read paths must not force refresh/sync work inline. Serve the latest cached projection, mark staleness explicitly, and trigger background refresh separately when needed.
+- If a workflow needs to resume after some external work completes, model that as workflow state plus follow-up messages/events instead of holding the original request open.
+- Do not rely on retries for correctness or normal control flow. If a queue/workflow/external dependency is not ready yet, model that explicitly and resume from a push/event, instead of polling or retry loops.
 - Actor handle policy:
 - Prefer explicit `get` or explicit `create` based on workflow intent; do not default to `getOrCreate`.
 - Use `get`/`getForId` when the actor is expected to already exist; if missing, surface an explicit `Actor not found` error with recovery context.

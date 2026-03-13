@@ -218,6 +218,16 @@ Update this file continuously during the migration.
 - Status: resolved
 - Links: `server/packages/sandbox-agent/src/router.rs`, `server/packages/sandbox-agent/src/acp_runtime/mod.rs`, `server/packages/sandbox-agent/tests/v1_api/acp_transport.rs`, `docs/advanced/acp-http-client.mdx`
 
+- Date: 2026-03-13
+- Area: Actor runtime shutdown and draining
+- Issue: Actors can continue receiving or finishing action work after shutdown has started, while actor cleanup clears runtime resources such as the database handle. In RivetKit this can surface as `Database not enabled` from `c.db` even when the actor definition correctly includes `db`.
+- Impact: User requests can fail with misleading internal errors during runner eviction or shutdown, and long-lived request paths can bubble up as HTTP 502/timeout failures instead of a clear retryable stopping/draining signal.
+- Proposed direction: Add a real runner draining state so actors stop receiving traffic before shutdown, and ensure actor cleanup does not clear `#db` until in-flight actions are fully quiesced or aborted. App-side request paths should also avoid waiting inline on long actor workflows when possible.
+- Decision: Open.
+- Owner: Unassigned.
+- Status: open
+- Links: `foundry/packages/backend/src/actors/workspace/app-shell.ts`, `/Users/nathan/rivet/rivetkit-typescript/packages/rivetkit/src/actor/instance/mod.ts`, `/Users/nathan/rivet/rivetkit-typescript/packages/rivetkit/src/drivers/engine/actor-driver.ts`
+
 - Date: 2026-03-12
 - Area: Foundry RivetKit serverless routing on Railway
 - Issue: Moving Foundry from `/api/rivet` to `/v1/rivet` exposed three RivetKit deployment couplings: `serverless.basePath` had to be updated explicitly for metadata/start routes, `configureRunnerPool` could not be used in production because the current Rivet token lacked permission to list datacenters, and wrapping `registry.handler(c.req.raw)` inside Hono route handlers produced unstable serverless runner startup under Railway until `/v1/rivet` was dispatched directly from `Bun.serve`.

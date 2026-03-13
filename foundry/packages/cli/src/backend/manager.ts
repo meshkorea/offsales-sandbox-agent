@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { checkBackendHealth } from "@sandbox-agent/foundry-client";
 import type { AppConfig } from "@sandbox-agent/foundry-shared";
 import { CLI_BUILD_ID } from "../build-id.js";
+import { logger } from "../logging.js";
 
 const HEALTH_TIMEOUT_MS = 1_500;
 const START_TIMEOUT_MS = 30_000;
@@ -237,7 +238,17 @@ async function startBackend(host: string, port: number): Promise<void> {
   });
 
   child.on("error", (error) => {
-    console.error(`failed to launch backend: ${String(error)}`);
+    logger.error(
+      {
+        host,
+        port,
+        command: launch.command,
+        args: launch.args,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+      },
+      "failed_to_launch_backend",
+    );
   });
 
   child.unref();

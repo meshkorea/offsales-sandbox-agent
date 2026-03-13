@@ -1,8 +1,21 @@
 import { describe, expect, it } from "vitest";
-import type { TaskWorkbenchSnapshot, WorkbenchAgentTab, WorkbenchTask, WorkbenchModelId, WorkbenchTranscriptEvent } from "@sandbox-agent/foundry-shared";
+import {
+  createFoundryLogger,
+  type TaskWorkbenchSnapshot,
+  type WorkbenchAgentTab,
+  type WorkbenchTask,
+  type WorkbenchModelId,
+  type WorkbenchTranscriptEvent,
+} from "@sandbox-agent/foundry-shared";
 import { createBackendClient } from "../../src/backend-client.js";
 
 const RUN_WORKBENCH_LOAD_E2E = process.env.HF_ENABLE_DAEMON_WORKBENCH_LOAD_E2E === "1";
+const logger = createFoundryLogger({
+  service: "foundry-client-e2e",
+  bindings: {
+    suite: "workbench-load",
+  },
+});
 
 function requiredEnv(name: string): string {
   const value = process.env[name]?.trim();
@@ -269,12 +282,12 @@ describe("e2e(client): workbench load", () => {
 
       const snapshotMetrics = await measureWorkbenchSnapshot(client, workspaceId, 3);
       snapshotSeries.push(snapshotMetrics);
-      console.info(
-        "[workbench-load-snapshot]",
-        JSON.stringify({
+      logger.info(
+        {
           taskIndex: taskIndex + 1,
           ...snapshotMetrics,
-        }),
+        },
+        "workbench_load_snapshot",
       );
     }
 
@@ -296,7 +309,7 @@ describe("e2e(client): workbench load", () => {
       snapshotTranscriptFinalCount: lastSnapshot.transcriptEventCount,
     };
 
-    console.info("[workbench-load-summary]", JSON.stringify(summary));
+    logger.info(summary, "workbench_load_summary");
 
     expect(createTaskLatencies.length).toBe(taskCount);
     expect(provisionLatencies.length).toBe(taskCount);
