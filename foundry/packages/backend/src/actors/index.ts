@@ -8,9 +8,25 @@ import { project } from "./project/index.js";
 import { sandboxInstance } from "./sandbox-instance/index.js";
 import { workspace } from "./workspace/index.js";
 
+function normalizePublicApiUrl(raw: string | undefined): string | undefined {
+  const value = raw?.trim();
+  if (!value) return undefined;
+  return value.replace(/\/$/, "");
+}
+
+const publicApiUrl = normalizePublicApiUrl(process.env.BETTER_AUTH_URL);
+const shouldConfigureRunnerPool = Boolean(publicApiUrl && (process.env.RIVET_ENDPOINT || process.env.RIVET_ENGINE));
+
 export const registry = setup({
   serverless: {
     basePath: "/v1/rivet",
+    ...(shouldConfigureRunnerPool
+      ? {
+          configureRunnerPool: {
+            url: `${publicApiUrl}/v1/rivet/start`,
+          },
+        }
+      : {}),
   },
   use: {
     workspace,
