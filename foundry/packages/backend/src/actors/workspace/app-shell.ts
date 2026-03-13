@@ -11,7 +11,7 @@ import type {
   UpdateFoundryOrganizationProfileInput,
 } from "@sandbox-agent/foundry-shared";
 import { getActorRuntimeContext } from "../context.js";
-import { getOrCreateWorkspace } from "../handles.js";
+import { getOrCreateWorkspace, selfWorkspace } from "../handles.js";
 import { GitHubAppError } from "../../services/app-github.js";
 import { repoIdFromRemote, repoLabelFromRemote } from "../../services/repo.js";
 import { logger } from "../../logging.js";
@@ -369,11 +369,50 @@ async function safeListInstallations(accessToken: string): Promise<any[]> {
   }
 }
 
-async function syncGithubSessionFromToken(c: any, sessionId: string, accessToken: string): Promise<{ sessionId: string; redirectTo: string }> {
+/**
+ * Fast path: resolve viewer identity, store user + token in the session,
+ * and return the redirect URL. Does NOT sync organizations — that work is
+ * deferred to `syncGithubOrganizations` via the workflow queue so the HTTP
+ * callback can respond before any proxy timeout triggers a retry.
+ */
+async function initGithubSession(c: any, sessionId: string, accessToken: string, scopes: string[]): Promise<{ sessionId: string; redirectTo: string }> {
   assertAppWorkspace(c);
   const { appShell } = getActorRuntimeContext();
+  const viewer = await appShell.github.getViewer(accessToken);
+  const userId = `user-${slugify(viewer.login)}`;
+
+  await updateAppSession(c, sessionId, {
+    currentUserId: userId,
+    currentUserName: viewer.name || viewer.login,
+    currentUserEmail: viewer.email ?? `${viewer.login}@users.noreply.github.com`,
+    currentUserGithubLogin: viewer.login,
+    currentUserRoleLabel: "GitHub user",
+    githubAccessToken: accessToken,
+    githubScope: scopes.join(","),
+    oauthState: null,
+    oauthStateExpiresAt: null,
+  });
+
+  return {
+    sessionId,
+    redirectTo: `${appShell.appUrl}/organizations?foundrySession=${encodeURIComponent(sessionId)}`,
+  };
+}
+
+/**
+ * Slow path: list GitHub orgs + installations, sync each org workspace,
+ * and update the session's eligible organization list. Called from the
+ * workflow queue so it runs in the background after the callback has
+ * already returned a redirect to the browser.
+ *
+ * Also used synchronously by bootstrapAppGithubSession (dev-only) where
+ * proxy timeouts are not a concern.
+ */
+export async function syncGithubOrganizations(c: any, input: { sessionId: string; accessToken: string }): Promise<void> {
+  assertAppWorkspace(c);
+  const { appShell } = getActorRuntimeContext();
+  const { sessionId, accessToken } = input;
   const session = await requireAppSessionRow(c, sessionId);
-  const token = { accessToken, scopes: splitScopes(session.githubScope) };
   const viewer = await appShell.github.getViewer(accessToken);
   const organizations = await safeListOrganizations(accessToken);
   const installations = await safeListInstallations(accessToken);
@@ -424,24 +463,23 @@ async function syncGithubSessionFromToken(c: any, sessionId: string, accessToken
         ? (linkedOrganizationIds[0] ?? null)
         : null;
 
-  await updateAppSession(c, session.id, {
-    currentUserId: userId,
-    currentUserName: viewer.name || viewer.login,
-    currentUserEmail: viewer.email ?? `${viewer.login}@users.noreply.github.com`,
-    currentUserGithubLogin: viewer.login,
-    currentUserRoleLabel: "GitHub user",
+  await updateAppSession(c, sessionId, {
     eligibleOrganizationIdsJson: encodeEligibleOrganizationIds(linkedOrganizationIds),
     activeOrganizationId,
-    githubAccessToken: accessToken,
-    githubScope: token.scopes.join(","),
-    oauthState: null,
-    oauthStateExpiresAt: null,
   });
+}
 
-  return {
-    sessionId: session.id,
-    redirectTo: `${appShell.appUrl}/organizations?foundrySession=${encodeURIComponent(session.id)}`,
-  };
+/**
+ * Full synchronous sync: init session + sync orgs in one call.
+ * Used by bootstrapAppGithubSession (dev-only) where there is no proxy
+ * timeout concern and we want the session fully populated before returning.
+ */
+async function syncGithubSessionFromToken(c: any, sessionId: string, accessToken: string): Promise<{ sessionId: string; redirectTo: string }> {
+  const session = await requireAppSessionRow(c, sessionId);
+  const scopes = splitScopes(session.githubScope);
+  const result = await initGithubSession(c, sessionId, accessToken, scopes);
+  await syncGithubOrganizations(c, { sessionId, accessToken });
+  return result;
 }
 
 async function readOrganizationProfileRow(c: any) {
@@ -626,14 +664,9 @@ export const workspaceAppActions = {
       throw new Error("GitHub OAuth state is invalid or expired");
     }
 
-    // HACK: Clear the oauth state before exchangeCode so that duplicate
-    // callback requests (e.g. user refresh during the slow sync) fail the
-    // state check above instead of attempting a second code exchange.
-    // GitHub OAuth codes are single-use; a second exchangeCode always
-    // returns bad_verification_code. The root cause of duplicate requests
-    // is unknown — actor RPCs serialize, appWorkspaceAction does not retry,
-    // yet production logs show two HTTP requests with different request IDs
-    // hitting /v1/auth/github/callback with the same code+state ~9s apart.
+    // Clear state before exchangeCode — GitHub codes are single-use and
+    // duplicate callback requests (from proxy retries or user refresh)
+    // must fail the state check rather than attempt a second exchange.
     // See research/friction/general.mdx 2026-03-13 entry.
     await updateAppSession(c, session.id, {
       oauthState: null,
@@ -641,10 +674,27 @@ export const workspaceAppActions = {
     });
 
     const token = await appShell.github.exchangeCode(input.code);
-    await updateAppSession(c, session.id, {
-      githubScope: token.scopes.join(","),
-    });
-    return await syncGithubSessionFromToken(c, session.id, token.accessToken);
+
+    // Fast path: store token + user identity and return the redirect
+    // immediately. The slow org sync (list orgs, list installations,
+    // sync each workspace) runs in the workflow queue so the HTTP
+    // response lands before any proxy/infra timeout triggers a retry.
+    // The frontend already polls when it sees syncStatus === "syncing".
+    const result = await initGithubSession(c, session.id, token.accessToken, token.scopes);
+
+    // Enqueue the slow org sync to the workflow. fire-and-forget (wait: false)
+    // because the redirect does not depend on org data — the frontend will
+    // poll getAppSnapshot until organizations are populated.
+    const self = selfWorkspace(c);
+    await self.send(
+      "workspace.command.syncGithubSession",
+      { sessionId: session.id, accessToken: token.accessToken },
+      {
+        wait: false,
+      },
+    );
+
+    return result;
   },
 
   async bootstrapAppGithubSession(c: any, input: { accessToken: string; sessionId?: string | null }): Promise<{ sessionId: string; redirectTo: string }> {
