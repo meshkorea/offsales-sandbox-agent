@@ -230,19 +230,23 @@ async function buildAppSnapshot(c: any, sessionId: string): Promise<FoundryAppSn
   const session = await requireAppSessionRow(c, sessionId);
   const eligibleOrganizationIds = parseEligibleOrganizationIds(session.eligibleOrganizationIdsJson);
 
-  const organizations: FoundryOrganization[] = [];
-  for (const organizationId of eligibleOrganizationIds) {
-    try {
-      const workspace = await getOrCreateWorkspace(c, organizationId);
-      const organizationState = await getOrganizationState(workspace);
-      organizations.push(organizationState.snapshot);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!message.includes("Actor not found")) {
-        throw error;
-      }
-    }
-  }
+  const organizations = (
+    await Promise.all(
+      eligibleOrganizationIds.map(async (organizationId) => {
+        try {
+          const workspace = await getOrCreateWorkspace(c, organizationId);
+          const organizationState = await getOrganizationState(workspace);
+          return organizationState.snapshot;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!message.includes("Actor not found")) {
+            throw error;
+          }
+          return null;
+        }
+      }),
+    )
+  ).filter((organization): organization is FoundryOrganization => organization !== null);
 
   const currentUser: FoundryUser | null = session.currentUserId
     ? {
