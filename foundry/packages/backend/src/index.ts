@@ -21,10 +21,22 @@ export interface BackendStartOptions {
 
 interface AppWorkspaceLogContext {
   action?: string;
+  cfConnectingIp?: string;
+  cfRay?: string;
+  forwardedFor?: string;
+  forwardedHost?: string;
+  forwardedProto?: string;
   method?: string;
   path?: string;
   requestId?: string;
+  referer?: string;
+  secFetchDest?: string;
+  secFetchMode?: string;
+  secFetchSite?: string;
+  secFetchUser?: string;
   sessionId?: string;
+  userAgent?: string;
+  xRealIp?: string;
 }
 
 function isRivetRequest(request: Request): boolean {
@@ -88,6 +100,21 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     endpoint: `http://127.0.0.1:${config.backend.port}/v1/rivet`,
   }) as any;
 
+  const requestHeaderContext = (c: any): AppWorkspaceLogContext => ({
+    cfConnectingIp: c.req.header("cf-connecting-ip") ?? undefined,
+    cfRay: c.req.header("cf-ray") ?? undefined,
+    forwardedFor: c.req.header("x-forwarded-for") ?? undefined,
+    forwardedHost: c.req.header("x-forwarded-host") ?? undefined,
+    forwardedProto: c.req.header("x-forwarded-proto") ?? undefined,
+    referer: c.req.header("referer") ?? undefined,
+    secFetchDest: c.req.header("sec-fetch-dest") ?? undefined,
+    secFetchMode: c.req.header("sec-fetch-mode") ?? undefined,
+    secFetchSite: c.req.header("sec-fetch-site") ?? undefined,
+    secFetchUser: c.req.header("sec-fetch-user") ?? undefined,
+    userAgent: c.req.header("user-agent") ?? undefined,
+    xRealIp: c.req.header("x-real-ip") ?? undefined,
+  });
+
   // Serve custom Foundry HTTP APIs alongside the RivetKit registry.
   const app = new Hono<{ Variables: { requestId: string } }>();
   const allowHeaders = [
@@ -138,6 +165,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     } catch (error) {
       logger.error(
         {
+          ...requestHeaderContext(c),
           requestId,
           method: c.req.method,
           path: c.req.path,
@@ -151,6 +179,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
 
     logger.info(
       {
+        ...requestHeaderContext(c),
         requestId,
         method: c.req.method,
         path: c.req.path,
@@ -217,6 +246,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
   };
 
   const requestLogContext = (c: any, sessionId?: string): AppWorkspaceLogContext => ({
+    ...requestHeaderContext(c),
     method: c.req.method,
     path: c.req.path,
     requestId: c.get("requestId"),
