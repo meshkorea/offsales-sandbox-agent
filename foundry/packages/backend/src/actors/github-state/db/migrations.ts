@@ -6,6 +6,12 @@ const journal = {
       tag: "0000_github_state",
       breakpoints: true,
     },
+    {
+      idx: 1,
+      when: 1773340800000,
+      tag: "0001_github_state_sync_progress",
+      breakpoints: true,
+    },
   ],
 } as const;
 
@@ -53,6 +59,12 @@ CREATE TABLE \`github_pull_requests\` (
 	\`is_draft\` integer NOT NULL,
 	\`updated_at\` integer NOT NULL
 );
+`,
+    m0001: `ALTER TABLE \`github_meta\` ADD \`sync_phase\` text;
+ALTER TABLE \`github_meta\` ADD \`sync_run_started_at\` integer;
+ALTER TABLE \`github_meta\` ADD \`sync_repositories_total\` integer;
+ALTER TABLE \`github_meta\` ADD \`sync_repositories_completed\` integer;
+ALTER TABLE \`github_meta\` ADD \`sync_pull_request_repositories_completed\` integer;
 `,
   } as const,
 };

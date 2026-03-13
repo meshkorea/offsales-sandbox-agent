@@ -4,6 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, Clock, CreditCard, FileText, Github, LogOut, Moon, Settings, Sun, Users } from "lucide-react";
 import { activeMockUser, eligibleOrganizations, useMockAppClient, useMockAppSnapshot } from "../lib/mock-app";
 import { isMockFrontendClient } from "../lib/env";
+import { getMockOrganizationStatus } from "../lib/mock-organization-status";
 import { useColorMode, useFoundryTokens } from "../app/theme";
 import type { FoundryTokens } from "../styles/tokens";
 import { appSurfaceStyle, primaryButtonStyle, secondaryButtonStyle, subtleButtonStyle, cardStyle, badgeStyle, inputStyle } from "../styles/shared-styles";
@@ -132,6 +133,40 @@ function githubBadge(t: FoundryTokens, organization: FoundryOrganization) {
     return <span style={badgeStyle(t, "rgba(255, 193, 7, 0.18)", "#ffe6a6")}>Reconnect required</span>;
   }
   return <span style={badgeStyle(t, t.borderSubtle)}>Install GitHub App</span>;
+}
+
+function organizationStatusBadge(t: FoundryTokens, organization: FoundryOrganization) {
+  const status = getMockOrganizationStatus(organization);
+  if (!status) {
+    return null;
+  }
+
+  const toneStyles =
+    status.tone === "error"
+      ? { background: "rgba(255, 79, 0, 0.18)", color: "#ffd6c7", borderColor: "rgba(255, 79, 0, 0.35)" }
+      : status.tone === "warning"
+        ? { background: "rgba(255, 193, 7, 0.18)", color: "#ffe6a6", borderColor: "rgba(255, 193, 7, 0.28)" }
+        : { background: "rgba(24, 140, 255, 0.18)", color: "#b9d8ff", borderColor: "rgba(24, 140, 255, 0.28)" };
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "6px",
+        padding: "4px 8px",
+        borderRadius: "999px",
+        border: `1px solid ${toneStyles.borderColor}`,
+        background: toneStyles.background,
+        color: toneStyles.color,
+        fontSize: "11px",
+        fontWeight: 600,
+        lineHeight: 1,
+      }}
+    >
+      {status.label}
+    </span>
+  );
 }
 
 function StatCard({ label, value, caption }: { label: string; value: string; caption: string }) {
@@ -410,7 +445,10 @@ export function MockOrganizationSelectorPage() {
 
               {/* Info */}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: "14px", fontWeight: 500, lineHeight: 1.3 }}>{organization.settings.displayName}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <div style={{ fontSize: "14px", fontWeight: 500, lineHeight: 1.3 }}>{organization.settings.displayName}</div>
+                  {organizationStatusBadge(t, organization)}
+                </div>
                 <div style={{ fontSize: "12px", color: t.textTertiary, lineHeight: 1.3, marginTop: "1px" }}>
                   {organization.kind === "personal" ? "Personal" : "Organization"} · {planCatalog[organization.billing.planId]!.label} ·{" "}
                   {organization.members.length} member{organization.members.length !== 1 ? "s" : ""}

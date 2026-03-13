@@ -156,6 +156,7 @@ export interface BackendMetadata {
 
 export interface BackendClient {
   getAppSnapshot(): Promise<FoundryAppSnapshot>;
+  subscribeApp(listener: () => void): () => void;
   signInWithGithub(): Promise<void>;
   signOutApp(): Promise<FoundryAppSnapshot>;
   skipAppStarterRepo(): Promise<FoundryAppSnapshot>;
@@ -405,6 +406,10 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       disposeConnPromise: Promise<(() => Promise<void>) | null> | null;
     }
   >();
+  const appSubscriptions = {
+    listeners: new Set<() => void>(),
+    disposeConnPromise: null as Promise<(() => Promise<void>) | null> | null,
+  };
   const sandboxProcessSubscriptions = new Map<
     string,
     {
@@ -664,6 +669,66 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     };
   };
 
+  const subscribeApp = (listener: () => void): (() => void) => {
+    appSubscriptions.listeners.add(listener);
+
+    const ensureConnection = () => {
+      if (appSubscriptions.disposeConnPromise) {
+        return;
+      }
+
+      let reconnecting = false;
+      let disposeConnPromise: Promise<(() => Promise<void>) | null> | null = null;
+      disposeConnPromise = (async () => {
+        const handle = await workspace("app");
+        const conn = (handle as any).connect();
+        const unsubscribeEvent = conn.on("appUpdated", () => {
+          for (const currentListener of [...appSubscriptions.listeners]) {
+            currentListener();
+          }
+        });
+        const unsubscribeError = conn.onError(() => {
+          if (reconnecting) {
+            return;
+          }
+          reconnecting = true;
+          if (appSubscriptions.disposeConnPromise !== disposeConnPromise) {
+            return;
+          }
+          appSubscriptions.disposeConnPromise = null;
+          void disposeConnPromise?.then(async (disposeConn) => {
+            await disposeConn?.();
+          });
+          if (appSubscriptions.listeners.size > 0) {
+            ensureConnection();
+            for (const currentListener of [...appSubscriptions.listeners]) {
+              currentListener();
+            }
+          }
+        });
+        return async () => {
+          unsubscribeEvent();
+          unsubscribeError();
+          await conn.dispose();
+        };
+      })().catch(() => null);
+      appSubscriptions.disposeConnPromise = disposeConnPromise;
+    };
+
+    ensureConnection();
+
+    return () => {
+      appSubscriptions.listeners.delete(listener);
+      if (appSubscriptions.listeners.size > 0) {
+        return;
+      }
+      void appSubscriptions.disposeConnPromise?.then(async (disposeConn) => {
+        await disposeConn?.();
+      });
+      appSubscriptions.disposeConnPromise = null;
+    };
+  };
+
   const sandboxProcessSubscriptionKey = (workspaceId: string, providerId: ProviderId, sandboxId: string): string => `${workspaceId}:${providerId}:${sandboxId}`;
 
   const subscribeSandboxProcesses = (workspaceId: string, providerId: ProviderId, sandboxId: string, listener: () => void): (() => void) => {
@@ -721,6 +786,10 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
   return {
     async getAppSnapshot(): Promise<FoundryAppSnapshot> {
       return await appRequest<FoundryAppSnapshot>("/app/snapshot");
+    },
+
+    subscribeApp(listener: () => void): () => void {
+      return subscribeApp(listener);
     },
 
     async signInWithGithub(): Promise<void> {

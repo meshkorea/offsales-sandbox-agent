@@ -225,6 +225,10 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
       return unsupportedAppSnapshot();
     },
 
+    subscribeApp(): () => void {
+      return () => {};
+    },
+
     async signInWithGithub(): Promise<void> {
       notSupported("signInWithGithub");
     },

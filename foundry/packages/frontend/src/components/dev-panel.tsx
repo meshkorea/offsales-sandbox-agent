@@ -51,6 +51,17 @@ function labelStyle(color: string) {
   };
 }
 
+function mergedRouteParams(matches: Array<{ params: Record<string, unknown> }>): Record<string, string> {
+  return matches.reduce<Record<string, string>>((acc, match) => {
+    for (const [key, value] of Object.entries(match.params)) {
+      if (typeof value === "string" && value.length > 0) {
+        acc[key] = value;
+      }
+    }
+    return acc;
+  }, {});
+}
+
 export function DevPanel() {
   if (!import.meta.env.DEV) {
     return null;
@@ -62,7 +73,12 @@ export function DevPanel() {
   const user = activeMockUser(snapshot);
   const organizations = eligibleOrganizations(snapshot);
   const t = useFoundryTokens();
-  const location = useRouterState({ select: (state) => state.location });
+  const routeContext = useRouterState({
+    select: (state) => ({
+      location: state.location,
+      params: mergedRouteParams(state.matches as Array<{ params: Record<string, unknown> }>),
+    }),
+  });
   const [visible, setVisible] = useState<boolean>(() => readStoredVisibility());
 
   useEffect(() => {
@@ -84,8 +100,19 @@ export function DevPanel() {
   }, []);
 
   const modeLabel = isMockFrontendClient ? "Mock" : "Live";
-  const github = organization?.github ?? null;
-  const runtime = organization?.runtime ?? null;
+  const selectedWorkspaceId = routeContext.params.workspaceId ?? null;
+  const selectedTaskId = routeContext.params.taskId ?? null;
+  const selectedRepoId = routeContext.params.repoId ?? null;
+  const selectedSessionId =
+    routeContext.location.search && typeof routeContext.location.search === "object" && "sessionId" in routeContext.location.search
+      ? (((routeContext.location.search as Record<string, unknown>).sessionId as string | undefined) ?? null)
+      : null;
+  const contextOrganization =
+    (routeContext.params.organizationId ? (snapshot.organizations.find((candidate) => candidate.id === routeContext.params.organizationId) ?? null) : null) ??
+    (selectedWorkspaceId ? (snapshot.organizations.find((candidate) => candidate.workspaceId === selectedWorkspaceId) ?? null) : null) ??
+    organization;
+  const github = contextOrganization?.github ?? null;
+  const runtime = contextOrganization?.runtime ?? null;
   const runtimeSummary = useMemo(() => {
     if (!runtime || runtime.errorCount === 0) {
       return "No actor errors";
@@ -122,16 +149,31 @@ export function DevPanel() {
           alignItems: "center",
           gap: "8px",
           border: `1px solid ${t.borderDefault}`,
-          background: t.surfacePrimary,
+          background: "rgba(9, 9, 11, 0.78)",
           color: t.textPrimary,
           borderRadius: "999px",
-          padding: "10px 14px",
-          boxShadow: "0 18px 40px rgba(0, 0, 0, 0.28)",
+          padding: "9px 12px",
+          boxShadow: "0 18px 40px rgba(0, 0, 0, 0.22)",
           cursor: "pointer",
         }}
       >
         <Bug size={14} />
-        Dev
+        <span style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontSize: "12px", lineHeight: 1 }}>
+          <span style={{ color: t.textSecondary }}>Show Dev Panel</span>
+          <span
+            style={{
+              padding: "4px 7px",
+              borderRadius: "999px",
+              border: `1px solid ${t.borderDefault}`,
+              background: "rgba(255, 255, 255, 0.04)",
+              fontSize: "11px",
+              fontWeight: 700,
+              letterSpacing: "0.03em",
+            }}
+          >
+            Shift+D
+          </span>
+        </span>
       </button>
     );
   }
@@ -181,7 +223,7 @@ export function DevPanel() {
               {modeLabel}
             </span>
           </div>
-          <div style={{ fontSize: "11px", color: t.textMuted }}>{location.pathname}</div>
+          <div style={{ fontSize: "11px", color: t.textMuted }}>{routeContext.location.pathname}</div>
         </div>
         <button type="button" onClick={() => setVisible(false)} style={pillButtonStyle()}>
           Hide
@@ -190,11 +232,22 @@ export function DevPanel() {
 
       <div style={{ display: "grid", gap: "12px", padding: "14px" }}>
         <div style={sectionStyle(t.borderSubtle, t.surfaceSecondary)}>
+          <div style={labelStyle(t.textMuted)}>Context</div>
+          <div style={{ display: "grid", gap: "4px", fontSize: "12px" }}>
+            <div>Organization: {contextOrganization?.settings.displayName ?? "None selected"}</div>
+            <div>Workspace: {selectedWorkspaceId ?? "None selected"}</div>
+            <div>Task: {selectedTaskId ?? "None selected"}</div>
+            <div>Repo: {selectedRepoId ?? "None selected"}</div>
+            <div>Session: {selectedSessionId ?? "None selected"}</div>
+          </div>
+        </div>
+
+        <div style={sectionStyle(t.borderSubtle, t.surfaceSecondary)}>
           <div style={labelStyle(t.textMuted)}>Session</div>
           <div style={{ display: "grid", gap: "4px", fontSize: "12px" }}>
             <div>Auth: {snapshot.auth.status}</div>
             <div>User: {user ? `${user.name} (@${user.githubLogin})` : "None"}</div>
-            <div>Organization: {organization?.settings.displayName ?? "None selected"}</div>
+            <div>Active org: {organization?.settings.displayName ?? "None selected"}</div>
           </div>
           {isMockFrontendClient ? (
             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
@@ -221,26 +274,26 @@ export function DevPanel() {
             <div>Repos: {github?.importedRepoCount ?? 0}</div>
             <div>Last sync: {github?.lastSyncLabel ?? "n/a"}</div>
           </div>
-          {organization ? (
+          {contextOrganization ? (
             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-              <button type="button" onClick={() => void client.triggerGithubSync(organization.id)} style={pillButtonStyle()}>
+              <button type="button" onClick={() => void client.triggerGithubSync(contextOrganization.id)} style={pillButtonStyle()}>
                 <RefreshCw size={12} style={{ marginRight: "6px", verticalAlign: "text-bottom" }} />
                 Sync
               </button>
-              <button type="button" onClick={() => void client.reconnectGithub(organization.id)} style={pillButtonStyle()}>
+              <button type="button" onClick={() => void client.reconnectGithub(contextOrganization.id)} style={pillButtonStyle()}>
                 <Wifi size={12} style={{ marginRight: "6px", verticalAlign: "text-bottom" }} />
                 Reconnect
               </button>
             </div>
           ) : null}
-          {isMockFrontendClient && organization && client.setMockDebugOrganizationState ? (
+          {isMockFrontendClient && contextOrganization && client.setMockDebugOrganizationState ? (
             <div style={{ display: "grid", gap: "8px" }}>
               <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                 {(["pending", "syncing", "synced", "error"] as const).map((status) => (
                   <button
                     key={status}
                     type="button"
-                    onClick={() => void client.setMockDebugOrganizationState?.({ organizationId: organization.id, githubSyncStatus: status })}
+                    onClick={() => void client.setMockDebugOrganizationState?.({ organizationId: contextOrganization.id, githubSyncStatus: status })}
                     style={pillButtonStyle(github?.syncStatus === status)}
                   >
                     {status}
@@ -252,7 +305,7 @@ export function DevPanel() {
                   <button
                     key={status}
                     type="button"
-                    onClick={() => void client.setMockDebugOrganizationState?.({ organizationId: organization.id, githubInstallationStatus: status })}
+                    onClick={() => void client.setMockDebugOrganizationState?.({ organizationId: contextOrganization.id, githubInstallationStatus: status })}
                     style={pillButtonStyle(github?.installationStatus === status)}
                   >
                     {status}
@@ -270,13 +323,13 @@ export function DevPanel() {
             <div>{runtimeSummary}</div>
             {runtime?.issues[0] ? <div>Latest: {runtime.issues[0].message}</div> : null}
           </div>
-          {organization ? (
+          {contextOrganization ? (
             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
               {isMockFrontendClient && client.setMockDebugOrganizationState ? (
                 <>
                   <button
                     type="button"
-                    onClick={() => void client.setMockDebugOrganizationState?.({ organizationId: organization.id, runtimeStatus: "error" })}
+                    onClick={() => void client.setMockDebugOrganizationState?.({ organizationId: contextOrganization.id, runtimeStatus: "error" })}
                     style={pillButtonStyle(runtime?.status === "error")}
                   >
                     <ShieldAlert size={12} style={{ marginRight: "6px", verticalAlign: "text-bottom" }} />
@@ -284,7 +337,7 @@ export function DevPanel() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void client.setMockDebugOrganizationState?.({ organizationId: organization.id, runtimeStatus: "healthy" })}
+                    onClick={() => void client.setMockDebugOrganizationState?.({ organizationId: contextOrganization.id, runtimeStatus: "healthy" })}
                     style={pillButtonStyle(runtime?.status === "healthy")}
                   >
                     Healthy
@@ -292,7 +345,7 @@ export function DevPanel() {
                 </>
               ) : null}
               {runtime?.errorCount ? (
-                <button type="button" onClick={() => void client.clearOrganizationRuntimeIssues(organization.id)} style={pillButtonStyle()}>
+                <button type="button" onClick={() => void client.clearOrganizationRuntimeIssues(contextOrganization.id)} style={pillButtonStyle()}>
                   Clear actor errors
                 </button>
               ) : null}
@@ -309,7 +362,7 @@ export function DevPanel() {
                   key={candidate.id}
                   type="button"
                   onClick={() => void client.selectOrganization(candidate.id)}
-                  style={pillButtonStyle(organization?.id === candidate.id)}
+                  style={pillButtonStyle(contextOrganization?.id === candidate.id)}
                 >
                   {candidate.settings.displayName}
                 </button>

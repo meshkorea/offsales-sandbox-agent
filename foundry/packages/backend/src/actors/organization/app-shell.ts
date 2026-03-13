@@ -610,6 +610,11 @@ export const workspaceAppActions = {
     return await buildAppSnapshot(c, input.sessionId);
   },
 
+  async notifyAppUpdated(c: any): Promise<void> {
+    assertAppWorkspace(c);
+    c.broadcast("appUpdated", { at: Date.now() });
+  },
+
   async resolveAppGithubToken(
     c: any,
     input: { organizationId: string; requireRepoScope?: boolean },
@@ -785,6 +790,7 @@ export const workspaceAppActions = {
         installationId: organization.snapshot.kind === "personal" ? null : organization.githubInstallationId,
         accessToken: auth.accessToken,
         label: "Syncing GitHub data...",
+        force: true,
         fallbackMembers:
           organization.snapshot.kind === "personal"
             ? [
@@ -1052,8 +1058,8 @@ export const workspaceAppActions = {
     const { appShell } = getActorRuntimeContext();
     const { event, body } = appShell.github.verifyWebhookEvent(input.payload, input.signatureHeader, input.eventHeader);
 
-    const accountLogin = body.installation?.account?.login;
-    const accountType = body.installation?.account?.type;
+    const accountLogin = body.installation?.account?.login ?? body.repository?.owner?.login ?? body.organization?.login ?? null;
+    const accountType = body.installation?.account?.type ?? body.repository?.owner?.type ?? (body.organization?.login ? "Organization" : null);
     if (!accountLogin) {
       console.log(`[github-webhook] Ignoring ${event}.${body.action ?? ""}: no installation account`);
       return { ok: true };
@@ -1080,6 +1086,7 @@ export const workspaceAppActions = {
           installationStatus: "connected",
           installationId: body.installation?.id ?? null,
           label: "Syncing GitHub data from installation webhook...",
+          force: true,
           fallbackMembers: [],
         });
       } else if (body.action === "suspend") {
@@ -1097,6 +1104,7 @@ export const workspaceAppActions = {
           installationStatus: "connected",
           installationId: body.installation?.id ?? null,
           label: "Resyncing GitHub data after unsuspend...",
+          force: true,
           fallbackMembers: [],
         });
       }
@@ -1114,6 +1122,7 @@ export const workspaceAppActions = {
         installationStatus: "connected",
         installationId: body.installation?.id ?? null,
         label: "Resyncing GitHub data after repository access change...",
+        force: true,
         fallbackMembers: [],
       });
       return { ok: true };

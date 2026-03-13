@@ -4,6 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useStyletron } from "baseui";
 import { LabelSmall, LabelXSmall } from "baseui/typography";
 import {
+  AlertTriangle,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -14,6 +15,7 @@ import {
   LogOut,
   PanelLeft,
   Plus,
+  RefreshCw,
   Settings,
   User,
 } from "lucide-react";
@@ -21,6 +23,7 @@ import {
 import { formatRelativeAge, type Task, type ProjectSection } from "./view-model";
 import { ContextMenuOverlay, TaskIndicator, PanelHeaderBar, SPanel, ScrollBody, useContextMenu } from "./ui";
 import { activeMockOrganization, eligibleOrganizations, useMockAppClient, useMockAppSnapshot } from "../../lib/mock-app";
+import { getMockOrganizationStatus } from "../../lib/mock-organization-status";
 import { useFoundryTokens } from "../../app/theme";
 import type { FoundryTokens } from "../../styles/tokens";
 
@@ -38,6 +41,28 @@ function projectIconColor(label: string): string {
     hash = (hash * 31 + label.charCodeAt(i)) | 0;
   }
   return PROJECT_COLORS[Math.abs(hash) % PROJECT_COLORS.length]!;
+}
+
+function organizationStatusToneStyles(tokens: FoundryTokens, tone: "info" | "warning" | "error") {
+  if (tone === "error") {
+    return {
+      backgroundColor: "rgba(255, 79, 0, 0.14)",
+      borderColor: "rgba(255, 79, 0, 0.3)",
+      color: "#ffd6c7",
+    };
+  }
+  if (tone === "warning") {
+    return {
+      backgroundColor: "rgba(255, 193, 7, 0.16)",
+      borderColor: "rgba(255, 193, 7, 0.24)",
+      color: "#ffe6a6",
+    };
+  }
+  return {
+    backgroundColor: "rgba(24, 140, 255, 0.16)",
+    borderColor: "rgba(24, 140, 255, 0.24)",
+    color: "#b9d8ff",
+  };
 }
 
 export const Sidebar = memo(function Sidebar({
@@ -694,6 +719,7 @@ function SidebarFooter() {
   const client = useMockAppClient();
   const snapshot = useMockAppSnapshot();
   const organization = activeMockOrganization(snapshot);
+  const organizationStatus = organization ? getMockOrganizationStatus(organization) : null;
   const [open, setOpen] = useState(false);
   const [workspaceFlyoutOpen, setWorkspaceFlyoutOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -802,6 +828,41 @@ function SidebarFooter() {
     gap: "2px",
   });
 
+  const statusChipClass =
+    organizationStatus != null
+      ? css({
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "6px",
+          flexShrink: 0,
+          padding: "4px 7px",
+          borderRadius: "999px",
+          border: `1px solid ${organizationStatusToneStyles(t, organizationStatus.tone).borderColor}`,
+          backgroundColor: organizationStatusToneStyles(t, organizationStatus.tone).backgroundColor,
+          color: organizationStatusToneStyles(t, organizationStatus.tone).color,
+          fontSize: "10px",
+          fontWeight: 600,
+          lineHeight: 1,
+        })
+      : "";
+
+  const footerStatusClass =
+    organizationStatus != null
+      ? css({
+          margin: "0 8px 4px",
+          padding: "8px 10px",
+          borderRadius: "10px",
+          border: `1px solid ${organizationStatusToneStyles(t, organizationStatus.tone).borderColor}`,
+          backgroundColor: organizationStatusToneStyles(t, organizationStatus.tone).backgroundColor,
+          color: organizationStatusToneStyles(t, organizationStatus.tone).color,
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          fontSize: "11px",
+          lineHeight: 1.3,
+        })
+      : "";
+
   return (
     <div ref={containerRef} className={css({ position: "relative", flexShrink: 0 })}>
       {open ? (
@@ -851,6 +912,7 @@ function SidebarFooter() {
                   <span className={css({ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" })}>
                     {organization.settings.displayName}
                   </span>
+                  {organizationStatus ? <span className={statusChipClass}>{organizationStatus.label}</span> : null}
                   <ChevronRight size={12} className={css({ flexShrink: 0, color: t.textMuted })} />
                 </button>
               </div>
@@ -919,6 +981,30 @@ function SidebarFooter() {
                             <span className={css({ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" })}>
                               {org.settings.displayName}
                             </span>
+                            {(() => {
+                              const orgStatus = getMockOrganizationStatus(org);
+                              if (!orgStatus) return null;
+                              const tone = organizationStatusToneStyles(t, orgStatus.tone);
+                              return (
+                                <span
+                                  className={css({
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    padding: "4px 7px",
+                                    borderRadius: "999px",
+                                    border: `1px solid ${tone.borderColor}`,
+                                    backgroundColor: tone.backgroundColor,
+                                    color: tone.color,
+                                    fontSize: "10px",
+                                    fontWeight: 600,
+                                    lineHeight: 1,
+                                    flexShrink: 0,
+                                  })}
+                                >
+                                  {orgStatus.label}
+                                </span>
+                              );
+                            })()}
                           </button>
                         );
                       })}
@@ -946,6 +1032,15 @@ function SidebarFooter() {
                 {item.label}
               </button>
             ))}
+          </div>
+        </div>
+      ) : null}
+      {organizationStatus ? (
+        <div className={footerStatusClass}>
+          {organizationStatus.key === "syncing" ? <RefreshCw size={12} /> : <AlertTriangle size={12} />}
+          <div className={css({ display: "grid", gap: "2px", minWidth: 0 })}>
+            <div className={css({ fontWeight: 600 })}>{organizationStatus.label}</div>
+            <div className={css({ color: t.textSecondary, fontSize: "10px" })}>{organizationStatus.detail}</div>
           </div>
         </div>
       ) : null}

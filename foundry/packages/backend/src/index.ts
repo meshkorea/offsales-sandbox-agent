@@ -73,7 +73,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
   const notifications = createNotificationService(backends);
   initActorRuntimeContext(config, providers, notifications, driver, createDefaultAppShellServices());
 
-  registry.startRunner();
+  await registry.startRunner();
   const managerOrigin = `http://127.0.0.1:${resolveManagerPort()}`;
   const actorClient = createClient({
     endpoint: managerOrigin,

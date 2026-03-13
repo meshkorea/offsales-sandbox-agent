@@ -548,15 +548,11 @@ class MockFoundryAppStore implements MockFoundryAppClient {
 
   async selectOrganization(organizationId: string): Promise<void> {
     await this.injectAsyncLatency();
-    const org = this.requireOrganization(organizationId);
+    this.requireOrganization(organizationId);
     this.updateSnapshot((current) => ({
       ...current,
       activeOrganizationId: organizationId,
     }));
-
-    if (org.github.syncStatus !== "synced") {
-      await this.triggerGithubSync(organizationId);
-    }
   }
 
   async updateOrganizationProfile(input: UpdateMockOrganizationProfileInput): Promise<void> {

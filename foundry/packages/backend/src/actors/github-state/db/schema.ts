@@ -8,6 +8,11 @@ export const githubMeta = sqliteTable("github_meta", {
   installationId: integer("installation_id"),
   lastSyncLabel: text("last_sync_label").notNull(),
   lastSyncAt: integer("last_sync_at"),
+  syncPhase: text("sync_phase"),
+  syncRunStartedAt: integer("sync_run_started_at"),
+  syncRepositoriesTotal: integer("sync_repositories_total"),
+  syncRepositoriesCompleted: integer("sync_repositories_completed"),
+  syncPullRequestRepositoriesCompleted: integer("sync_pull_request_repositories_completed"),
   updatedAt: integer("updated_at").notNull(),
 });
 

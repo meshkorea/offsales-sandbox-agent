@@ -408,6 +408,11 @@ export class GitHubAppClient {
     return await this.listPullRequestsForRepositories(repositories, accessToken);
   }
 
+  async listInstallationPullRequestsForRepositories(installationId: number, repositories: GitHubRepositoryRecord[]): Promise<GitHubPullRequestRecord[]> {
+    const accessToken = await this.createInstallationAccessToken(installationId);
+    return await this.listPullRequestsForRepositories(repositories, accessToken);
+  }
+
   async listUserPullRequests(accessToken: string): Promise<GitHubPullRequestRecord[]> {
     const repositories = await this.listUserRepositories(accessToken);
     return await this.listPullRequestsForRepositories(repositories, accessToken);
