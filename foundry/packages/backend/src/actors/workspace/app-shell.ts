@@ -832,7 +832,7 @@ export const workspaceAppActions = {
           customerId,
           customerEmail: session.currentUserEmail,
           planId: input.planId,
-          successUrl: `${appShell.apiUrl}/api/billing/checkout/complete?organizationId=${encodeURIComponent(
+          successUrl: `${appShell.apiUrl}/v1/billing/checkout/complete?organizationId=${encodeURIComponent(
             input.organizationId,
           )}&foundrySession=${encodeURIComponent(input.sessionId)}&session_id={CHECKOUT_SESSION_ID}`,
           cancelUrl: `${appShell.appUrl}/organizations/${input.organizationId}/billing?foundrySession=${encodeURIComponent(input.sessionId)}`,

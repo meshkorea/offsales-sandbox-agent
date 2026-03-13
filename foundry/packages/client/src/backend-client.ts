@@ -259,7 +259,7 @@ export interface BackendClient {
 }
 
 export function rivetEndpoint(config: AppConfig): string {
-  return `http://${config.backend.host}:${config.backend.port}/api/rivet`;
+  return `http://${config.backend.host}:${config.backend.port}/v1/rivet`;
 }
 
 export function createBackendClientFromConfig(config: AppConfig): BackendClient {
@@ -273,8 +273,18 @@ function stripTrailingSlash(value: string): string {
   return value.replace(/\/$/, "");
 }
 
-function deriveAppApiEndpoint(endpoint: string): string {
-  return stripTrailingSlash(endpoint).replace(/\/api\/rivet$/, "/api");
+function deriveBackendEndpoints(endpoint: string): { appEndpoint: string; rivetEndpoint: string } {
+  const normalized = stripTrailingSlash(endpoint);
+  if (normalized.endsWith("/rivet")) {
+    return {
+      appEndpoint: normalized.slice(0, -"/rivet".length),
+      rivetEndpoint: normalized,
+    };
+  }
+  return {
+    appEndpoint: normalized,
+    rivetEndpoint: `${normalized}/rivet`,
+  };
 }
 
 function isLoopbackHost(hostname: string): boolean {
@@ -394,8 +404,9 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     return createMockBackendClient(options.defaultWorkspaceId);
   }
 
-  const rivetApiEndpoint = stripTrailingSlash(options.endpoint);
-  const appApiEndpoint = deriveAppApiEndpoint(options.endpoint);
+  const endpoints = deriveBackendEndpoints(options.endpoint);
+  const rivetApiEndpoint = endpoints.rivetEndpoint;
+  const appApiEndpoint = endpoints.appEndpoint;
   let clientPromise: Promise<RivetClient> | null = null;
   let appSessionId = typeof window !== "undefined" ? window.localStorage.getItem("sandbox-agent-foundry:remote-app-session") : null;
   const workbenchSubscriptions = new Map<

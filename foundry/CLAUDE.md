@@ -57,7 +57,7 @@ Use `pnpm` workspaces and Turborepo.
 - Keep a browser-friendly GUI implementation aligned with the TUI interaction model wherever possible.
 - Do not import `rivetkit` directly in CLI or GUI packages. RivetKit client access must stay isolated inside `packages/client`.
 - All backend interaction (actor calls, metadata/health checks, backend HTTP endpoint access) must go through the dedicated client library in `packages/client`.
-- Outside `packages/client`, do not call backend endpoints directly (for example `fetch(.../api/rivet...)`), except in black-box E2E tests that intentionally exercise raw transport behavior.
+- Outside `packages/client`, do not call backend endpoints directly (for example `fetch(.../v1/rivet...)`), except in black-box E2E tests that intentionally exercise raw transport behavior.
 - GUI state should update in realtime (no manual refresh buttons). Prefer RivetKit push reactivity and actor-driven events; do not add polling/refetch for normal product flows.
 - Keep the mock workbench types and mock client in `packages/shared` + `packages/client` up to date with the frontend contract. The mock is the UI testing reference implementation while backend functionality catches up.
 - Keep frontend route/state coverage current in code and tests; there is no separate page-inventory doc to maintain.
@@ -105,9 +105,9 @@ For all Rivet/RivetKit implementation:
 
 ## Rivet Routing
 
-- Mount RivetKit directly on `/api/rivet` via `registry.handler(c.req.raw)`.
+- Mount RivetKit directly on `/v1/rivet` via `registry.handler(c.req.raw)`.
 - Do not add an extra proxy or manager-specific route layer in the backend.
-- Let RivetKit own metadata/public endpoint behavior for `/api/rivet`.
+- Let RivetKit own metadata/public endpoint behavior for `/v1/rivet`.
 
 ## Workspace + Actor Rules
 
@@ -142,7 +142,7 @@ For all Rivet/RivetKit implementation:
 - All external service calls (git CLI, GitHub CLI, sandbox-agent HTTP, tmux) must go through the `BackendDriver` interface on the runtime context.
 - Integration tests use `setupTest()` from `rivetkit/test` and are gated behind `HF_ENABLE_ACTOR_INTEGRATION_TESTS=1`.
 - End-to-end testing must run against the dev backend started via `docker compose -f compose.dev.yaml up` (host -> container). Do not run E2E against an in-process test runtime.
-  - E2E tests should talk to the backend over HTTP (default `http://127.0.0.1:7741/api/rivet`) and use real GitHub repos/PRs.
+  - E2E tests should talk to the backend over HTTP (default `http://127.0.0.1:7741/v1/rivet`) and use real GitHub repos/PRs.
   - For Foundry live verification, use `rivet-dev/sandbox-agent-testing` as the default testing repo unless the task explicitly says otherwise.
   - Secrets (e.g. `OPENAI_API_KEY`, `GITHUB_TOKEN`/`GH_TOKEN`) must be provided via environment variables, never hardcoded in the repo.
   - `~/misc/env.txt` and `~/misc/the-foundry.env` contain the expected local OpenAI + GitHub OAuth/App config for dev.

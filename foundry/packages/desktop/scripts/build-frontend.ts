@@ -22,7 +22,7 @@ function run(cmd: string, opts?: { cwd?: string; env?: NodeJS.ProcessEnv }) {
 console.log("\n=== Building frontend for desktop ===\n");
 run("pnpm --filter @sandbox-agent/foundry-frontend build", {
   env: {
-    VITE_HF_BACKEND_ENDPOINT: "http://127.0.0.1:7741/api/rivet",
+    VITE_HF_BACKEND_ENDPOINT: "http://127.0.0.1:7741/v1/rivet",
   },
 });
 

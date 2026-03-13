@@ -217,7 +217,7 @@ async function handleBackend(args: string[]): Promise<void> {
   if (sub === "inspect") {
     await ensureBackendRunning(backendConfig);
     const metadata = await readBackendMetadata({
-      endpoint: `http://${host}:${port}/api/rivet`,
+      endpoint: `http://${host}:${port}/v1/rivet`,
       timeoutMs: 4_000,
     });
     const managerEndpoint = metadata.clientEndpoint ?? `http://${host}:${port}`;

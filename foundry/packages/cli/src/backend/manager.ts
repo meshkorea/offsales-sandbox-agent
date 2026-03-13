@@ -132,7 +132,7 @@ function removeStateFiles(host: string, port: number): void {
 
 async function checkHealth(host: string, port: number): Promise<boolean> {
   return await checkBackendHealth({
-    endpoint: `http://${host}:${port}/api/rivet`,
+    endpoint: `http://${host}:${port}/v1/rivet`,
     timeoutMs: HEALTH_TIMEOUT_MS,
   });
 }
