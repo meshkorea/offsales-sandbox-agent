@@ -66,6 +66,7 @@ const WORKSPACE_QUEUE_NAMES = [
   "workspace.command.addRepo",
   "workspace.command.createTask",
   "workspace.command.refreshProviderProfiles",
+  "workspace.command.syncGithubOrganizationRepos",
   "workspace.command.syncGithubSession",
 ] as const;
 const SANDBOX_AGENT_REPO = "rivet-dev/sandbox-agent";
@@ -381,6 +382,19 @@ export async function runWorkspaceWorkflow(ctx: any): Promise<void> {
         run: async () => {
           const { syncGithubOrganizations } = await import("./app-shell.js");
           await syncGithubOrganizations(loopCtx, msg.body as { sessionId: string; accessToken: string });
+        },
+      });
+      await msg.complete({ ok: true });
+      return Loop.continue(undefined);
+    }
+
+    if (msg.name === "workspace.command.syncGithubOrganizationRepos") {
+      await loopCtx.step({
+        name: "workspace-sync-github-organization-repos",
+        timeout: 60_000,
+        run: async () => {
+          const { syncGithubOrganizationRepos } = await import("./app-shell.js");
+          await syncGithubOrganizationRepos(loopCtx, msg.body as { sessionId: string; organizationId: string });
         },
       });
       await msg.complete({ ok: true });

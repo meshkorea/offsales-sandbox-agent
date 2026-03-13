@@ -469,6 +469,58 @@ export async function syncGithubOrganizations(c: any, input: { sessionId: string
   });
 }
 
+export async function syncGithubOrganizationRepos(c: any, input: { sessionId: string; organizationId: string }): Promise<void> {
+  assertAppWorkspace(c);
+  const session = await requireSignedInSession(c, input.sessionId);
+  requireEligibleOrganization(session, input.organizationId);
+
+  const { appShell } = getActorRuntimeContext();
+  const workspace = await getOrCreateWorkspace(c, input.organizationId);
+  const organization = await getOrganizationState(workspace);
+
+  try {
+    let repositories;
+    let installationStatus = organization.snapshot.github.installationStatus;
+
+    if (organization.snapshot.kind === "personal") {
+      repositories = await appShell.github.listUserRepositories(session.githubAccessToken);
+      installationStatus = "connected";
+    } else if (organization.githubInstallationId) {
+      try {
+        repositories = await appShell.github.listInstallationRepositories(organization.githubInstallationId);
+      } catch (error) {
+        if (!(error instanceof GitHubAppError) || (error.status !== 403 && error.status !== 404)) {
+          throw error;
+        }
+        repositories = (await appShell.github.listUserRepositories(session.githubAccessToken)).filter((repository) =>
+          repository.fullName.startsWith(`${organization.githubLogin}/`),
+        );
+        installationStatus = "reconnect_required";
+      }
+    } else {
+      repositories = (await appShell.github.listUserRepositories(session.githubAccessToken)).filter((repository) =>
+        repository.fullName.startsWith(`${organization.githubLogin}/`),
+      );
+      installationStatus = "reconnect_required";
+    }
+
+    await workspace.applyOrganizationSyncCompleted({
+      repositories,
+      installationStatus,
+      lastSyncLabel: repositories.length > 0 ? "Synced just now" : "No repositories available",
+    });
+  } catch (error) {
+    const installationStatus =
+      error instanceof GitHubAppError && (error.status === 403 || error.status === 404)
+        ? "reconnect_required"
+        : organization.snapshot.github.installationStatus;
+    await workspace.markOrganizationSyncFailed({
+      message: error instanceof Error ? error.message : "GitHub import failed",
+      installationStatus,
+    });
+  }
+}
+
 /**
  * Full synchronous sync: init session + sync orgs in one call.
  * Used by bootstrapAppGithubSession (dev-only) where there is no proxy
@@ -766,7 +818,22 @@ export const workspaceAppActions = {
     const workspace = await getOrCreateWorkspace(c, input.organizationId);
     const organization = await getOrganizationState(workspace);
     if (organization.snapshot.github.syncStatus !== "synced") {
-      return await workspaceAppActions.triggerAppRepoImport(c, input);
+      if (organization.snapshot.github.syncStatus !== "syncing") {
+        await workspace.markOrganizationSyncStarted({
+          label: "Importing repository catalog...",
+        });
+
+        const self = selfWorkspace(c);
+        await self.send(
+          "workspace.command.syncGithubOrganizationRepos",
+          { sessionId: input.sessionId, organizationId: input.organizationId },
+          {
+            wait: false,
+          },
+        );
+      }
+
+      return await buildAppSnapshot(c, input.sessionId);
     }
     return await buildAppSnapshot(c, input.sessionId);
   },
@@ -792,55 +859,24 @@ export const workspaceAppActions = {
     const session = await requireSignedInSession(c, input.sessionId);
     requireEligibleOrganization(session, input.organizationId);
 
-    const { appShell } = getActorRuntimeContext();
     const workspace = await getOrCreateWorkspace(c, input.organizationId);
     const organization = await getOrganizationState(workspace);
+    if (organization.snapshot.github.syncStatus === "syncing") {
+      return await buildAppSnapshot(c, input.sessionId);
+    }
 
     await workspace.markOrganizationSyncStarted({
       label: "Importing repository catalog...",
     });
 
-    try {
-      let repositories;
-      let installationStatus = organization.snapshot.github.installationStatus;
-
-      if (organization.snapshot.kind === "personal") {
-        repositories = await appShell.github.listUserRepositories(session.githubAccessToken);
-        installationStatus = "connected";
-      } else if (organization.githubInstallationId) {
-        try {
-          repositories = await appShell.github.listInstallationRepositories(organization.githubInstallationId);
-        } catch (error) {
-          if (!(error instanceof GitHubAppError) || (error.status !== 403 && error.status !== 404)) {
-            throw error;
-          }
-          repositories = (await appShell.github.listUserRepositories(session.githubAccessToken)).filter((repository) =>
-            repository.fullName.startsWith(`${organization.githubLogin}/`),
-          );
-          installationStatus = "reconnect_required";
-        }
-      } else {
-        repositories = (await appShell.github.listUserRepositories(session.githubAccessToken)).filter((repository) =>
-          repository.fullName.startsWith(`${organization.githubLogin}/`),
-        );
-        installationStatus = "reconnect_required";
-      }
-
-      await workspace.applyOrganizationSyncCompleted({
-        repositories,
-        installationStatus,
-        lastSyncLabel: repositories.length > 0 ? "Synced just now" : "No repositories available",
-      });
-    } catch (error) {
-      const installationStatus =
-        error instanceof GitHubAppError && (error.status === 403 || error.status === 404)
-          ? "reconnect_required"
-          : organization.snapshot.github.installationStatus;
-      await workspace.markOrganizationSyncFailed({
-        message: error instanceof Error ? error.message : "GitHub import failed",
-        installationStatus,
-      });
-    }
+    const self = selfWorkspace(c);
+    await self.send(
+      "workspace.command.syncGithubOrganizationRepos",
+      { sessionId: input.sessionId, organizationId: input.organizationId },
+      {
+        wait: false,
+      },
+    );
 
     return await buildAppSnapshot(c, input.sessionId);
   },
