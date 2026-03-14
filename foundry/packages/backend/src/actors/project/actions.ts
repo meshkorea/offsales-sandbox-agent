@@ -437,7 +437,6 @@ async function hydrateTaskIndexMutation(c: any, _cmd?: HydrateTaskIndexCommand):
 }
 
 async function createTaskMutation(c: any, cmd: CreateTaskCommand): Promise<TaskRecord> {
-  const localPath = await ensureProjectReady(c);
   const onBranch = cmd.onBranch?.trim() || null;
   const initialBranchName = onBranch;
   const initialTitle = onBranch ? deriveFallbackTitle(cmd.task, cmd.explicitTitle ?? undefined) : null;
@@ -463,7 +462,6 @@ async function createTaskMutation(c: any, cmd: CreateTaskCommand): Promise<TaskR
       repoId: c.state.repoId,
       taskId,
       repoRemote: c.state.remoteUrl,
-      repoLocalPath: localPath,
       branchName: initialBranchName,
       title: initialTitle,
       task: cmd.task,
@@ -954,7 +952,7 @@ export async function runProjectWorkflow(ctx: any): Promise<void> {
     if (msg.name === "project.command.createTask") {
       const result = await loopCtx.step({
         name: "project-create-task",
-        timeout: 12 * 60_000,
+        timeout: 60_000,
         run: async () => createTaskMutation(loopCtx, msg.body as CreateTaskCommand),
       });
       await msg.complete(result);
@@ -1020,7 +1018,7 @@ export const projectActions = {
     return expectQueueResponse<TaskRecord>(
       await self.send(projectWorkflowQueueName("project.command.createTask"), cmd, {
         wait: true,
-        timeout: 12 * 60_000,
+        timeout: 60_000,
       }),
     );
   },

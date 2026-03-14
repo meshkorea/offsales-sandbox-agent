@@ -17,6 +17,9 @@ import type {
 } from "../provider-api/index.js";
 import type { DaytonaDriver } from "../../driver.js";
 import { Image } from "@daytonaio/sdk";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { resolve } from "node:path";
 
 export interface DaytonaProviderConfig {
   endpoint?: string;
@@ -176,6 +179,51 @@ export class DaytonaProvider implements SandboxProvider {
     }
   }
 
+  private shellSingleQuote(value: string): string {
+    return `'${value.replace(/'/g, `'\"'\"'`)}'`;
+  }
+
+  private readLocalCodexAuth(): string | null {
+    const authPath = resolve(homedir(), ".codex", "auth.json");
+    try {
+      return readFileSync(authPath, "utf8");
+    } catch {
+      return null;
+    }
+  }
+
+  private buildCloneRepoScript(req: CreateSandboxRequest, repoDir: string): string {
+    const usesGithubHttpAuth = req.repoRemote.startsWith("https://github.com/");
+    const githubPath = usesGithubHttpAuth ? req.repoRemote.slice("https://github.com/".length) : "";
+
+    const lines = [
+      "set -eu",
+      "export GIT_TERMINAL_PROMPT=0",
+      "export GIT_ASKPASS=/bin/echo",
+      `TOKEN=${JSON.stringify(req.githubToken ?? "")}`,
+      'if [ -z "$TOKEN" ]; then',
+      '  if [ -n "${GH_TOKEN:-}" ]; then TOKEN="$GH_TOKEN"; else TOKEN="${GITHUB_TOKEN:-}"; fi',
+      "fi",
+      'AUTH_REMOTE=""',
+      ...(usesGithubHttpAuth ? ['if [ -n "$TOKEN" ]; then', `  AUTH_REMOTE="https://x-access-token:${"$"}TOKEN@github.com/${githubPath}"`, "fi"] : []),
+      `rm -rf "${repoDir}"`,
+      `mkdir -p "${repoDir}"`,
+      `rmdir "${repoDir}"`,
+      // Foundry test repos can be private, so clone/fetch must use the sandbox's GitHub token when available.
+      ...(usesGithubHttpAuth
+        ? ['if [ -n "$AUTH_REMOTE" ]; then', `  git clone "$AUTH_REMOTE" "${repoDir}"`, "else", `  git clone "${req.repoRemote}" "${repoDir}"`, "fi"]
+        : [`git clone "${req.repoRemote}" "${repoDir}"`]),
+      `cd "${repoDir}"`,
+      ...(usesGithubHttpAuth ? ['if [ -n "$AUTH_REMOTE" ]; then', `  git remote set-url origin "${req.repoRemote}"`, "fi"] : []),
+      // The task branch may not exist remotely yet (agent push creates it). Base off current branch (default branch).
+      `if git show-ref --verify --quiet "refs/remotes/origin/${req.branchName}"; then git checkout -B "${req.branchName}" "origin/${req.branchName}"; else git checkout -B "${req.branchName}" "$(git branch --show-current 2>/dev/null || echo main)"; fi`,
+      `git config user.email "foundry@local" >/dev/null 2>&1 || true`,
+      `git config user.name "Foundry" >/dev/null 2>&1 || true`,
+    ];
+
+    return lines.join("\n");
+  }
+
   id() {
     return "daytona" as const;
   }
@@ -242,37 +290,7 @@ export class DaytonaProvider implements SandboxProvider {
     });
 
     const cloneStartedAt = Date.now();
-    await this.runCheckedCommand(
-      sandbox.id,
-      [
-        "bash",
-        "-lc",
-        `${JSON.stringify(
-          [
-            "set -euo pipefail",
-            "export GIT_TERMINAL_PROMPT=0",
-            "export GIT_ASKPASS=/bin/echo",
-            `TOKEN=${JSON.stringify(req.githubToken ?? "")}`,
-            'if [ -z "$TOKEN" ]; then TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"; fi',
-            "GIT_AUTH_ARGS=()",
-            `if [ -n "$TOKEN" ] && [[ "${req.repoRemote}" == https://github.com/* ]]; then AUTH_HEADER="$(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\\n')"; GIT_AUTH_ARGS=(-c "http.https://github.com/.extraheader=AUTHORIZATION: basic $AUTH_HEADER"); fi`,
-            `rm -rf "${repoDir}"`,
-            `mkdir -p "${repoDir}"`,
-            `rmdir "${repoDir}"`,
-            // Foundry test repos can be private, so clone/fetch must use the sandbox's GitHub token when available.
-            `git "\${GIT_AUTH_ARGS[@]}" clone "${req.repoRemote}" "${repoDir}"`,
-            `cd "${repoDir}"`,
-            `if [ -n "$TOKEN" ] && [[ "${req.repoRemote}" == https://github.com/* ]]; then git config --local credential.helper ""; git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $AUTH_HEADER"; fi`,
-            `git "\${GIT_AUTH_ARGS[@]}" fetch origin --prune`,
-            // The task branch may not exist remotely yet (agent push creates it). Base off current branch (default branch).
-            `if git show-ref --verify --quiet "refs/remotes/origin/${req.branchName}"; then git checkout -B "${req.branchName}" "origin/${req.branchName}"; else git checkout -B "${req.branchName}" "$(git branch --show-current 2>/dev/null || echo main)"; fi`,
-            `git config user.email "foundry@local" >/dev/null 2>&1 || true`,
-            `git config user.name "Foundry" >/dev/null 2>&1 || true`,
-          ].join("; "),
-        )}`,
-      ].join(" "),
-      "clone repo",
-    );
+    await this.runCheckedCommand(sandbox.id, ["bash", "-lc", this.shellSingleQuote(this.buildCloneRepoScript(req, repoDir))].join(" "), "clone repo");
     emitDebug("daytona.createSandbox.clone_repo.done", {
       sandboxId: sandbox.id,
       durationMs: Date.now() - cloneStartedAt,
@@ -357,6 +375,15 @@ export class DaytonaProvider implements SandboxProvider {
     const sandboxAgentExports = this.buildShellExports({
       SANDBOX_AGENT_ACP_REQUEST_TIMEOUT_MS: acpRequestTimeoutMs.toString(),
     });
+    const codexAuth = this.readLocalCodexAuth();
+    const codexAuthSetup = codexAuth
+      ? [
+          'mkdir -p "$HOME/.codex" "$HOME/.config/codex"',
+          `printf %s ${JSON.stringify(Buffer.from(codexAuth, "utf8").toString("base64"))} | base64 -d > "$HOME/.codex/auth.json"`,
+          'cp "$HOME/.codex/auth.json" "$HOME/.config/codex/auth.json"',
+          "unset OPENAI_API_KEY CODEX_API_KEY",
+        ]
+      : [];
 
     await this.ensureStarted(req.sandboxId);
 
@@ -407,16 +434,16 @@ export class DaytonaProvider implements SandboxProvider {
       [
         "bash",
         "-lc",
-        JSON.stringify(
+        this.shellSingleQuote(
           [
             "set -euo pipefail",
             'export PATH="$HOME/.local/bin:$PATH"',
             ...sandboxAgentExports,
+            ...codexAuthSetup,
             "command -v sandbox-agent >/dev/null 2>&1",
             "if pgrep -x sandbox-agent >/dev/null; then exit 0; fi",
-            'rm -f "$HOME/.codex/auth.json" "$HOME/.config/codex/auth.json"',
             `nohup sandbox-agent server --no-token --host 0.0.0.0 --port ${DaytonaProvider.SANDBOX_AGENT_PORT} >/tmp/sandbox-agent.log 2>&1 &`,
-          ].join("; "),
+          ].join("\n"),
         ),
       ].join(" "),
       "start sandbox-agent",

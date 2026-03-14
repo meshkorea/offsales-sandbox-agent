@@ -41,7 +41,7 @@ export interface TaskInput {
   repoId: string;
   taskId: string;
   repoRemote: string;
-  repoLocalPath: string;
+  repoLocalPath?: string;
   branchName: string | null;
   title: string | null;
   task: string;

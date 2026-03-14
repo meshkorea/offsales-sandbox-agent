@@ -1,3 +1,6 @@
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { DaytonaClientLike, DaytonaDriver } from "../src/driver.js";
 import type { DaytonaCreateSandboxOptions } from "../src/integrations/daytona/client.js";
@@ -91,6 +94,10 @@ describe("daytona provider snapshot image behavior", () => {
     const commands = client.executedCommands.join("\n");
     expect(commands).toContain("GIT_TERMINAL_PROMPT=0");
     expect(commands).toContain("GIT_ASKPASS=/bin/echo");
+    expect(commands).not.toContain("[[");
+    expect(commands).not.toContain("GIT_AUTH_ARGS=()");
+    expect(commands).not.toContain("${GIT_AUTH_ARGS[@]}");
+    expect(commands).not.toContain(".extraheader");
 
     expect(handle.metadata.snapshot).toBe("snapshot-foundry");
     expect(handle.metadata.image).toBe("ubuntu:24.04");
@@ -100,6 +107,11 @@ describe("daytona provider snapshot image behavior", () => {
 
   it("starts sandbox-agent with ACP timeout env override", async () => {
     const previous = process.env.HF_SANDBOX_AGENT_ACP_REQUEST_TIMEOUT_MS;
+    const previousHome = process.env.HOME;
+    const tempHome = resolve(tmpdir(), `daytona-provider-test-${Date.now()}`);
+    mkdirSync(resolve(tempHome, ".codex"), { recursive: true });
+    writeFileSync(resolve(tempHome, ".codex", "auth.json"), JSON.stringify({ access_token: "test-token" }));
+    process.env.HOME = tempHome;
     process.env.HF_SANDBOX_AGENT_ACP_REQUEST_TIMEOUT_MS = "240000";
 
     try {
@@ -111,15 +123,18 @@ describe("daytona provider snapshot image behavior", () => {
         sandboxId: "sandbox-1",
       });
 
-      const startCommand = client.executedCommands.find((command) =>
-        command.includes("nohup env SANDBOX_AGENT_ACP_REQUEST_TIMEOUT_MS=240000 sandbox-agent server"),
+      const startCommand = client.executedCommands.find(
+        (command) => command.includes("export SANDBOX_AGENT_ACP_REQUEST_TIMEOUT_MS=") && command.includes("sandbox-agent server --no-token"),
       );
 
       const joined = client.executedCommands.join("\n");
       expect(joined).toContain("sandbox-agent/0.3.0/install.sh");
-      expect(joined).toContain("SANDBOX_AGENT_ACP_REQUEST_TIMEOUT_MS=240000");
+      expect(joined).toContain("SANDBOX_AGENT_ACP_REQUEST_TIMEOUT_MS");
       expect(joined).toContain("apt-get install -y nodejs npm");
       expect(joined).toContain("sandbox-agent server --no-token --host 0.0.0.0 --port 2468");
+      expect(joined).toContain('mkdir -p "$HOME/.codex" "$HOME/.config/codex"');
+      expect(joined).toContain("unset OPENAI_API_KEY CODEX_API_KEY");
+      expect(joined).not.toContain('rm -f "$HOME/.codex/auth.json"');
       expect(startCommand).toBeTruthy();
     } finally {
       if (previous === undefined) {
@@ -127,6 +142,12 @@ describe("daytona provider snapshot image behavior", () => {
       } else {
         process.env.HF_SANDBOX_AGENT_ACP_REQUEST_TIMEOUT_MS = previous;
       }
+      if (previousHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = previousHome;
+      }
+      rmSync(tempHome, { force: true, recursive: true });
     }
   });
 

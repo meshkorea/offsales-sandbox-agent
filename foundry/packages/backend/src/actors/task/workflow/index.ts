@@ -76,6 +76,7 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
   "task.command.provision": async (loopCtx, msg) => {
     const body = msg.body;
     await loopCtx.removed("init-failed", "step");
+    await loopCtx.removed("init-failed-v2", "step");
     try {
       await loopCtx.step("init-ensure-name", async () => initEnsureNameActivity(loopCtx));
       await loopCtx.step("init-assert-name", async () => initAssertNameActivity(loopCtx));
@@ -107,7 +108,7 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
       await loopCtx.step("init-complete", async () => initCompleteActivity(loopCtx, body, sandbox, session));
       await msg.complete({ ok: true });
     } catch (error) {
-      await loopCtx.step("init-failed-v2", async () => initFailedActivity(loopCtx, error));
+      await loopCtx.step("init-failed-v3", async () => initFailedActivity(loopCtx, error));
       await msg.complete({
         ok: false,
         error: resolveErrorMessage(error),

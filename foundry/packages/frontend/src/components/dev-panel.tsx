@@ -2,7 +2,9 @@ import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useStyletron } from "baseui";
 import { useFoundryTokens } from "../app/theme";
 import { isMockFrontendClient } from "../lib/env";
+import { interestManager } from "../lib/interest";
 import type { FoundryOrganization, TaskWorkbenchSnapshot, WorkbenchTask } from "@sandbox-agent/foundry-shared";
+import type { DebugInterestTopic } from "@sandbox-agent/foundry-client";
 
 interface DevPanelProps {
   workspaceId: string;
@@ -15,7 +17,23 @@ interface TopicInfo {
   key: string;
   listenerCount: number;
   hasConnection: boolean;
+  status: "loading" | "connected" | "error";
   lastRefresh: number | null;
+}
+
+function topicLabel(topic: DebugInterestTopic): string {
+  switch (topic.topicKey) {
+    case "app":
+      return "App";
+    case "workspace":
+      return "Workspace";
+    case "task":
+      return "Task";
+    case "session":
+      return "Session";
+    case "sandboxProcesses":
+      return "Sandbox";
+  }
 }
 
 function timeAgo(ts: number | null): string {
@@ -37,8 +55,11 @@ function taskStatusLabel(task: WorkbenchTask): string {
 
 function statusColor(status: string, t: ReturnType<typeof useFoundryTokens>): string {
   switch (status) {
+    case "connected":
     case "running":
       return t.statusSuccess;
+    case "loading":
+      return t.statusWarning;
     case "archived":
       return t.textMuted;
     case "error":
@@ -88,33 +109,15 @@ export const DevPanel = memo(function DevPanel({ workspaceId, snapshot, organiza
   }, []);
 
   const topics = useMemo((): TopicInfo[] => {
-    const items: TopicInfo[] = [];
-
-    // Workbench subscription topic
-    items.push({
-      label: "Workbench",
-      key: `ws:${workspaceId}`,
-      listenerCount: 1,
-      hasConnection: true,
-      lastRefresh: now,
-    });
-
-    // Per-task tab subscriptions
-    for (const task of snapshot.tasks ?? []) {
-      if (task.status === "archived") continue;
-      for (const tab of task.tabs ?? []) {
-        items.push({
-          label: `Tab/${task.title?.slice(0, 16) || task.id.slice(0, 8)}/${tab.sessionName.slice(0, 10)}`,
-          key: `${workspaceId}:${task.id}:${tab.id}`,
-          listenerCount: 1,
-          hasConnection: tab.status === "running",
-          lastRefresh: tab.status === "running" ? now : null,
-        });
-      }
-    }
-
-    return items;
-  }, [workspaceId, snapshot, now]);
+    return interestManager.listDebugTopics().map((topic) => ({
+      label: topicLabel(topic),
+      key: topic.cacheKey,
+      listenerCount: topic.listenerCount,
+      hasConnection: topic.status === "connected",
+      status: topic.status,
+      lastRefresh: topic.lastRefreshAt,
+    }));
+  }, [now]);
 
   const tasks = snapshot.tasks ?? [];
   const repos = snapshot.repos ?? [];
@@ -199,6 +202,7 @@ export const DevPanel = memo(function DevPanel({ workspaceId, snapshot, organiza
               <span className={css({ fontSize: "10px", color: t.textPrimary, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" })}>
                 {topic.label}
               </span>
+              <span className={`${mono} ${css({ color: statusColor(topic.status, t) })}`}>{topic.status}</span>
               <span className={`${mono} ${css({ color: t.textMuted })}`}>{topic.key.length > 24 ? `...${topic.key.slice(-20)}` : topic.key}</span>
               <span className={`${mono} ${css({ color: t.textTertiary })}`}>{timeAgo(topic.lastRefresh)}</span>
             </div>

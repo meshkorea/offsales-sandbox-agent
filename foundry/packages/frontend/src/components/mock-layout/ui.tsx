@@ -118,10 +118,21 @@ export const UnreadDot = memo(function UnreadDot() {
   );
 });
 
-export const TaskIndicator = memo(function TaskIndicator({ isRunning, hasUnread, isDraft }: { isRunning: boolean; hasUnread: boolean; isDraft: boolean }) {
+export const TaskIndicator = memo(function TaskIndicator({
+  isRunning,
+  isProvisioning,
+  hasUnread,
+  isDraft,
+}: {
+  isRunning: boolean;
+  isProvisioning: boolean;
+  hasUnread: boolean;
+  isDraft: boolean;
+}) {
   const t = useFoundryTokens();
 
   if (isRunning) return <SpinnerDot size={8} />;
+  if (isProvisioning) return <SpinnerDot size={8} />;
   if (hasUnread) return <UnreadDot />;
   if (isDraft) return <GitPullRequestDraft size={12} color={t.textSecondary} />;
   return <GitPullRequest size={12} color={t.statusSuccess} />;
@@ -174,7 +185,7 @@ export const AgentIcon = memo(function AgentIcon({ agent, size = 14 }: { agent: 
 });
 
 export const TabAvatar = memo(function TabAvatar({ tab }: { tab: AgentTab }) {
-  if (tab.status === "running") return <SpinnerDot size={8} />;
+  if (tab.status === "running" || tab.status === "pending_provision" || tab.status === "pending_session_create") return <SpinnerDot size={8} />;
   if (tab.unread) return <UnreadDot />;
   return <AgentIcon agent={tab.agent} size={13} />;
 });

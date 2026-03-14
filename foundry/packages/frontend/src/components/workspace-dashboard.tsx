@@ -99,7 +99,8 @@ const AGENT_OPTIONS: SelectItem[] = [
 
 function statusKind(status: WorkbenchTaskStatus): StatusTagKind {
   if (status === "running") return "positive";
-  if (status === "new") return "warning";
+  if (status === "error") return "negative";
+  if (status === "new" || String(status).startsWith("init_")) return "warning";
   return "neutral";
 }
 
@@ -497,6 +498,10 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
         }
       : null,
   );
+  const selectedSessionSummary = useMemo(() => sessionRows.find((session) => session.id === resolvedSessionId) ?? null, [resolvedSessionId, sessionRows]);
+  const isPendingProvision = selectedSessionSummary?.status === "pending_provision";
+  const isPendingSessionCreate = selectedSessionSummary?.status === "pending_session_create";
+  const isSessionError = selectedSessionSummary?.status === "error";
   const canStartSession = Boolean(selectedForSession && activeSandbox?.sandboxId);
 
   const startSessionFromTask = async (): Promise<{ id: string; status: "running" | "idle" | "error" }> => {
@@ -1363,19 +1368,47 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
                       >
                         {resolvedSessionId && sessionState.status === "loading" ? <Skeleton rows={2} height="90px" /> : null}
 
+                        {selectedSessionSummary && (isPendingProvision || isPendingSessionCreate) ? (
+                          <div
+                            className={css({
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: theme.sizing.scale300,
+                              padding: theme.sizing.scale500,
+                              border: `1px solid ${theme.colors.borderOpaque}`,
+                              backgroundColor: theme.colors.backgroundSecondary,
+                              marginBottom: theme.sizing.scale400,
+                            })}
+                          >
+                            <LabelSmall marginTop="0" marginBottom="0">
+                              {isPendingProvision ? "Provisioning sandbox..." : "Creating session..."}
+                            </LabelSmall>
+                            <Skeleton rows={1} height="32px" />
+                            <ParagraphSmall marginTop="0" marginBottom="0" color="contentSecondary">
+                              {selectedForSession?.statusMessage ?? (isPendingProvision ? "The task is still provisioning." : "The session is being created.")}
+                            </ParagraphSmall>
+                          </div>
+                        ) : null}
+
                         {transcript.length === 0 && !(resolvedSessionId && sessionState.status === "loading") ? (
                           <EmptyState testId="session-transcript-empty">
                             {selectedForSession.runtimeStatus === "error" && selectedForSession.statusMessage
                               ? `Session failed: ${selectedForSession.statusMessage}`
-                              : !activeSandbox?.sandboxId
-                                ? selectedForSession.statusMessage
-                                  ? `Sandbox unavailable: ${selectedForSession.statusMessage}`
-                                  : "This task is still provisioning its sandbox."
-                                : staleSessionId
-                                  ? `Session ${staleSessionId} is unavailable. Start a new session to continue.`
-                                  : resolvedSessionId
-                                    ? "No transcript events yet. Send a prompt to start this session."
-                                    : "No active session for this task."}
+                              : isPendingProvision
+                                ? (selectedForSession.statusMessage ?? "Provisioning sandbox...")
+                                : isPendingSessionCreate
+                                  ? "Creating session..."
+                                  : isSessionError
+                                    ? (selectedSessionSummary?.errorMessage ?? "Session failed to start.")
+                                    : !activeSandbox?.sandboxId
+                                      ? selectedForSession.statusMessage
+                                        ? `Sandbox unavailable: ${selectedForSession.statusMessage}`
+                                        : "This task is still provisioning its sandbox."
+                                      : staleSessionId
+                                        ? `Session ${staleSessionId} is unavailable. Start a new session to continue.`
+                                        : resolvedSessionId
+                                          ? "No transcript events yet. Send a prompt to start this session."
+                                          : "No active session for this task."}
                           </EmptyState>
                         ) : null}
 
@@ -1442,7 +1475,7 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
                         onChange={(event) => setDraft(event.target.value)}
                         placeholder="Send a follow-up prompt to this session"
                         rows={5}
-                        disabled={!activeSandbox?.sandboxId}
+                        disabled={!activeSandbox?.sandboxId || isPendingProvision || isPendingSessionCreate || isSessionError}
                         overrides={textareaTestIdOverrides("task-session-prompt")}
                       />
                       <div
@@ -1460,7 +1493,14 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
                             void sendPrompt.mutateAsync(prompt);
                           }}
                           disabled={
-                            sendPrompt.isPending || createSession.isPending || !selectedForSession || !activeSandbox?.sandboxId || draft.trim().length === 0
+                            sendPrompt.isPending ||
+                            createSession.isPending ||
+                            !selectedForSession ||
+                            !activeSandbox?.sandboxId ||
+                            isPendingProvision ||
+                            isPendingSessionCreate ||
+                            isSessionError ||
+                            draft.trim().length === 0
                           }
                         >
                           <span
@@ -1837,7 +1877,7 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
               }}
               data-testid="task-create-submit"
             >
-              Create Task
+              {createTask.isPending ? "Creating..." : "Create Task"}
             </Button>
           </ModalFooter>
         </Modal>

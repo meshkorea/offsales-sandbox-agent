@@ -54,7 +54,7 @@ export interface SandboxSessionRecord {
   lastConnectionId: string;
   createdAt: number;
   destroyedAt?: number;
-  status?: "running" | "idle" | "error";
+  status?: "pending_provision" | "pending_session_create" | "ready" | "running" | "idle" | "error";
 }
 
 export interface SandboxSessionEventRecord {

@@ -7,7 +7,6 @@ import { getOrCreateTaskStatusSync, getOrCreateProject, getOrCreateWorkspace, ge
 import { resolveWorkspaceGithubAuth } from "../../services/github-auth.js";
 import { task as taskTable, taskRuntime, taskWorkbenchSessions } from "./db/schema.js";
 import { getCurrentRecord } from "./workflow/common.js";
-import { taskWorkflowQueueName } from "./workflow/queue.js";
 
 const STATUS_SYNC_INTERVAL_MS = 1_000;
 
@@ -599,7 +598,13 @@ export async function ensureWorkbenchSeeded(c: any): Promise<any> {
 function buildSessionSummary(record: any, meta: any): any {
   const derivedSandboxSessionId = meta.sandboxSessionId ?? (meta.status === "pending_provision" && record.activeSessionId ? record.activeSessionId : null);
   const sessionStatus =
-    meta.status === "ready" && derivedSandboxSessionId ? activeSessionStatus(record, derivedSandboxSessionId) : meta.status === "error" ? "error" : "idle";
+    meta.status === "pending_provision" || meta.status === "pending_session_create"
+      ? meta.status
+      : meta.status === "ready" && derivedSandboxSessionId
+        ? activeSessionStatus(record, derivedSandboxSessionId)
+        : meta.status === "error"
+          ? "error"
+          : "ready";
   let thinkingSinceMs = meta.thinkingSinceMs ?? null;
   let unread = Boolean(meta.unread);
   if (thinkingSinceMs && sessionStatus !== "running") {
@@ -617,6 +622,7 @@ function buildSessionSummary(record: any, meta: any): any {
     thinkingSinceMs: sessionStatus === "running" ? thinkingSinceMs : null,
     unread,
     created: Boolean(meta.created || derivedSandboxSessionId),
+    errorMessage: meta.errorMessage ?? null,
   };
 }
 
@@ -633,6 +639,7 @@ function buildSessionDetailFromMeta(record: any, meta: any): any {
     thinkingSinceMs: summary.thinkingSinceMs,
     unread: summary.unread,
     created: summary.created,
+    errorMessage: summary.errorMessage,
     draft: {
       text: meta.draftText ?? "",
       attachments: Array.isArray(meta.draftAttachments) ? meta.draftAttachments : [],
@@ -655,7 +662,7 @@ export async function buildTaskSummary(c: any): Promise<any> {
     id: c.state.taskId,
     repoId: c.state.repoId,
     title: record.title ?? "New Task",
-    status: record.status === "archived" ? "archived" : record.status === "running" ? "running" : record.status === "idle" ? "idle" : "new",
+    status: record.status ?? "new",
     repoName: repoLabelFromRemote(c.state.repoRemote),
     updatedAtMs: record.updatedAt,
     branch: record.branchName,
@@ -837,14 +844,6 @@ export async function renameWorkbenchBranch(c: any, value: string): Promise<void
 
 export async function createWorkbenchSession(c: any, model?: string): Promise<{ tabId: string }> {
   let record = await ensureWorkbenchSeeded(c);
-  if (!record.activeSandboxId) {
-    // Fire-and-forget: enqueue provisioning without waiting to avoid self-deadlock
-    // (this handler already runs inside the task workflow loop, so wait:true would deadlock).
-    const providerId = record.providerId ?? c.state.providerId ?? getActorRuntimeContext().providers.defaultProviderId();
-    await selfTask(c).send(taskWorkflowQueueName("task.command.provision"), { providerId }, { wait: false });
-    throw new Error("sandbox is provisioning — retry shortly");
-  }
-
   if (record.activeSessionId) {
     const existingSessions = await listSessionMetaRows(c);
     if (existingSessions.length === 0) {
@@ -1216,9 +1215,16 @@ export async function publishWorkbenchPr(c: any): Promise<void> {
   if (!record.branchName) {
     throw new Error("cannot publish PR without a branch");
   }
+  let repoLocalPath = c.state.repoLocalPath;
+  if (!repoLocalPath) {
+    const project = await getOrCreateProject(c, c.state.workspaceId, c.state.repoId, c.state.repoRemote);
+    const result = await project.ensure({ remoteUrl: c.state.repoRemote });
+    repoLocalPath = result.localPath;
+    c.state.repoLocalPath = repoLocalPath;
+  }
   const { driver } = getActorRuntimeContext();
   const auth = await resolveWorkspaceGithubAuth(c, c.state.workspaceId);
-  const created = await driver.github.createPr(c.state.repoLocalPath, record.branchName, record.title ?? c.state.task, undefined, {
+  const created = await driver.github.createPr(repoLocalPath, record.branchName, record.title ?? c.state.task, undefined, {
     githubToken: auth?.githubToken ?? null,
   });
   await c.db

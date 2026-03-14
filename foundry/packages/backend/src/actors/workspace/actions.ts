@@ -370,7 +370,6 @@ async function createTaskMutation(c: any, input: CreateTaskInput): Promise<TaskR
     .run();
 
   const project = await getOrCreateProject(c, c.state.workspaceId, repoId, remoteUrl);
-  await project.ensure({ remoteUrl });
 
   const created = await project.createTask({
     task: input.task,
@@ -457,7 +456,7 @@ export async function runWorkspaceWorkflow(ctx: any): Promise<void> {
     if (msg.name === "workspace.command.createTask") {
       const result = await loopCtx.step({
         name: "workspace-create-task",
-        timeout: 12 * 60_000,
+        timeout: 60_000,
         run: async () => createTaskMutation(loopCtx, msg.body as CreateTaskInput),
       });
       await msg.complete(result);
@@ -547,7 +546,7 @@ export const workspaceActions = {
     return expectQueueResponse<TaskRecord>(
       await self.send(workspaceWorkflowQueueName("workspace.command.createTask"), input, {
         wait: true,
-        timeout: 12 * 60_000,
+        timeout: 60_000,
       }),
     );
   },

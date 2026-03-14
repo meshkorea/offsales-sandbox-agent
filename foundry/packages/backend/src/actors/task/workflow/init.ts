@@ -178,8 +178,16 @@ export async function initEnsureNameActivity(loopCtx: any): Promise<void> {
 
   const { driver } = getActorRuntimeContext();
   const auth = await resolveWorkspaceGithubAuth(loopCtx, loopCtx.state.workspaceId);
+  let repoLocalPath = loopCtx.state.repoLocalPath;
+  if (!repoLocalPath) {
+    const project = await getOrCreateProject(loopCtx, loopCtx.state.workspaceId, loopCtx.state.repoId, loopCtx.state.repoRemote);
+    const result = await project.ensure({ remoteUrl: loopCtx.state.repoRemote });
+    repoLocalPath = result.localPath;
+    loopCtx.state.repoLocalPath = repoLocalPath;
+  }
+
   try {
-    await driver.git.fetch(loopCtx.state.repoLocalPath, { githubToken: auth?.githubToken ?? null });
+    await driver.git.fetch(repoLocalPath, { githubToken: auth?.githubToken ?? null });
   } catch (error) {
     logActorWarning("task.init", "fetch before naming failed", {
       workspaceId: loopCtx.state.workspaceId,
@@ -188,7 +196,7 @@ export async function initEnsureNameActivity(loopCtx: any): Promise<void> {
       error: resolveErrorMessage(error),
     });
   }
-  const remoteBranches = (await driver.git.listRemoteBranches(loopCtx.state.repoLocalPath, { githubToken: auth?.githubToken ?? null })).map(
+  const remoteBranches = (await driver.git.listRemoteBranches(repoLocalPath, { githubToken: auth?.githubToken ?? null })).map(
     (branch: any) => branch.branchName,
   );
 
