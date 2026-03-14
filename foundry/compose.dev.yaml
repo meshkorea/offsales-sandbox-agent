@@ -7,6 +7,9 @@ services:
       dockerfile: foundry/docker/backend.dev.Dockerfile
     image: foundry-backend-dev
     working_dir: /app
+    env_file:
+      - path: .env
+        required: false
     environment:
       HF_BACKEND_HOST: "0.0.0.0"
       HF_BACKEND_PORT: "7741"

@@ -6,6 +6,7 @@ import { getOrCreateTaskStatusSync, getOrCreateProject, getOrCreateWorkspace, ge
 import { resolveWorkspaceGithubAuth } from "../../services/github-auth.js";
 import { task as taskTable, taskRuntime, taskWorkbenchSessions } from "./db/schema.js";
 import { getCurrentRecord } from "./workflow/common.js";
+import { taskWorkflowQueueName } from "./workflow/queue.js";
 
 const STATUS_SYNC_INTERVAL_MS = 1_000;
 
@@ -551,9 +552,11 @@ export async function renameWorkbenchBranch(c: any, value: string): Promise<void
 export async function createWorkbenchSession(c: any, model?: string): Promise<{ tabId: string }> {
   let record = await ensureWorkbenchSeeded(c);
   if (!record.activeSandboxId) {
+    // Fire-and-forget: enqueue provisioning without waiting to avoid self-deadlock
+    // (this handler already runs inside the task workflow loop, so wait:true would deadlock).
     const providerId = record.providerId ?? c.state.providerId ?? getActorRuntimeContext().providers.defaultProviderId();
-    await selfTask(c).provision({ providerId });
-    record = await ensureWorkbenchSeeded(c);
+    await selfTask(c).send(taskWorkflowQueueName("task.command.provision"), { providerId }, { wait: false });
+    throw new Error("sandbox is provisioning — retry shortly");
   }
 
   if (record.activeSessionId) {

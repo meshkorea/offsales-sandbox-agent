@@ -16,6 +16,7 @@ import { TabStrip } from "./mock-layout/tab-strip";
 import { TerminalPane } from "./mock-layout/terminal-pane";
 import { TranscriptHeader } from "./mock-layout/transcript-header";
 import { PROMPT_TEXTAREA_MAX_HEIGHT, PROMPT_TEXTAREA_MIN_HEIGHT, SPanel, ScrollBody, Shell } from "./mock-layout/ui";
+import { DevPanel, useDevPanel } from "./dev-panel";
 import {
   buildDisplayMessages,
   diffPath,
@@ -910,6 +911,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
   );
   const tasks = viewModel.tasks ?? [];
   const rawProjects = viewModel.projects ?? [];
+  const showDevPanel = useDevPanel();
   const appSnapshot = useMockAppSnapshot();
   const activeOrg = activeMockOrganization(appSnapshot);
   const navigateToUsage = useCallback(() => {
@@ -1610,6 +1612,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
             </div>
           </div>
         </div>
+        {showDevPanel && <DevPanel workspaceId={workspaceId} snapshot={viewModel} />}
       </Shell>
     </>
   );

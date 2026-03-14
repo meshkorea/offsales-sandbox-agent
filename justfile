@@ -141,9 +141,23 @@ foundry-frontend-dev host='127.0.0.1' port='4173' backend='http://127.0.0.1:7741
 	VITE_HF_BACKEND_ENDPOINT="{{backend}}" pnpm --filter @sandbox-agent/foundry-frontend dev -- --host {{host}} --port {{port}}
 
 [group('foundry')]
-foundry-dev-mock host='127.0.0.1' port='4173':
+foundry-dev-mock host='127.0.0.1' port='4174':
 	pnpm install
 	FOUNDRY_FRONTEND_CLIENT_MODE=mock pnpm --filter @sandbox-agent/foundry-frontend dev -- --host {{host}} --port {{port}}
+
+[group('foundry')]
+foundry-mock:
+	pnpm install
+	mkdir -p foundry/.foundry/logs
+	docker compose -f foundry/compose.mock.yaml up --build --force-recreate -d
+
+[group('foundry')]
+foundry-mock-down:
+	docker compose -f foundry/compose.mock.yaml down
+
+[group('foundry')]
+foundry-mock-logs:
+	docker compose -f foundry/compose.mock.yaml logs -f --tail=200
 
 [group('foundry')]
 foundry-dev-turbo:
