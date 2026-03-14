@@ -1,8 +1,9 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "@tanstack/react-router";
 import { useStyletron } from "baseui";
 import { LabelSmall, LabelXSmall } from "baseui/typography";
+import { Select, type Value } from "baseui/select";
 import {
   ChevronDown,
   ChevronRight,
@@ -25,6 +26,17 @@ import { useFoundryTokens } from "../../app/theme";
 import type { FoundryTokens } from "../../styles/tokens";
 
 const PROJECT_COLORS = ["#6366f1", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316"];
+
+/** Strip the org prefix (e.g. "rivet-dev/") when all repos share the same org. */
+function stripCommonOrgPrefix(label: string, repos: Array<{ label: string }>): string {
+  const slashIdx = label.indexOf("/");
+  if (slashIdx < 0) return label;
+  const prefix = label.slice(0, slashIdx + 1);
+  if (repos.every((r) => r.label.startsWith(prefix))) {
+    return label.slice(slashIdx + 1);
+  }
+  return label;
+}
 
 function projectInitial(label: string): string {
   const parts = label.split("/");
@@ -61,7 +73,7 @@ export const Sidebar = memo(function Sidebar({
   selectedNewTaskRepoId: string;
   activeId: string;
   onSelect: (id: string) => void;
-  onCreate: () => void;
+  onCreate: (repoId?: string) => void;
   onSelectNewTaskRepo: (repoId: string) => void;
   onMarkUnread: (id: string) => void;
   onRenameTask: (id: string) => void;
@@ -137,19 +149,8 @@ export const Sidebar = memo(function Sidebar({
     };
   }, [drag, onReorderProjects, onReorderTasks]);
 
-  const [createMenuOpen, setCreateMenuOpen] = useState(false);
-  const createMenuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!createMenuOpen) return;
-    function handleClick(event: MouseEvent) {
-      if (createMenuRef.current && !createMenuRef.current.contains(event.target as Node)) {
-        setCreateMenuOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [createMenuOpen]);
+  const [createSelectOpen, setCreateSelectOpen] = useState(false);
+  const selectOptions = useMemo(() => newTaskRepos.map((repo) => ({ id: repo.id, label: stripCommonOrgPrefix(repo.label, newTaskRepos) })), [newTaskRepos]);
 
   return (
     <SPanel>
@@ -232,7 +233,99 @@ export const Sidebar = memo(function Sidebar({
             <PanelLeft size={14} />
           </div>
         ) : null}
-        <div ref={createMenuRef} className={css({ position: "relative", flexShrink: 0 })}>
+        {createSelectOpen ? (
+          <div className={css({ flex: 1, minWidth: 0 })}>
+            <Select
+              options={selectOptions}
+              value={[]}
+              placeholder="Search repos..."
+              type="search"
+              openOnClick
+              autoFocus
+              onChange={({ value }: { value: Value }) => {
+                const selected = value[0];
+                if (selected) {
+                  onSelectNewTaskRepo(selected.id as string);
+                  setCreateSelectOpen(false);
+                  onCreate(selected.id as string);
+                }
+              }}
+              onClose={() => setCreateSelectOpen(false)}
+              overrides={{
+                Root: {
+                  style: {
+                    width: "100%",
+                  },
+                },
+                ControlContainer: {
+                  style: {
+                    backgroundColor: t.surfaceTertiary,
+                    borderTopColor: t.borderSubtle,
+                    borderBottomColor: t.borderSubtle,
+                    borderLeftColor: t.borderSubtle,
+                    borderRightColor: t.borderSubtle,
+                    borderTopWidth: "1px",
+                    borderBottomWidth: "1px",
+                    borderLeftWidth: "1px",
+                    borderRightWidth: "1px",
+                    borderTopLeftRadius: "6px",
+                    borderTopRightRadius: "6px",
+                    borderBottomLeftRadius: "6px",
+                    borderBottomRightRadius: "6px",
+                    minHeight: "28px",
+                    paddingLeft: "8px",
+                  },
+                },
+                ValueContainer: {
+                  style: {
+                    paddingTop: "0px",
+                    paddingBottom: "0px",
+                  },
+                },
+                Input: {
+                  style: {
+                    fontSize: "12px",
+                    color: t.textPrimary,
+                  },
+                },
+                Placeholder: {
+                  style: {
+                    fontSize: "12px",
+                    color: t.textMuted,
+                  },
+                },
+                Dropdown: {
+                  style: {
+                    backgroundColor: t.surfaceElevated,
+                    borderTopColor: t.borderDefault,
+                    borderBottomColor: t.borderDefault,
+                    borderLeftColor: t.borderDefault,
+                    borderRightColor: t.borderDefault,
+                    maxHeight: "min(320px, 50vh)",
+                  },
+                },
+                DropdownListItem: {
+                  style: {
+                    fontSize: "12px",
+                    paddingTop: "6px",
+                    paddingBottom: "6px",
+                  },
+                },
+                IconsContainer: {
+                  style: {
+                    paddingRight: "4px",
+                  },
+                },
+                SearchIconContainer: {
+                  style: {
+                    paddingLeft: "0px",
+                    paddingRight: "4px",
+                  },
+                },
+              }}
+            />
+          </div>
+        ) : (
           <div
             role="button"
             tabIndex={0}
@@ -241,9 +334,9 @@ export const Sidebar = memo(function Sidebar({
               if (newTaskRepos.length === 0) return;
               if (newTaskRepos.length === 1) {
                 onSelectNewTaskRepo(newTaskRepos[0]!.id);
-                onCreate();
+                onCreate(newTaskRepos[0]!.id);
               } else {
-                setCreateMenuOpen((prev) => !prev);
+                setCreateSelectOpen(true);
               }
             }}
             onKeyDown={(event) => {
@@ -251,9 +344,9 @@ export const Sidebar = memo(function Sidebar({
               if (event.key === "Enter" || event.key === " ") {
                 if (newTaskRepos.length === 1) {
                   onSelectNewTaskRepo(newTaskRepos[0]!.id);
-                  onCreate();
+                  onCreate(newTaskRepos[0]!.id);
                 } else {
-                  setCreateMenuOpen((prev) => !prev);
+                  setCreateSelectOpen(true);
                 }
               }
             }}
@@ -275,80 +368,7 @@ export const Sidebar = memo(function Sidebar({
           >
             <Plus size={14} style={{ display: "block" }} />
           </div>
-          {createMenuOpen && newTaskRepos.length > 1 ? (
-            <div
-              className={css({
-                position: "absolute",
-                top: "100%",
-                right: 0,
-                marginTop: "4px",
-                zIndex: 9999,
-                minWidth: "200px",
-                borderRadius: "10px",
-                border: `1px solid ${t.borderDefault}`,
-                backgroundColor: t.surfaceElevated,
-                boxShadow: `${t.shadow}, 0 0 0 1px ${t.interactiveSubtle}`,
-                padding: "4px",
-                display: "flex",
-                flexDirection: "column",
-                gap: "2px",
-                maxHeight: "240px",
-                overflowY: "auto",
-              })}
-            >
-              {newTaskRepos.map((repo) => (
-                <button
-                  key={repo.id}
-                  type="button"
-                  onClick={() => {
-                    onSelectNewTaskRepo(repo.id);
-                    setCreateMenuOpen(false);
-                    onCreate();
-                  }}
-                  className={css({
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px",
-                    width: "100%",
-                    padding: "8px 12px",
-                    borderRadius: "6px",
-                    border: "none",
-                    background: "transparent",
-                    color: t.textSecondary,
-                    cursor: "pointer",
-                    fontSize: "13px",
-                    fontWeight: 400,
-                    textAlign: "left",
-                    transition: "background 200ms ease, color 200ms ease",
-                    ":hover": {
-                      backgroundColor: t.interactiveHover,
-                      color: t.textPrimary,
-                    },
-                  })}
-                >
-                  <span
-                    className={css({
-                      width: "18px",
-                      height: "18px",
-                      borderRadius: "4px",
-                      background: `linear-gradient(135deg, ${projectIconColor(repo.label)}, ${projectIconColor(repo.label + "x")})`,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: "9px",
-                      fontWeight: 700,
-                      color: t.textOnAccent,
-                      flexShrink: 0,
-                    })}
-                  >
-                    {projectInitial(repo.label)}
-                  </span>
-                  <span className={css({ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" })}>{repo.label}</span>
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
+        )}
       </PanelHeaderBar>
       <ScrollBody>
         <div className={css({ padding: "8px", display: "flex", flexDirection: "column", gap: "4px" })}>
@@ -458,7 +478,7 @@ export const Sidebar = memo(function Sidebar({
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {project.label}
+                      {stripCommonOrgPrefix(project.label, projects)}
                     </LabelSmall>
                   </div>
                   <div className={css({ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 })}>
@@ -468,7 +488,7 @@ export const Sidebar = memo(function Sidebar({
                         e.stopPropagation();
                         setHoveredProjectId(null);
                         onSelectNewTaskRepo(project.id);
-                        onCreate();
+                        onCreate(project.id);
                       }}
                       onMouseDown={(e) => e.stopPropagation()}
                       className={css({

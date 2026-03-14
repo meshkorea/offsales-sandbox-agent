@@ -636,6 +636,12 @@ export async function syncGithubOrganizationRepos(c: any, input: { sessionId: st
       installationStatus,
       lastSyncLabel: repositories.length > 0 ? "Synced just now" : "No repositories available",
     });
+
+    // Broadcast updated app snapshot so connected clients see the new repos
+    c.broadcast("appUpdated", {
+      type: "appUpdated",
+      snapshot: await buildAppSnapshot(c, input.sessionId),
+    });
   } catch (error) {
     const installationStatus =
       error instanceof GitHubAppError && (error.status === 403 || error.status === 404)
@@ -644,6 +650,12 @@ export async function syncGithubOrganizationRepos(c: any, input: { sessionId: st
     await workspace.markOrganizationSyncFailed({
       message: error instanceof Error ? error.message : "GitHub import failed",
       installationStatus,
+    });
+
+    // Broadcast sync failure so the client updates status
+    c.broadcast("appUpdated", {
+      type: "appUpdated",
+      snapshot: await buildAppSnapshot(c, input.sessionId),
     });
   }
 }

@@ -1,7 +1,13 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useStyletron } from "baseui";
-import { createErrorContext, type WorkbenchSessionSummary, type WorkbenchTaskDetail, type WorkbenchTaskSummary } from "@sandbox-agent/foundry-shared";
+import {
+  createErrorContext,
+  type TaskWorkbenchSnapshot,
+  type WorkbenchSessionSummary,
+  type WorkbenchTaskDetail,
+  type WorkbenchTaskSummary,
+} from "@sandbox-agent/foundry-shared";
 import { useInterest } from "@sandbox-agent/foundry-client";
 
 import { PanelLeft, PanelRight } from "lucide-react";
@@ -1085,6 +1091,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
   const [leftSidebarPeeking, setLeftSidebarPeeking] = useState(false);
+  const showDevPanel = useDevPanel();
   const peekTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const startPeek = useCallback(() => {
@@ -1269,35 +1276,38 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
           },
           "failed_to_auto_create_workbench_session",
         );
-      } finally {
-        autoCreatingSessionForTaskRef.current.delete(activeTask.id);
+        // Keep the guard in the set on error to prevent retry storms.
+        // The guard is cleared when tabs appear (line above) or the task changes.
       }
     })();
   }, [activeTask, selectedSessionId, syncRouteSession, taskWorkbenchClient]);
 
-  const createTask = useCallback(() => {
-    void (async () => {
-      const repoId = selectedNewTaskRepoId;
-      if (!repoId) {
-        throw new Error("Cannot create a task without an available repo");
-      }
+  const createTask = useCallback(
+    (overrideRepoId?: string) => {
+      void (async () => {
+        const repoId = overrideRepoId || selectedNewTaskRepoId;
+        if (!repoId) {
+          throw new Error("Cannot create a task without an available repo");
+        }
 
-      const { taskId, tabId } = await taskWorkbenchClient.createTask({
-        repoId,
-        task: "New task",
-        model: "gpt-4o",
-        title: "New task",
-      });
-      await navigate({
-        to: "/workspaces/$workspaceId/tasks/$taskId",
-        params: {
-          workspaceId,
-          taskId,
-        },
-        search: { sessionId: tabId ?? undefined },
-      });
-    })();
-  }, [navigate, selectedNewTaskRepoId, workspaceId]);
+        const { taskId, tabId } = await taskWorkbenchClient.createTask({
+          repoId,
+          task: "New task",
+          model: "gpt-4o",
+          title: "New task",
+        });
+        await navigate({
+          to: "/workspaces/$workspaceId/tasks/$taskId",
+          params: {
+            workspaceId,
+            taskId,
+          },
+          search: { sessionId: tabId ?? undefined },
+        });
+      })();
+    },
+    [navigate, selectedNewTaskRepoId, workspaceId],
+  );
 
   const openDiffTab = useCallback(
     (path: string) => {
@@ -1509,7 +1519,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
               transition: sidebarTransition,
             }}
           >
-            <div style={{ minWidth: `${leftWidth}px`, flex: 1, display: "flex", flexDirection: "column" }}>
+            <div style={{ minWidth: `${leftWidth}px`, flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
               <Sidebar
                 projects={projects}
                 newTaskRepos={workspaceRepos}
@@ -1565,29 +1575,63 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
                       gap: "12px",
                     }}
                   >
-                    <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 600 }}>Create your first task</h2>
-                    <p style={{ margin: 0, opacity: 0.75 }}>
-                      {workspaceRepos.length > 0
-                        ? "Start from the sidebar to create a task on the first available repo."
-                        : "No repos are available in this workspace yet."}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={createTask}
-                      disabled={workspaceRepos.length === 0}
-                      style={{
-                        alignSelf: "center",
-                        border: 0,
-                        borderRadius: "999px",
-                        padding: "10px 18px",
-                        background: workspaceRepos.length > 0 ? t.borderMedium : t.textTertiary,
-                        color: t.textPrimary,
-                        cursor: workspaceRepos.length > 0 ? "pointer" : "not-allowed",
-                        fontWeight: 600,
-                      }}
-                    >
-                      New task
-                    </button>
+                    {activeOrg?.github.syncStatus === "syncing" || activeOrg?.github.syncStatus === "pending" ? (
+                      <>
+                        <div
+                          className={css({
+                            width: "24px",
+                            height: "24px",
+                            border: `2px solid ${t.borderSubtle}`,
+                            borderTopColor: t.textSecondary,
+                            borderRadius: "50%",
+                            animationName: {
+                              from: { transform: "rotate(0deg)" },
+                              to: { transform: "rotate(360deg)" },
+                            } as unknown as string,
+                            animationDuration: "0.8s",
+                            animationIterationCount: "infinite",
+                            animationTimingFunction: "linear",
+                            alignSelf: "center",
+                          })}
+                        />
+                        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 600 }}>Syncing with GitHub</h2>
+                        <p style={{ margin: 0, opacity: 0.75 }}>
+                          Importing repos from @{activeOrg.github.connectedAccount || "GitHub"}...
+                          {activeOrg.github.importedRepoCount > 0 && <> {activeOrg.github.importedRepoCount} repos imported so far.</>}
+                        </p>
+                      </>
+                    ) : activeOrg?.github.syncStatus === "error" ? (
+                      <>
+                        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 600, color: t.statusError }}>GitHub sync failed</h2>
+                        <p style={{ margin: 0, opacity: 0.75 }}>There was a problem syncing repos from GitHub. Check the dev panel for details.</p>
+                      </>
+                    ) : (
+                      <>
+                        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 600 }}>Create your first task</h2>
+                        <p style={{ margin: 0, opacity: 0.75 }}>
+                          {workspaceRepos.length > 0
+                            ? "Start from the sidebar to create a task on the first available repo."
+                            : "No repos are available in this workspace yet."}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => createTask()}
+                          disabled={workspaceRepos.length === 0}
+                          style={{
+                            alignSelf: "center",
+                            border: 0,
+                            borderRadius: "999px",
+                            padding: "10px 18px",
+                            background: workspaceRepos.length > 0 ? t.borderMedium : t.textTertiary,
+                            color: t.textPrimary,
+                            cursor: workspaceRepos.length > 0 ? "pointer" : "not-allowed",
+                            fontWeight: 600,
+                          }}
+                        >
+                          New task
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               </ScrollBody>
@@ -1610,6 +1654,47 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
             </div>
           </div>
         </Shell>
+        {activeOrg && (activeOrg.github.installationStatus === "install_required" || activeOrg.github.installationStatus === "reconnect_required") && (
+          <div
+            className={css({
+              position: "fixed",
+              bottom: "8px",
+              left: "8px",
+              zIndex: 99998,
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "6px 12px",
+              backgroundColor: t.surfaceElevated,
+              border: `1px solid ${t.statusError}`,
+              borderRadius: "6px",
+              boxShadow: t.shadow,
+              fontSize: "11px",
+              color: t.textPrimary,
+              maxWidth: "360px",
+            })}
+          >
+            <span
+              className={css({
+                width: "6px",
+                height: "6px",
+                borderRadius: "50%",
+                backgroundColor: t.statusError,
+                flexShrink: 0,
+              })}
+            />
+            <span>
+              GitHub App {activeOrg.github.installationStatus === "install_required" ? "not installed" : "needs reconnection"} — repo sync is unavailable
+            </span>
+          </div>
+        )}
+        {showDevPanel && (
+          <DevPanel
+            workspaceId={workspaceId}
+            snapshot={{ workspaceId, repos: workspaceRepos, projects: rawProjects, tasks } as TaskWorkbenchSnapshot}
+            organization={activeOrg}
+          />
+        )}
       </>
     );
   }
@@ -1629,7 +1714,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
             transition: sidebarTransition,
           }}
         >
-          <div style={{ minWidth: `${leftWidth}px`, flex: 1, display: "flex", flexDirection: "column" }}>
+          <div style={{ minWidth: `${leftWidth}px`, flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
             <Sidebar
               projects={projects}
               newTaskRepos={workspaceRepos}
@@ -1760,7 +1845,47 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
             </div>
           </div>
         </div>
-        {showDevPanel && <DevPanel workspaceId={workspaceId} snapshot={viewModel} />}
+        {activeOrg && (activeOrg.github.installationStatus === "install_required" || activeOrg.github.installationStatus === "reconnect_required") && (
+          <div
+            className={css({
+              position: "fixed",
+              bottom: "8px",
+              left: "8px",
+              zIndex: 99998,
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "6px 12px",
+              backgroundColor: t.surfaceElevated,
+              border: `1px solid ${t.statusError}`,
+              borderRadius: "6px",
+              boxShadow: t.shadow,
+              fontSize: "11px",
+              color: t.textPrimary,
+              maxWidth: "360px",
+            })}
+          >
+            <span
+              className={css({
+                width: "6px",
+                height: "6px",
+                borderRadius: "50%",
+                backgroundColor: t.statusError,
+                flexShrink: 0,
+              })}
+            />
+            <span>
+              GitHub App {activeOrg.github.installationStatus === "install_required" ? "not installed" : "needs reconnection"} — repo sync is unavailable
+            </span>
+          </div>
+        )}
+        {showDevPanel && (
+          <DevPanel
+            workspaceId={workspaceId}
+            snapshot={{ workspaceId, repos: workspaceRepos, projects: rawProjects, tasks } as TaskWorkbenchSnapshot}
+            organization={activeOrg}
+          />
+        )}
       </Shell>
     </>
   );

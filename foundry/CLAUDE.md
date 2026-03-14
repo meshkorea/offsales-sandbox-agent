@@ -50,6 +50,7 @@ Use `pnpm` workspaces and Turborepo.
 - `compose.dev.yaml` loads `foundry/.env` (optional) for credentials needed by the backend (GitHub OAuth, Stripe, Daytona, API keys, etc.).
 - The canonical source for these credentials is `~/misc/the-foundry.env`. If `foundry/.env` does not exist, copy it: `cp ~/misc/the-foundry.env foundry/.env`
 - `foundry/.env` is gitignored and must never be committed.
+- The backend does **not** hot reload. Bun's `--hot` flag causes the server to re-bind on a different port (e.g. 6421 instead of 6420), breaking all client connections while the container still exposes the original port. After backend code changes, restart the backend container: `just foundry-dev-down && just foundry-dev`.
 
 ## Railway Logs
 

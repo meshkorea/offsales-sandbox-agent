@@ -168,12 +168,16 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
   },
 
   "task.command.workbench.create_session": async (loopCtx, msg) => {
-    const created = await loopCtx.step({
-      name: "workbench-create-session",
-      timeout: 30_000,
-      run: async () => createWorkbenchSession(loopCtx, msg.body?.model),
-    });
-    await msg.complete(created);
+    try {
+      const created = await loopCtx.step({
+        name: "workbench-create-session",
+        timeout: 30_000,
+        run: async () => createWorkbenchSession(loopCtx, msg.body?.model),
+      });
+      await msg.complete(created);
+    } catch (error) {
+      await msg.complete({ error: resolveErrorMessage(error) });
+    }
   },
 
   "task.command.workbench.ensure_session": async (loopCtx, msg) => {

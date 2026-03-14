@@ -1,304 +1,379 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouterState } from "@tanstack/react-router";
-import { Bug, RefreshCw, Wifi } from "lucide-react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { useStyletron } from "baseui";
 import { useFoundryTokens } from "../app/theme";
 import { isMockFrontendClient } from "../lib/env";
-import { activeMockOrganization, activeMockUser, eligibleOrganizations, useMockAppClient, useMockAppSnapshot } from "../lib/mock-app";
+import type { FoundryOrganization, TaskWorkbenchSnapshot, WorkbenchTask } from "@sandbox-agent/foundry-shared";
 
-const DEV_PANEL_STORAGE_KEY = "sandbox-agent-foundry:dev-panel-visible";
+interface DevPanelProps {
+  workspaceId: string;
+  snapshot: TaskWorkbenchSnapshot;
+  organization?: FoundryOrganization | null;
+}
 
-function readStoredVisibility(): boolean {
-  if (typeof window === "undefined") {
-    return true;
-  }
-  try {
-    const stored = window.localStorage.getItem(DEV_PANEL_STORAGE_KEY);
-    return stored == null ? true : stored === "true";
-  } catch {
-    return true;
+interface TopicInfo {
+  label: string;
+  key: string;
+  listenerCount: number;
+  hasConnection: boolean;
+  lastRefresh: number | null;
+}
+
+function timeAgo(ts: number | null): string {
+  if (!ts) return "never";
+  const seconds = Math.floor((Date.now() - ts) / 1000);
+  if (seconds < 5) return "now";
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  return `${Math.floor(minutes / 60)}h`;
+}
+
+function taskStatusLabel(task: WorkbenchTask): string {
+  if (task.status === "archived") return "archived";
+  const hasRunning = task.tabs?.some((tab) => tab.status === "running");
+  if (hasRunning) return "running";
+  return task.status ?? "idle";
+}
+
+function statusColor(status: string, t: ReturnType<typeof useFoundryTokens>): string {
+  switch (status) {
+    case "running":
+      return t.statusSuccess;
+    case "archived":
+      return t.textMuted;
+    case "error":
+    case "failed":
+      return t.statusError;
+    default:
+      return t.textTertiary;
   }
 }
 
-function writeStoredVisibility(value: boolean): void {
-  if (typeof window === "undefined") {
-    return;
+function syncStatusColor(status: string, t: ReturnType<typeof useFoundryTokens>): string {
+  switch (status) {
+    case "synced":
+      return t.statusSuccess;
+    case "syncing":
+    case "pending":
+      return t.statusWarning;
+    case "error":
+      return t.statusError;
+    default:
+      return t.textMuted;
   }
-  try {
-    window.localStorage.setItem(DEV_PANEL_STORAGE_KEY, String(value));
-  } catch {
-    // ignore
+}
+
+function installStatusColor(status: string, t: ReturnType<typeof useFoundryTokens>): string {
+  switch (status) {
+    case "connected":
+      return t.statusSuccess;
+    case "install_required":
+      return t.statusWarning;
+    case "reconnect_required":
+      return t.statusError;
+    default:
+      return t.textMuted;
   }
 }
 
-function sectionStyle(borderColor: string, background: string) {
-  return {
-    display: "grid",
-    gap: "10px",
-    padding: "12px",
-    borderRadius: "12px",
-    border: `1px solid ${borderColor}`,
-    background,
-  } as const;
-}
-
-function labelStyle(color: string) {
-  return {
-    fontSize: "11px",
-    fontWeight: 600,
-    letterSpacing: "0.04em",
-    textTransform: "uppercase" as const,
-    color,
-  };
-}
-
-function mergedRouteParams(matches: Array<{ params: Record<string, unknown> }>): Record<string, string> {
-  return matches.reduce<Record<string, string>>((acc, match) => {
-    for (const [key, value] of Object.entries(match.params)) {
-      if (typeof value === "string" && value.length > 0) {
-        acc[key] = value;
-      }
-    }
-    return acc;
-  }, {});
-}
-
-export function DevPanel() {
-  if (!import.meta.env.DEV) {
-    return null;
-  }
-
-  const client = useMockAppClient();
-  const snapshot = useMockAppSnapshot();
-  const organization = activeMockOrganization(snapshot);
-  const user = activeMockUser(snapshot);
-  const organizations = eligibleOrganizations(snapshot);
+export const DevPanel = memo(function DevPanel({ workspaceId, snapshot, organization }: DevPanelProps) {
+  const [css] = useStyletron();
   const t = useFoundryTokens();
-  const routeContext = useRouterState({
-    select: (state) => ({
-      location: state.location,
-      params: mergedRouteParams(state.matches as Array<{ params: Record<string, unknown> }>),
-    }),
-  });
-  const [visible, setVisible] = useState<boolean>(() => readStoredVisibility());
+  const [now, setNow] = useState(Date.now());
 
+  // Tick every 2s to keep relative timestamps fresh
   useEffect(() => {
-    writeStoredVisibility(visible);
-  }, [visible]);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.shiftKey && event.key.toLowerCase() === "d") {
-        event.preventDefault();
-        setVisible((current) => !current);
-      }
-      if (event.key === "Escape") {
-        setVisible(false);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    const id = setInterval(() => setNow(Date.now()), 2000);
+    return () => clearInterval(id);
   }, []);
 
-  const modeLabel = isMockFrontendClient ? "Mock" : "Live";
-  const selectedWorkspaceId = routeContext.params.workspaceId ?? null;
-  const selectedTaskId = routeContext.params.taskId ?? null;
-  const selectedRepoId = routeContext.params.repoId ?? null;
-  const selectedSessionId =
-    routeContext.location.search && typeof routeContext.location.search === "object" && "sessionId" in routeContext.location.search
-      ? (((routeContext.location.search as Record<string, unknown>).sessionId as string | undefined) ?? null)
-      : null;
-  const contextOrganization =
-    (routeContext.params.organizationId ? (snapshot.organizations.find((candidate) => candidate.id === routeContext.params.organizationId) ?? null) : null) ??
-    (selectedWorkspaceId ? (snapshot.organizations.find((candidate) => candidate.workspaceId === selectedWorkspaceId) ?? null) : null) ??
-    organization;
-  const github = contextOrganization?.github ?? null;
+  const topics = useMemo((): TopicInfo[] => {
+    const items: TopicInfo[] = [];
 
-  const pillButtonStyle = useCallback(
-    (active = false) =>
-      ({
-        border: `1px solid ${active ? t.accent : t.borderDefault}`,
-        background: active ? t.surfacePrimary : t.surfaceSecondary,
-        color: t.textPrimary,
-        borderRadius: "999px",
-        padding: "6px 10px",
-        fontSize: "11px",
-        fontWeight: 600,
-        cursor: "pointer",
-      }) as const,
-    [t],
-  );
+    // Workbench subscription topic
+    items.push({
+      label: "Workbench",
+      key: `ws:${workspaceId}`,
+      listenerCount: 1,
+      hasConnection: true,
+      lastRefresh: now,
+    });
 
-  if (!visible) {
-    return (
-      <button
-        type="button"
-        onClick={() => setVisible(true)}
-        style={{
-          position: "fixed",
-          right: "16px",
-          bottom: "16px",
-          zIndex: 1000,
-          display: "inline-flex",
-          alignItems: "center",
-          gap: "8px",
-          border: `1px solid ${t.borderDefault}`,
-          background: "rgba(9, 9, 11, 0.78)",
-          color: t.textPrimary,
-          borderRadius: "999px",
-          padding: "9px 12px",
-          boxShadow: "0 18px 40px rgba(0, 0, 0, 0.22)",
-          cursor: "pointer",
-        }}
-      >
-        <Bug size={14} />
-        <span style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontSize: "12px", lineHeight: 1 }}>
-          <span style={{ color: t.textSecondary }}>Show Dev Panel</span>
-          <span
-            style={{
-              padding: "4px 7px",
-              borderRadius: "999px",
-              border: `1px solid ${t.borderDefault}`,
-              background: "rgba(255, 255, 255, 0.04)",
-              fontSize: "11px",
-              fontWeight: 700,
-              letterSpacing: "0.03em",
-            }}
-          >
-            Shift+D
-          </span>
-        </span>
-      </button>
-    );
-  }
+    // Per-task tab subscriptions
+    for (const task of snapshot.tasks ?? []) {
+      if (task.status === "archived") continue;
+      for (const tab of task.tabs ?? []) {
+        items.push({
+          label: `Tab/${task.title?.slice(0, 16) || task.id.slice(0, 8)}/${tab.sessionName.slice(0, 10)}`,
+          key: `${workspaceId}:${task.id}:${tab.id}`,
+          listenerCount: 1,
+          hasConnection: tab.status === "running",
+          lastRefresh: tab.status === "running" ? now : null,
+        });
+      }
+    }
+
+    return items;
+  }, [workspaceId, snapshot, now]);
+
+  const tasks = snapshot.tasks ?? [];
+  const repos = snapshot.repos ?? [];
+  const projects = snapshot.projects ?? [];
+
+  const mono = css({
+    fontFamily: "ui-monospace, SFMono-Regular, 'SF Mono', Consolas, monospace",
+    fontSize: "10px",
+  });
 
   return (
     <div
-      style={{
+      className={css({
         position: "fixed",
-        right: "16px",
-        bottom: "16px",
-        width: "360px",
-        maxHeight: "calc(100vh - 32px)",
-        overflowY: "auto",
-        zIndex: 1000,
-        borderRadius: "18px",
-        border: `1px solid ${t.borderDefault}`,
-        background: t.surfacePrimary,
-        color: t.textPrimary,
-        boxShadow: "0 24px 60px rgba(0, 0, 0, 0.35)",
-      }}
+        bottom: "8px",
+        right: "8px",
+        width: "320px",
+        maxHeight: "50vh",
+        zIndex: 99999,
+        backgroundColor: t.surfaceElevated,
+        border: `1px solid ${t.borderMedium}`,
+        borderRadius: "6px",
+        boxShadow: t.shadow,
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+      })}
     >
+      {/* Header */}
       <div
-        style={{
-          position: "sticky",
-          top: 0,
+        className={css({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          padding: "14px 16px",
-          borderBottom: `1px solid ${t.borderDefault}`,
-          background: t.surfacePrimary,
-        }}
+          padding: "4px 8px",
+          borderBottom: `1px solid ${t.borderSubtle}`,
+          backgroundColor: t.surfaceTertiary,
+          flexShrink: 0,
+        })}
       >
-        <div style={{ display: "grid", gap: "2px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <Bug size={14} />
-            <strong style={{ fontSize: "13px" }}>Dev Panel</strong>
-            <span
-              style={{
-                fontSize: "10px",
-                fontWeight: 700,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                color: t.textMuted,
-              }}
-            >
-              {modeLabel}
-            </span>
-          </div>
-          <div style={{ fontSize: "11px", color: t.textMuted }}>{routeContext.location.pathname}</div>
-        </div>
-        <button type="button" onClick={() => setVisible(false)} style={pillButtonStyle()}>
-          Hide
-        </button>
+        <span
+          className={css({
+            fontSize: "10px",
+            fontWeight: 600,
+            color: t.textSecondary,
+            letterSpacing: "0.5px",
+            textTransform: "uppercase",
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
+          })}
+        >
+          Dev
+          {isMockFrontendClient && <span className={css({ fontSize: "8px", fontWeight: 600, color: t.statusWarning, letterSpacing: "0.3px" })}>MOCK</span>}
+        </span>
+        <span className={css({ fontSize: "9px", color: t.textMuted })}>Shift+D</span>
       </div>
 
-      <div style={{ display: "grid", gap: "12px", padding: "14px" }}>
-        <div style={sectionStyle(t.borderSubtle, t.surfaceSecondary)}>
-          <div style={labelStyle(t.textMuted)}>Context</div>
-          <div style={{ display: "grid", gap: "4px", fontSize: "12px" }}>
-            <div>Organization: {contextOrganization?.settings.displayName ?? "None selected"}</div>
-            <div>Workspace: {selectedWorkspaceId ?? "None selected"}</div>
-            <div>Task: {selectedTaskId ?? "None selected"}</div>
-            <div>Repo: {selectedRepoId ?? "None selected"}</div>
-            <div>Session: {selectedSessionId ?? "None selected"}</div>
-          </div>
-        </div>
+      {/* Body */}
+      <div className={css({ overflowY: "auto", padding: "6px" })}>
+        {/* Interest Topics */}
+        <Section label="Interest Topics" t={t} css={css}>
+          {topics.map((topic) => (
+            <div
+              key={topic.key}
+              className={css({
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "2px 0",
+              })}
+            >
+              <span
+                className={css({
+                  width: "5px",
+                  height: "5px",
+                  borderRadius: "50%",
+                  backgroundColor: topic.hasConnection ? t.statusSuccess : t.textMuted,
+                  flexShrink: 0,
+                })}
+              />
+              <span className={css({ fontSize: "10px", color: t.textPrimary, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" })}>
+                {topic.label}
+              </span>
+              <span className={`${mono} ${css({ color: t.textMuted })}`}>{topic.key.length > 24 ? `...${topic.key.slice(-20)}` : topic.key}</span>
+              <span className={`${mono} ${css({ color: t.textTertiary })}`}>{timeAgo(topic.lastRefresh)}</span>
+            </div>
+          ))}
+          {topics.length === 0 && <span className={css({ fontSize: "10px", color: t.textMuted })}>No active subscriptions</span>}
+        </Section>
 
-        <div style={sectionStyle(t.borderSubtle, t.surfaceSecondary)}>
-          <div style={labelStyle(t.textMuted)}>Session</div>
-          <div style={{ display: "grid", gap: "4px", fontSize: "12px" }}>
-            <div>Auth: {snapshot.auth.status}</div>
-            <div>User: {user ? `${user.name} (@${user.githubLogin})` : "None"}</div>
-            <div>Active org: {organization?.settings.displayName ?? "None selected"}</div>
+        {/* Snapshot Summary */}
+        <Section label="Snapshot" t={t} css={css}>
+          <div className={css({ display: "flex", gap: "10px", fontSize: "10px" })}>
+            <Stat label="repos" value={repos.length} t={t} css={css} />
+            <Stat label="projects" value={projects.length} t={t} css={css} />
+            <Stat label="tasks" value={tasks.length} t={t} css={css} />
           </div>
-          {isMockFrontendClient ? (
-            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-              {snapshot.auth.status === "signed_in" ? (
-                <button type="button" onClick={() => void client.signOut()} style={pillButtonStyle()}>
-                  Sign out
-                </button>
-              ) : (
-                snapshot.users.map((candidate) => (
-                  <button key={candidate.id} type="button" onClick={() => void client.signInWithGithub(candidate.id)} style={pillButtonStyle()}>
-                    Sign in as {candidate.githubLogin}
-                  </button>
-                ))
+        </Section>
+
+        {/* Tasks */}
+        {tasks.length > 0 && (
+          <Section label="Tasks" t={t} css={css}>
+            {tasks.slice(0, 10).map((task) => {
+              const status = taskStatusLabel(task);
+              return (
+                <div
+                  key={task.id}
+                  className={css({
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "1px 0",
+                    fontSize: "10px",
+                  })}
+                >
+                  <span
+                    className={css({
+                      width: "5px",
+                      height: "5px",
+                      borderRadius: "50%",
+                      backgroundColor: statusColor(status, t),
+                      flexShrink: 0,
+                    })}
+                  />
+                  <span className={css({ color: t.textPrimary, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" })}>
+                    {task.title || task.id.slice(0, 12)}
+                  </span>
+                  <span className={`${mono} ${css({ color: statusColor(status, t) })}`}>{status}</span>
+                  <span className={`${mono} ${css({ color: t.textMuted })}`}>{task.tabs?.length ?? 0} tabs</span>
+                </div>
+              );
+            })}
+          </Section>
+        )}
+
+        {/* GitHub */}
+        {organization && (
+          <Section label="GitHub" t={t} css={css}>
+            <div className={css({ display: "flex", flexDirection: "column", gap: "3px", fontSize: "10px" })}>
+              <div className={css({ display: "flex", alignItems: "center", gap: "6px" })}>
+                <span
+                  className={css({
+                    width: "5px",
+                    height: "5px",
+                    borderRadius: "50%",
+                    backgroundColor: installStatusColor(organization.github.installationStatus, t),
+                    flexShrink: 0,
+                  })}
+                />
+                <span className={css({ color: t.textPrimary, flex: 1 })}>App</span>
+                <span className={`${mono} ${css({ color: installStatusColor(organization.github.installationStatus, t) })}`}>
+                  {organization.github.installationStatus.replace(/_/g, " ")}
+                </span>
+              </div>
+              <div className={css({ display: "flex", alignItems: "center", gap: "6px" })}>
+                <span
+                  className={css({
+                    width: "5px",
+                    height: "5px",
+                    borderRadius: "50%",
+                    backgroundColor: syncStatusColor(organization.github.syncStatus, t),
+                    flexShrink: 0,
+                  })}
+                />
+                <span className={css({ color: t.textPrimary, flex: 1 })}>Sync</span>
+                <span className={`${mono} ${css({ color: syncStatusColor(organization.github.syncStatus, t) })}`}>{organization.github.syncStatus}</span>
+              </div>
+              <div className={css({ display: "flex", gap: "10px", marginTop: "2px" })}>
+                <Stat label="repos imported" value={organization.github.importedRepoCount} t={t} css={css} />
+              </div>
+              {organization.github.connectedAccount && (
+                <div className={`${mono} ${css({ color: t.textMuted, marginTop: "1px" })}`}>@{organization.github.connectedAccount}</div>
+              )}
+              {organization.github.lastSyncLabel && (
+                <div className={`${mono} ${css({ color: t.textMuted })}`}>last sync: {organization.github.lastSyncLabel}</div>
               )}
             </div>
-          ) : null}
-        </div>
+          </Section>
+        )}
 
-        <div style={sectionStyle(t.borderSubtle, t.surfaceSecondary)}>
-          <div style={labelStyle(t.textMuted)}>GitHub</div>
-          <div style={{ display: "grid", gap: "4px", fontSize: "12px" }}>
-            <div>Installation: {github?.installationStatus ?? "n/a"}</div>
-            <div>Sync: {github?.syncStatus ?? "n/a"}</div>
-            <div>Repos: {github?.importedRepoCount ?? 0}</div>
-            <div>Last sync: {github?.lastSyncLabel ?? "n/a"}</div>
-          </div>
-          {contextOrganization ? (
-            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-              <button type="button" onClick={() => void client.triggerGithubSync(contextOrganization.id)} style={pillButtonStyle()}>
-                <RefreshCw size={12} style={{ marginRight: "6px", verticalAlign: "text-bottom" }} />
-                Sync
-              </button>
-              <button type="button" onClick={() => void client.reconnectGithub(contextOrganization.id)} style={pillButtonStyle()}>
-                <Wifi size={12} style={{ marginRight: "6px", verticalAlign: "text-bottom" }} />
-                Reconnect
-              </button>
+        {/* Workspace */}
+        <Section label="Workspace" t={t} css={css}>
+          <div className={`${mono} ${css({ color: t.textTertiary })}`}>{workspaceId}</div>
+          {organization && (
+            <div className={`${mono} ${css({ color: t.textMuted, marginTop: "2px" })}`}>
+              org: {organization.settings.displayName} ({organization.kind})
             </div>
-          ) : null}
-        </div>
-
-        {isMockFrontendClient && organizations.length > 0 ? (
-          <div style={sectionStyle(t.borderSubtle, t.surfaceSecondary)}>
-            <div style={labelStyle(t.textMuted)}>Mock Organization</div>
-            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-              {organizations.map((candidate) => (
-                <button
-                  key={candidate.id}
-                  type="button"
-                  onClick={() => void client.selectOrganization(candidate.id)}
-                  style={pillButtonStyle(contextOrganization?.id === candidate.id)}
-                >
-                  {candidate.settings.displayName}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
+          )}
+        </Section>
       </div>
     </div>
   );
+});
+
+function Section({
+  label,
+  t,
+  css: cssFn,
+  children,
+}: {
+  label: string;
+  t: ReturnType<typeof useFoundryTokens>;
+  css: ReturnType<typeof useStyletron>[0];
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={cssFn({ marginBottom: "6px" })}>
+      <div
+        className={cssFn({
+          fontSize: "9px",
+          fontWeight: 600,
+          color: t.textMuted,
+          textTransform: "uppercase",
+          letterSpacing: "0.5px",
+          marginBottom: "2px",
+        })}
+      >
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  t,
+  css: cssFn,
+}: {
+  label: string;
+  value: number;
+  t: ReturnType<typeof useFoundryTokens>;
+  css: ReturnType<typeof useStyletron>[0];
+}) {
+  return (
+    <span>
+      <span className={cssFn({ fontWeight: 600, color: t.textPrimary })}>{value}</span>
+      <span className={cssFn({ color: t.textTertiary, marginLeft: "2px" })}>{label}</span>
+    </span>
+  );
+}
+
+export function useDevPanel() {
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.shiftKey && e.key === "D" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+        e.preventDefault();
+        setVisible((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  return visible;
 }
