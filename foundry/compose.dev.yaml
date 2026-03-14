@@ -14,6 +14,10 @@ services:
       HF_BACKEND_HOST: "0.0.0.0"
       HF_BACKEND_PORT: "7741"
       RIVETKIT_STORAGE_PATH: "/root/.local/share/foundry/rivetkit"
+      RIVET_LOG_ERROR_STACK: "${RIVET_LOG_ERROR_STACK:-1}"
+      RIVET_LOG_LEVEL: "${RIVET_LOG_LEVEL:-debug}"
+      RIVET_LOG_TIMESTAMP: "${RIVET_LOG_TIMESTAMP:-1}"
+      FOUNDRY_LOG_LEVEL: "${FOUNDRY_LOG_LEVEL:-debug}"
       # Pass through credentials needed for agent execution + PR creation in dev/e2e.
       # Do not hardcode secrets; set these in your environment when starting compose.
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"

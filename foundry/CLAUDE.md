@@ -224,6 +224,12 @@ Examples:
 
 Never use `wait: true` for operations that depend on external readiness, sandbox I/O, agent responses, git network operations, polling loops, or long-running queue drains. Never hold an action open while waiting for an external system to become ready — that is a polling/retry loop in disguise.
 
+### Timeout policy
+
+All `wait: true` sends must have an explicit `timeout`. Maximum timeout for any `wait: true` send is **10 seconds** (`10_000`). If an operation cannot reliably complete within 10 seconds, it must be restructured: write the initial record to the DB, return it to the caller, and continue the work asynchronously with `wait: false`. The client observes completion via push events.
+
+`wait: false` sends do not need a timeout (the enqueue is instant; the work runs in the workflow loop with its own step-level timeouts).
+
 ### Task creation: resolve metadata before creating the actor
 
 When creating a task, all deterministic metadata (title, branch name) must be resolved synchronously in the parent actor (project) *before* the task actor is created. The task actor must never be created with null `branchName` or `title`.

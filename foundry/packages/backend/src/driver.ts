@@ -5,6 +5,7 @@ import {
   ensureCloned,
   fetch,
   listRemoteBranches,
+  listLocalRemoteRefs,
   remoteDefaultBaseRef,
   revParse,
   ensureRemoteBranch,
@@ -28,6 +29,8 @@ export interface GitDriver {
   ensureCloned(remoteUrl: string, targetPath: string, options?: { githubToken?: string | null }): Promise<void>;
   fetch(repoPath: string, options?: { githubToken?: string | null }): Promise<void>;
   listRemoteBranches(repoPath: string, options?: { githubToken?: string | null }): Promise<BranchSnapshot[]>;
+  /** Read remote-tracking refs from the local clone without fetching. */
+  listLocalRemoteRefs(repoPath: string): Promise<BranchSnapshot[]>;
   remoteDefaultBaseRef(repoPath: string): Promise<string>;
   revParse(repoPath: string, ref: string): Promise<string>;
   ensureRemoteBranch(repoPath: string, branchName: string, options?: { githubToken?: string | null }): Promise<void>;
@@ -81,6 +84,7 @@ export function createDefaultDriver(): BackendDriver {
       ensureCloned,
       fetch,
       listRemoteBranches,
+      listLocalRemoteRefs,
       remoteDefaultBaseRef,
       revParse,
       ensureRemoteBranch,

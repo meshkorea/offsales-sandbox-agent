@@ -1,14 +1,7 @@
 import { Loop } from "rivetkit/workflow";
 import { logActorWarning, resolveErrorMessage } from "../../logging.js";
 import { getCurrentRecord } from "./common.js";
-import {
-  initAssertNameActivity,
-  initBootstrapDbActivity,
-  initCompleteActivity,
-  initEnqueueProvisionActivity,
-  initEnsureNameActivity,
-  initFailedActivity,
-} from "./init.js";
+import { initBootstrapDbActivity, initCompleteActivity, initEnqueueProvisionActivity, initFailedActivity } from "./init.js";
 import {
   handleArchiveActivity,
   handleAttachActivity,
@@ -67,12 +60,8 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
     await loopCtx.removed("init-failed", "step");
     await loopCtx.removed("init-failed-v2", "step");
     try {
-      await loopCtx.step({
-        name: "init-ensure-name",
-        timeout: 5 * 60_000,
-        run: async () => initEnsureNameActivity(loopCtx),
-      });
-      await loopCtx.step("init-assert-name", async () => initAssertNameActivity(loopCtx));
+      await loopCtx.removed("init-ensure-name", "step");
+      await loopCtx.removed("init-assert-name", "step");
       await loopCtx.removed("init-create-sandbox", "step");
       await loopCtx.removed("init-ensure-agent", "step");
       await loopCtx.removed("init-start-sandbox-instance", "step");
@@ -154,6 +143,26 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
     } catch (error) {
       await msg.complete({ error: resolveErrorMessage(error) });
     }
+  },
+
+  "task.command.workbench.create_session_and_send": async (loopCtx, msg) => {
+    try {
+      const created = await loopCtx.step({
+        name: "workbench-create-session-for-send",
+        timeout: 5 * 60_000,
+        run: async () => createWorkbenchSession(loopCtx, msg.body?.model),
+      });
+      await loopCtx.step({
+        name: "workbench-send-initial-message",
+        timeout: 5 * 60_000,
+        run: async () => sendWorkbenchMessage(loopCtx, created.tabId, msg.body.text, []),
+      });
+    } catch (error) {
+      logActorWarning("task.workflow", "create_session_and_send failed", {
+        error: resolveErrorMessage(error),
+      });
+    }
+    await msg.complete({ ok: true });
   },
 
   "task.command.workbench.ensure_session": async (loopCtx, msg) => {

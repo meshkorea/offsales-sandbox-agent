@@ -101,12 +101,13 @@ interface TaskWorkbenchSendMessageCommand {
   attachments: Array<any>;
 }
 
-interface TaskWorkbenchSendMessageActionInput extends TaskWorkbenchSendMessageInput {
-  waitForCompletion?: boolean;
-}
-
 interface TaskWorkbenchCreateSessionCommand {
   model?: string;
+}
+
+interface TaskWorkbenchCreateSessionAndSendCommand {
+  model?: string;
+  text: string;
 }
 
 interface TaskWorkbenchSessionCommand {
@@ -143,7 +144,7 @@ export const task = actor({
       const self = selfTask(c);
       const result = await self.send(taskWorkflowQueueName("task.command.initialize"), cmd ?? {}, {
         wait: true,
-        timeout: 5 * 60_000,
+        timeout: 10_000,
       });
       return expectQueueResponse<TaskRecord>(result);
     },
@@ -160,7 +161,7 @@ export const task = actor({
       const self = selfTask(c);
       const result = await self.send(taskWorkflowQueueName("task.command.attach"), cmd ?? {}, {
         wait: true,
-        timeout: 20_000,
+        timeout: 10_000,
       });
       return expectQueueResponse<{ target: string; sessionId: string | null }>(result);
     },
@@ -172,7 +173,7 @@ export const task = actor({
         {},
         {
           wait: true,
-          timeout: 20_000,
+          timeout: 10_000,
         },
       );
       return expectQueueResponse<{ switchTarget: string }>(result);
@@ -236,7 +237,7 @@ export const task = actor({
         {},
         {
           wait: true,
-          timeout: 20_000,
+          timeout: 10_000,
         },
       );
     },
@@ -263,10 +264,23 @@ export const task = actor({
         { ...(input?.model ? { model: input.model } : {}) } satisfies TaskWorkbenchCreateSessionCommand,
         {
           wait: true,
-          timeout: 5 * 60_000,
+          timeout: 10_000,
         },
       );
       return expectQueueResponse<{ tabId: string }>(result);
+    },
+
+    /**
+     * Fire-and-forget: creates a workbench session and sends the initial message.
+     * Used by createWorkbenchTask so the caller doesn't block on session creation.
+     */
+    async createWorkbenchSessionAndSend(c, input: { model?: string; text: string }): Promise<void> {
+      const self = selfTask(c);
+      await self.send(
+        taskWorkflowQueueName("task.command.workbench.create_session_and_send"),
+        { model: input.model, text: input.text } satisfies TaskWorkbenchCreateSessionAndSendCommand,
+        { wait: false },
+      );
     },
 
     async renameWorkbenchSession(c, input: TaskWorkbenchRenameSessionInput): Promise<void> {
@@ -276,7 +290,7 @@ export const task = actor({
         { sessionId: input.tabId, title: input.title } satisfies TaskWorkbenchSessionTitleCommand,
         {
           wait: true,
-          timeout: 20_000,
+          timeout: 10_000,
         },
       );
     },
@@ -288,7 +302,7 @@ export const task = actor({
         { sessionId: input.tabId, unread: input.unread } satisfies TaskWorkbenchSessionUnreadCommand,
         {
           wait: true,
-          timeout: 20_000,
+          timeout: 10_000,
         },
       );
     },
@@ -304,7 +318,7 @@ export const task = actor({
         } satisfies TaskWorkbenchUpdateDraftCommand,
         {
           wait: true,
-          timeout: 20_000,
+          timeout: 10_000,
         },
       );
     },
@@ -316,14 +330,14 @@ export const task = actor({
         { sessionId: input.tabId, model: input.model } satisfies TaskWorkbenchChangeModelCommand,
         {
           wait: true,
-          timeout: 20_000,
+          timeout: 10_000,
         },
       );
     },
 
-    async sendWorkbenchMessage(c, input: TaskWorkbenchSendMessageActionInput): Promise<void> {
+    async sendWorkbenchMessage(c, input: TaskWorkbenchSendMessageInput): Promise<void> {
       const self = selfTask(c);
-      const result = await self.send(
+      await self.send(
         taskWorkflowQueueName("task.command.workbench.send_message"),
         {
           sessionId: input.tabId,
@@ -331,13 +345,9 @@ export const task = actor({
           attachments: input.attachments,
         } satisfies TaskWorkbenchSendMessageCommand,
         {
-          wait: input.waitForCompletion === true,
-          ...(input.waitForCompletion === true ? { timeout: 10 * 60_000 } : {}),
+          wait: false,
         },
       );
-      if (input.waitForCompletion === true) {
-        expectQueueResponse(result);
-      }
     },
 
     async stopWorkbenchSession(c, input: TaskTabCommand): Promise<void> {

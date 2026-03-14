@@ -13,6 +13,7 @@ export const TASK_QUEUE_NAMES = [
   "task.command.workbench.rename_task",
   "task.command.workbench.rename_branch",
   "task.command.workbench.create_session",
+  "task.command.workbench.create_session_and_send",
   "task.command.workbench.ensure_session",
   "task.command.workbench.rename_session",
   "task.command.workbench.set_session_unread",

@@ -307,22 +307,14 @@ async function requireReadySessionMeta(c: any, tabId: string): Promise<any> {
   return meta;
 }
 
-async function ensureReadySessionMeta(c: any, tabId: string): Promise<any> {
-  const meta = await readSessionMeta(c, tabId);
+export function requireSendableSessionMeta(meta: any, tabId: string): any {
   if (!meta) {
     throw new Error(`Unknown workbench tab: ${tabId}`);
   }
-
-  if (meta.status === "ready" && meta.sandboxSessionId) {
-    return meta;
+  if (meta.status !== "ready" || !meta.sandboxSessionId) {
+    throw new Error(`Session is not ready (status: ${meta.status}). Wait for session provisioning to complete.`);
   }
-
-  if (meta.status === "error") {
-    throw new Error(meta.errorMessage ?? "This workbench tab failed to prepare");
-  }
-
-  await ensureWorkbenchSession(c, tabId);
-  return await requireReadySessionMeta(c, tabId);
+  return meta;
 }
 
 function shellFragment(parts: string[]): string {
@@ -1204,7 +1196,7 @@ export async function changeWorkbenchModel(c: any, sessionId: string, model: str
 }
 
 export async function sendWorkbenchMessage(c: any, sessionId: string, text: string, attachments: Array<any>): Promise<void> {
-  const meta = await ensureReadySessionMeta(c, sessionId);
+  const meta = requireSendableSessionMeta(await readSessionMeta(c, sessionId), sessionId);
   const record = await ensureWorkbenchSeeded(c);
   const runtime = await getTaskSandboxRuntime(c, record);
   await ensureSandboxRepo(c, runtime.sandbox, record);

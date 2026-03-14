@@ -11,7 +11,7 @@ import { resolveWorkspaceGithubAuth } from "../../services/github-auth.js";
 import { expectQueueResponse } from "../../services/queue.js";
 import { withRepoGitLock } from "../../services/repo-git-lock.js";
 import { branches, taskIndex, repoActionJobs, repoMeta } from "./db/schema.js";
-import { deriveFallbackTitle } from "../../services/create-flow.js";
+import { deriveFallbackTitle, resolveCreateFlowDecision } from "../../services/create-flow.js";
 import { normalizeBaseBranchName } from "../../integrations/git-spice/index.js";
 import { sortBranchesForOverview } from "./stack-model.js";
 
@@ -416,37 +416,81 @@ async function hydrateTaskIndexMutation(c: any, _cmd?: HydrateTaskIndexCommand):
 }
 
 async function createTaskMutation(c: any, cmd: CreateTaskCommand): Promise<TaskRecord> {
+  const workspaceId = c.state.workspaceId;
+  const repoId = c.state.repoId;
+  const repoRemote = c.state.remoteUrl;
   const onBranch = cmd.onBranch?.trim() || null;
-  const initialBranchName = onBranch;
-  const initialTitle = onBranch ? deriveFallbackTitle(cmd.task, cmd.explicitTitle ?? undefined) : null;
   const taskId = randomUUID();
+  let initialBranchName: string | null = null;
+  let initialTitle: string | null = null;
 
   if (onBranch) {
+    initialBranchName = onBranch;
+    initialTitle = deriveFallbackTitle(cmd.task, cmd.explicitTitle ?? undefined);
+
     await registerTaskBranchMutation(c, {
       taskId,
       branchName: onBranch,
       requireExistingRemote: true,
     });
+  } else {
+    const localPath = await ensureProjectReady(c);
+    const { driver } = getActorRuntimeContext();
+
+    // Read locally cached remote-tracking refs — no network fetch.
+    // The branch sync actor keeps these reasonably fresh. If a rare naming
+    // collision occurs with a very recently created remote branch, it will
+    // be caught lazily on push/checkout.
+    const remoteBranches = (await driver.git.listLocalRemoteRefs(localPath)).map((branch: any) => branch.branchName);
+
+    await ensureTaskIndexHydrated(c);
+    const reservedBranchRows = await c.db.select({ branchName: taskIndex.branchName }).from(taskIndex).where(isNotNull(taskIndex.branchName)).all();
+    const reservedBranches = reservedBranchRows
+      .map((row: { branchName: string | null }) => row.branchName)
+      .filter((branchName): branchName is string => typeof branchName === "string" && branchName.length > 0);
+
+    const resolved = resolveCreateFlowDecision({
+      task: cmd.task,
+      explicitTitle: cmd.explicitTitle ?? undefined,
+      explicitBranchName: cmd.explicitBranchName ?? undefined,
+      localBranches: remoteBranches,
+      taskBranches: reservedBranches,
+    });
+
+    initialBranchName = resolved.branchName;
+    initialTitle = resolved.title;
+
+    const now = Date.now();
+    await c.db
+      .insert(taskIndex)
+      .values({
+        taskId,
+        branchName: resolved.branchName,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoNothing()
+      .run();
   }
 
   let task: Awaited<ReturnType<typeof getOrCreateTask>>;
   try {
-    task = await getOrCreateTask(c, c.state.workspaceId, c.state.repoId, taskId, {
-      workspaceId: c.state.workspaceId,
-      repoId: c.state.repoId,
+    task = await getOrCreateTask(c, workspaceId, repoId, taskId, {
+      workspaceId,
+      repoId,
       taskId,
-      repoRemote: c.state.remoteUrl,
+      repoRemote,
       branchName: initialBranchName,
       title: initialTitle,
       task: cmd.task,
       providerId: cmd.providerId,
       agentType: cmd.agentType,
-      explicitTitle: onBranch ? null : cmd.explicitTitle,
-      explicitBranchName: onBranch ? null : cmd.explicitBranchName,
+      explicitTitle: null,
+      explicitBranchName: null,
       initialPrompt: cmd.initialPrompt,
     });
   } catch (error) {
-    if (onBranch) {
+    if (initialBranchName) {
       await c.db
         .delete(taskIndex)
         .where(eq(taskIndex.taskId, taskId))
@@ -456,28 +500,14 @@ async function createTaskMutation(c: any, cmd: CreateTaskCommand): Promise<TaskR
     throw error;
   }
 
-  if (!onBranch) {
-    const now = Date.now();
-    await c.db
-      .insert(taskIndex)
-      .values({
-        taskId,
-        branchName: initialBranchName,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoNothing()
-      .run();
-  }
-
   const created = await task.initialize({ providerId: cmd.providerId });
 
-  const history = await getOrCreateHistory(c, c.state.workspaceId, c.state.repoId);
+  const history = await getOrCreateHistory(c, workspaceId, repoId);
   await history.append({
     kind: "task.created",
     taskId,
     payload: {
-      repoId: c.state.repoId,
+      repoId,
       providerId: cmd.providerId,
     },
   });
@@ -919,7 +949,7 @@ export const projectActions = {
     return expectQueueResponse<EnsureProjectResult>(
       await self.send(projectWorkflowQueueName("project.command.ensure"), cmd, {
         wait: true,
-        timeout: 5 * 60_000,
+        timeout: 10_000,
       }),
     );
   },
@@ -929,7 +959,7 @@ export const projectActions = {
     return expectQueueResponse<TaskRecord>(
       await self.send(projectWorkflowQueueName("project.command.createTask"), cmd, {
         wait: true,
-        timeout: 5 * 60_000,
+        timeout: 10_000,
       }),
     );
   },
@@ -947,7 +977,7 @@ export const projectActions = {
     return expectQueueResponse<{ branchName: string; headSha: string }>(
       await self.send(projectWorkflowQueueName("project.command.registerTaskBranch"), cmd, {
         wait: true,
-        timeout: 5 * 60_000,
+        timeout: 10_000,
       }),
     );
   },
@@ -956,7 +986,7 @@ export const projectActions = {
     const self = selfProject(c);
     await self.send(projectWorkflowQueueName("project.command.hydrateTaskIndex"), cmd ?? {}, {
       wait: true,
-      timeout: 60_000,
+      timeout: 10_000,
     });
   },
 
@@ -1225,7 +1255,7 @@ export const projectActions = {
     const self = selfProject(c);
     await self.send(projectWorkflowQueueName("project.command.applyBranchSyncResult"), body, {
       wait: true,
-      timeout: 5 * 60_000,
+      timeout: 10_000,
     });
   },
 };

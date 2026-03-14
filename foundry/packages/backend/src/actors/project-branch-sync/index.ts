@@ -156,7 +156,7 @@ export const projectBranchSync = actor({
 
     async force(c): Promise<void> {
       const self = selfProjectBranchSync(c);
-      await self.send(CONTROL.force, {}, { wait: true, timeout: 5 * 60_000 });
+      await self.send(CONTROL.force, {}, { wait: true, timeout: 10_000 });
     },
   },
   run: workflow(async (ctx) => {

@@ -1,5 +1,4 @@
 // @ts-nocheck
-import { setTimeout as delay } from "node:timers/promises";
 import { desc, eq } from "drizzle-orm";
 import { Loop } from "rivetkit/workflow";
 import type {
@@ -270,24 +269,6 @@ async function reconcileWorkbenchProjection(c: any): Promise<WorkspaceSummarySna
 async function requireWorkbenchTask(c: any, taskId: string) {
   const repoId = await resolveRepoId(c, taskId);
   return getTask(c, c.state.workspaceId, repoId, taskId);
-}
-
-async function waitForWorkbenchTaskReady(task: any, timeoutMs = 5 * 60_000): Promise<any> {
-  const startedAt = Date.now();
-
-  for (;;) {
-    const record = await task.get();
-    if (record?.branchName && record?.title) {
-      return record;
-    }
-    if (record?.status === "error") {
-      throw new Error("task initialization failed before the workbench session was ready");
-    }
-    if (Date.now() - startedAt > timeoutMs) {
-      throw new Error("timed out waiting for task initialization");
-    }
-    await delay(1_000);
-  }
 }
 
 /**
@@ -562,7 +543,7 @@ export const workspaceActions = {
     return expectQueueResponse<RepoRecord>(
       await self.send(workspaceWorkflowQueueName("workspace.command.addRepo"), input, {
         wait: true,
-        timeout: 60_000,
+        timeout: 10_000,
       }),
     );
   },
@@ -595,7 +576,7 @@ export const workspaceActions = {
     return expectQueueResponse<TaskRecord>(
       await self.send(workspaceWorkflowQueueName("workspace.command.createTask"), input, {
         wait: true,
-        timeout: 5 * 60_000,
+        timeout: 10_000,
       }),
     );
   },
@@ -813,6 +794,7 @@ export const workspaceActions = {
   },
 
   async createWorkbenchTask(c: any, input: TaskWorkbenchCreateTaskInput): Promise<{ taskId: string; tabId?: string }> {
+    // Step 1: Create the task record (wait: true — local state mutations only).
     const created = await workspaceActions.createTask(c, {
       workspaceId: c.state.workspaceId,
       repoId: input.repoId,
@@ -821,26 +803,18 @@ export const workspaceActions = {
       ...(input.onBranch ? { onBranch: input.onBranch } : input.branch ? { explicitBranchName: input.branch } : {}),
       ...(input.model ? { agentType: agentTypeForModel(input.model) } : {}),
     });
+
+    // Step 2: Enqueue session creation + initial message (wait: false).
+    // The task workflow creates the session record and sends the message in
+    // the background. The client observes progress via push events on the
+    // task interest topic.
     const task = await requireWorkbenchTask(c, created.taskId);
-    await waitForWorkbenchTaskReady(task);
-    const session = await task.createWorkbenchSession({
-      taskId: created.taskId,
-      ...(input.model ? { model: input.model } : {}),
-    });
-    await task.sendWorkbenchMessage({
-      taskId: created.taskId,
-      tabId: session.tabId,
+    await task.createWorkbenchSessionAndSend({
+      model: input.model,
       text: input.task,
-      attachments: [],
-      waitForCompletion: true,
     });
-    await task.getSessionDetail({
-      sessionId: session.tabId,
-    });
-    return {
-      taskId: created.taskId,
-      tabId: session.tabId,
-    };
+
+    return { taskId: created.taskId };
   },
 
   async markWorkbenchUnread(c: any, input: TaskWorkbenchSelectInput): Promise<void> {
@@ -988,7 +962,7 @@ export const workspaceActions = {
     const self = selfWorkspace(c);
     await self.send(workspaceWorkflowQueueName("workspace.command.refreshProviderProfiles"), command ?? {}, {
       wait: true,
-      timeout: 60_000,
+      timeout: 10_000,
     });
   },
 

@@ -208,11 +208,25 @@ export async function remoteDefaultBaseRef(repoPath: string): Promise<string> {
   return "origin/main";
 }
 
+/**
+ * Fetch from origin, then read remote-tracking refs.
+ * Use when you need guaranteed-fresh branch data and can tolerate network I/O.
+ */
 export async function listRemoteBranches(repoPath: string, options?: GitAuthOptions): Promise<BranchSnapshot[]> {
   await fetch(repoPath, options);
+  return listLocalRemoteRefs(repoPath);
+}
+
+/**
+ * Read remote-tracking refs (`refs/remotes/origin/*`) from the local clone
+ * without fetching. The data is only as fresh as the last fetch — use this
+ * when the branch sync actor keeps refs current and you want to avoid
+ * blocking on network I/O.
+ */
+export async function listLocalRemoteRefs(repoPath: string): Promise<BranchSnapshot[]> {
   const { stdout } = await execFileAsync("git", ["-C", repoPath, "for-each-ref", "--format=%(refname:short) %(objectname)", "refs/remotes/origin"], {
     maxBuffer: 1024 * 1024,
-    env: gitEnv(options),
+    env: gitEnv(),
   });
 
   return stdout

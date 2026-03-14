@@ -15,6 +15,7 @@ export function createTestGitDriver(overrides?: Partial<GitDriver>): GitDriver {
     ensureCloned: async () => {},
     fetch: async () => {},
     listRemoteBranches: async () => [],
+    listLocalRemoteRefs: async () => [],
     remoteDefaultBaseRef: async () => "origin/main",
     revParse: async () => "abc1234567890",
     ensureRemoteBranch: async () => {},
