@@ -35,7 +35,7 @@ importers:
     dependencies:
       '@boxlite-ai/boxlite':
         specifier: latest
-        version: 0.4.1
+        version: 0.4.2
       '@sandbox-agent/example-shared':
         specifier: workspace:*
         version: link:../shared
@@ -554,9 +554,6 @@ importers:
       '@sandbox-agent/foundry-client':
         specifier: workspace:*
         version: link:../client
-      '@sandbox-agent/foundry-frontend-errors':
-        specifier: workspace:*
-        version: link:../frontend-errors
       '@sandbox-agent/foundry-shared':
         specifier: workspace:*
         version: link:../shared
@@ -606,22 +603,6 @@ importers:
       react-grab:
         specifier: ^0.1.13
         version: 0.1.27(@types/react@18.3.27)(react@19.2.4)
-      tsup:
-        specifier: ^8.5.0
-        version: 8.5.1(jiti@1.21.7)(postcss@8.5.6)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.2)
-      vite:
-        specifier: ^7.1.3
-        version: 7.3.1(@types/node@25.5.0)(jiti@1.21.7)(tsx@4.21.0)(yaml@2.8.2)
-
-  foundry/packages/frontend-errors:
-    dependencies:
-      '@hono/node-server':
-        specifier: ^1.19.9
-        version: 1.19.9(hono@4.12.2)
-      hono:
-        specifier: ^4.11.9
-        version: 4.12.2
-    devDependencies:
       tsup:
         specifier: ^8.5.0
         version: 8.5.1(jiti@1.21.7)(postcss@8.5.6)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.2)
@@ -1547,20 +1528,20 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@boxlite-ai/boxlite-darwin-arm64@0.4.1':
-    resolution: {integrity: sha512-OcpQ9fGeQTBLZDOwireul0l6D+kTxs8Qmtalv/hobBUto8cOLX7NjiQ1Huo9kr0UOThu1T8nfDSNol18+iOjpw==}
+  '@boxlite-ai/boxlite-darwin-arm64@0.4.2':
+    resolution: {integrity: sha512-FwTfA8AyDXwoDb7nE7vGo04uBt2VDAiEl5leNNzroGSUKoTuCxNy8JfEbwwHb54UrIp/q7GNq7hG0JtmyxuubQ==}
     engines: {node: '>=18.0.0'}
     cpu: [arm64]
     os: [darwin]
 
-  '@boxlite-ai/boxlite-linux-x64-gnu@0.4.1':
-    resolution: {integrity: sha512-hBoZxWRvkFS8sztOjtTtgIAEE0K2xzuBtte2hl0sLfg5twgCy2BE/Ds/RikC6hMk6Ug4oc8MeBfWIhSvF70Jjw==}
+  '@boxlite-ai/boxlite-linux-x64-gnu@0.4.2':
+    resolution: {integrity: sha512-UIRiTKl1L0cx2igDiikEiBfpNbTZ0W3lft5ow7I2mkDnjtBVIQYSm+PmVXBupTYivAuPh38g9WhqJH44C1RJdQ==}
     engines: {node: '>=18.0.0'}
     cpu: [x64]
     os: [linux]
 
-  '@boxlite-ai/boxlite@0.4.1':
-    resolution: {integrity: sha512-iy302L3Yy4w8UTYQrthYzB0KGFh8y71olSUYnseUnnIQlCgHBlFHCdrdPrgUrttplBu/m4zwTRNCQq4jIzNWeg==}
+  '@boxlite-ai/boxlite@0.4.2':
+    resolution: {integrity: sha512-LVxG0feP1sBGbYz/VOm11VsU8PyUv7rvXOQJqKrfBgI9oRVyqycpY39PCJ1oC+FFho7w7d61q8VCVDlDdj8i6Q==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
       playwright-core: '>=1.58.0'
@@ -8441,16 +8422,16 @@ snapshots:
   '@biomejs/cli-win32-x64@2.4.6':
     optional: true
 
-  '@boxlite-ai/boxlite-darwin-arm64@0.4.1':
+  '@boxlite-ai/boxlite-darwin-arm64@0.4.2':
     optional: true
 
-  '@boxlite-ai/boxlite-linux-x64-gnu@0.4.1':
+  '@boxlite-ai/boxlite-linux-x64-gnu@0.4.2':
     optional: true
 
-  '@boxlite-ai/boxlite@0.4.1':
+  '@boxlite-ai/boxlite@0.4.2':
     optionalDependencies:
-      '@boxlite-ai/boxlite-darwin-arm64': 0.4.1
-      '@boxlite-ai/boxlite-linux-x64-gnu': 0.4.1
+      '@boxlite-ai/boxlite-darwin-arm64': 0.4.2
+      '@boxlite-ai/boxlite-linux-x64-gnu': 0.4.2
 
   '@bufbuild/protobuf@2.11.0': {}
 

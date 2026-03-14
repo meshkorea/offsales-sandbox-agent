@@ -1,8 +1,7 @@
 import { type ReactNode, useEffect } from "react";
-import { setFrontendErrorContext } from "@sandbox-agent/foundry-frontend-errors/client";
 import type { FoundryBillingPlanId } from "@sandbox-agent/foundry-shared";
 import { useInterest } from "@sandbox-agent/foundry-client";
-import { Navigate, Outlet, createRootRoute, createRoute, createRouter, useRouterState } from "@tanstack/react-router";
+import { Navigate, Outlet, createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
 import { MockLayout } from "../components/mock-layout";
 import {
   MockAccountSettingsPage,
@@ -257,13 +256,6 @@ function WorkspaceView({
   selectedTaskId: string | null;
   selectedSessionId: string | null;
 }) {
-  useEffect(() => {
-    setFrontendErrorContext({
-      workspaceId,
-      taskId: undefined,
-    });
-  }, [workspaceId]);
-
   return <MockLayout workspaceId={workspaceId} selectedTaskId={selectedTaskId} selectedSessionId={selectedSessionId} />;
 }
 
@@ -278,14 +270,6 @@ function TaskRoute() {
 }
 
 function TaskView({ workspaceId, taskId, sessionId }: { workspaceId: string; taskId: string; sessionId: string | null }) {
-  useEffect(() => {
-    setFrontendErrorContext({
-      workspaceId,
-      taskId,
-      repoId: undefined,
-    });
-  }, [taskId, workspaceId]);
-
   return <MockLayout workspaceId={workspaceId} selectedTaskId={taskId} selectedSessionId={sessionId} />;
 }
 
@@ -326,13 +310,6 @@ function AppWorkspaceGate({ workspaceId, children }: { workspaceId: string; chil
 
 function RepoRouteInner({ workspaceId, repoId }: { workspaceId: string; repoId: string }) {
   const workspaceState = useInterest(interestManager, "workspace", { workspaceId });
-  useEffect(() => {
-    setFrontendErrorContext({
-      workspaceId,
-      taskId: undefined,
-      repoId,
-    });
-  }, [repoId, workspaceId]);
   const activeTaskId = workspaceState.data?.taskSummaries.find((task) => task.repoId === repoId)?.id;
   if (!activeTaskId) {
     return <Navigate to="/workspaces/$workspaceId" params={{ workspaceId }} replace />;
@@ -343,22 +320,7 @@ function RepoRouteInner({ workspaceId, repoId }: { workspaceId: string; repoId: 
 function RootLayout() {
   return (
     <>
-      <RouteContextSync />
       <Outlet />
     </>
   );
-}
-
-function RouteContextSync() {
-  const location = useRouterState({
-    select: (state) => state.location,
-  });
-
-  useEffect(() => {
-    setFrontendErrorContext({
-      route: `${location.pathname}${location.search}${location.hash}`,
-    });
-  }, [location.hash, location.pathname, location.search]);
-
-  return null;
 }

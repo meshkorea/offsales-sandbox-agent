@@ -84,7 +84,6 @@ services:
       # Use Linux-native workspace dependencies inside the container instead of host node_modules.
       - "foundry_node_modules:/app/node_modules"
       - "foundry_client_node_modules:/app/foundry/packages/client/node_modules"
-      - "foundry_frontend_errors_node_modules:/app/foundry/packages/frontend-errors/node_modules"
       - "foundry_frontend_node_modules:/app/foundry/packages/frontend/node_modules"
       - "foundry_shared_node_modules:/app/foundry/packages/shared/node_modules"
       - "foundry_pnpm_store:/tmp/.local/share/pnpm/store"
@@ -100,7 +99,6 @@ volumes:
   foundry_rivetkit_storage: {}
   foundry_node_modules: {}
   foundry_client_node_modules: {}
-  foundry_frontend_errors_node_modules: {}
   foundry_frontend_node_modules: {}
   foundry_shared_node_modules: {}
   foundry_pnpm_store: {}

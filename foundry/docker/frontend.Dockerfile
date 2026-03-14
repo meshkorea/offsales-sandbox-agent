@@ -15,7 +15,6 @@ RUN pnpm --filter @sandbox-agent/cli-shared build
 RUN SKIP_OPENAPI_GEN=1 pnpm --filter sandbox-agent build
 RUN pnpm --filter @sandbox-agent/react build
 RUN pnpm --filter @sandbox-agent/foundry-client build
-RUN pnpm --filter @sandbox-agent/foundry-frontend-errors build
 ENV FOUNDRY_FRONTEND_CLIENT_MODE=remote
 RUN pnpm --filter @sandbox-agent/foundry-frontend build
 
