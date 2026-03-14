@@ -125,7 +125,7 @@
 ## Docker Examples (Dev Testing)
 
 - When manually testing bleeding-edge (unreleased) versions of sandbox-agent in `examples/`, use `SANDBOX_AGENT_DEV=1` with the Docker-based examples.
-- This triggers `examples/shared/Dockerfile.dev` which builds the server binary from local source and packages it into the Docker image.
+- This triggers a local build of `docker/runtime/Dockerfile.full` which builds the server binary from local source and packages it into the Docker image.
 - Example: `SANDBOX_AGENT_DEV=1 pnpm --filter @sandbox-agent/example-mcp start`
 
 ## Install Version References
@@ -152,7 +152,7 @@
   - `.claude/commands/post-release-testing.md`
   - `examples/cloudflare/Dockerfile`
   - `examples/daytona/src/index.ts`
-  - `examples/daytona/src/daytona-with-snapshot.ts`
+  - `examples/shared/src/docker.ts`
   - `examples/docker/src/index.ts`
   - `examples/e2b/src/index.ts`
   - `examples/vercel/src/index.ts`
