@@ -152,6 +152,10 @@ function encodeEligibleOrganizationIds(value: string[]): string {
   return JSON.stringify([...new Set(value)]);
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function seatsIncludedForPlan(planId: FoundryBillingPlanId): number {
   switch (planId) {
     case "free":
@@ -217,7 +221,76 @@ async function getOrganizationState(workspace: any) {
   return await workspace.getOrganizationShellState({});
 }
 
-async function buildAppSnapshot(c: any, sessionId: string): Promise<FoundryAppSnapshot> {
+async function getOrganizationStateIfInitialized(workspace: any) {
+  return await workspace.getOrganizationShellStateIfInitialized({});
+}
+
+async function listSnapshotOrganizations(c: any, sessionId: string, organizationIds: string[]) {
+  const results = await Promise.all(
+    organizationIds.map(async (organizationId) => {
+      const organizationStartedAt = performance.now();
+      try {
+        const workspace = await getOrCreateWorkspace(c, organizationId);
+        const organizationState = await getOrganizationStateIfInitialized(workspace);
+        if (!organizationState) {
+          logger.warn(
+            {
+              sessionId,
+              workspaceId: c.state.workspaceId,
+              organizationId,
+              durationMs: roundDurationMs(organizationStartedAt),
+            },
+            "build_app_snapshot_organization_uninitialized",
+          );
+          return { organizationId, snapshot: null, status: "uninitialized" as const };
+        }
+        logger.info(
+          {
+            sessionId,
+            workspaceId: c.state.workspaceId,
+            organizationId,
+            durationMs: roundDurationMs(organizationStartedAt),
+          },
+          "build_app_snapshot_organization_completed",
+        );
+        return { organizationId, snapshot: organizationState.snapshot, status: "ok" as const };
+      } catch (error) {
+        const message = errorMessage(error);
+        if (!message.includes("Actor not found")) {
+          logger.error(
+            {
+              sessionId,
+              workspaceId: c.state.workspaceId,
+              organizationId,
+              durationMs: roundDurationMs(organizationStartedAt),
+              errorMessage: message,
+              errorStack: error instanceof Error ? error.stack : undefined,
+            },
+            "build_app_snapshot_organization_failed",
+          );
+          throw error;
+        }
+        logger.info(
+          {
+            sessionId,
+            workspaceId: c.state.workspaceId,
+            organizationId,
+            durationMs: roundDurationMs(organizationStartedAt),
+          },
+          "build_app_snapshot_organization_missing",
+        );
+        return { organizationId, snapshot: null, status: "missing" as const };
+      }
+    }),
+  );
+
+  return {
+    organizations: results.map((result) => result.snapshot).filter((organization): organization is FoundryOrganization => organization !== null),
+    uninitializedOrganizationIds: results.filter((result) => result.status === "uninitialized").map((result) => result.organizationId),
+  };
+}
+
+async function buildAppSnapshot(c: any, sessionId: string, allowOrganizationRepair = true): Promise<FoundryAppSnapshot> {
   assertAppWorkspace(c);
   const startedAt = performance.now();
   const auth = getBetterAuthService();
@@ -252,53 +325,31 @@ async function buildAppSnapshot(c: any, sessionId: string): Promise<FoundryAppSn
     "build_app_snapshot_started",
   );
 
-  const organizations = (
-    await Promise.all(
-      eligibleOrganizationIds.map(async (organizationId) => {
-        const organizationStartedAt = performance.now();
-        try {
-          const workspace = await getOrCreateWorkspace(c, organizationId);
-          const organizationState = await getOrganizationState(workspace);
-          logger.info(
-            {
-              sessionId,
-              workspaceId: c.state.workspaceId,
-              organizationId,
-              durationMs: roundDurationMs(organizationStartedAt),
-            },
-            "build_app_snapshot_organization_completed",
-          );
-          return organizationState.snapshot;
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          if (!message.includes("Actor not found")) {
-            logger.error(
-              {
-                sessionId,
-                workspaceId: c.state.workspaceId,
-                organizationId,
-                durationMs: roundDurationMs(organizationStartedAt),
-                errorMessage: message,
-                errorStack: error instanceof Error ? error.stack : undefined,
-              },
-              "build_app_snapshot_organization_failed",
-            );
-            throw error;
-          }
-          logger.info(
-            {
-              sessionId,
-              workspaceId: c.state.workspaceId,
-              organizationId,
-              durationMs: roundDurationMs(organizationStartedAt),
-            },
-            "build_app_snapshot_organization_missing",
-          );
-          return null;
-        }
-      }),
-    )
-  ).filter((organization): organization is FoundryOrganization => organization !== null);
+  let { organizations, uninitializedOrganizationIds } = await listSnapshotOrganizations(c, sessionId, eligibleOrganizationIds);
+
+  if (allowOrganizationRepair && uninitializedOrganizationIds.length > 0) {
+    const token = await auth.getAccessTokenForSession(sessionId);
+    if (token?.accessToken) {
+      logger.info(
+        {
+          sessionId,
+          workspaceId: c.state.workspaceId,
+          organizationIds: uninitializedOrganizationIds,
+        },
+        "build_app_snapshot_repairing_organizations",
+      );
+      await syncGithubOrganizationsInternal(c, { sessionId, accessToken: token.accessToken }, { broadcast: false });
+      return await buildAppSnapshot(c, sessionId, false);
+    }
+    logger.warn(
+      {
+        sessionId,
+        workspaceId: c.state.workspaceId,
+        organizationIds: uninitializedOrganizationIds,
+      },
+      "build_app_snapshot_repair_skipped_no_access_token",
+    );
+  }
 
   const currentUser: FoundryUser | null = user
     ? {
@@ -466,6 +517,10 @@ async function safeListInstallations(accessToken: string): Promise<any[]> {
  * already returned a redirect to the browser.
  */
 export async function syncGithubOrganizations(c: any, input: { sessionId: string; accessToken: string }): Promise<void> {
+  await syncGithubOrganizationsInternal(c, input, { broadcast: true });
+}
+
+async function syncGithubOrganizationsInternal(c: any, input: { sessionId: string; accessToken: string }, options: { broadcast: boolean }): Promise<void> {
   assertAppWorkspace(c);
   const auth = getBetterAuthService();
   const { appShell } = getActorRuntimeContext();
@@ -532,7 +587,13 @@ export async function syncGithubOrganizations(c: any, input: { sessionId: string
     roleLabel: "GitHub user",
     eligibleOrganizationIdsJson: encodeEligibleOrganizationIds(linkedOrganizationIds),
   });
-  c.broadcast("appUpdated", { at: Date.now(), sessionId });
+  if (!options.broadcast) {
+    return;
+  }
+  c.broadcast("appUpdated", {
+    type: "appUpdated",
+    snapshot: await buildAppSnapshot(c, sessionId),
+  });
 }
 
 export async function syncGithubOrganizationRepos(c: any, input: { sessionId: string; organizationId: string }): Promise<void> {
@@ -639,6 +700,19 @@ async function listOrganizationRepoCatalog(c: any): Promise<string[]> {
 async function buildOrganizationState(c: any) {
   const startedAt = performance.now();
   const row = await requireOrganizationProfileRow(c);
+  return await buildOrganizationStateFromRow(c, row, startedAt);
+}
+
+async function buildOrganizationStateIfInitialized(c: any) {
+  const startedAt = performance.now();
+  const row = await readOrganizationProfileRow(c);
+  if (!row) {
+    return null;
+  }
+  return await buildOrganizationStateFromRow(c, row, startedAt);
+}
+
+async function buildOrganizationStateFromRow(c: any, row: any, startedAt: number) {
   const repoCatalog = await listOrganizationRepoCatalog(c);
   const members = await listOrganizationMembers(c);
   const seatAssignmentEmails = await listOrganizationSeatAssignments(c);
@@ -1577,6 +1651,11 @@ export const workspaceAppActions = {
   async getOrganizationShellState(c: any): Promise<any> {
     assertOrganizationWorkspace(c);
     return await buildOrganizationState(c);
+  },
+
+  async getOrganizationShellStateIfInitialized(c: any): Promise<any | null> {
+    assertOrganizationWorkspace(c);
+    return await buildOrganizationStateIfInitialized(c);
   },
 
   async updateOrganizationShellProfile(c: any, input: Pick<UpdateFoundryOrganizationProfileInput, "displayName" | "slug" | "primaryDomain">): Promise<void> {

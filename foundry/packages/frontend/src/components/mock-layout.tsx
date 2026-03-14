@@ -1,7 +1,8 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useStyletron } from "baseui";
-import { createErrorContext } from "@sandbox-agent/foundry-shared";
+import { createErrorContext, type WorkbenchSessionSummary, type WorkbenchTaskDetail, type WorkbenchTaskSummary } from "@sandbox-agent/foundry-shared";
+import { useInterest } from "@sandbox-agent/foundry-client";
 
 import { PanelLeft, PanelRight } from "lucide-react";
 import { useFoundryTokens } from "../app/theme";
@@ -30,7 +31,8 @@ import {
   type ModelId,
 } from "./mock-layout/view-model";
 import { activeMockOrganization, useMockAppSnapshot } from "../lib/mock-app";
-import { getTaskWorkbenchClient } from "../lib/workbench";
+import { backendClient } from "../lib/backend";
+import { interestManager } from "../lib/interest";
 
 function firstAgentTabId(task: Task): string | null {
   return task.tabs[0]?.id ?? null;
@@ -65,6 +67,81 @@ function sanitizeActiveTabId(task: Task, tabId: string | null | undefined, openD
   return openDiffs.length > 0 ? diffTabId(openDiffs[openDiffs.length - 1]!) : lastAgentTabId;
 }
 
+function toLegacyTab(
+  summary: WorkbenchSessionSummary,
+  sessionDetail?: { draft: Task["tabs"][number]["draft"]; transcript: Task["tabs"][number]["transcript"] },
+): Task["tabs"][number] {
+  return {
+    id: summary.id,
+    sessionId: summary.sessionId,
+    sessionName: summary.sessionName,
+    agent: summary.agent,
+    model: summary.model,
+    status: summary.status,
+    thinkingSinceMs: summary.thinkingSinceMs,
+    unread: summary.unread,
+    created: summary.created,
+    draft: sessionDetail?.draft ?? {
+      text: "",
+      attachments: [],
+      updatedAtMs: null,
+    },
+    transcript: sessionDetail?.transcript ?? [],
+  };
+}
+
+function toLegacyTask(
+  summary: WorkbenchTaskSummary,
+  detail?: WorkbenchTaskDetail,
+  sessionCache?: Map<string, { draft: Task["tabs"][number]["draft"]; transcript: Task["tabs"][number]["transcript"] }>,
+): Task {
+  const sessions = detail?.sessionsSummary ?? summary.sessionsSummary;
+  return {
+    id: summary.id,
+    repoId: summary.repoId,
+    title: detail?.title ?? summary.title,
+    status: detail?.status ?? summary.status,
+    repoName: detail?.repoName ?? summary.repoName,
+    updatedAtMs: detail?.updatedAtMs ?? summary.updatedAtMs,
+    branch: detail?.branch ?? summary.branch,
+    pullRequest: detail?.pullRequest ?? summary.pullRequest,
+    tabs: sessions.map((session) => toLegacyTab(session, sessionCache?.get(session.id))),
+    fileChanges: detail?.fileChanges ?? [],
+    diffs: detail?.diffs ?? {},
+    fileTree: detail?.fileTree ?? [],
+    minutesUsed: detail?.minutesUsed ?? 0,
+  };
+}
+
+function groupProjects(repos: Array<{ id: string; label: string }>, tasks: Task[]) {
+  return repos
+    .map((repo) => ({
+      id: repo.id,
+      label: repo.label,
+      updatedAtMs: tasks.filter((task) => task.repoId === repo.id).reduce((latest, task) => Math.max(latest, task.updatedAtMs), 0),
+      tasks: tasks.filter((task) => task.repoId === repo.id).sort((left, right) => right.updatedAtMs - left.updatedAtMs),
+    }))
+    .filter((repo) => repo.tasks.length > 0);
+}
+
+interface WorkbenchActions {
+  createTask(input: { repoId: string; task: string; title?: string; branch?: string; model?: ModelId }): Promise<{ taskId: string; tabId?: string }>;
+  markTaskUnread(input: { taskId: string }): Promise<void>;
+  renameTask(input: { taskId: string; value: string }): Promise<void>;
+  renameBranch(input: { taskId: string; value: string }): Promise<void>;
+  archiveTask(input: { taskId: string }): Promise<void>;
+  publishPr(input: { taskId: string }): Promise<void>;
+  revertFile(input: { taskId: string; path: string }): Promise<void>;
+  updateDraft(input: { taskId: string; tabId: string; text: string; attachments: LineAttachment[] }): Promise<void>;
+  sendMessage(input: { taskId: string; tabId: string; text: string; attachments: LineAttachment[] }): Promise<void>;
+  stopAgent(input: { taskId: string; tabId: string }): Promise<void>;
+  setSessionUnread(input: { taskId: string; tabId: string; unread: boolean }): Promise<void>;
+  renameSession(input: { taskId: string; tabId: string; title: string }): Promise<void>;
+  closeTab(input: { taskId: string; tabId: string }): Promise<void>;
+  addTab(input: { taskId: string; model?: string }): Promise<{ tabId: string }>;
+  changeModel(input: { taskId: string; tabId: string; model: ModelId }): Promise<void>;
+}
+
 const TranscriptPanel = memo(function TranscriptPanel({
   taskWorkbenchClient,
   task,
@@ -83,7 +160,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
   onToggleRightSidebar,
   onNavigateToUsage,
 }: {
-  taskWorkbenchClient: ReturnType<typeof getTaskWorkbenchClient>;
+  taskWorkbenchClient: WorkbenchActions;
   task: Task;
   activeTabId: string | null;
   lastAgentTabId: string | null;
@@ -902,14 +979,82 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
   const [css] = useStyletron();
   const t = useFoundryTokens();
   const navigate = useNavigate();
-  const taskWorkbenchClient = useMemo(() => getTaskWorkbenchClient(workspaceId), [workspaceId]);
-  const viewModel = useSyncExternalStore(
-    taskWorkbenchClient.subscribe.bind(taskWorkbenchClient),
-    taskWorkbenchClient.getSnapshot.bind(taskWorkbenchClient),
-    taskWorkbenchClient.getSnapshot.bind(taskWorkbenchClient),
+  const taskWorkbenchClient = useMemo<WorkbenchActions>(
+    () => ({
+      createTask: (input) => backendClient.createWorkbenchTask(workspaceId, input),
+      markTaskUnread: (input) => backendClient.markWorkbenchUnread(workspaceId, input),
+      renameTask: (input) => backendClient.renameWorkbenchTask(workspaceId, input),
+      renameBranch: (input) => backendClient.renameWorkbenchBranch(workspaceId, input),
+      archiveTask: async (input) => backendClient.runAction(workspaceId, input.taskId, "archive"),
+      publishPr: (input) => backendClient.publishWorkbenchPr(workspaceId, input),
+      revertFile: (input) => backendClient.revertWorkbenchFile(workspaceId, input),
+      updateDraft: (input) => backendClient.updateWorkbenchDraft(workspaceId, input),
+      sendMessage: (input) => backendClient.sendWorkbenchMessage(workspaceId, input),
+      stopAgent: (input) => backendClient.stopWorkbenchSession(workspaceId, input),
+      setSessionUnread: (input) => backendClient.setWorkbenchSessionUnread(workspaceId, input),
+      renameSession: (input) => backendClient.renameWorkbenchSession(workspaceId, input),
+      closeTab: (input) => backendClient.closeWorkbenchSession(workspaceId, input),
+      addTab: (input) => backendClient.createWorkbenchSession(workspaceId, input),
+      changeModel: (input) => backendClient.changeWorkbenchModel(workspaceId, input),
+    }),
+    [workspaceId],
   );
-  const tasks = viewModel.tasks ?? [];
-  const rawProjects = viewModel.projects ?? [];
+  const workspaceState = useInterest(interestManager, "workspace", { workspaceId });
+  const workspaceRepos = workspaceState.data?.repos ?? [];
+  const taskSummaries = workspaceState.data?.taskSummaries ?? [];
+  const selectedTaskSummary = useMemo(
+    () => taskSummaries.find((task) => task.id === selectedTaskId) ?? taskSummaries[0] ?? null,
+    [selectedTaskId, taskSummaries],
+  );
+  const taskState = useInterest(
+    interestManager,
+    "task",
+    selectedTaskSummary
+      ? {
+          workspaceId,
+          repoId: selectedTaskSummary.repoId,
+          taskId: selectedTaskSummary.id,
+        }
+      : null,
+  );
+  const sessionState = useInterest(
+    interestManager,
+    "session",
+    selectedTaskSummary && selectedSessionId
+      ? {
+          workspaceId,
+          repoId: selectedTaskSummary.repoId,
+          taskId: selectedTaskSummary.id,
+          sessionId: selectedSessionId,
+        }
+      : null,
+  );
+  const tasks = useMemo(() => {
+    const sessionCache = new Map<string, { draft: Task["tabs"][number]["draft"]; transcript: Task["tabs"][number]["transcript"] }>();
+    if (selectedTaskSummary && taskState.data) {
+      for (const session of taskState.data.sessionsSummary) {
+        const cached =
+          (selectedSessionId && session.id === selectedSessionId ? sessionState.data : undefined) ??
+          interestManager.getSnapshot("session", {
+            workspaceId,
+            repoId: selectedTaskSummary.repoId,
+            taskId: selectedTaskSummary.id,
+            sessionId: session.id,
+          });
+        if (cached) {
+          sessionCache.set(session.id, {
+            draft: cached.draft,
+            transcript: cached.transcript,
+          });
+        }
+      }
+    }
+
+    return taskSummaries.map((summary) =>
+      summary.id === selectedTaskSummary?.id ? toLegacyTask(summary, taskState.data, sessionCache) : toLegacyTask(summary),
+    );
+  }, [selectedTaskSummary, selectedSessionId, sessionState.data, taskState.data, taskSummaries, workspaceId]);
+  const rawProjects = useMemo(() => groupProjects(workspaceRepos, tasks), [tasks, workspaceRepos]);
   const appSnapshot = useMockAppSnapshot();
   const activeOrg = activeMockOrganization(appSnapshot);
   const navigateToUsage = useCallback(() => {
@@ -1084,16 +1229,16 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
   }, [activeTask, lastAgentTabIdByTask, selectedSessionId, syncRouteSession]);
 
   useEffect(() => {
-    if (selectedNewTaskRepoId && viewModel.repos.some((repo) => repo.id === selectedNewTaskRepoId)) {
+    if (selectedNewTaskRepoId && workspaceRepos.some((repo) => repo.id === selectedNewTaskRepoId)) {
       return;
     }
 
     const fallbackRepoId =
-      activeTask?.repoId && viewModel.repos.some((repo) => repo.id === activeTask.repoId) ? activeTask.repoId : (viewModel.repos[0]?.id ?? "");
+      activeTask?.repoId && workspaceRepos.some((repo) => repo.id === activeTask.repoId) ? activeTask.repoId : (workspaceRepos[0]?.id ?? "");
     if (fallbackRepoId !== selectedNewTaskRepoId) {
       setSelectedNewTaskRepoId(fallbackRepoId);
     }
-  }, [activeTask?.repoId, selectedNewTaskRepoId, viewModel.repos]);
+  }, [activeTask?.repoId, selectedNewTaskRepoId, workspaceRepos]);
 
   useEffect(() => {
     if (!activeTask) {
@@ -1366,7 +1511,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
             <div style={{ minWidth: `${leftWidth}px`, flex: 1, display: "flex", flexDirection: "column" }}>
               <Sidebar
                 projects={projects}
-                newTaskRepos={viewModel.repos}
+                newTaskRepos={workspaceRepos}
                 selectedNewTaskRepoId={selectedNewTaskRepoId}
                 activeId=""
                 onSelect={selectTask}
@@ -1421,22 +1566,22 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
                   >
                     <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 600 }}>Create your first task</h2>
                     <p style={{ margin: 0, opacity: 0.75 }}>
-                      {viewModel.repos.length > 0
+                      {workspaceRepos.length > 0
                         ? "Start from the sidebar to create a task on the first available repo."
                         : "No repos are available in this workspace yet."}
                     </p>
                     <button
                       type="button"
                       onClick={createTask}
-                      disabled={viewModel.repos.length === 0}
+                      disabled={workspaceRepos.length === 0}
                       style={{
                         alignSelf: "center",
                         border: 0,
                         borderRadius: "999px",
                         padding: "10px 18px",
-                        background: viewModel.repos.length > 0 ? t.borderMedium : t.textTertiary,
+                        background: workspaceRepos.length > 0 ? t.borderMedium : t.textTertiary,
                         color: t.textPrimary,
-                        cursor: viewModel.repos.length > 0 ? "pointer" : "not-allowed",
+                        cursor: workspaceRepos.length > 0 ? "pointer" : "not-allowed",
                         fontWeight: 600,
                       }}
                     >
@@ -1486,7 +1631,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
           <div style={{ minWidth: `${leftWidth}px`, flex: 1, display: "flex", flexDirection: "column" }}>
             <Sidebar
               projects={projects}
-              newTaskRepos={viewModel.repos}
+              newTaskRepos={workspaceRepos}
               selectedNewTaskRepoId={selectedNewTaskRepoId}
               activeId={activeTask.id}
               onSelect={selectTask}
@@ -1534,7 +1679,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
             >
               <Sidebar
                 projects={projects}
-                newTaskRepos={viewModel.repos}
+                newTaskRepos={workspaceRepos}
                 selectedNewTaskRepoId={selectedNewTaskRepoId}
                 activeId={activeTask.id}
                 onSelect={(id) => {

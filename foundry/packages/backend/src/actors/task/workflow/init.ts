@@ -35,6 +35,13 @@ function debugInit(loopCtx: any, message: string, context?: Record<string, unkno
   });
 }
 
+async function ensureTaskRuntimeCacheColumns(db: any): Promise<void> {
+  await db.execute(`ALTER TABLE task_runtime ADD COLUMN git_state_json text`).catch(() => {});
+  await db.execute(`ALTER TABLE task_runtime ADD COLUMN git_state_updated_at integer`).catch(() => {});
+  await db.execute(`ALTER TABLE task_runtime ADD COLUMN provision_stage text`).catch(() => {});
+  await db.execute(`ALTER TABLE task_runtime ADD COLUMN provision_stage_updated_at integer`).catch(() => {});
+}
+
 async function withActivityTimeout<T>(timeoutMs: number, label: string, run: () => Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | null = null;
   try {
@@ -61,6 +68,8 @@ export async function initBootstrapDbActivity(loopCtx: any, body: any): Promise<
   const initialStatusMessage = loopCtx.state.branchName && loopCtx.state.title ? "provisioning" : "naming";
 
   try {
+    await ensureTaskRuntimeCacheColumns(db);
+
     await db
       .insert(taskTable)
       .values({

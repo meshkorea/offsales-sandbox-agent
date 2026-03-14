@@ -65,6 +65,58 @@ Use `pnpm` workspaces and Turborepo.
 - When asked for screenshots, capture all relevant affected screens and modal states, not just a single viewport. Include empty, populated, success, and blocked/error states when they are part of the changed flow.
 - If a screenshot catches a transition frame, blank modal, or otherwise misleading state, retake it before reporting it.
 
+## Realtime Data Architecture
+
+### Core pattern: fetch initial state + subscribe to deltas
+
+All client data flows follow the same pattern:
+
+1. **Connect** to the actor via WebSocket.
+2. **Fetch initial state** via an action call to get the current materialized snapshot.
+3. **Subscribe to events** on the connection. Events carry **full replacement payloads** for the changed entity (not empty notifications, not patches — the complete new state of the thing that changed).
+4. **Unsubscribe** after a 30-second grace period when interest ends (screen navigation, component unmount). The grace period prevents thrashing during screen transitions and React double-renders.
+
+Do not use polling (`refetchInterval`), empty "go re-fetch" broadcast events, or full-snapshot re-fetches on every mutation. Every mutation broadcasts the new absolute state of the changed entity to connected clients.
+
+### Materialized state in coordinator actors
+
+- **Workspace actor** materializes sidebar-level data in its own SQLite: repo catalog, task summaries (title, status, branch, PR, updatedAt), repo summaries (overview/branch state), and session summaries (id, name, status, unread, model — no transcript). Task actors push summary changes to the workspace actor when they mutate. The workspace actor broadcasts the updated entity to connected clients. `getWorkspaceSummary` reads from local tables only — no fan-out to child actors.
+- **Task actor** materializes its own detail state (session summaries, sandbox info, diffs, file tree). `getTaskDetail` reads from the task actor's own SQLite. The task actor broadcasts updates directly to clients connected to it.
+- **Session data** lives on the task actor but is a separate subscription topic. The task topic includes `sessions_summary` (list without content). The `session` topic provides full transcript and draft state. Clients subscribe to the `session` topic for whichever session tab is active, and filter `sessionUpdated` events by session ID (ignoring events for other sessions on the same actor).
+- The expensive fan-out (querying every project/task actor) only exists as a background reconciliation/rebuild path, never on the hot read path.
+
+### Interest manager
+
+The interest manager (`packages/client`) is a global singleton that manages WebSocket connections, cached state, and subscriptions for all topics. It:
+
+- **Deduplicates** — multiple subscribers to the same topic share one connection and one cached state.
+- **Grace period (30s)** — when the last subscriber leaves, the connection and state stay alive for 30 seconds before teardown. This keeps data warm for back-navigation and prevents thrashing.
+- **Exposes a single hook** — `useInterest(topicKey, params)` returns `{ data, status, error }`. Null params = no subscription (conditional interest).
+- **Shared harness, separate implementations** — the `InterestManager` interface is shared between mock and remote implementations. The mock implementation uses in-memory state. The remote implementation uses WebSocket connections. The API/client exposure is identical for both.
+
+### Topics
+
+Each topic maps to one actor connection and one event stream:
+
+| Topic | Actor | Event | Data |
+|---|---|---|---|
+| `app` | Workspace `"app"` | `appUpdated` | Auth, orgs, onboarding |
+| `workspace` | Workspace `{workspaceId}` | `workspaceUpdated` | Repo catalog, task summaries, repo summaries |
+| `task` | Task `{workspaceId, repoId, taskId}` | `taskUpdated` | Session summaries, sandbox info, diffs, file tree |
+| `session` | Task `{workspaceId, repoId, taskId}` (filtered by sessionId) | `sessionUpdated` | Transcript, draft state |
+| `sandboxProcesses` | SandboxInstance | `processesUpdated` | Process list |
+
+The client subscribes to `app` always, `workspace` when entering a workspace, `task` when viewing a task, and `session` when viewing a specific session tab. At most 4 actor connections at a time (app + workspace + task + sandbox if terminal is open). The `session` topic reuses the task actor connection and filters by session ID.
+
+### Rules
+
+- Do not add `useQuery` with `refetchInterval` for data that should be push-based.
+- Do not broadcast empty notification events. Events must carry the full new state of the changed entity.
+- Do not re-fetch full snapshots after mutations. The mutation triggers a server-side broadcast with the new entity state; the client replaces it in local state.
+- All event subscriptions go through the interest manager. Do not create ad-hoc `handle.connect()` + `conn.on()` patterns.
+- Backend mutations that affect sidebar data (task title, status, branch, PR state) must push the updated summary to the parent workspace actor, which broadcasts to workspace subscribers.
+- Comment architecture-related code: add doc comments explaining the materialized state pattern, why deltas flow the way they do, and the relationship between parent/child actor broadcasts. New contributors should understand the data flow from comments alone.
+
 ## Runtime Policy
 
 - Runtime is Bun-native.

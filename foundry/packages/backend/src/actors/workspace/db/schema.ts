@@ -20,6 +20,23 @@ export const taskLookup = sqliteTable("task_lookup", {
   repoId: text("repo_id").notNull(),
 });
 
+/**
+ * Materialized sidebar projection maintained by task actors.
+ * The source of truth still lives on each task actor; this table exists so
+ * workspace reads can stay local and avoid fan-out across child actors.
+ */
+export const taskSummaries = sqliteTable("task_summaries", {
+  taskId: text("task_id").notNull().primaryKey(),
+  repoId: text("repo_id").notNull(),
+  title: text("title").notNull(),
+  status: text("status").notNull(),
+  repoName: text("repo_name").notNull(),
+  updatedAtMs: integer("updated_at_ms").notNull(),
+  branch: text("branch"),
+  pullRequestJson: text("pull_request_json"),
+  sessionsSummaryJson: text("sessions_summary_json").notNull().default("[]"),
+});
+
 export const organizationProfile = sqliteTable("organization_profile", {
   id: text("id").notNull().primaryKey(),
   kind: text("kind").notNull(),

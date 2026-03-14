@@ -278,10 +278,12 @@ async function getSandboxAgentClient(c: any) {
   });
 }
 
-function broadcastProcessesUpdated(c: any): void {
+async function broadcastProcessesUpdated(c: any): Promise<void> {
+  const client = await getSandboxAgentClient(c);
+  const { processes } = await client.listProcesses();
   c.broadcast("processesUpdated", {
-    sandboxId: c.state.sandboxId,
-    at: Date.now(),
+    type: "processesUpdated",
+    processes,
   });
 }
 
@@ -475,7 +477,7 @@ export const sandboxInstance = actor({
     async createProcess(c: any, request: ProcessCreateRequest): Promise<ProcessInfo> {
       const client = await getSandboxAgentClient(c);
       const created = await client.createProcess(request);
-      broadcastProcessesUpdated(c);
+      await broadcastProcessesUpdated(c);
       return created;
     },
 
@@ -492,21 +494,21 @@ export const sandboxInstance = actor({
     async stopProcess(c: any, request: { processId: string; query?: ProcessSignalQuery }): Promise<ProcessInfo> {
       const client = await getSandboxAgentClient(c);
       const stopped = await client.stopProcess(request.processId, request.query);
-      broadcastProcessesUpdated(c);
+      await broadcastProcessesUpdated(c);
       return stopped;
     },
 
     async killProcess(c: any, request: { processId: string; query?: ProcessSignalQuery }): Promise<ProcessInfo> {
       const client = await getSandboxAgentClient(c);
       const killed = await client.killProcess(request.processId, request.query);
-      broadcastProcessesUpdated(c);
+      await broadcastProcessesUpdated(c);
       return killed;
     },
 
     async deleteProcess(c: any, request: { processId: string }): Promise<void> {
       const client = await getSandboxAgentClient(c);
       await client.deleteProcess(request.processId);
-      broadcastProcessesUpdated(c);
+      await broadcastProcessesUpdated(c);
     },
 
     async providerState(c: any): Promise<{ providerId: ProviderId; sandboxId: string; state: string; at: number }> {

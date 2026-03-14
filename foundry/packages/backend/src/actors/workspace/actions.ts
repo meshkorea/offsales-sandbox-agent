@@ -4,6 +4,17 @@ import { Loop } from "rivetkit/workflow";
 import type {
   AddRepoInput,
   CreateTaskInput,
+  HistoryEvent,
+  HistoryQueryInput,
+  ListTasksInput,
+  ProviderId,
+  RepoOverview,
+  RepoRecord,
+  RepoStackActionInput,
+  RepoStackActionResult,
+  StarSandboxAgentRepoInput,
+  StarSandboxAgentRepoResult,
+  SwitchResult,
   TaskRecord,
   TaskSummary,
   TaskWorkbenchChangeModelInput,
@@ -14,20 +25,13 @@ import type {
   TaskWorkbenchSelectInput,
   TaskWorkbenchSetSessionUnreadInput,
   TaskWorkbenchSendMessageInput,
-  TaskWorkbenchSnapshot,
   TaskWorkbenchTabInput,
   TaskWorkbenchUpdateDraftInput,
-  HistoryEvent,
-  HistoryQueryInput,
-  ListTasksInput,
-  ProviderId,
-  RepoOverview,
-  RepoStackActionInput,
-  RepoStackActionResult,
-  RepoRecord,
-  StarSandboxAgentRepoInput,
-  StarSandboxAgentRepoResult,
-  SwitchResult,
+  WorkbenchRepoSummary,
+  WorkbenchSessionSummary,
+  WorkbenchTaskSummary,
+  WorkspaceEvent,
+  WorkspaceSummarySnapshot,
   WorkspaceUseInput,
 } from "@sandbox-agent/foundry-shared";
 import { getActorRuntimeContext } from "../context.js";
@@ -35,7 +39,7 @@ import { getTask, getOrCreateHistory, getOrCreateProject, selfWorkspace } from "
 import { logActorWarning, resolveErrorMessage } from "../logging.js";
 import { normalizeRemoteUrl, repoIdFromRemote } from "../../services/repo.js";
 import { resolveWorkspaceGithubAuth } from "../../services/github-auth.js";
-import { taskLookup, repos, providerProfiles } from "./db/schema.js";
+import { taskLookup, repos, providerProfiles, taskSummaries } from "./db/schema.js";
 import { agentTypeForModel } from "../task/workbench.js";
 import { expectQueueResponse } from "../../services/queue.js";
 import { workspaceAppActions } from "./app-shell.js";
@@ -109,6 +113,18 @@ async function upsertTaskLookupRow(c: any, taskId: string, repoId: string): Prom
     .run();
 }
 
+function parseJsonValue<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) {
+    return fallback;
+  }
+
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 async function collectAllTaskSummaries(c: any): Promise<TaskSummary[]> {
   const repoRows = await c.db.select({ repoId: repos.repoId, remoteUrl: repos.remoteUrl }).from(repos).orderBy(desc(repos.updatedAt)).all();
 
@@ -145,17 +161,55 @@ function repoLabelFromRemote(remoteUrl: string): string {
   return remoteUrl;
 }
 
-async function buildWorkbenchSnapshot(c: any): Promise<TaskWorkbenchSnapshot> {
+function buildRepoSummary(repoRow: { repoId: string; remoteUrl: string; updatedAt: number }, taskRows: WorkbenchTaskSummary[]): WorkbenchRepoSummary {
+  const repoTasks = taskRows.filter((task) => task.repoId === repoRow.repoId);
+  const latestActivityMs = repoTasks.reduce((latest, task) => Math.max(latest, task.updatedAtMs), repoRow.updatedAt);
+
+  return {
+    id: repoRow.repoId,
+    label: repoLabelFromRemote(repoRow.remoteUrl),
+    taskCount: repoTasks.length,
+    latestActivityMs,
+  };
+}
+
+function taskSummaryRowFromSummary(taskSummary: WorkbenchTaskSummary) {
+  return {
+    taskId: taskSummary.id,
+    repoId: taskSummary.repoId,
+    title: taskSummary.title,
+    status: taskSummary.status,
+    repoName: taskSummary.repoName,
+    updatedAtMs: taskSummary.updatedAtMs,
+    branch: taskSummary.branch,
+    pullRequestJson: JSON.stringify(taskSummary.pullRequest),
+    sessionsSummaryJson: JSON.stringify(taskSummary.sessionsSummary),
+  };
+}
+
+function taskSummaryFromRow(row: any): WorkbenchTaskSummary {
+  return {
+    id: row.taskId,
+    repoId: row.repoId,
+    title: row.title,
+    status: row.status,
+    repoName: row.repoName,
+    updatedAtMs: row.updatedAtMs,
+    branch: row.branch ?? null,
+    pullRequest: parseJsonValue(row.pullRequestJson, null),
+    sessionsSummary: parseJsonValue<WorkbenchSessionSummary[]>(row.sessionsSummaryJson, []),
+  };
+}
+
+async function reconcileWorkbenchProjection(c: any): Promise<WorkspaceSummarySnapshot> {
   const repoRows = await c.db
     .select({ repoId: repos.repoId, remoteUrl: repos.remoteUrl, updatedAt: repos.updatedAt })
     .from(repos)
     .orderBy(desc(repos.updatedAt))
     .all();
 
-  const tasks: Array<any> = [];
-  const projects: Array<any> = [];
+  const taskRows: WorkbenchTaskSummary[] = [];
   for (const row of repoRows) {
-    const projectTasks: Array<any> = [];
     try {
       const project = await getOrCreateProject(c, c.state.workspaceId, row.repoId, row.remoteUrl);
       const summaries = await project.listTaskSummaries({ includeArchived: true });
@@ -163,11 +217,18 @@ async function buildWorkbenchSnapshot(c: any): Promise<TaskWorkbenchSnapshot> {
         try {
           await upsertTaskLookupRow(c, summary.taskId, row.repoId);
           const task = getTask(c, c.state.workspaceId, row.repoId, summary.taskId);
-          const snapshot = await task.getWorkbench({});
-          tasks.push(snapshot);
-          projectTasks.push(snapshot);
+          const taskSummary = await task.getTaskSummary({});
+          taskRows.push(taskSummary);
+          await c.db
+            .insert(taskSummaries)
+            .values(taskSummaryRowFromSummary(taskSummary))
+            .onConflictDoUpdate({
+              target: taskSummaries.taskId,
+              set: taskSummaryRowFromSummary(taskSummary),
+            })
+            .run();
         } catch (error) {
-          logActorWarning("workspace", "failed collecting workbench task", {
+          logActorWarning("workspace", "failed collecting task summary during reconciliation", {
             workspaceId: c.state.workspaceId,
             repoId: row.repoId,
             taskId: summary.taskId,
@@ -175,17 +236,8 @@ async function buildWorkbenchSnapshot(c: any): Promise<TaskWorkbenchSnapshot> {
           });
         }
       }
-
-      if (projectTasks.length > 0) {
-        projects.push({
-          id: row.repoId,
-          label: repoLabelFromRemote(row.remoteUrl),
-          updatedAtMs: projectTasks[0]?.updatedAtMs ?? row.updatedAt,
-          tasks: projectTasks.sort((left, right) => right.updatedAtMs - left.updatedAtMs),
-        });
-      }
     } catch (error) {
-      logActorWarning("workspace", "failed collecting workbench repo snapshot", {
+      logActorWarning("workspace", "failed collecting repo during workbench reconciliation", {
         workspaceId: c.state.workspaceId,
         repoId: row.repoId,
         error: resolveErrorMessage(error),
@@ -193,22 +245,52 @@ async function buildWorkbenchSnapshot(c: any): Promise<TaskWorkbenchSnapshot> {
     }
   }
 
-  tasks.sort((left, right) => right.updatedAtMs - left.updatedAtMs);
-  projects.sort((left, right) => right.updatedAtMs - left.updatedAtMs);
+  taskRows.sort((left, right) => right.updatedAtMs - left.updatedAtMs);
   return {
     workspaceId: c.state.workspaceId,
-    repos: repoRows.map((row) => ({
-      id: row.repoId,
-      label: repoLabelFromRemote(row.remoteUrl),
-    })),
-    projects,
-    tasks,
+    repos: repoRows.map((row) => buildRepoSummary(row, taskRows)).sort((left, right) => right.latestActivityMs - left.latestActivityMs),
+    taskSummaries: taskRows,
   };
 }
 
 async function requireWorkbenchTask(c: any, taskId: string) {
   const repoId = await resolveRepoId(c, taskId);
   return getTask(c, c.state.workspaceId, repoId, taskId);
+}
+
+/**
+ * Reads the workspace sidebar snapshot from the workspace actor's local SQLite
+ * only. Task actors push summary updates into `task_summaries`, so clients do
+ * not need this action to fan out to every child actor on the hot read path.
+ */
+async function getWorkspaceSummarySnapshot(c: any): Promise<WorkspaceSummarySnapshot> {
+  const repoRows = await c.db
+    .select({
+      repoId: repos.repoId,
+      remoteUrl: repos.remoteUrl,
+      updatedAt: repos.updatedAt,
+    })
+    .from(repos)
+    .orderBy(desc(repos.updatedAt))
+    .all();
+  const taskRows = await c.db.select().from(taskSummaries).orderBy(desc(taskSummaries.updatedAtMs)).all();
+  const summaries = taskRows.map(taskSummaryFromRow);
+
+  return {
+    workspaceId: c.state.workspaceId,
+    repos: repoRows.map((row) => buildRepoSummary(row, summaries)).sort((left, right) => right.latestActivityMs - left.latestActivityMs),
+    taskSummaries: summaries,
+  };
+}
+
+async function broadcastRepoSummary(
+  c: any,
+  type: "repoAdded" | "repoUpdated",
+  repoRow: { repoId: string; remoteUrl: string; updatedAt: number },
+): Promise<void> {
+  const matchingTaskRows = await c.db.select().from(taskSummaries).where(eq(taskSummaries.repoId, repoRow.repoId)).all();
+  const repo = buildRepoSummary(repoRow, matchingTaskRows.map(taskSummaryFromRow));
+  c.broadcast("workspaceUpdated", { type, repo } satisfies WorkspaceEvent);
 }
 
 async function addRepoMutation(c: any, input: AddRepoInput): Promise<RepoRecord> {
@@ -225,6 +307,7 @@ async function addRepoMutation(c: any, input: AddRepoInput): Promise<RepoRecord>
 
   const repoId = repoIdFromRemote(remoteUrl);
   const now = Date.now();
+  const existing = await c.db.select({ repoId: repos.repoId }).from(repos).where(eq(repos.repoId, repoId)).get();
 
   await c.db
     .insert(repos)
@@ -243,7 +326,11 @@ async function addRepoMutation(c: any, input: AddRepoInput): Promise<RepoRecord>
     })
     .run();
 
-  await workspaceActions.notifyWorkbenchUpdated(c);
+  await broadcastRepoSummary(c, existing ? "repoUpdated" : "repoAdded", {
+    repoId,
+    remoteUrl,
+    updatedAt: now,
+  });
   return {
     workspaceId: c.state.workspaceId,
     repoId,
@@ -306,7 +393,20 @@ async function createTaskMutation(c: any, input: CreateTaskInput): Promise<TaskR
     })
     .run();
 
-  await workspaceActions.notifyWorkbenchUpdated(c);
+  try {
+    const task = getTask(c, c.state.workspaceId, repoId, created.taskId);
+    await workspaceActions.applyTaskSummaryUpdate(c, {
+      taskSummary: await task.getTaskSummary({}),
+    });
+  } catch (error) {
+    logActorWarning("workspace", "failed seeding task summary after task creation", {
+      workspaceId: c.state.workspaceId,
+      repoId,
+      taskId: created.taskId,
+      error: resolveErrorMessage(error),
+    });
+  }
+
   return created;
 }
 
@@ -462,13 +562,37 @@ export const workspaceActions = {
     };
   },
 
-  async getWorkbench(c: any, input: WorkspaceUseInput): Promise<TaskWorkbenchSnapshot> {
-    assertWorkspace(c, input.workspaceId);
-    return await buildWorkbenchSnapshot(c);
+  /**
+   * Called by task actors when their summary-level state changes.
+   * This is the write path for the local materialized projection; clients read
+   * the projection via `getWorkspaceSummary`, but only task actors should push
+   * rows into it.
+   */
+  async applyTaskSummaryUpdate(c: any, input: { taskSummary: WorkbenchTaskSummary }): Promise<void> {
+    await c.db
+      .insert(taskSummaries)
+      .values(taskSummaryRowFromSummary(input.taskSummary))
+      .onConflictDoUpdate({
+        target: taskSummaries.taskId,
+        set: taskSummaryRowFromSummary(input.taskSummary),
+      })
+      .run();
+    c.broadcast("workspaceUpdated", { type: "taskSummaryUpdated", taskSummary: input.taskSummary } satisfies WorkspaceEvent);
   },
 
-  async notifyWorkbenchUpdated(c: any): Promise<void> {
-    c.broadcast("workbenchUpdated", { at: Date.now() });
+  async removeTaskSummary(c: any, input: { taskId: string }): Promise<void> {
+    await c.db.delete(taskSummaries).where(eq(taskSummaries.taskId, input.taskId)).run();
+    c.broadcast("workspaceUpdated", { type: "taskRemoved", taskId: input.taskId } satisfies WorkspaceEvent);
+  },
+
+  async getWorkspaceSummary(c: any, input: WorkspaceUseInput): Promise<WorkspaceSummarySnapshot> {
+    assertWorkspace(c, input.workspaceId);
+    return await getWorkspaceSummarySnapshot(c);
+  },
+
+  async reconcileWorkbenchState(c: any, input: WorkspaceUseInput): Promise<WorkspaceSummarySnapshot> {
+    assertWorkspace(c, input.workspaceId);
+    return await reconcileWorkbenchProjection(c);
   },
 
   async createWorkbenchTask(c: any, input: TaskWorkbenchCreateTaskInput): Promise<{ taskId: string; tabId?: string }> {

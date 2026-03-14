@@ -16,6 +16,12 @@ const journal = {
       tag: "0001_auth_index_tables",
       breakpoints: true,
     },
+    {
+      idx: 2,
+      when: 1773720000000,
+      tag: "0002_task_summaries",
+      breakpoints: true,
+    },
   ],
 } as const;
 
@@ -149,6 +155,18 @@ CREATE TABLE IF NOT EXISTS \`auth_verification\` (
 	\`expires_at\` integer NOT NULL,
 	\`created_at\` integer NOT NULL,
 	\`updated_at\` integer NOT NULL
+);
+`,
+    m0002: `CREATE TABLE IF NOT EXISTS \`task_summaries\` (
+	\`task_id\` text PRIMARY KEY NOT NULL,
+	\`repo_id\` text NOT NULL,
+	\`title\` text NOT NULL,
+	\`status\` text NOT NULL,
+	\`repo_name\` text NOT NULL,
+	\`updated_at_ms\` integer NOT NULL,
+	\`branch\` text,
+	\`pull_request_json\` text,
+	\`sessions_summary_json\` text DEFAULT '[]' NOT NULL
 );
 `,
   } as const,

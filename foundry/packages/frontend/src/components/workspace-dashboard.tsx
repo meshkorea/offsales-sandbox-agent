@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { AgentType, TaskRecord, TaskSummary, RepoBranchRecord, RepoOverview, RepoStackAction } from "@sandbox-agent/foundry-shared";
-import { groupTaskStatus, type SandboxSessionEventRecord } from "@sandbox-agent/foundry-client";
+import type { AgentType, RepoBranchRecord, RepoOverview, RepoStackAction, WorkbenchTaskStatus } from "@sandbox-agent/foundry-shared";
+import { useInterest } from "@sandbox-agent/foundry-client";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Button } from "baseui/button";
@@ -17,6 +17,7 @@ import { Bot, CircleAlert, FolderGit2, GitBranch, MessageSquareText, SendHorizon
 import { formatDiffStat } from "../features/tasks/model";
 import { buildTranscript, resolveSessionSelection } from "../features/sessions/model";
 import { backendClient } from "../lib/backend";
+import { interestManager } from "../lib/interest";
 
 interface WorkspaceDashboardProps {
   workspaceId: string;
@@ -96,11 +97,9 @@ const AGENT_OPTIONS: SelectItem[] = [
   { id: "claude", label: "claude" },
 ];
 
-function statusKind(status: TaskSummary["status"]): StatusTagKind {
-  const group = groupTaskStatus(status);
-  if (group === "running") return "positive";
-  if (group === "queued") return "warning";
-  if (group === "error") return "negative";
+function statusKind(status: WorkbenchTaskStatus): StatusTagKind {
+  if (status === "running") return "positive";
+  if (status === "new") return "warning";
   return "neutral";
 }
 
@@ -133,26 +132,6 @@ function branchTestIdToken(value: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
   return token || "branch";
-}
-
-function useSessionEvents(
-  task: TaskRecord | null,
-  sessionId: string | null,
-): ReturnType<typeof useQuery<{ items: SandboxSessionEventRecord[]; nextCursor?: string }, Error>> {
-  return useQuery({
-    queryKey: ["workspace", task?.workspaceId ?? "", "session", task?.taskId ?? "", sessionId ?? ""],
-    enabled: Boolean(task?.activeSandboxId && sessionId),
-    refetchInterval: 2_500,
-    queryFn: async () => {
-      if (!task?.activeSandboxId || !sessionId) {
-        return { items: [] };
-      }
-      return backendClient.listSandboxSessionEvents(task.workspaceId, task.providerId, task.activeSandboxId, {
-        sessionId,
-        limit: 120,
-      });
-    },
-  });
 }
 
 function repoSummary(overview: RepoOverview | undefined): {
@@ -382,37 +361,26 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
   });
   const [createError, setCreateError] = useState<string | null>(null);
 
-  const tasksQuery = useQuery({
-    queryKey: ["workspace", workspaceId, "tasks"],
-    queryFn: async () => backendClient.listTasks(workspaceId),
-    refetchInterval: 2_500,
-  });
-
-  const taskDetailQuery = useQuery({
-    queryKey: ["workspace", workspaceId, "task-detail", selectedTaskId],
-    enabled: Boolean(selectedTaskId && !repoOverviewMode),
-    refetchInterval: 2_500,
-    queryFn: async () => {
-      if (!selectedTaskId) {
-        throw new Error("No task selected");
-      }
-      return backendClient.getTask(workspaceId, selectedTaskId);
-    },
-  });
-
-  const reposQuery = useQuery({
-    queryKey: ["workspace", workspaceId, "repos"],
-    queryFn: async () => backendClient.listRepos(workspaceId),
-    refetchInterval: 10_000,
-  });
-
-  const repos = reposQuery.data ?? [];
+  const workspaceState = useInterest(interestManager, "workspace", { workspaceId });
+  const repos = workspaceState.data?.repos ?? [];
+  const rows = workspaceState.data?.taskSummaries ?? [];
+  const selectedSummary = useMemo(() => rows.find((row) => row.id === selectedTaskId) ?? rows[0] ?? null, [rows, selectedTaskId]);
+  const taskState = useInterest(
+    interestManager,
+    "task",
+    !repoOverviewMode && selectedSummary
+      ? {
+          workspaceId,
+          repoId: selectedSummary.repoId,
+          taskId: selectedSummary.id,
+        }
+      : null,
+  );
   const activeRepoId = selectedRepoId ?? createRepoId;
 
   const repoOverviewQuery = useQuery({
     queryKey: ["workspace", workspaceId, "repo-overview", activeRepoId],
     enabled: Boolean(repoOverviewMode && activeRepoId),
-    refetchInterval: 5_000,
     queryFn: async () => {
       if (!activeRepoId) {
         throw new Error("No repo selected");
@@ -427,7 +395,7 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
       return;
     }
     if (!createRepoId && repos.length > 0) {
-      setCreateRepoId(repos[0]!.repoId);
+      setCreateRepoId(repos[0]!.id);
     }
   }, [createRepoId, repoOverviewMode, repos, selectedRepoId]);
 
@@ -439,9 +407,8 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
     }
   }, [newAgentType]);
 
-  const rows = tasksQuery.data ?? [];
   const repoGroups = useMemo(() => {
-    const byRepo = new Map<string, TaskSummary[]>();
+    const byRepo = new Map<string, typeof rows>();
     for (const row of rows) {
       const bucket = byRepo.get(row.repoId);
       if (bucket) {
@@ -453,12 +420,12 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
 
     return repos
       .map((repo) => {
-        const tasks = [...(byRepo.get(repo.repoId) ?? [])].sort((a, b) => b.updatedAt - a.updatedAt);
-        const latestTaskAt = tasks[0]?.updatedAt ?? 0;
+        const tasks = [...(byRepo.get(repo.id) ?? [])].sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+        const latestTaskAt = tasks[0]?.updatedAtMs ?? 0;
         return {
-          repoId: repo.repoId,
-          repoRemote: repo.remoteUrl,
-          latestActivityAt: Math.max(repo.updatedAt, latestTaskAt),
+          repoId: repo.id,
+          repoLabel: repo.label,
+          latestActivityAt: Math.max(repo.latestActivityMs, latestTaskAt),
           tasks,
         };
       })
@@ -466,13 +433,11 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
         if (a.latestActivityAt !== b.latestActivityAt) {
           return b.latestActivityAt - a.latestActivityAt;
         }
-        return a.repoRemote.localeCompare(b.repoRemote);
+        return a.repoLabel.localeCompare(b.repoLabel);
       });
   }, [repos, rows]);
 
-  const selectedSummary = useMemo(() => rows.find((row) => row.taskId === selectedTaskId) ?? rows[0] ?? null, [rows, selectedTaskId]);
-
-  const selectedForSession = repoOverviewMode ? null : (taskDetailQuery.data ?? null);
+  const selectedForSession = repoOverviewMode ? null : (taskState.data ?? null);
 
   const activeSandbox = useMemo(() => {
     if (!selectedForSession) return null;
@@ -488,7 +453,7 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
         to: "/workspaces/$workspaceId/tasks/$taskId",
         params: {
           workspaceId,
-          taskId: rows[0]!.taskId,
+          taskId: rows[0]!.id,
         },
         search: { sessionId: undefined },
         replace: true,
@@ -499,35 +464,39 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
   useEffect(() => {
     setActiveSessionId(null);
     setDraft("");
-  }, [selectedForSession?.taskId]);
+  }, [selectedForSession?.id]);
 
-  const sessionsQuery = useQuery({
-    queryKey: ["workspace", workspaceId, "sandbox", activeSandbox?.sandboxId ?? "", "sessions"],
-    enabled: Boolean(activeSandbox?.sandboxId && selectedForSession),
-    refetchInterval: 3_000,
-    queryFn: async () => {
-      if (!activeSandbox?.sandboxId || !selectedForSession) {
-        return { items: [] };
-      }
-      return backendClient.listSandboxSessions(workspaceId, activeSandbox.providerId, activeSandbox.sandboxId, {
-        limit: 30,
-      });
-    },
-  });
-
-  const sessionRows = sessionsQuery.data?.items ?? [];
+  const sessionRows = selectedForSession?.sessionsSummary ?? [];
   const sessionSelection = useMemo(
     () =>
       resolveSessionSelection({
         explicitSessionId: activeSessionId,
         taskSessionId: selectedForSession?.activeSessionId ?? null,
-        sessions: sessionRows,
+        sessions: sessionRows.map((session) => ({
+          id: session.id,
+          agent: session.agent,
+          agentSessionId: session.sessionId ?? "",
+          lastConnectionId: "",
+          createdAt: 0,
+          status: session.status,
+        })),
       }),
     [activeSessionId, selectedForSession?.activeSessionId, sessionRows],
   );
   const resolvedSessionId = sessionSelection.sessionId;
   const staleSessionId = sessionSelection.staleSessionId;
-  const eventsQuery = useSessionEvents(selectedForSession, resolvedSessionId);
+  const sessionState = useInterest(
+    interestManager,
+    "session",
+    selectedForSession && resolvedSessionId
+      ? {
+          workspaceId,
+          repoId: selectedForSession.repoId,
+          taskId: selectedForSession.id,
+          sessionId: resolvedSessionId,
+        }
+      : null,
+  );
   const canStartSession = Boolean(selectedForSession && activeSandbox?.sandboxId);
 
   const startSessionFromTask = async (): Promise<{ id: string; status: "running" | "idle" | "error" }> => {
@@ -546,9 +515,8 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
 
   const createSession = useMutation({
     mutationFn: async () => startSessionFromTask(),
-    onSuccess: async (session) => {
+    onSuccess: (session) => {
       setActiveSessionId(session.id);
-      await Promise.all([sessionsQuery.refetch(), eventsQuery.refetch()]);
     },
   });
 
@@ -558,7 +526,6 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
     }
     const created = await startSessionFromTask();
     setActiveSessionId(created.id);
-    await sessionsQuery.refetch();
     return created.id;
   };
 
@@ -576,13 +543,12 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
         prompt,
       });
     },
-    onSuccess: async () => {
+    onSuccess: () => {
       setDraft("");
-      await Promise.all([sessionsQuery.refetch(), eventsQuery.refetch()]);
     },
   });
 
-  const transcript = buildTranscript(eventsQuery.data?.items ?? []);
+  const transcript = buildTranscript(sessionState.data?.transcript ?? []);
   const canCreateTask = createRepoId.trim().length > 0 && newTask.trim().length > 0;
 
   const createTask = useMutation({
@@ -613,8 +579,6 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
       setNewBranchName("");
       setCreateOnBranch(null);
       setCreateTaskOpen(false);
-      await tasksQuery.refetch();
-      await repoOverviewQuery.refetch();
       await navigate({
         to: "/workspaces/$workspaceId/tasks/$taskId",
         params: {
@@ -641,7 +605,6 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
       setAddRepoError(null);
       setAddRepoRemote("");
       setAddRepoOpen(false);
-      await reposQuery.refetch();
       setCreateRepoId(created.repoId);
       if (repoOverviewMode) {
         await navigate({
@@ -679,7 +642,7 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
         setStackActionMessage(null);
         setStackActionError(result.message);
       }
-      await Promise.all([repoOverviewQuery.refetch(), tasksQuery.refetch()]);
+      await repoOverviewQuery.refetch();
     },
     onError: (error) => {
       setStackActionMessage(null);
@@ -698,7 +661,7 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
     setCreateTaskOpen(true);
   };
 
-  const repoOptions = useMemo(() => repos.map((repo) => createOption({ id: repo.repoId, label: repo.remoteUrl })), [repos]);
+  const repoOptions = useMemo(() => repos.map((repo) => createOption({ id: repo.id, label: repo.label })), [repos]);
   const selectedRepoOption = repoOptions.find((option) => option.id === createRepoId) ?? null;
   const selectedAgentOption = useMemo(() => createOption(AGENT_OPTIONS.find((option) => option.id === newAgentType) ?? AGENT_OPTIONS[0]!), [newAgentType]);
   const selectedFilterOption = useMemo(
@@ -706,7 +669,7 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
     [overviewFilter],
   );
   const sessionOptions = useMemo(
-    () => sessionRows.map((session) => createOption({ id: session.id, label: `${session.id} (${session.status ?? "running"})` })),
+    () => sessionRows.map((session) => createOption({ id: session.id, label: `${session.sessionName} (${session.status})` })),
     [sessionRows],
   );
   const selectedSessionOption = sessionOptions.find((option) => option.id === resolvedSessionId) ?? null;
@@ -839,13 +802,15 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
           </PanelHeader>
 
           <ScrollBody>
-            {tasksQuery.isLoading ? (
+            {workspaceState.status === "loading" ? (
               <>
                 <Skeleton rows={3} height="72px" />
               </>
             ) : null}
 
-            {!tasksQuery.isLoading && repoGroups.length === 0 ? <EmptyState>No repos or tasks yet. Add a repo to start a workspace.</EmptyState> : null}
+            {workspaceState.status !== "loading" && repoGroups.length === 0 ? (
+              <EmptyState>No repos or tasks yet. Add a repo to start a workspace.</EmptyState>
+            ) : null}
 
             {repoGroups.map((group) => (
               <section
@@ -876,7 +841,7 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
                   })}
                   data-testid={group.repoId === activeRepoId ? "repo-overview-open" : `repo-overview-open-${group.repoId}`}
                 >
-                  {group.repoRemote}
+                  {group.repoLabel}
                 </Link>
 
                 <div
@@ -887,14 +852,14 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
                   })}
                 >
                   {group.tasks
-                    .filter((task) => task.status !== "archived" || task.taskId === selectedSummary?.taskId)
+                    .filter((task) => task.status !== "archived" || task.id === selectedSummary?.id)
                     .map((task) => {
-                      const isActive = !repoOverviewMode && task.taskId === selectedSummary?.taskId;
+                      const isActive = !repoOverviewMode && task.id === selectedSummary?.id;
                       return (
                         <Link
-                          key={task.taskId}
+                          key={task.id}
                           to="/workspaces/$workspaceId/tasks/$taskId"
-                          params={{ workspaceId, taskId: task.taskId }}
+                          params={{ workspaceId, taskId: task.id }}
                           search={{ sessionId: undefined }}
                           className={css({
                             display: "block",
@@ -927,7 +892,7 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
                               color="contentSecondary"
                               overrides={{ Block: { style: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } } }}
                             >
-                              {task.branchName ?? "Determining branch..."}
+                              {task.branch ?? "Determining branch..."}
                             </ParagraphSmall>
                             <StatusPill kind={statusKind(task.status)}>{task.status}</StatusPill>
                           </div>
@@ -1396,11 +1361,11 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
                           backgroundColor: theme.colors.backgroundPrimary,
                         })}
                       >
-                        {eventsQuery.isLoading ? <Skeleton rows={2} height="90px" /> : null}
+                        {resolvedSessionId && sessionState.status === "loading" ? <Skeleton rows={2} height="90px" /> : null}
 
-                        {transcript.length === 0 && !eventsQuery.isLoading ? (
+                        {transcript.length === 0 && !(resolvedSessionId && sessionState.status === "loading") ? (
                           <EmptyState testId="session-transcript-empty">
-                            {groupTaskStatus(selectedForSession.status) === "error" && selectedForSession.statusMessage
+                            {selectedForSession.runtimeStatus === "error" && selectedForSession.statusMessage
                               ? `Session failed: ${selectedForSession.statusMessage}`
                               : !activeSandbox?.sandboxId
                                 ? selectedForSession.statusMessage
@@ -1597,7 +1562,7 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
                       gap: theme.sizing.scale300,
                     })}
                   >
-                    <MetaRow label="Task" value={selectedForSession.taskId} mono />
+                    <MetaRow label="Task" value={selectedForSession.id} mono />
                     <MetaRow label="Sandbox" value={selectedForSession.activeSandboxId ?? "-"} mono />
                     <MetaRow label="Session" value={resolvedSessionId ?? "-"} mono />
                   </div>
@@ -1615,7 +1580,7 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
                       gap: theme.sizing.scale300,
                     })}
                   >
-                    <MetaRow label="Branch" value={selectedForSession.branchName ?? "-"} mono />
+                    <MetaRow label="Branch" value={selectedForSession.branch ?? "-"} mono />
                     <MetaRow label="Diff" value={formatDiffStat(selectedForSession.diffStat)} />
                     <MetaRow label="PR" value={selectedForSession.prUrl ?? "-"} />
                     <MetaRow label="Review" value={selectedForSession.reviewStatus ?? "-"} />
@@ -1641,7 +1606,7 @@ export function WorkspaceDashboard({ workspaceId, selectedTaskId, selectedRepoId
                   </div>
                 </section>
 
-                {groupTaskStatus(selectedForSession.status) === "error" ? (
+                {selectedForSession.runtimeStatus === "error" ? (
                   <div
                     className={css({
                       padding: "12px",

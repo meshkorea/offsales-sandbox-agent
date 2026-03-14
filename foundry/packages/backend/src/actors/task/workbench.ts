@@ -286,11 +286,6 @@ async function requireReadySessionMeta(c: any, tabId: string): Promise<any> {
   return meta;
 }
 
-async function notifyWorkbenchUpdated(c: any): Promise<void> {
-  const workspace = await getOrCreateWorkspace(c, c.state.workspaceId);
-  await workspace.notifyWorkbenchUpdated({});
-}
-
 function shellFragment(parts: string[]): string {
   return parts.join(" && ");
 }
@@ -600,42 +595,60 @@ export async function ensureWorkbenchSeeded(c: any): Promise<any> {
   return record;
 }
 
-export async function getWorkbenchTask(c: any): Promise<any> {
+function buildSessionSummary(record: any, meta: any): any {
+  const derivedSandboxSessionId = meta.sandboxSessionId ?? (meta.status === "pending_provision" && record.activeSessionId ? record.activeSessionId : null);
+  const sessionStatus =
+    meta.status === "ready" && derivedSandboxSessionId ? activeSessionStatus(record, derivedSandboxSessionId) : meta.status === "error" ? "error" : "idle";
+  let thinkingSinceMs = meta.thinkingSinceMs ?? null;
+  let unread = Boolean(meta.unread);
+  if (thinkingSinceMs && sessionStatus !== "running") {
+    thinkingSinceMs = null;
+    unread = true;
+  }
+
+  return {
+    id: meta.id,
+    sessionId: derivedSandboxSessionId,
+    sessionName: meta.sessionName,
+    agent: agentKindForModel(meta.model),
+    model: meta.model,
+    status: sessionStatus,
+    thinkingSinceMs: sessionStatus === "running" ? thinkingSinceMs : null,
+    unread,
+    created: Boolean(meta.created || derivedSandboxSessionId),
+  };
+}
+
+function buildSessionDetailFromMeta(record: any, meta: any): any {
+  const summary = buildSessionSummary(record, meta);
+  return {
+    sessionId: meta.tabId,
+    tabId: meta.tabId,
+    sandboxSessionId: summary.sessionId,
+    sessionName: summary.sessionName,
+    agent: summary.agent,
+    model: summary.model,
+    status: summary.status,
+    thinkingSinceMs: summary.thinkingSinceMs,
+    unread: summary.unread,
+    created: summary.created,
+    draft: {
+      text: meta.draftText ?? "",
+      attachments: Array.isArray(meta.draftAttachments) ? meta.draftAttachments : [],
+      updatedAtMs: meta.draftUpdatedAtMs ?? null,
+    },
+    transcript: meta.transcript ?? [],
+  };
+}
+
+/**
+ * Builds a WorkbenchTaskSummary from local task actor state. Task actors push
+ * this to the parent workspace actor so workspace sidebar reads stay local.
+ */
+export async function buildTaskSummary(c: any): Promise<any> {
   const record = await ensureWorkbenchSeeded(c);
-  const gitState = await readCachedGitState(c);
   const sessions = await listSessionMetaRows(c);
   await maybeScheduleWorkbenchRefreshes(c, record, sessions);
-  const tabs = [];
-
-  for (const meta of sessions) {
-    const derivedSandboxSessionId = meta.sandboxSessionId ?? (meta.status === "pending_provision" && record.activeSessionId ? record.activeSessionId : null);
-    const sessionStatus =
-      meta.status === "ready" && derivedSandboxSessionId ? activeSessionStatus(record, derivedSandboxSessionId) : meta.status === "error" ? "error" : "idle";
-    let thinkingSinceMs = meta.thinkingSinceMs ?? null;
-    let unread = Boolean(meta.unread);
-    if (thinkingSinceMs && sessionStatus !== "running") {
-      thinkingSinceMs = null;
-      unread = true;
-    }
-
-    tabs.push({
-      id: meta.id,
-      sessionId: derivedSandboxSessionId,
-      sessionName: meta.sessionName,
-      agent: agentKindForModel(meta.model),
-      model: meta.model,
-      status: sessionStatus,
-      thinkingSinceMs: sessionStatus === "running" ? thinkingSinceMs : null,
-      unread,
-      created: Boolean(meta.created || derivedSandboxSessionId),
-      draft: {
-        text: meta.draftText ?? "",
-        attachments: Array.isArray(meta.draftAttachments) ? meta.draftAttachments : [],
-        updatedAtMs: meta.draftUpdatedAtMs ?? null,
-      },
-      transcript: meta.transcript ?? [],
-    });
-  }
 
   return {
     id: c.state.taskId,
@@ -646,19 +659,98 @@ export async function getWorkbenchTask(c: any): Promise<any> {
     updatedAtMs: record.updatedAt,
     branch: record.branchName,
     pullRequest: await readPullRequestSummary(c, record.branchName),
-    tabs,
+    sessionsSummary: sessions.map((meta) => buildSessionSummary(record, meta)),
+  };
+}
+
+/**
+ * Builds a WorkbenchTaskDetail from local task actor state for direct task
+ * subscribers. This is a full replacement payload, not a patch.
+ */
+export async function buildTaskDetail(c: any): Promise<any> {
+  const record = await ensureWorkbenchSeeded(c);
+  const gitState = await readCachedGitState(c);
+  const sessions = await listSessionMetaRows(c);
+  await maybeScheduleWorkbenchRefreshes(c, record, sessions);
+  const summary = await buildTaskSummary(c);
+
+  return {
+    ...summary,
+    task: record.task,
+    agentType: record.agentType === "claude" || record.agentType === "codex" ? record.agentType : null,
+    runtimeStatus: record.status,
+    statusMessage: record.statusMessage ?? null,
+    activeSessionId: record.activeSessionId ?? null,
+    diffStat: record.diffStat ?? null,
+    prUrl: record.prUrl ?? null,
+    reviewStatus: record.reviewStatus ?? null,
     fileChanges: gitState.fileChanges,
     diffs: gitState.diffs,
     fileTree: gitState.fileTree,
     minutesUsed: 0,
+    sandboxes: (record.sandboxes ?? []).map((sandbox: any) => ({
+      providerId: sandbox.providerId,
+      sandboxId: sandbox.sandboxId,
+      cwd: sandbox.cwd ?? null,
+    })),
+    activeSandboxId: record.activeSandboxId ?? null,
   };
+}
+
+/**
+ * Builds a WorkbenchSessionDetail for a specific session tab.
+ */
+export async function buildSessionDetail(c: any, tabId: string): Promise<any> {
+  const record = await ensureWorkbenchSeeded(c);
+  const meta = await readSessionMeta(c, tabId);
+  if (!meta || meta.closed) {
+    throw new Error(`Unknown workbench session tab: ${tabId}`);
+  }
+
+  return buildSessionDetailFromMeta(record, meta);
+}
+
+export async function getTaskSummary(c: any): Promise<any> {
+  return await buildTaskSummary(c);
+}
+
+export async function getTaskDetail(c: any): Promise<any> {
+  return await buildTaskDetail(c);
+}
+
+export async function getSessionDetail(c: any, tabId: string): Promise<any> {
+  return await buildSessionDetail(c, tabId);
+}
+
+/**
+ * Replaces the old notifyWorkbenchUpdated pattern.
+ *
+ * The task actor emits two kinds of updates:
+ * - Push summary state up to the parent workspace actor so the sidebar
+ *   materialized projection stays current.
+ * - Broadcast full detail/session payloads down to direct task subscribers.
+ */
+export async function broadcastTaskUpdate(c: any, options?: { sessionId?: string }): Promise<void> {
+  const workspace = await getOrCreateWorkspace(c, c.state.workspaceId);
+  await workspace.applyTaskSummaryUpdate({ taskSummary: await buildTaskSummary(c) });
+  c.broadcast("taskUpdated", {
+    type: "taskDetailUpdated",
+    detail: await buildTaskDetail(c),
+  });
+
+  if (options?.sessionId) {
+    c.broadcast("sessionUpdated", {
+      type: "sessionUpdated",
+      session: await buildSessionDetail(c, options.sessionId),
+    });
+  }
 }
 
 export async function refreshWorkbenchDerivedState(c: any): Promise<void> {
   const record = await ensureWorkbenchSeeded(c);
   const gitState = await collectWorkbenchGitState(c, record);
   await writeCachedGitState(c, gitState);
-  await notifyWorkbenchUpdated(c);
+  await broadcastTaskUpdate(c);
 }
 
 export async function refreshWorkbenchSessionTranscript(c: any, sessionId: string): Promise<void> {
@@ -670,7 +762,7 @@ export async function refreshWorkbenchSessionTranscript(c: any, sessionId: strin
 
   const transcript = await readSessionTranscript(c, record, meta.sandboxSessionId);
   await writeSessionTranscript(c, meta.tabId, transcript);
-  await notifyWorkbenchUpdated(c);
+  await broadcastTaskUpdate(c, { sessionId: meta.tabId });
 }
 
 export async function renameWorkbenchTask(c: any, value: string): Promise<void> {
@@ -688,7 +780,7 @@ export async function renameWorkbenchTask(c: any, value: string): Promise<void> 
     .where(eq(taskTable.id, 1))
     .run();
   c.state.title = nextTitle;
-  await notifyWorkbenchUpdated(c);
+  await broadcastTaskUpdate(c);
 }
 
 export async function renameWorkbenchBranch(c: any, value: string): Promise<void> {
@@ -739,7 +831,7 @@ export async function renameWorkbenchBranch(c: any, value: string): Promise<void
     taskId: c.state.taskId,
     branchName: nextBranch,
   });
-  await notifyWorkbenchUpdated(c);
+  await broadcastTaskUpdate(c);
 }
 
 export async function createWorkbenchSession(c: any, model?: string): Promise<{ tabId: string }> {
@@ -755,7 +847,7 @@ export async function createWorkbenchSession(c: any, model?: string): Promise<{ 
         sessionName: "Session 1",
         status: "ready",
       });
-      await notifyWorkbenchUpdated(c);
+      await broadcastTaskUpdate(c, { sessionId: record.activeSessionId });
       return { tabId: record.activeSessionId };
     }
   }
@@ -780,7 +872,7 @@ export async function createWorkbenchSession(c: any, model?: string): Promise<{ 
       wait: false,
     },
   );
-  await notifyWorkbenchUpdated(c);
+  await broadcastTaskUpdate(c, { sessionId: tabId });
   return { tabId };
 }
 
@@ -815,7 +907,7 @@ export async function ensureWorkbenchSession(c: any, tabId: string, model?: stri
     await enqueueWorkbenchRefresh(c, "task.command.workbench.refresh_session_transcript", {
       sessionId: record.activeSessionId,
     });
-    await notifyWorkbenchUpdated(c);
+    await broadcastTaskUpdate(c, { sessionId: tabId });
     return;
   }
 
@@ -827,7 +919,7 @@ export async function ensureWorkbenchSession(c: any, tabId: string, model?: stri
     await enqueueWorkbenchRefresh(c, "task.command.workbench.refresh_session_transcript", {
       sessionId: meta.sandboxSessionId,
     });
-    await notifyWorkbenchUpdated(c);
+    await broadcastTaskUpdate(c, { sessionId: tabId });
     return;
   }
 
@@ -838,7 +930,7 @@ export async function ensureWorkbenchSession(c: any, tabId: string, model?: stri
       status: "error",
       errorMessage: "cannot create session without a sandbox cwd",
     });
-    await notifyWorkbenchUpdated(c);
+    await broadcastTaskUpdate(c, { sessionId: tabId });
     return;
   }
 
@@ -873,7 +965,7 @@ export async function ensureWorkbenchSession(c: any, tabId: string, model?: stri
     });
   }
 
-  await notifyWorkbenchUpdated(c);
+  await broadcastTaskUpdate(c, { sessionId: tabId });
 }
 
 export async function enqueuePendingWorkbenchSessions(c: any): Promise<void> {
@@ -904,14 +996,14 @@ export async function renameWorkbenchSession(c: any, sessionId: string, title: s
   await updateSessionMeta(c, sessionId, {
     sessionName: trimmed,
   });
-  await notifyWorkbenchUpdated(c);
+  await broadcastTaskUpdate(c, { sessionId });
 }
 
 export async function setWorkbenchSessionUnread(c: any, sessionId: string, unread: boolean): Promise<void> {
   await updateSessionMeta(c, sessionId, {
     unread: unread ? 1 : 0,
   });
-  await notifyWorkbenchUpdated(c);
+  await broadcastTaskUpdate(c, { sessionId });
 }
 
 export async function updateWorkbenchDraft(c: any, sessionId: string, text: string, attachments: Array<any>): Promise<void> {
@@ -920,14 +1012,14 @@ export async function updateWorkbenchDraft(c: any, sessionId: string, text: stri
     draftAttachmentsJson: JSON.stringify(attachments),
     draftUpdatedAt: Date.now(),
   });
-  await notifyWorkbenchUpdated(c);
+  await broadcastTaskUpdate(c, { sessionId });
 }
 
 export async function changeWorkbenchModel(c: any, sessionId: string, model: string): Promise<void> {
   await updateSessionMeta(c, sessionId, {
     model,
   });
-  await notifyWorkbenchUpdated(c);
+  await broadcastTaskUpdate(c, { sessionId });
 }
 
 export async function sendWorkbenchMessage(c: any, sessionId: string, text: string, attachments: Array<any>): Promise<void> {
@@ -984,7 +1076,7 @@ export async function sendWorkbenchMessage(c: any, sessionId: string, text: stri
   await enqueueWorkbenchRefresh(c, "task.command.workbench.refresh_session_transcript", {
     sessionId: meta.sandboxSessionId,
   });
-  await notifyWorkbenchUpdated(c);
+  await broadcastTaskUpdate(c, { sessionId });
 }
 
 export async function stopWorkbenchSession(c: any, sessionId: string): Promise<void> {
@@ -998,7 +1090,7 @@ export async function stopWorkbenchSession(c: any, sessionId: string): Promise<v
   await updateSessionMeta(c, sessionId, {
     thinkingSinceMs: null,
   });
-  await notifyWorkbenchUpdated(c);
+  await broadcastTaskUpdate(c, { sessionId });
 }
 
 export async function syncWorkbenchSessionStatus(c: any, sessionId: string, status: "running" | "idle" | "error", at: number): Promise<void> {
@@ -1063,7 +1155,7 @@ export async function syncWorkbenchSessionStatus(c: any, sessionId: string, stat
       });
       await enqueueWorkbenchRefresh(c, "task.command.workbench.refresh_derived", {});
     }
-    await notifyWorkbenchUpdated(c);
+    await broadcastTaskUpdate(c, { sessionId: meta.tabId });
   }
 }
 
@@ -1096,7 +1188,7 @@ export async function closeWorkbenchSession(c: any, sessionId: string): Promise<
       .where(eq(taskRuntime.id, 1))
       .run();
   }
-  await notifyWorkbenchUpdated(c);
+  await broadcastTaskUpdate(c);
 }
 
 export async function markWorkbenchUnread(c: any): Promise<void> {
@@ -1108,7 +1200,7 @@ export async function markWorkbenchUnread(c: any): Promise<void> {
   await updateSessionMeta(c, latest.tabId, {
     unread: 1,
   });
-  await notifyWorkbenchUpdated(c);
+  await broadcastTaskUpdate(c, { sessionId: latest.tabId });
 }
 
 export async function publishWorkbenchPr(c: any): Promise<void> {
@@ -1129,7 +1221,7 @@ export async function publishWorkbenchPr(c: any): Promise<void> {
     })
     .where(eq(taskTable.id, 1))
     .run();
-  await notifyWorkbenchUpdated(c);
+  await broadcastTaskUpdate(c);
 }
 
 export async function revertWorkbenchFile(c: any, path: string): Promise<void> {
@@ -1152,5 +1244,5 @@ export async function revertWorkbenchFile(c: any, path: string): Promise<void> {
     throw new Error(`file revert failed (${result.exitCode}): ${result.result}`);
   }
   await enqueueWorkbenchRefresh(c, "task.command.workbench.refresh_derived", {});
-  await notifyWorkbenchUpdated(c);
+  await broadcastTaskUpdate(c);
 }

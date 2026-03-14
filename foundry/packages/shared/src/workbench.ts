@@ -1,3 +1,5 @@
+import type { AgentType, ProviderId, TaskStatus } from "./contracts.js";
+
 export type WorkbenchTaskStatus = "running" | "idle" | "new" | "archived";
 export type WorkbenchAgentKind = "Claude" | "Codex" | "Cursor";
 export type WorkbenchModelId = "claude-sonnet-4" | "claude-opus-4" | "gpt-4o" | "o3";
@@ -18,9 +20,25 @@ export interface WorkbenchComposerDraft {
   updatedAtMs: number | null;
 }
 
-export interface WorkbenchAgentTab {
+/** Session metadata without transcript content. */
+export interface WorkbenchSessionSummary {
   id: string;
   sessionId: string | null;
+  sessionName: string;
+  agent: WorkbenchAgentKind;
+  model: WorkbenchModelId;
+  status: "running" | "idle" | "error";
+  thinkingSinceMs: number | null;
+  unread: boolean;
+  created: boolean;
+}
+
+/** Full session content — only fetched when viewing a specific session tab. */
+export interface WorkbenchSessionDetail {
+  /** Stable UI tab id used for the session topic key and routing. */
+  sessionId: string;
+  tabId: string;
+  sandboxSessionId: string | null;
   sessionName: string;
   agent: WorkbenchAgentKind;
   model: WorkbenchModelId;
@@ -74,6 +92,73 @@ export interface WorkbenchParsedDiffLine {
 export interface WorkbenchPullRequestSummary {
   number: number;
   status: "draft" | "ready";
+}
+
+export interface WorkbenchSandboxSummary {
+  providerId: ProviderId;
+  sandboxId: string;
+  cwd: string | null;
+}
+
+/** Sidebar-level task data. Materialized in the workspace actor's SQLite. */
+export interface WorkbenchTaskSummary {
+  id: string;
+  repoId: string;
+  title: string;
+  status: WorkbenchTaskStatus;
+  repoName: string;
+  updatedAtMs: number;
+  branch: string | null;
+  pullRequest: WorkbenchPullRequestSummary | null;
+  /** Summary of sessions — no transcript content. */
+  sessionsSummary: WorkbenchSessionSummary[];
+}
+
+/** Full task detail — only fetched when viewing a specific task. */
+export interface WorkbenchTaskDetail extends WorkbenchTaskSummary {
+  /** Original task prompt/instructions shown in the detail view. */
+  task: string;
+  /** Agent choice used when creating new sandbox sessions for this task. */
+  agentType: AgentType | null;
+  /** Underlying task runtime status preserved for detail views and error handling. */
+  runtimeStatus: TaskStatus;
+  statusMessage: string | null;
+  activeSessionId: string | null;
+  diffStat: string | null;
+  prUrl: string | null;
+  reviewStatus: string | null;
+  fileChanges: WorkbenchFileChange[];
+  diffs: Record<string, string>;
+  fileTree: WorkbenchFileTreeNode[];
+  minutesUsed: number;
+  /** Sandbox info for this task. */
+  sandboxes: WorkbenchSandboxSummary[];
+  activeSandboxId: string | null;
+}
+
+/** Repo-level summary for workspace sidebar. */
+export interface WorkbenchRepoSummary {
+  id: string;
+  label: string;
+  /** Aggregated branch/task overview state (replaces getRepoOverview polling). */
+  taskCount: number;
+  latestActivityMs: number;
+}
+
+/** Workspace-level snapshot — initial fetch for the workspace topic. */
+export interface WorkspaceSummarySnapshot {
+  workspaceId: string;
+  repos: WorkbenchRepoSummary[];
+  taskSummaries: WorkbenchTaskSummary[];
+}
+
+/**
+ * Deprecated compatibility aliases for older mock/view-model code.
+ * New code should use the summary/detail/topic-specific types above.
+ */
+export interface WorkbenchAgentTab extends WorkbenchSessionSummary {
+  draft: WorkbenchComposerDraft;
+  transcript: WorkbenchTranscriptEvent[];
 }
 
 export interface WorkbenchTask {

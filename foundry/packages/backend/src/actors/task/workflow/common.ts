@@ -1,9 +1,9 @@
 // @ts-nocheck
 import { eq } from "drizzle-orm";
 import type { TaskRecord, TaskStatus } from "@sandbox-agent/foundry-shared";
-import { getOrCreateWorkspace } from "../../handles.js";
 import { task as taskTable, taskRuntime, taskSandboxes } from "../db/schema.js";
 import { historyKey } from "../../keys.js";
+import { broadcastTaskUpdate } from "../workbench.js";
 
 export const TASK_ROW_ID = 1;
 
@@ -83,8 +83,7 @@ export async function setTaskState(ctx: any, status: TaskStatus, statusMessage?:
       .run();
   }
 
-  const workspace = await getOrCreateWorkspace(ctx, ctx.state.workspaceId);
-  await workspace.notifyWorkbenchUpdated({});
+  await broadcastTaskUpdate(ctx);
 }
 
 export async function getCurrentRecord(ctx: any): Promise<TaskRecord> {
@@ -176,6 +175,5 @@ export async function appendHistory(ctx: any, kind: string, payload: Record<stri
     payload,
   });
 
-  const workspace = await getOrCreateWorkspace(ctx, ctx.state.workspaceId);
-  await workspace.notifyWorkbenchUpdated({});
+  await broadcastTaskUpdate(ctx);
 }

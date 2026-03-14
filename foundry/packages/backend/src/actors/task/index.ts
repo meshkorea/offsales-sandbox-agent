@@ -19,7 +19,9 @@ import {
   changeWorkbenchModel,
   closeWorkbenchSession,
   createWorkbenchSession,
-  getWorkbenchTask,
+  getSessionDetail,
+  getTaskDetail,
+  getTaskSummary,
   markWorkbenchUnread,
   publishWorkbenchPr,
   renameWorkbenchBranch,
@@ -228,8 +230,16 @@ export const task = actor({
       return await getCurrentRecord({ db: c.db, state: c.state });
     },
 
-    async getWorkbench(c) {
-      return await getWorkbenchTask(c);
+    async getTaskSummary(c) {
+      return await getTaskSummary(c);
+    },
+
+    async getTaskDetail(c) {
+      return await getTaskDetail(c);
+    },
+
+    async getSessionDetail(c, input: { sessionId: string }) {
+      return await getSessionDetail(c, input.sessionId);
     },
 
     async markWorkbenchUnread(c): Promise<void> {
