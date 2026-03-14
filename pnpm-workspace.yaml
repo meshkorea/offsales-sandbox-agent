@@ -2,6 +2,7 @@ packages:
   - "frontend/packages/*"
   - "foundry/packages/*"
   - "!foundry/packages/cli"
+  - "!foundry/packages/desktop"
   - "sdks/*"
   - "sdks/cli"
   - "sdks/cli/platforms/*"
