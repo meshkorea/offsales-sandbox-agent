@@ -25,7 +25,7 @@ class RemoteFoundryAppStore implements FoundryAppClient {
   };
   private readonly listeners = new Set<() => void>();
   private refreshPromise: Promise<void> | null = null;
-  private syncPollTimeout: ReturnType<typeof setTimeout> | null = null;
+  private unsubscribeApp: (() => void) | null = null;
 
   constructor(options: RemoteFoundryAppClientOptions) {
     this.backend = options.backend;
@@ -37,9 +37,13 @@ class RemoteFoundryAppStore implements FoundryAppClient {
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
-    void this.refresh();
+    this.ensureStarted();
     return () => {
       this.listeners.delete(listener);
+      if (this.listeners.size === 0 && this.unsubscribeApp) {
+        this.unsubscribeApp();
+        this.unsubscribeApp = null;
+      }
     };
   }
 
@@ -66,7 +70,6 @@ class RemoteFoundryAppStore implements FoundryAppClient {
   async selectOrganization(organizationId: string): Promise<void> {
     this.snapshot = await this.backend.selectAppOrganization(organizationId);
     this.notify();
-    this.scheduleSyncPollingIfNeeded();
   }
 
   async updateOrganizationProfile(input: UpdateFoundryOrganizationProfileInput): Promise<void> {
@@ -77,7 +80,6 @@ class RemoteFoundryAppStore implements FoundryAppClient {
   async triggerGithubSync(organizationId: string): Promise<void> {
     this.snapshot = await this.backend.triggerAppRepoImport(organizationId);
     this.notify();
-    this.scheduleSyncPollingIfNeeded();
   }
 
   async completeHostedCheckout(organizationId: string, planId: FoundryBillingPlanId): Promise<void> {
@@ -107,20 +109,13 @@ class RemoteFoundryAppStore implements FoundryAppClient {
     this.notify();
   }
 
-  private scheduleSyncPollingIfNeeded(): void {
-    if (this.syncPollTimeout) {
-      clearTimeout(this.syncPollTimeout);
-      this.syncPollTimeout = null;
+  private ensureStarted(): void {
+    if (!this.unsubscribeApp) {
+      this.unsubscribeApp = this.backend.subscribeApp(() => {
+        void this.refresh();
+      });
     }
-
-    if (!this.snapshot.organizations.some((organization) => organization.github.syncStatus === "syncing")) {
-      return;
-    }
-
-    this.syncPollTimeout = setTimeout(() => {
-      this.syncPollTimeout = null;
-      void this.refresh();
-    }, 500);
+    void this.refresh();
   }
 
   private async refresh(): Promise<void> {
@@ -132,7 +127,6 @@ class RemoteFoundryAppStore implements FoundryAppClient {
     this.refreshPromise = (async () => {
       this.snapshot = await this.backend.getAppSnapshot();
       this.notify();
-      this.scheduleSyncPollingIfNeeded();
     })().finally(() => {
       this.refreshPromise = null;
     });

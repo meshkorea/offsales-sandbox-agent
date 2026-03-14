@@ -39,4 +39,8 @@ ENV SANDBOX_AGENT_BIN="/root/.local/bin/sandbox-agent"
 
 WORKDIR /app
 
-CMD ["bash", "-lc", "git config --global --add safe.directory /app >/dev/null 2>&1 || true; pnpm install --force --frozen-lockfile --filter @sandbox-agent/foundry-backend... && exec bun foundry/packages/backend/src/index.ts start --host 0.0.0.0 --port 7741"]
+# NOTE: Do NOT use `bun --hot` here. Bun's hot reloading re-initializes the
+# server on a new port (e.g. 6421 instead of 6420) while the container still
+# exposes the original port, breaking all client connections. Restart the
+# backend container instead: `just foundry-dev-down && just foundry-dev`
+CMD ["bash", "-lc", "git config --global --add safe.directory /app >/dev/null 2>&1 || true; pnpm install --frozen-lockfile --filter @sandbox-agent/foundry-backend... && exec bun foundry/packages/backend/src/index.ts start --host 0.0.0.0 --port 7741"]

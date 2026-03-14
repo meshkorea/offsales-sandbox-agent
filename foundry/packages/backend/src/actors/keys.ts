@@ -4,6 +4,10 @@ export function workspaceKey(workspaceId: string): ActorKey {
   return ["ws", workspaceId];
 }
 
+export function authUserKey(userId: string): ActorKey {
+  return ["ws", "app", "user", userId];
+}
+
 export function projectKey(workspaceId: string, repoId: string): ActorKey {
   return ["ws", workspaceId, "project", repoId];
 }

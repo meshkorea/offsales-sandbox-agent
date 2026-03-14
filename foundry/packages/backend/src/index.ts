@@ -10,6 +10,7 @@ import { createDefaultDriver } from "./driver.js";
 import { createProviderRegistry } from "./providers/index.js";
 import { createClient } from "rivetkit/client";
 import type { FoundryBillingPlanId } from "@sandbox-agent/foundry-shared";
+import { initBetterAuthService } from "./services/better-auth.js";
 import { createDefaultAppShellServices } from "./services/app-shell-runtime.js";
 import { APP_SHELL_WORKSPACE_ID } from "./actors/workspace/app-shell.js";
 import { logger } from "./logging.js";
@@ -39,31 +40,13 @@ interface AppWorkspaceLogContext {
   xRealIp?: string;
 }
 
+function stripTrailingSlash(value: string): string {
+  return value.replace(/\/$/, "");
+}
+
 function isRivetRequest(request: Request): boolean {
   const { pathname } = new URL(request.url);
   return pathname === "/v1/rivet" || pathname.startsWith("/v1/rivet/");
-}
-
-function isRetryableAppActorError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.includes("Actor not ready") || message.includes("socket connection was closed unexpectedly");
-}
-
-async function withRetries<T>(run: () => Promise<T>, attempts = 20, delayMs = 250): Promise<T> {
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    try {
-      return await run();
-    } catch (error) {
-      lastError = error;
-      if (!isRetryableAppActorError(error) || attempt === attempts) {
-        throw error;
-      }
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-  }
-
-  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 export async function startBackend(options: BackendStartOptions = {}): Promise<void> {
@@ -94,11 +77,16 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
   const providers = createProviderRegistry(config, driver);
   const backends = await createBackends(config.notify);
   const notifications = createNotificationService(backends);
-  initActorRuntimeContext(config, providers, notifications, driver, createDefaultAppShellServices());
+  const appShellServices = createDefaultAppShellServices();
+  initActorRuntimeContext(config, providers, notifications, driver, appShellServices);
 
   const actorClient = createClient({
     endpoint: `http://127.0.0.1:${config.backend.port}/v1/rivet`,
   }) as any;
+  const betterAuth = initBetterAuthService(actorClient, {
+    apiUrl: appShellServices.apiUrl,
+    appUrl: appShellServices.appUrl,
+  });
 
   const requestHeaderContext = (c: any): AppWorkspaceLogContext => ({
     cfConnectingIp: c.req.header("cf-connecting-ip") ?? undefined,
@@ -131,29 +119,18 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     "x-rivet-total-slots",
     "x-rivet-runner-name",
     "x-rivet-namespace-name",
-    "x-foundry-session",
   ];
-  const exposeHeaders = ["Content-Type", "x-foundry-session", "x-rivet-ray-id"];
-  app.use(
-    "/v1/*",
-    cors({
-      origin: (origin) => origin ?? "*",
-      credentials: true,
-      allowHeaders,
-      allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      exposeHeaders,
-    }),
-  );
-  app.use(
-    "/v1",
-    cors({
-      origin: (origin) => origin ?? "*",
-      credentials: true,
-      allowHeaders,
-      allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      exposeHeaders,
-    }),
-  );
+  const exposeHeaders = ["Content-Type", "x-rivet-ray-id"];
+  const allowedOrigins = new Set([stripTrailingSlash(appShellServices.appUrl), stripTrailingSlash(appShellServices.apiUrl)]);
+  const corsConfig = {
+    origin: (origin: string) => (allowedOrigins.has(origin) ? origin : null) as string | undefined | null,
+    credentials: true,
+    allowHeaders,
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    exposeHeaders,
+  };
+  app.use("/v1/*", cors(corsConfig));
+  app.use("/v1", cors(corsConfig));
   app.use("*", async (c, next) => {
     const requestId = c.req.header("x-request-id")?.trim() || randomUUID();
     const start = performance.now();
@@ -190,6 +167,9 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     );
   });
 
+  // Cache the app workspace actor handle for the lifetime of this backend process.
+  // The "app" workspace is a singleton coordinator for auth indexes, org state, and
+  // billing. Caching avoids repeated getOrCreate round-trips on every HTTP request.
   let cachedAppWorkspace: any | null = null;
 
   const appWorkspace = async (context: AppWorkspaceLogContext = {}) => {
@@ -197,12 +177,9 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
 
     const start = performance.now();
     try {
-      const handle = await withRetries(
-        async () =>
-          await actorClient.workspace.getOrCreate(workspaceKey(APP_SHELL_WORKSPACE_ID), {
-            createWithInput: APP_SHELL_WORKSPACE_ID,
-          }),
-      );
+      const handle = await actorClient.workspace.getOrCreate(workspaceKey(APP_SHELL_WORKSPACE_ID), {
+        createWithInput: APP_SHELL_WORKSPACE_ID,
+      });
       cachedAppWorkspace = handle;
       logger.info(
         {
@@ -253,68 +230,70 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     sessionId,
   });
 
-  const resolveSessionId = async (c: any): Promise<string> => {
-    const requested = c.req.header("x-foundry-session");
-    const { sessionId } = await appWorkspaceAction(
-      "ensureAppSession",
-      async (workspace) => await workspace.ensureAppSession(requested && requested.trim().length > 0 ? { requestedSessionId: requested } : {}),
-      requestLogContext(c),
-    );
-    c.header("x-foundry-session", sessionId);
-    return sessionId;
+  const resolveSessionId = async (c: any): Promise<string | null> => {
+    const session = await betterAuth.resolveSession(c.req.raw.headers);
+    return session?.session?.id ?? null;
   };
 
   app.get("/v1/app/snapshot", async (c) => {
     const sessionId = await resolveSessionId(c);
+    if (!sessionId) {
+      return c.json({
+        auth: { status: "signed_out", currentUserId: null },
+        activeOrganizationId: null,
+        onboarding: {
+          starterRepo: {
+            repoFullName: "rivet-dev/sandbox-agent",
+            repoUrl: "https://github.com/rivet-dev/sandbox-agent",
+            status: "pending",
+            starredAt: null,
+            skippedAt: null,
+          },
+        },
+        users: [],
+        organizations: [],
+      });
+    }
     return c.json(
       await appWorkspaceAction("getAppSnapshot", async (workspace) => await workspace.getAppSnapshot({ sessionId }), requestLogContext(c, sessionId)),
     );
   });
 
-  app.get("/v1/auth/github/start", async (c) => {
-    const sessionId = await resolveSessionId(c);
-    const result = await appWorkspaceAction(
-      "startAppGithubAuth",
-      async (workspace) => await workspace.startAppGithubAuth({ sessionId }),
-      requestLogContext(c, sessionId),
-    );
-    return Response.redirect(result.url, 302);
+  app.all("/v1/auth/*", async (c) => {
+    return await betterAuth.auth.handler(c.req.raw);
   });
-
-  const handleGithubAuthCallback = async (c: any) => {
-    // TEMPORARY: dump all request headers to diagnose duplicate callback requests
-    // (Railway nginx proxy_next_upstream? Cloudflare retry? browser?)
-    // Remove once root cause is identified.
-    const allHeaders: Record<string, string> = {};
-    c.req.raw.headers.forEach((value: string, key: string) => {
-      allHeaders[key] = value;
-    });
-    logger.info({ headers: allHeaders, url: c.req.url }, "github_callback_headers");
-
-    const code = c.req.query("code");
-    const state = c.req.query("state");
-    if (!code || !state) {
-      return c.text("Missing GitHub OAuth callback parameters", 400);
-    }
-    const result = await appWorkspaceAction(
-      "completeAppGithubAuth",
-      async (workspace) => await workspace.completeAppGithubAuth({ code, state }),
-      requestLogContext(c),
-    );
-    c.header("x-foundry-session", result.sessionId);
-    return Response.redirect(result.redirectTo, 302);
-  };
-
-  app.get("/v1/auth/github/callback", handleGithubAuthCallback);
-  app.get("/api/auth/callback/github", handleGithubAuthCallback);
 
   app.post("/v1/app/sign-out", async (c) => {
     const sessionId = await resolveSessionId(c);
-    return c.json(await appWorkspaceAction("signOutApp", async (workspace) => await workspace.signOutApp({ sessionId }), requestLogContext(c, sessionId)));
+    if (sessionId) {
+      const signOutResponse = await betterAuth.signOut(c.req.raw.headers);
+      const setCookie = signOutResponse.headers.get("set-cookie");
+      if (setCookie) {
+        c.header("set-cookie", setCookie);
+      }
+    }
+    return c.json({
+      auth: { status: "signed_out", currentUserId: null },
+      activeOrganizationId: null,
+      onboarding: {
+        starterRepo: {
+          repoFullName: "rivet-dev/sandbox-agent",
+          repoUrl: "https://github.com/rivet-dev/sandbox-agent",
+          status: "pending",
+          starredAt: null,
+          skippedAt: null,
+        },
+      },
+      users: [],
+      organizations: [],
+    });
   });
 
   app.post("/v1/app/onboarding/starter-repo/skip", async (c) => {
     const sessionId = await resolveSessionId(c);
+    if (!sessionId) {
+      return c.text("Unauthorized", 401);
+    }
     return c.json(
       await appWorkspaceAction("skipAppStarterRepo", async (workspace) => await workspace.skipAppStarterRepo({ sessionId }), requestLogContext(c, sessionId)),
     );
@@ -322,6 +301,9 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
 
   app.post("/v1/app/organizations/:organizationId/starter-repo/star", async (c) => {
     const sessionId = await resolveSessionId(c);
+    if (!sessionId) {
+      return c.text("Unauthorized", 401);
+    }
     return c.json(
       await appWorkspaceAction(
         "starAppStarterRepo",
@@ -337,6 +319,9 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
 
   app.post("/v1/app/organizations/:organizationId/select", async (c) => {
     const sessionId = await resolveSessionId(c);
+    if (!sessionId) {
+      return c.text("Unauthorized", 401);
+    }
     return c.json(
       await appWorkspaceAction(
         "selectAppOrganization",
@@ -352,6 +337,9 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
 
   app.patch("/v1/app/organizations/:organizationId/profile", async (c) => {
     const sessionId = await resolveSessionId(c);
+    if (!sessionId) {
+      return c.text("Unauthorized", 401);
+    }
     const body = await c.req.json();
     return c.json(
       await appWorkspaceAction(
@@ -371,6 +359,9 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
 
   app.post("/v1/app/organizations/:organizationId/import", async (c) => {
     const sessionId = await resolveSessionId(c);
+    if (!sessionId) {
+      return c.text("Unauthorized", 401);
+    }
     return c.json(
       await appWorkspaceAction(
         "triggerAppRepoImport",
@@ -386,6 +377,9 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
 
   app.post("/v1/app/organizations/:organizationId/reconnect", async (c) => {
     const sessionId = await resolveSessionId(c);
+    if (!sessionId) {
+      return c.text("Unauthorized", 401);
+    }
     return c.json(
       await appWorkspaceAction(
         "beginAppGithubInstall",
@@ -401,6 +395,9 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
 
   app.post("/v1/app/organizations/:organizationId/billing/checkout", async (c) => {
     const sessionId = await resolveSessionId(c);
+    if (!sessionId) {
+      return c.text("Unauthorized", 401);
+    }
     const body = await c.req.json().catch(() => ({}));
     const planId = body?.planId === "free" || body?.planId === "team" ? (body.planId as FoundryBillingPlanId) : "team";
     return c.json(
@@ -414,10 +411,13 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
 
   app.get("/v1/billing/checkout/complete", async (c) => {
     const organizationId = c.req.query("organizationId");
-    const sessionId = c.req.query("foundrySession");
     const checkoutSessionId = c.req.query("session_id");
-    if (!organizationId || !sessionId || !checkoutSessionId) {
+    if (!organizationId || !checkoutSessionId) {
       return c.text("Missing Stripe checkout completion parameters", 400);
+    }
+    const sessionId = await resolveSessionId(c);
+    if (!sessionId) {
+      return c.text("Unauthorized", 401);
     }
     const result = await (await appWorkspace(requestLogContext(c, sessionId))).finalizeAppCheckoutSession({
       organizationId,
@@ -429,6 +429,9 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
 
   app.post("/v1/app/organizations/:organizationId/billing/portal", async (c) => {
     const sessionId = await resolveSessionId(c);
+    if (!sessionId) {
+      return c.text("Unauthorized", 401);
+    }
     return c.json(
       await (await appWorkspace(requestLogContext(c, sessionId))).createAppBillingPortalSession({
         sessionId,
@@ -439,6 +442,9 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
 
   app.post("/v1/app/organizations/:organizationId/billing/cancel", async (c) => {
     const sessionId = await resolveSessionId(c);
+    if (!sessionId) {
+      return c.text("Unauthorized", 401);
+    }
     return c.json(
       await (await appWorkspace(requestLogContext(c, sessionId))).cancelAppScheduledRenewal({
         sessionId,
@@ -449,6 +455,9 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
 
   app.post("/v1/app/organizations/:organizationId/billing/resume", async (c) => {
     const sessionId = await resolveSessionId(c);
+    if (!sessionId) {
+      return c.text("Unauthorized", 401);
+    }
     return c.json(
       await (await appWorkspace(requestLogContext(c, sessionId))).resumeAppSubscription({
         sessionId,
@@ -459,6 +468,9 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
 
   app.post("/v1/app/workspaces/:workspaceId/seat-usage", async (c) => {
     const sessionId = await resolveSessionId(c);
+    if (!sessionId) {
+      return c.text("Unauthorized", 401);
+    }
     return c.json(
       await (await appWorkspace(requestLogContext(c, sessionId))).recordAppSeatUsage({
         sessionId,

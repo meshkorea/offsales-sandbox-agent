@@ -167,4 +167,4 @@ WORKDIR /home/sandbox
 EXPOSE 2468
 
 ENTRYPOINT ["sandbox-agent"]
-CMD ["--host", "0.0.0.0", "--port", "2468"]
+CMD ["server", "--host", "0.0.0.0", "--port", "2468"]

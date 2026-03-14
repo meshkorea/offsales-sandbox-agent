@@ -13,6 +13,7 @@ import type {
   WorkbenchRepo,
   WorkbenchTranscriptEvent as TranscriptEvent,
 } from "@sandbox-agent/foundry-shared";
+import rivetDevFixture from "../../../scripts/data/rivet-dev.json" with { type: "json" };
 
 export const MODEL_GROUPS: ModelGroup[] = [
   {
@@ -801,13 +802,13 @@ export function buildInitialTasks(): Task[] {
       fileTree: [],
       minutesUsed: 312,
     },
-    // ── rivet-dev/cloud ──
+    // ── rivet-dev/vbare ──
     {
       id: "h6",
-      repoId: "cloud",
+      repoId: "vbare",
       title: "Use full cloud run pool name for routing",
       status: "idle",
-      repoName: "rivet-dev/cloud",
+      repoName: "rivet-dev/vbare",
       updatedAtMs: minutesAgo(25),
       branch: "fix-use-full-cloud-run-pool-name",
       pullRequest: { number: 235, status: "ready" },
@@ -910,13 +911,13 @@ export function buildInitialTasks(): Task[] {
       ],
       minutesUsed: 0,
     },
-    // ── rivet-dev/engine-ee ──
+    // ── rivet-dev/skills ──
     {
       id: "h7",
-      repoId: "engine-ee",
+      repoId: "skills",
       title: "Route compute gateway path correctly",
       status: "idle",
-      repoName: "rivet-dev/engine-ee",
+      repoName: "rivet-dev/skills",
       updatedAtMs: minutesAgo(50),
       branch: "fix-guard-support-https-targets",
       pullRequest: { number: 125, status: "ready" },
@@ -1024,13 +1025,13 @@ export function buildInitialTasks(): Task[] {
       ],
       minutesUsed: 78,
     },
-    // ── rivet-dev/engine-ee (archived) ──
+    // ── rivet-dev/skills (archived) ──
     {
       id: "h8",
-      repoId: "engine-ee",
+      repoId: "skills",
       title: "Move compute gateway to guard",
       status: "archived",
-      repoName: "rivet-dev/engine-ee",
+      repoName: "rivet-dev/skills",
       updatedAtMs: minutesAgo(2 * 24 * 60),
       branch: "chore-move-compute-gateway-to",
       pullRequest: { number: 123, status: "ready" },
@@ -1066,13 +1067,13 @@ export function buildInitialTasks(): Task[] {
       fileTree: [],
       minutesUsed: 15,
     },
-    // ── rivet-dev/secure-exec ──
+    // ── rivet-dev/deploy-action ──
     {
       id: "h9",
-      repoId: "secure-exec",
+      repoId: "deploy-action",
       title: "Harden namespace isolation for nested containers",
       status: "idle",
-      repoName: "rivet-dev/secure-exec",
+      repoName: "rivet-dev/deploy-action",
       updatedAtMs: minutesAgo(90),
       branch: "fix/namespace-isolation",
       pullRequest: null,
@@ -1122,15 +1123,63 @@ export function buildInitialTasks(): Task[] {
   ];
 }
 
+/**
+ * Build repos list from the rivet-dev fixture data (scripts/data/rivet-dev.json).
+ * Uses real public repos so the mock sidebar matches what an actual rivet-dev
+ * workspace would show after a GitHub sync.
+ */
+function buildMockRepos(): WorkbenchRepo[] {
+  return rivetDevFixture.repos.map((r) => ({
+    id: repoIdFromFullName(r.fullName),
+    label: r.fullName,
+  }));
+}
+
+/** Derive a stable short id from a "org/repo" full name (e.g. "rivet-dev/rivet" → "rivet"). */
+function repoIdFromFullName(fullName: string): string {
+  const parts = fullName.split("/");
+  return parts[parts.length - 1] ?? fullName;
+}
+
+/**
+ * Build task entries from open PR fixture data.
+ * Maps to the backend's PR sync behavior (ProjectPrSyncActor) where PRs
+ * appear as first-class sidebar items even without an associated task.
+ * Each open PR gets a lightweight task entry so it shows in the sidebar.
+ */
+function buildPrTasks(): Task[] {
+  // Collect branch names already claimed by hand-written tasks so we don't duplicate
+  const existingBranches = new Set(
+    buildInitialTasks()
+      .map((t) => t.branch)
+      .filter(Boolean),
+  );
+
+  return rivetDevFixture.openPullRequests
+    .filter((pr) => !existingBranches.has(pr.headRefName))
+    .map((pr) => {
+      const repoId = repoIdFromFullName(pr.repoFullName);
+      return {
+        id: `pr-${repoId}-${pr.number}`,
+        repoId,
+        title: pr.title,
+        status: "idle" as const,
+        repoName: pr.repoFullName,
+        updatedAtMs: new Date(pr.updatedAt).getTime(),
+        branch: pr.headRefName,
+        pullRequest: { number: pr.number, status: pr.draft ? ("draft" as const) : ("ready" as const) },
+        tabs: [],
+        fileChanges: [],
+        diffs: {},
+        fileTree: [],
+        minutesUsed: 0,
+      };
+    });
+}
+
 export function buildInitialMockLayoutViewModel(): TaskWorkbenchSnapshot {
-  const repos: WorkbenchRepo[] = [
-    { id: "sandbox-agent", label: "rivet-dev/sandbox-agent" },
-    { id: "rivet", label: "rivet-dev/rivet" },
-    { id: "cloud", label: "rivet-dev/cloud" },
-    { id: "engine-ee", label: "rivet-dev/engine-ee" },
-    { id: "secure-exec", label: "rivet-dev/secure-exec" },
-  ];
-  const tasks = buildInitialTasks();
+  const repos = buildMockRepos();
+  const tasks = [...buildInitialTasks(), ...buildPrTasks()];
   return {
     workspaceId: "default",
     repos,

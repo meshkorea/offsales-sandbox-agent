@@ -19,6 +19,7 @@
     "@iarna/toml": "^2.2.5",
     "@sandbox-agent/foundry-shared": "workspace:*",
     "@sandbox-agent/persist-rivet": "workspace:*",
+    "better-auth": "^1.5.5",
     "drizzle-kit": "^0.31.8",
     "drizzle-orm": "^0.44.5",
     "hono": "^4.11.9",

@@ -143,10 +143,7 @@ sandbox-agent server --token "$SANDBOX_TOKEN" --host 127.0.0.1 --port 2468
 Optional: preinstall agent binaries (no server required; they will be installed lazily on first use if you skip this):
 
 ```bash
-sandbox-agent install-agent claude
-sandbox-agent install-agent codex
-sandbox-agent install-agent opencode
-sandbox-agent install-agent amp
+sandbox-agent install-agent --all
 ```
 
 To disable auth locally:

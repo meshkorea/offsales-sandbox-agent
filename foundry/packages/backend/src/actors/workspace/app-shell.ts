@@ -1,5 +1,4 @@
-// @ts-nocheck
-import { desc, eq } from "drizzle-orm";
+import { and, asc, count as sqlCount, desc, eq, gt, gte, inArray, isNotNull, isNull, like, lt, lte, ne, notInArray, or } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type {
   FoundryAppSnapshot,
@@ -13,18 +12,93 @@ import type {
 import { getActorRuntimeContext } from "../context.js";
 import { getOrCreateWorkspace, selfWorkspace } from "../handles.js";
 import { GitHubAppError } from "../../services/app-github.js";
+import { getBetterAuthService } from "../../services/better-auth.js";
 import { repoIdFromRemote, repoLabelFromRemote } from "../../services/repo.js";
 import { logger } from "../../logging.js";
-import { appSessions, invoices, organizationMembers, organizationProfile, repos, seatAssignments, stripeLookup } from "./db/schema.js";
+import {
+  authAccountIndex,
+  authEmailIndex,
+  authSessionIndex,
+  authVerification,
+  invoices,
+  organizationMembers,
+  organizationProfile,
+  repos,
+  seatAssignments,
+  stripeLookup,
+} from "./db/schema.js";
 
 export const APP_SHELL_WORKSPACE_ID = "app";
+
+// ── Better Auth adapter where-clause helpers ──
+// These convert the adapter's `{ field, value, operator }` clause arrays into
+// Drizzle predicates for workspace-level auth index / verification tables.
+
+function workspaceAuthColumn(table: any, field: string): any {
+  const column = table[field];
+  if (!column) {
+    throw new Error(`Unknown auth table field: ${field}`);
+  }
+  return column;
+}
+
+function normalizeAuthValue(value: unknown): unknown {
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeAuthValue(entry));
+  }
+  return value;
+}
+
+function workspaceAuthClause(table: any, clause: { field: string; value: unknown; operator?: string }): any {
+  const column = workspaceAuthColumn(table, clause.field);
+  const value = normalizeAuthValue(clause.value);
+  switch (clause.operator) {
+    case "ne":
+      return value === null ? isNotNull(column) : ne(column, value as any);
+    case "lt":
+      return lt(column, value as any);
+    case "lte":
+      return lte(column, value as any);
+    case "gt":
+      return gt(column, value as any);
+    case "gte":
+      return gte(column, value as any);
+    case "in":
+      return inArray(column, Array.isArray(value) ? (value as any[]) : [value as any]);
+    case "not_in":
+      return notInArray(column, Array.isArray(value) ? (value as any[]) : [value as any]);
+    case "contains":
+      return like(column, `%${String(value ?? "")}%`);
+    case "starts_with":
+      return like(column, `${String(value ?? "")}%`);
+    case "ends_with":
+      return like(column, `%${String(value ?? "")}`);
+    case "eq":
+    default:
+      return value === null ? isNull(column) : eq(column, value as any);
+  }
+}
+
+function workspaceAuthWhere(table: any, clauses: any[] | undefined): any {
+  if (!clauses || clauses.length === 0) {
+    return undefined;
+  }
+  let expr = workspaceAuthClause(table, clauses[0]);
+  for (const clause of clauses.slice(1)) {
+    const next = workspaceAuthClause(table, clause);
+    expr = clause.connector === "OR" ? or(expr, next) : and(expr, next);
+  }
+  return expr;
+}
 
 const githubWebhookLogger = logger.child({
   scope: "github-webhook",
 });
 
 const PROFILE_ROW_ID = "profile";
-const OAUTH_TTL_MS = 10 * 60_000;
 
 function roundDurationMs(start: number): number {
   return Math.round((performance.now() - start) * 100) / 100;
@@ -58,13 +132,6 @@ function organizationWorkspaceId(kind: FoundryOrganization["kind"], login: strin
   return kind === "personal" ? personalWorkspaceId(login) : slugify(login);
 }
 
-function splitScopes(value: string): string[] {
-  return value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
-}
-
 function hasRepoScope(scopes: string[]): boolean {
   return scopes.some((scope) => scope === "repo" || scope.startsWith("repo:"));
 }
@@ -85,19 +152,8 @@ function encodeEligibleOrganizationIds(value: string[]): string {
   return JSON.stringify([...new Set(value)]);
 }
 
-function encodeOauthState(payload: { sessionId: string; nonce: string }): string {
-  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
-}
-
-function decodeOauthState(value: string): { sessionId: string; nonce: string } {
-  const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as Record<string, unknown>;
-  if (typeof parsed.sessionId !== "string" || typeof parsed.nonce !== "string") {
-    throw new Error("GitHub OAuth state is malformed");
-  }
-  return {
-    sessionId: parsed.sessionId,
-    nonce: parsed.nonce,
-  };
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function seatsIncludedForPlan(planId: FoundryBillingPlanId): number {
@@ -161,79 +217,103 @@ function stripeWebhookSubscription(event: any) {
   };
 }
 
-async function getAppSessionRow(c: any, sessionId: string) {
-  assertAppWorkspace(c);
-  return await c.db.select().from(appSessions).where(eq(appSessions.id, sessionId)).get();
-}
-
-async function requireAppSessionRow(c: any, sessionId: string) {
-  const row = await getAppSessionRow(c, sessionId);
-  if (!row) {
-    throw new Error(`Unknown app session: ${sessionId}`);
-  }
-  return row;
-}
-
-async function ensureAppSession(c: any, requestedSessionId?: string | null): Promise<string> {
-  assertAppWorkspace(c);
-  const requested = typeof requestedSessionId === "string" && requestedSessionId.trim().length > 0 ? requestedSessionId.trim() : null;
-
-  if (requested) {
-    const existing = await getAppSessionRow(c, requested);
-    if (existing) {
-      return requested;
-    }
-  }
-
-  const sessionId = requested ?? randomUUID();
-  const now = Date.now();
-  await c.db
-    .insert(appSessions)
-    .values({
-      id: sessionId,
-      currentUserId: null,
-      currentUserName: null,
-      currentUserEmail: null,
-      currentUserGithubLogin: null,
-      currentUserRoleLabel: null,
-      eligibleOrganizationIdsJson: "[]",
-      activeOrganizationId: null,
-      githubAccessToken: null,
-      githubScope: "",
-      starterRepoStatus: "pending",
-      starterRepoStarredAt: null,
-      starterRepoSkippedAt: null,
-      oauthState: null,
-      oauthStateExpiresAt: null,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoNothing()
-    .run();
-  return sessionId;
-}
-
-async function updateAppSession(c: any, sessionId: string, patch: Record<string, unknown>): Promise<void> {
-  assertAppWorkspace(c);
-  await c.db
-    .update(appSessions)
-    .set({
-      ...patch,
-      updatedAt: Date.now(),
-    })
-    .where(eq(appSessions.id, sessionId))
-    .run();
-}
-
 async function getOrganizationState(workspace: any) {
   return await workspace.getOrganizationShellState({});
 }
 
-async function buildAppSnapshot(c: any, sessionId: string): Promise<FoundryAppSnapshot> {
+async function getOrganizationStateIfInitialized(workspace: any) {
+  return await workspace.getOrganizationShellStateIfInitialized({});
+}
+
+async function listSnapshotOrganizations(c: any, sessionId: string, organizationIds: string[]) {
+  const results = await Promise.all(
+    organizationIds.map(async (organizationId) => {
+      const organizationStartedAt = performance.now();
+      try {
+        const workspace = await getOrCreateWorkspace(c, organizationId);
+        const organizationState = await getOrganizationStateIfInitialized(workspace);
+        if (!organizationState) {
+          logger.warn(
+            {
+              sessionId,
+              workspaceId: c.state.workspaceId,
+              organizationId,
+              durationMs: roundDurationMs(organizationStartedAt),
+            },
+            "build_app_snapshot_organization_uninitialized",
+          );
+          return { organizationId, snapshot: null, status: "uninitialized" as const };
+        }
+        logger.info(
+          {
+            sessionId,
+            workspaceId: c.state.workspaceId,
+            organizationId,
+            durationMs: roundDurationMs(organizationStartedAt),
+          },
+          "build_app_snapshot_organization_completed",
+        );
+        return { organizationId, snapshot: organizationState.snapshot, status: "ok" as const };
+      } catch (error) {
+        const message = errorMessage(error);
+        if (!message.includes("Actor not found")) {
+          logger.error(
+            {
+              sessionId,
+              workspaceId: c.state.workspaceId,
+              organizationId,
+              durationMs: roundDurationMs(organizationStartedAt),
+              errorMessage: message,
+              errorStack: error instanceof Error ? error.stack : undefined,
+            },
+            "build_app_snapshot_organization_failed",
+          );
+          throw error;
+        }
+        logger.info(
+          {
+            sessionId,
+            workspaceId: c.state.workspaceId,
+            organizationId,
+            durationMs: roundDurationMs(organizationStartedAt),
+          },
+          "build_app_snapshot_organization_missing",
+        );
+        return { organizationId, snapshot: null, status: "missing" as const };
+      }
+    }),
+  );
+
+  return {
+    organizations: results.map((result) => result.snapshot).filter((organization): organization is FoundryOrganization => organization !== null),
+    uninitializedOrganizationIds: results.filter((result) => result.status === "uninitialized").map((result) => result.organizationId),
+  };
+}
+
+async function buildAppSnapshot(c: any, sessionId: string, allowOrganizationRepair = true): Promise<FoundryAppSnapshot> {
   assertAppWorkspace(c);
   const startedAt = performance.now();
-  const session = await requireAppSessionRow(c, sessionId);
-  const eligibleOrganizationIds = parseEligibleOrganizationIds(session.eligibleOrganizationIdsJson);
+  const auth = getBetterAuthService();
+  let authState = await auth.getAuthState(sessionId);
+  // Inline fallback: if the user is signed in but has no eligible organizations yet
+  // (e.g. first load after OAuth callback), sync GitHub orgs before building the snapshot.
+  if (authState?.user && parseEligibleOrganizationIds(authState.profile?.eligibleOrganizationIdsJson ?? "[]").length === 0) {
+    const token = await auth.getAccessTokenForSession(sessionId);
+    if (token?.accessToken) {
+      logger.info({ sessionId }, "build_app_snapshot_sync_orgs");
+      await syncGithubOrganizations(c, { sessionId, accessToken: token.accessToken });
+      authState = await auth.getAuthState(sessionId);
+    } else {
+      logger.warn({ sessionId }, "build_app_snapshot_no_access_token");
+    }
+  }
+
+  const session = authState?.session ?? null;
+  const user = authState?.user ?? null;
+  const profile = authState?.profile ?? null;
+  const currentSessionState = authState?.sessionState ?? null;
+  const githubAccount = authState?.accounts?.find((account: any) => account.providerId === "github") ?? null;
+  const eligibleOrganizationIds = parseEligibleOrganizationIds(profile?.eligibleOrganizationIdsJson ?? "[]");
 
   logger.info(
     {
@@ -245,73 +325,53 @@ async function buildAppSnapshot(c: any, sessionId: string): Promise<FoundryAppSn
     "build_app_snapshot_started",
   );
 
-  const organizations = (
-    await Promise.all(
-      eligibleOrganizationIds.map(async (organizationId) => {
-        const organizationStartedAt = performance.now();
-        try {
-          const workspace = await getOrCreateWorkspace(c, organizationId);
-          const organizationState = await getOrganizationState(workspace);
-          logger.info(
-            {
-              sessionId,
-              workspaceId: c.state.workspaceId,
-              organizationId,
-              durationMs: roundDurationMs(organizationStartedAt),
-            },
-            "build_app_snapshot_organization_completed",
-          );
-          return organizationState.snapshot;
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          if (!message.includes("Actor not found")) {
-            logger.error(
-              {
-                sessionId,
-                workspaceId: c.state.workspaceId,
-                organizationId,
-                durationMs: roundDurationMs(organizationStartedAt),
-                errorMessage: message,
-                errorStack: error instanceof Error ? error.stack : undefined,
-              },
-              "build_app_snapshot_organization_failed",
-            );
-            throw error;
-          }
-          logger.info(
-            {
-              sessionId,
-              workspaceId: c.state.workspaceId,
-              organizationId,
-              durationMs: roundDurationMs(organizationStartedAt),
-            },
-            "build_app_snapshot_organization_missing",
-          );
-          return null;
-        }
-      }),
-    )
-  ).filter((organization): organization is FoundryOrganization => organization !== null);
+  let { organizations, uninitializedOrganizationIds } = await listSnapshotOrganizations(c, sessionId, eligibleOrganizationIds);
 
-  const currentUser: FoundryUser | null = session.currentUserId
+  if (allowOrganizationRepair && uninitializedOrganizationIds.length > 0) {
+    const token = await auth.getAccessTokenForSession(sessionId);
+    if (token?.accessToken) {
+      logger.info(
+        {
+          sessionId,
+          workspaceId: c.state.workspaceId,
+          organizationIds: uninitializedOrganizationIds,
+        },
+        "build_app_snapshot_repairing_organizations",
+      );
+      await syncGithubOrganizationsInternal(c, { sessionId, accessToken: token.accessToken }, { broadcast: false });
+      return await buildAppSnapshot(c, sessionId, false);
+    }
+    logger.warn(
+      {
+        sessionId,
+        workspaceId: c.state.workspaceId,
+        organizationIds: uninitializedOrganizationIds,
+      },
+      "build_app_snapshot_repair_skipped_no_access_token",
+    );
+  }
+
+  const currentUser: FoundryUser | null = user
     ? {
-        id: session.currentUserId,
-        name: session.currentUserName ?? session.currentUserGithubLogin ?? "GitHub user",
-        email: session.currentUserEmail ?? "",
-        githubLogin: session.currentUserGithubLogin ?? "",
-        roleLabel: session.currentUserRoleLabel ?? "GitHub user",
-        eligibleOrganizationIds: organizations.map((organization) => organization.id),
+        id: profile?.githubAccountId ?? githubAccount?.accountId ?? user.id,
+        name: user.name,
+        email: user.email,
+        githubLogin: profile?.githubLogin ?? "",
+        roleLabel: profile?.roleLabel ?? "GitHub user",
+        eligibleOrganizationIds,
       }
     : null;
 
   const activeOrganizationId =
-    currentUser && session.activeOrganizationId && organizations.some((organization) => organization.id === session.activeOrganizationId)
-      ? session.activeOrganizationId
+    currentUser &&
+    currentSessionState?.activeOrganizationId &&
+    organizations.some((organization) => organization.id === currentSessionState.activeOrganizationId)
+      ? currentSessionState.activeOrganizationId
       : currentUser && organizations.length === 1
         ? (organizations[0]?.id ?? null)
         : null;
 
-  const snapshot = {
+  const snapshot: FoundryAppSnapshot = {
     auth: {
       status: currentUser ? "signed_in" : "signed_out",
       currentUserId: currentUser?.id ?? null,
@@ -321,9 +381,9 @@ async function buildAppSnapshot(c: any, sessionId: string): Promise<FoundryAppSn
       starterRepo: {
         repoFullName: "rivet-dev/sandbox-agent",
         repoUrl: "https://github.com/rivet-dev/sandbox-agent",
-        status: session.starterRepoStatus ?? "pending",
-        starredAt: session.starterRepoStarredAt ?? null,
-        skippedAt: session.starterRepoSkippedAt ?? null,
+        status: profile?.starterRepoStatus ?? "pending",
+        starredAt: profile?.starterRepoStarredAt ?? null,
+        skippedAt: profile?.starterRepoSkippedAt ?? null,
       },
     },
     users: currentUser ? [currentUser] : [],
@@ -345,11 +405,30 @@ async function buildAppSnapshot(c: any, sessionId: string): Promise<FoundryAppSn
 }
 
 async function requireSignedInSession(c: any, sessionId: string) {
-  const session = await requireAppSessionRow(c, sessionId);
-  if (!session.currentUserId || !session.currentUserEmail || !session.currentUserGithubLogin) {
+  const auth = getBetterAuthService();
+  const authState = await auth.getAuthState(sessionId);
+  const user = authState?.user ?? null;
+  const profile = authState?.profile ?? null;
+  const githubAccount = authState?.accounts?.find((account: any) => account.providerId === "github") ?? null;
+  if (!authState?.session || !user?.email) {
     throw new Error("User must be signed in");
   }
-  return session;
+  const token = await auth.getAccessTokenForSession(sessionId);
+  return {
+    ...authState.session,
+    authUserId: user.id,
+    currentUserId: profile?.githubAccountId ?? githubAccount?.accountId ?? user.id,
+    currentUserName: user.name,
+    currentUserEmail: user.email,
+    currentUserGithubLogin: profile?.githubLogin ?? "",
+    currentUserRoleLabel: profile?.roleLabel ?? "GitHub user",
+    eligibleOrganizationIdsJson: profile?.eligibleOrganizationIdsJson ?? "[]",
+    githubAccessToken: token?.accessToken ?? null,
+    githubScope: (token?.scopes ?? []).join(","),
+    starterRepoStatus: profile?.starterRepoStatus ?? "pending",
+    starterRepoStarredAt: profile?.starterRepoStarredAt ?? null,
+    starterRepoSkippedAt: profile?.starterRepoSkippedAt ?? null,
+  };
 }
 
 function requireEligibleOrganization(session: any, organizationId: string): void {
@@ -432,53 +511,29 @@ async function safeListInstallations(accessToken: string): Promise<any[]> {
 }
 
 /**
- * Fast path: resolve viewer identity, store user + token in the session,
- * and return the redirect URL. Does NOT sync organizations — that work is
- * deferred to `syncGithubOrganizations` via the workflow queue so the HTTP
- * callback can respond before any proxy timeout triggers a retry.
- */
-async function initGithubSession(c: any, sessionId: string, accessToken: string, scopes: string[]): Promise<{ sessionId: string; redirectTo: string }> {
-  assertAppWorkspace(c);
-  const { appShell } = getActorRuntimeContext();
-  const viewer = await appShell.github.getViewer(accessToken);
-  const userId = `user-${slugify(viewer.login)}`;
-
-  await updateAppSession(c, sessionId, {
-    currentUserId: userId,
-    currentUserName: viewer.name || viewer.login,
-    currentUserEmail: viewer.email ?? `${viewer.login}@users.noreply.github.com`,
-    currentUserGithubLogin: viewer.login,
-    currentUserRoleLabel: "GitHub user",
-    githubAccessToken: accessToken,
-    githubScope: scopes.join(","),
-    oauthState: null,
-    oauthStateExpiresAt: null,
-  });
-
-  return {
-    sessionId,
-    redirectTo: `${appShell.appUrl}/organizations?foundrySession=${encodeURIComponent(sessionId)}`,
-  };
-}
-
-/**
  * Slow path: list GitHub orgs + installations, sync each org workspace,
  * and update the session's eligible organization list. Called from the
  * workflow queue so it runs in the background after the callback has
  * already returned a redirect to the browser.
- *
- * Also used synchronously by bootstrapAppGithubSession (dev-only) where
- * proxy timeouts are not a concern.
  */
 export async function syncGithubOrganizations(c: any, input: { sessionId: string; accessToken: string }): Promise<void> {
+  await syncGithubOrganizationsInternal(c, input, { broadcast: true });
+}
+
+async function syncGithubOrganizationsInternal(c: any, input: { sessionId: string; accessToken: string }, options: { broadcast: boolean }): Promise<void> {
   assertAppWorkspace(c);
+  const auth = getBetterAuthService();
   const { appShell } = getActorRuntimeContext();
   const { sessionId, accessToken } = input;
-  const session = await requireAppSessionRow(c, sessionId);
+  const authState = await auth.getAuthState(sessionId);
+  if (!authState?.user) {
+    throw new Error("User must be signed in");
+  }
   const viewer = await appShell.github.getViewer(accessToken);
   const organizations = await safeListOrganizations(accessToken);
   const installations = await safeListInstallations(accessToken);
-  const userId = `user-${slugify(viewer.login)}`;
+  const authUserId = authState.user.id;
+  const githubUserId = String(viewer.id);
 
   const linkedOrganizationIds: string[] = [];
   const accounts = [
@@ -503,7 +558,7 @@ export async function syncGithubOrganizations(c: any, input: { sessionId: string
     const installation = installations.find((candidate) => candidate.accountLogin === account.githubLogin) ?? null;
     const workspace = await getOrCreateWorkspace(c, organizationId);
     await workspace.syncOrganizationShellFromGithub({
-      userId,
+      userId: githubUserId,
       userName: viewer.name || viewer.login,
       userEmail: viewer.email ?? `${viewer.login}@users.noreply.github.com`,
       githubUserLogin: viewer.login,
@@ -519,15 +574,25 @@ export async function syncGithubOrganizations(c: any, input: { sessionId: string
   }
 
   const activeOrganizationId =
-    session.activeOrganizationId && linkedOrganizationIds.includes(session.activeOrganizationId)
-      ? session.activeOrganizationId
+    authState.sessionState?.activeOrganizationId && linkedOrganizationIds.includes(authState.sessionState.activeOrganizationId)
+      ? authState.sessionState.activeOrganizationId
       : linkedOrganizationIds.length === 1
         ? (linkedOrganizationIds[0] ?? null)
         : null;
 
-  await updateAppSession(c, sessionId, {
+  await auth.setActiveOrganization(sessionId, activeOrganizationId);
+  await auth.upsertUserProfile(authUserId, {
+    githubAccountId: String(viewer.id),
+    githubLogin: viewer.login,
+    roleLabel: "GitHub user",
     eligibleOrganizationIdsJson: encodeEligibleOrganizationIds(linkedOrganizationIds),
-    activeOrganizationId,
+  });
+  if (!options.broadcast) {
+    return;
+  }
+  c.broadcast("appUpdated", {
+    type: "appUpdated",
+    snapshot: await buildAppSnapshot(c, sessionId),
   });
 }
 
@@ -571,6 +636,12 @@ export async function syncGithubOrganizationRepos(c: any, input: { sessionId: st
       installationStatus,
       lastSyncLabel: repositories.length > 0 ? "Synced just now" : "No repositories available",
     });
+
+    // Broadcast updated app snapshot so connected clients see the new repos
+    c.broadcast("appUpdated", {
+      type: "appUpdated",
+      snapshot: await buildAppSnapshot(c, input.sessionId),
+    });
   } catch (error) {
     const installationStatus =
       error instanceof GitHubAppError && (error.status === 403 || error.status === 404)
@@ -580,20 +651,13 @@ export async function syncGithubOrganizationRepos(c: any, input: { sessionId: st
       message: error instanceof Error ? error.message : "GitHub import failed",
       installationStatus,
     });
-  }
-}
 
-/**
- * Full synchronous sync: init session + sync orgs in one call.
- * Used by bootstrapAppGithubSession (dev-only) where there is no proxy
- * timeout concern and we want the session fully populated before returning.
- */
-async function syncGithubSessionFromToken(c: any, sessionId: string, accessToken: string): Promise<{ sessionId: string; redirectTo: string }> {
-  const session = await requireAppSessionRow(c, sessionId);
-  const scopes = splitScopes(session.githubScope);
-  const result = await initGithubSession(c, sessionId, accessToken, scopes);
-  await syncGithubOrganizations(c, { sessionId, accessToken });
-  return result;
+    // Broadcast sync failure so the client updates status
+    c.broadcast("appUpdated", {
+      type: "appUpdated",
+      snapshot: await buildAppSnapshot(c, input.sessionId),
+    });
+  }
 }
 
 async function readOrganizationProfileRow(c: any) {
@@ -648,6 +712,19 @@ async function listOrganizationRepoCatalog(c: any): Promise<string[]> {
 async function buildOrganizationState(c: any) {
   const startedAt = performance.now();
   const row = await requireOrganizationProfileRow(c);
+  return await buildOrganizationStateFromRow(c, row, startedAt);
+}
+
+async function buildOrganizationStateIfInitialized(c: any) {
+  const startedAt = performance.now();
+  const row = await readOrganizationProfileRow(c);
+  if (!row) {
+    return null;
+  }
+  return await buildOrganizationStateFromRow(c, row, startedAt);
+}
+
+async function buildOrganizationStateFromRow(c: any, row: any, startedAt: number) {
   const repoCatalog = await listOrganizationRepoCatalog(c);
   const members = await listOrganizationMembers(c);
   const seatAssignmentEmails = await listOrganizationSeatAssignments(c);
@@ -736,9 +813,253 @@ async function applySubscriptionState(
 }
 
 export const workspaceAppActions = {
-  async ensureAppSession(c: any, input?: { requestedSessionId?: string | null }): Promise<{ sessionId: string }> {
-    const sessionId = await ensureAppSession(c, input?.requestedSessionId);
-    return { sessionId };
+  async authFindSessionIndex(c: any, input: { sessionId?: string; sessionToken?: string }) {
+    assertAppWorkspace(c);
+
+    const clauses = [
+      ...(input.sessionId ? [{ field: "sessionId", value: input.sessionId }] : []),
+      ...(input.sessionToken ? [{ field: "sessionToken", value: input.sessionToken }] : []),
+    ];
+    if (clauses.length === 0) {
+      return null;
+    }
+    const predicate = workspaceAuthWhere(authSessionIndex, clauses);
+    return await c.db.select().from(authSessionIndex).where(predicate!).get();
+  },
+
+  async authUpsertSessionIndex(c: any, input: { sessionId: string; sessionToken: string; userId: string }) {
+    assertAppWorkspace(c);
+
+    const now = Date.now();
+    await c.db
+      .insert(authSessionIndex)
+      .values({
+        sessionId: input.sessionId,
+        sessionToken: input.sessionToken,
+        userId: input.userId,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: authSessionIndex.sessionId,
+        set: {
+          sessionToken: input.sessionToken,
+          userId: input.userId,
+          updatedAt: now,
+        },
+      })
+      .run();
+    return await c.db.select().from(authSessionIndex).where(eq(authSessionIndex.sessionId, input.sessionId)).get();
+  },
+
+  async authDeleteSessionIndex(c: any, input: { sessionId?: string; sessionToken?: string }) {
+    assertAppWorkspace(c);
+
+    const clauses = [
+      ...(input.sessionId ? [{ field: "sessionId", value: input.sessionId }] : []),
+      ...(input.sessionToken ? [{ field: "sessionToken", value: input.sessionToken }] : []),
+    ];
+    if (clauses.length === 0) {
+      return;
+    }
+    const predicate = workspaceAuthWhere(authSessionIndex, clauses);
+    await c.db.delete(authSessionIndex).where(predicate!).run();
+  },
+
+  async authFindEmailIndex(c: any, input: { email: string }) {
+    assertAppWorkspace(c);
+
+    return await c.db.select().from(authEmailIndex).where(eq(authEmailIndex.email, input.email)).get();
+  },
+
+  async authUpsertEmailIndex(c: any, input: { email: string; userId: string }) {
+    assertAppWorkspace(c);
+
+    const now = Date.now();
+    await c.db
+      .insert(authEmailIndex)
+      .values({
+        email: input.email,
+        userId: input.userId,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: authEmailIndex.email,
+        set: {
+          userId: input.userId,
+          updatedAt: now,
+        },
+      })
+      .run();
+    return await c.db.select().from(authEmailIndex).where(eq(authEmailIndex.email, input.email)).get();
+  },
+
+  async authDeleteEmailIndex(c: any, input: { email: string }) {
+    assertAppWorkspace(c);
+
+    await c.db.delete(authEmailIndex).where(eq(authEmailIndex.email, input.email)).run();
+  },
+
+  async authFindAccountIndex(c: any, input: { id?: string; providerId?: string; accountId?: string }) {
+    assertAppWorkspace(c);
+
+    if (input.id) {
+      return await c.db.select().from(authAccountIndex).where(eq(authAccountIndex.id, input.id)).get();
+    }
+    if (!input.providerId || !input.accountId) {
+      return null;
+    }
+    return await c.db
+      .select()
+      .from(authAccountIndex)
+      .where(and(eq(authAccountIndex.providerId, input.providerId), eq(authAccountIndex.accountId, input.accountId)))
+      .get();
+  },
+
+  async authUpsertAccountIndex(c: any, input: { id: string; providerId: string; accountId: string; userId: string }) {
+    assertAppWorkspace(c);
+
+    const now = Date.now();
+    await c.db
+      .insert(authAccountIndex)
+      .values({
+        id: input.id,
+        providerId: input.providerId,
+        accountId: input.accountId,
+        userId: input.userId,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: authAccountIndex.id,
+        set: {
+          providerId: input.providerId,
+          accountId: input.accountId,
+          userId: input.userId,
+          updatedAt: now,
+        },
+      })
+      .run();
+    return await c.db.select().from(authAccountIndex).where(eq(authAccountIndex.id, input.id)).get();
+  },
+
+  async authDeleteAccountIndex(c: any, input: { id?: string; providerId?: string; accountId?: string }) {
+    assertAppWorkspace(c);
+
+    if (input.id) {
+      await c.db.delete(authAccountIndex).where(eq(authAccountIndex.id, input.id)).run();
+      return;
+    }
+    if (input.providerId && input.accountId) {
+      await c.db
+        .delete(authAccountIndex)
+        .where(and(eq(authAccountIndex.providerId, input.providerId), eq(authAccountIndex.accountId, input.accountId)))
+        .run();
+    }
+  },
+
+  async authCreateVerification(c: any, input: { data: Record<string, unknown> }) {
+    assertAppWorkspace(c);
+
+    await c.db
+      .insert(authVerification)
+      .values(input.data as any)
+      .run();
+    return await c.db
+      .select()
+      .from(authVerification)
+      .where(eq(authVerification.id, input.data.id as string))
+      .get();
+  },
+
+  async authFindOneVerification(c: any, input: { where: any[] }) {
+    assertAppWorkspace(c);
+
+    const predicate = workspaceAuthWhere(authVerification, input.where);
+    return predicate ? await c.db.select().from(authVerification).where(predicate).get() : null;
+  },
+
+  async authFindManyVerification(c: any, input: { where?: any[]; limit?: number; sortBy?: any; offset?: number }) {
+    assertAppWorkspace(c);
+
+    const predicate = workspaceAuthWhere(authVerification, input.where);
+    let query = c.db.select().from(authVerification);
+    if (predicate) {
+      query = query.where(predicate);
+    }
+    if (input.sortBy?.field) {
+      const column = workspaceAuthColumn(authVerification, input.sortBy.field);
+      query = query.orderBy(input.sortBy.direction === "asc" ? asc(column) : desc(column));
+    }
+    if (typeof input.limit === "number") {
+      query = query.limit(input.limit);
+    }
+    if (typeof input.offset === "number") {
+      query = query.offset(input.offset);
+    }
+    return await query.all();
+  },
+
+  async authUpdateVerification(c: any, input: { where: any[]; update: Record<string, unknown> }) {
+    assertAppWorkspace(c);
+
+    const predicate = workspaceAuthWhere(authVerification, input.where);
+    if (!predicate) {
+      return null;
+    }
+    await c.db
+      .update(authVerification)
+      .set(input.update as any)
+      .where(predicate)
+      .run();
+    return await c.db.select().from(authVerification).where(predicate).get();
+  },
+
+  async authUpdateManyVerification(c: any, input: { where: any[]; update: Record<string, unknown> }) {
+    assertAppWorkspace(c);
+
+    const predicate = workspaceAuthWhere(authVerification, input.where);
+    if (!predicate) {
+      return 0;
+    }
+    await c.db
+      .update(authVerification)
+      .set(input.update as any)
+      .where(predicate)
+      .run();
+    const row = await c.db.select({ value: sqlCount() }).from(authVerification).where(predicate).get();
+    return row?.value ?? 0;
+  },
+
+  async authDeleteVerification(c: any, input: { where: any[] }) {
+    assertAppWorkspace(c);
+
+    const predicate = workspaceAuthWhere(authVerification, input.where);
+    if (!predicate) {
+      return;
+    }
+    await c.db.delete(authVerification).where(predicate).run();
+  },
+
+  async authDeleteManyVerification(c: any, input: { where: any[] }) {
+    assertAppWorkspace(c);
+
+    const predicate = workspaceAuthWhere(authVerification, input.where);
+    if (!predicate) {
+      return 0;
+    }
+    const rows = await c.db.select().from(authVerification).where(predicate).all();
+    await c.db.delete(authVerification).where(predicate).run();
+    return rows.length;
+  },
+
+  async authCountVerification(c: any, input: { where?: any[] }) {
+    assertAppWorkspace(c);
+
+    const predicate = workspaceAuthWhere(authVerification, input.where);
+    const row = predicate
+      ? await c.db.select({ value: sqlCount() }).from(authVerification).where(predicate).get()
+      : await c.db.select({ value: sqlCount() }).from(authVerification).get();
+    return row?.value ?? 0;
   },
 
   async getAppSnapshot(c: any, input: { sessionId: string }): Promise<FoundryAppSnapshot> {
@@ -750,20 +1071,27 @@ export const workspaceAppActions = {
     input: { organizationId: string; requireRepoScope?: boolean },
   ): Promise<{ accessToken: string; scopes: string[] } | null> {
     assertAppWorkspace(c);
-    const rows = await c.db.select().from(appSessions).orderBy(desc(appSessions.updatedAt)).all();
+    const auth = getBetterAuthService();
+    const rows = await c.db.select().from(authSessionIndex).orderBy(desc(authSessionIndex.updatedAt)).all();
 
     for (const row of rows) {
-      if (row.activeOrganizationId !== input.organizationId || !row.githubAccessToken) {
+      const authState = await auth.getAuthState(row.sessionId);
+      if (authState?.sessionState?.activeOrganizationId !== input.organizationId) {
         continue;
       }
 
-      const scopes = splitScopes(row.githubScope);
-      if (input.requireRepoScope !== false && !hasRepoScope(scopes)) {
+      const token = await auth.getAccessTokenForSession(row.sessionId);
+      if (!token?.accessToken) {
+        continue;
+      }
+
+      const scopes = token.scopes;
+      if (input.requireRepoScope !== false && scopes.length > 0 && !hasRepoScope(scopes)) {
         continue;
       }
 
       return {
-        accessToken: row.githubAccessToken,
+        accessToken: token.accessToken,
         scopes,
       };
     }
@@ -771,97 +1099,10 @@ export const workspaceAppActions = {
     return null;
   },
 
-  async startAppGithubAuth(c: any, input: { sessionId: string }): Promise<{ url: string }> {
-    assertAppWorkspace(c);
-    const { appShell } = getActorRuntimeContext();
-    const sessionId = await ensureAppSession(c, input.sessionId);
-    const nonce = randomUUID();
-    await updateAppSession(c, sessionId, {
-      oauthState: nonce,
-      oauthStateExpiresAt: Date.now() + OAUTH_TTL_MS,
-    });
-    return {
-      url: appShell.github.buildAuthorizeUrl(encodeOauthState({ sessionId, nonce })),
-    };
-  },
-
-  async completeAppGithubAuth(c: any, input: { code: string; state: string }): Promise<{ sessionId: string; redirectTo: string }> {
-    assertAppWorkspace(c);
-    const { appShell } = getActorRuntimeContext();
-    const oauth = decodeOauthState(input.state);
-    const session = await requireAppSessionRow(c, oauth.sessionId);
-    if (!session.oauthState || session.oauthState !== oauth.nonce || !session.oauthStateExpiresAt || session.oauthStateExpiresAt < Date.now()) {
-      throw new Error("GitHub OAuth state is invalid or expired");
-    }
-
-    // Clear state before exchangeCode — GitHub codes are single-use and
-    // duplicate callback requests (from proxy retries or user refresh)
-    // must fail the state check rather than attempt a second exchange.
-    // See research/friction/general.mdx 2026-03-13 entry.
-    await updateAppSession(c, session.id, {
-      oauthState: null,
-      oauthStateExpiresAt: null,
-    });
-
-    const token = await appShell.github.exchangeCode(input.code);
-
-    // Fast path: store token + user identity and return the redirect
-    // immediately. The slow org sync (list orgs, list installations,
-    // sync each workspace) runs in the workflow queue so the HTTP
-    // response lands before any proxy/infra timeout triggers a retry.
-    // The frontend already polls when it sees syncStatus === "syncing".
-    const result = await initGithubSession(c, session.id, token.accessToken, token.scopes);
-
-    // Enqueue the slow org sync to the workflow. fire-and-forget (wait: false)
-    // because the redirect does not depend on org data — the frontend will
-    // poll getAppSnapshot until organizations are populated.
-    const self = selfWorkspace(c);
-    await self.send(
-      "workspace.command.syncGithubSession",
-      { sessionId: session.id, accessToken: token.accessToken },
-      {
-        wait: false,
-      },
-    );
-
-    return result;
-  },
-
-  async bootstrapAppGithubSession(c: any, input: { accessToken: string; sessionId?: string | null }): Promise<{ sessionId: string; redirectTo: string }> {
-    assertAppWorkspace(c);
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("bootstrapAppGithubSession is development-only");
-    }
-    const sessionId = await ensureAppSession(c, input.sessionId ?? null);
-    return await syncGithubSessionFromToken(c, sessionId, input.accessToken);
-  },
-
-  async signOutApp(c: any, input: { sessionId: string }): Promise<FoundryAppSnapshot> {
-    assertAppWorkspace(c);
-    const sessionId = await ensureAppSession(c, input.sessionId);
-    await updateAppSession(c, sessionId, {
-      currentUserId: null,
-      currentUserName: null,
-      currentUserEmail: null,
-      currentUserGithubLogin: null,
-      currentUserRoleLabel: null,
-      eligibleOrganizationIdsJson: "[]",
-      activeOrganizationId: null,
-      githubAccessToken: null,
-      githubScope: "",
-      starterRepoStatus: "pending",
-      starterRepoStarredAt: null,
-      starterRepoSkippedAt: null,
-      oauthState: null,
-      oauthStateExpiresAt: null,
-    });
-    return await buildAppSnapshot(c, sessionId);
-  },
-
   async skipAppStarterRepo(c: any, input: { sessionId: string }): Promise<FoundryAppSnapshot> {
     assertAppWorkspace(c);
-    await requireSignedInSession(c, input.sessionId);
-    await updateAppSession(c, input.sessionId, {
+    const session = await requireSignedInSession(c, input.sessionId);
+    await getBetterAuthService().upsertUserProfile(session.authUserId, {
       starterRepoStatus: "skipped",
       starterRepoSkippedAt: Date.now(),
       starterRepoStarredAt: null,
@@ -877,7 +1118,7 @@ export const workspaceAppActions = {
     await workspace.starSandboxAgentRepo({
       workspaceId: input.organizationId,
     });
-    await updateAppSession(c, input.sessionId, {
+    await getBetterAuthService().upsertUserProfile(session.authUserId, {
       starterRepoStatus: "starred",
       starterRepoStarredAt: Date.now(),
       starterRepoSkippedAt: null,
@@ -889,9 +1130,7 @@ export const workspaceAppActions = {
     assertAppWorkspace(c);
     const session = await requireSignedInSession(c, input.sessionId);
     requireEligibleOrganization(session, input.organizationId);
-    await updateAppSession(c, input.sessionId, {
-      activeOrganizationId: input.organizationId,
-    });
+    await getBetterAuthService().setActiveOrganization(input.sessionId, input.organizationId);
 
     const workspace = await getOrCreateWorkspace(c, input.organizationId);
     const organization = await getOrganizationState(workspace);
@@ -968,7 +1207,7 @@ export const workspaceAppActions = {
     const organization = await getOrganizationState(workspace);
     if (organization.snapshot.kind !== "organization") {
       return {
-        url: `${appShell.appUrl}/workspaces/${input.organizationId}?foundrySession=${encodeURIComponent(input.sessionId)}`,
+        url: `${appShell.appUrl}/workspaces/${input.organizationId}`,
       };
     }
     return {
@@ -987,7 +1226,7 @@ export const workspaceAppActions = {
     if (input.planId === "free") {
       await workspace.applyOrganizationFreePlan({ clearSubscription: false });
       return {
-        url: `${appShell.appUrl}/organizations/${input.organizationId}/billing?foundrySession=${encodeURIComponent(input.sessionId)}`,
+        url: `${appShell.appUrl}/organizations/${input.organizationId}/billing`,
       };
     }
 
@@ -1017,8 +1256,8 @@ export const workspaceAppActions = {
           planId: input.planId,
           successUrl: `${appShell.apiUrl}/v1/billing/checkout/complete?organizationId=${encodeURIComponent(
             input.organizationId,
-          )}&foundrySession=${encodeURIComponent(input.sessionId)}&session_id={CHECKOUT_SESSION_ID}`,
-          cancelUrl: `${appShell.appUrl}/organizations/${input.organizationId}/billing?foundrySession=${encodeURIComponent(input.sessionId)}`,
+          )}&session_id={CHECKOUT_SESSION_ID}`,
+          cancelUrl: `${appShell.appUrl}/organizations/${input.organizationId}/billing`,
         })
         .then((checkout) => checkout.url),
     };
@@ -1048,7 +1287,7 @@ export const workspaceAppActions = {
     }
 
     return {
-      redirectTo: `${appShell.appUrl}/organizations/${input.organizationId}/billing?foundrySession=${encodeURIComponent(input.sessionId)}`,
+      redirectTo: `${appShell.appUrl}/organizations/${input.organizationId}/billing`,
     };
   },
 
@@ -1064,7 +1303,7 @@ export const workspaceAppActions = {
     }
     const portal = await appShell.stripe.createPortalSession({
       customerId: organization.stripeCustomerId,
-      returnUrl: `${appShell.appUrl}/organizations/${input.organizationId}/billing?foundrySession=${encodeURIComponent(input.sessionId)}`,
+      returnUrl: `${appShell.appUrl}/organizations/${input.organizationId}/billing`,
     });
     return { url: portal.url };
   },
@@ -1424,6 +1663,11 @@ export const workspaceAppActions = {
   async getOrganizationShellState(c: any): Promise<any> {
     assertOrganizationWorkspace(c);
     return await buildOrganizationState(c);
+  },
+
+  async getOrganizationShellStateIfInitialized(c: any): Promise<any | null> {
+    assertOrganizationWorkspace(c);
+    return await buildOrganizationStateIfInitialized(c);
   },
 
   async updateOrganizationShellProfile(c: any, input: Pick<UpdateFoundryOrganizationProfileInput, "displayName" | "slug" | "primaryDomain">): Promise<void> {

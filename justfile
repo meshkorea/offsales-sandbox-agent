@@ -127,13 +127,13 @@ foundry-check:
 foundry-dev:
 	pnpm install
 	mkdir -p foundry/.foundry/logs
-	HF_DOCKER_UID="$(id -u)" HF_DOCKER_GID="$(id -g)" docker compose -f foundry/compose.dev.yaml up --build --force-recreate -d
+	HF_DOCKER_UID="$(id -u)" HF_DOCKER_GID="$(id -g)" docker compose --env-file .env -f foundry/compose.dev.yaml up --build --force-recreate -d
 
 [group('foundry')]
 foundry-preview:
 	pnpm install
 	mkdir -p foundry/.foundry/logs
-	HF_DOCKER_UID="$(id -u)" HF_DOCKER_GID="$(id -g)" docker compose -f foundry/compose.preview.yaml up --build --force-recreate -d
+	HF_DOCKER_UID="$(id -u)" HF_DOCKER_GID="$(id -g)" docker compose --env-file .env -f foundry/compose.preview.yaml up --build --force-recreate -d
 
 [group('foundry')]
 foundry-frontend-dev host='127.0.0.1' port='4173' backend='http://127.0.0.1:7741/api/rivet':
@@ -141,9 +141,23 @@ foundry-frontend-dev host='127.0.0.1' port='4173' backend='http://127.0.0.1:7741
 	VITE_HF_BACKEND_ENDPOINT="{{backend}}" pnpm --filter @sandbox-agent/foundry-frontend dev -- --host {{host}} --port {{port}}
 
 [group('foundry')]
-foundry-dev-mock host='127.0.0.1' port='4173':
+foundry-dev-mock host='127.0.0.1' port='4174':
 	pnpm install
 	FOUNDRY_FRONTEND_CLIENT_MODE=mock pnpm --filter @sandbox-agent/foundry-frontend dev -- --host {{host}} --port {{port}}
+
+[group('foundry')]
+foundry-mock:
+	pnpm install
+	mkdir -p foundry/.foundry/logs
+	docker compose -f foundry/compose.mock.yaml up --build --force-recreate -d
+
+[group('foundry')]
+foundry-mock-down:
+	docker compose -f foundry/compose.mock.yaml down
+
+[group('foundry')]
+foundry-mock-logs:
+	docker compose -f foundry/compose.mock.yaml logs -f --tail=200
 
 [group('foundry')]
 foundry-dev-turbo:
@@ -151,51 +165,25 @@ foundry-dev-turbo:
 
 [group('foundry')]
 foundry-dev-down:
-	docker compose -f foundry/compose.dev.yaml down
+	docker compose --env-file .env -f foundry/compose.dev.yaml down
 
 [group('foundry')]
 foundry-dev-logs:
-	docker compose -f foundry/compose.dev.yaml logs -f --tail=200
+	docker compose --env-file .env -f foundry/compose.dev.yaml logs -f --tail=200
 
 [group('foundry')]
 foundry-preview-down:
-	docker compose -f foundry/compose.preview.yaml down
+	docker compose --env-file .env -f foundry/compose.preview.yaml down
 
 [group('foundry')]
 foundry-preview-logs:
-	docker compose -f foundry/compose.preview.yaml logs -f --tail=200
+	docker compose --env-file .env -f foundry/compose.preview.yaml logs -f --tail=200
 
 [group('foundry')]
 foundry-format:
 	prettier --write foundry
 
 [group('foundry')]
-foundry-backend-start host='127.0.0.1' port='7741':
-	pnpm install
-	pnpm --filter @sandbox-agent/foundry-backend build
-	pnpm --filter @sandbox-agent/foundry-backend start -- --host {{host}} --port {{port}}
-
-[group('foundry')]
-foundry-hf *ARGS:
-	@echo "CLI package is disabled in this repo; use frontend workflows instead." >&2
-	@exit 1
-
-[group('foundry')]
 foundry-docker-build tag='foundry:local':
 	docker build -f foundry/docker/backend.Dockerfile -t {{tag}} .
 
-[group('foundry')]
-foundry-desktop-dev:
-	pnpm --filter @sandbox-agent/foundry-desktop dev
-
-[group('foundry')]
-foundry-desktop-build:
-	pnpm --filter @sandbox-agent/foundry-desktop build:all
-
-[group('foundry')]
-foundry-railway-up:
-	npx -y @railway/cli up --detach
-
-[group('foundry')]
-foundry-railway-status:
-	npx -y @railway/cli status --json

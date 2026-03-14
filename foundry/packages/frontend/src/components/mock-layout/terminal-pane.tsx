@@ -1,4 +1,4 @@
-import type { SandboxProcessRecord } from "@sandbox-agent/foundry-client";
+import { type SandboxProcessRecord, useInterest } from "@sandbox-agent/foundry-client";
 import { ProcessTerminal } from "@sandbox-agent/react";
 import { useQuery } from "@tanstack/react-query";
 import { useStyletron } from "baseui";
@@ -7,6 +7,7 @@ import { ChevronDown, ChevronUp, Plus, SquareTerminal, Trash2 } from "lucide-rea
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SandboxAgent } from "sandbox-agent";
 import { backendClient } from "../../lib/backend";
+import { interestManager } from "../../lib/interest";
 
 interface TerminalPaneProps {
   workspaceId: string;
@@ -135,6 +136,9 @@ export function TerminalPane({ workspaceId, taskId, isExpanded, onExpand, onColl
         setProcessTabs((prev) => {
           const next = [...prev];
           const [moved] = next.splice(d.fromIdx, 1);
+          if (!moved) {
+            return prev;
+          }
           next.splice(d.overIdx!, 0, moved);
           return next;
         });
@@ -180,28 +184,31 @@ export function TerminalPane({ workspaceId, taskId, isExpanded, onExpand, onColl
     [listWidth],
   );
 
-  const taskQuery = useQuery({
-    queryKey: ["mock-layout", "task", workspaceId, taskId],
-    enabled: Boolean(taskId),
-    staleTime: 1_000,
-    refetchOnWindowFocus: true,
-    refetchInterval: (query) => (query.state.data?.activeSandboxId ? false : 2_000),
-    queryFn: async () => {
-      if (!taskId) {
-        throw new Error("Cannot load terminal state without a task.");
-      }
-      return await backendClient.getTask(workspaceId, taskId);
-    },
-  });
+  const workspaceState = useInterest(interestManager, "workspace", { workspaceId });
+  const taskSummary = useMemo(
+    () => (taskId ? (workspaceState.data?.taskSummaries.find((task) => task.id === taskId) ?? null) : null),
+    [taskId, workspaceState.data?.taskSummaries],
+  );
+  const taskState = useInterest(
+    interestManager,
+    "task",
+    taskSummary
+      ? {
+          workspaceId,
+          repoId: taskSummary.repoId,
+          taskId: taskSummary.id,
+        }
+      : null,
+  );
 
   const activeSandbox = useMemo(() => {
-    const task = taskQuery.data;
+    const task = taskState.data;
     if (!task?.activeSandboxId) {
       return null;
     }
 
     return task.sandboxes.find((sandbox) => sandbox.sandboxId === task.activeSandboxId) ?? null;
-  }, [taskQuery.data]);
+  }, [taskState.data]);
 
   const connectionQuery = useQuery({
     queryKey: ["mock-layout", "sandbox-agent-connection", workspaceId, activeSandbox?.providerId ?? "", activeSandbox?.sandboxId ?? ""],
@@ -217,30 +224,17 @@ export function TerminalPane({ workspaceId, taskId, isExpanded, onExpand, onColl
     },
   });
 
-  const processesQuery = useQuery({
-    queryKey: ["mock-layout", "sandbox-processes", workspaceId, activeSandbox?.providerId ?? "", activeSandbox?.sandboxId ?? ""],
-    enabled: Boolean(activeSandbox?.sandboxId),
-    staleTime: 0,
-    refetchOnWindowFocus: true,
-    refetchInterval: activeSandbox?.sandboxId ? 3_000 : false,
-    queryFn: async () => {
-      if (!activeSandbox) {
-        throw new Error("Cannot load processes without an active sandbox.");
-      }
-
-      return await backendClient.listSandboxProcesses(workspaceId, activeSandbox.providerId, activeSandbox.sandboxId);
-    },
-  });
-
-  useEffect(() => {
-    if (!activeSandbox?.sandboxId) {
-      return;
-    }
-
-    return backendClient.subscribeSandboxProcesses(workspaceId, activeSandbox.providerId, activeSandbox.sandboxId, () => {
-      void processesQuery.refetch();
-    });
-  }, [activeSandbox?.providerId, activeSandbox?.sandboxId, processesQuery, workspaceId]);
+  const processesState = useInterest(
+    interestManager,
+    "sandboxProcesses",
+    activeSandbox
+      ? {
+          workspaceId,
+          providerId: activeSandbox.providerId,
+          sandboxId: activeSandbox.sandboxId,
+        }
+      : null,
+  );
 
   useEffect(() => {
     if (!connectionQuery.data) {
@@ -311,7 +305,7 @@ export function TerminalPane({ workspaceId, taskId, isExpanded, onExpand, onColl
     setProcessTabs([]);
   }, [taskId]);
 
-  const processes = processesQuery.data?.processes ?? [];
+  const processes = processesState.data ?? [];
 
   const openTerminalTab = useCallback((process: SandboxProcessRecord) => {
     setProcessTabs((current) => {
@@ -357,12 +351,11 @@ export function TerminalPane({ workspaceId, taskId, isExpanded, onExpand, onColl
         sandboxId: activeSandbox.sandboxId,
         request: defaultShellRequest(activeSandbox.cwd),
       });
-      await processesQuery.refetch();
       openTerminalTab(created);
     } finally {
       setCreatingProcess(false);
     }
-  }, [activeSandbox, openTerminalTab, processesQuery, workspaceId]);
+  }, [activeSandbox, openTerminalTab, workspaceId]);
 
   const processTabsById = useMemo(() => new Map(processTabs.map((tab) => [tab.id, tab])), [processTabs]);
   const activeProcessTab = activeTabId ? (processTabsById.get(activeTabId) ?? null) : null;
@@ -462,9 +455,6 @@ export function TerminalPane({ workspaceId, taskId, isExpanded, onExpand, onColl
             height: "100%",
             padding: "18px 16px 14px",
           }}
-          onExit={() => {
-            void processesQuery.refetch();
-          }}
         />
       </div>
     );
@@ -481,7 +471,7 @@ export function TerminalPane({ workspaceId, taskId, isExpanded, onExpand, onColl
       );
     }
 
-    if (taskQuery.isLoading) {
+    if (taskState.status === "loading") {
       return (
         <div className={emptyBodyClassName}>
           <div className={emptyCopyClassName}>
@@ -491,12 +481,12 @@ export function TerminalPane({ workspaceId, taskId, isExpanded, onExpand, onColl
       );
     }
 
-    if (taskQuery.error) {
+    if (taskState.error) {
       return (
         <div className={emptyBodyClassName}>
           <div className={emptyCopyClassName}>
             <strong>Could not load task state.</strong>
-            <span>{taskQuery.error.message}</span>
+            <span>{taskState.error.message}</span>
           </div>
         </div>
       );

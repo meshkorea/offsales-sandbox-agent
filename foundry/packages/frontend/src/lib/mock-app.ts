@@ -1,23 +1,100 @@
 import { useSyncExternalStore } from "react";
 import {
   createFoundryAppClient,
+  useInterest,
   currentFoundryOrganization,
   currentFoundryUser,
   eligibleFoundryOrganizations,
   type FoundryAppClient,
 } from "@sandbox-agent/foundry-client";
-import type { FoundryAppSnapshot, FoundryOrganization } from "@sandbox-agent/foundry-shared";
+import type { FoundryAppSnapshot, FoundryBillingPlanId, FoundryOrganization, UpdateFoundryOrganizationProfileInput } from "@sandbox-agent/foundry-shared";
 import { backendClient } from "./backend";
+import { interestManager } from "./interest";
 import { frontendClientMode } from "./env";
 
 const REMOTE_APP_SESSION_STORAGE_KEY = "sandbox-agent-foundry:remote-app-session";
 
-const appClient: FoundryAppClient = createFoundryAppClient({
+const EMPTY_APP_SNAPSHOT: FoundryAppSnapshot = {
+  auth: { status: "signed_out", currentUserId: null },
+  activeOrganizationId: null,
+  onboarding: {
+    starterRepo: {
+      repoFullName: "rivet-dev/sandbox-agent",
+      repoUrl: "https://github.com/rivet-dev/sandbox-agent",
+      status: "pending",
+      starredAt: null,
+      skippedAt: null,
+    },
+  },
+  users: [],
+  organizations: [],
+};
+
+const legacyAppClient: FoundryAppClient = createFoundryAppClient({
   mode: frontendClientMode,
   backend: frontendClientMode === "remote" ? backendClient : undefined,
 });
 
+const remoteAppClient: FoundryAppClient = {
+  getSnapshot(): FoundryAppSnapshot {
+    return interestManager.getSnapshot("app", {}) ?? EMPTY_APP_SNAPSHOT;
+  },
+  subscribe(listener: () => void): () => void {
+    return interestManager.subscribe("app", {}, listener);
+  },
+  async signInWithGithub(userId?: string): Promise<void> {
+    void userId;
+    await backendClient.signInWithGithub();
+  },
+  async signOut(): Promise<void> {
+    await backendClient.signOutApp();
+  },
+  async skipStarterRepo(): Promise<void> {
+    await backendClient.skipAppStarterRepo();
+  },
+  async starStarterRepo(organizationId: string): Promise<void> {
+    await backendClient.starAppStarterRepo(organizationId);
+  },
+  async selectOrganization(organizationId: string): Promise<void> {
+    await backendClient.selectAppOrganization(organizationId);
+  },
+  async updateOrganizationProfile(input: UpdateFoundryOrganizationProfileInput): Promise<void> {
+    await backendClient.updateAppOrganizationProfile(input);
+  },
+  async triggerGithubSync(organizationId: string): Promise<void> {
+    await backendClient.triggerAppRepoImport(organizationId);
+  },
+  async completeHostedCheckout(organizationId: string, planId: FoundryBillingPlanId): Promise<void> {
+    await backendClient.completeAppHostedCheckout(organizationId, planId);
+  },
+  async openBillingPortal(organizationId: string): Promise<void> {
+    await backendClient.openAppBillingPortal(organizationId);
+  },
+  async cancelScheduledRenewal(organizationId: string): Promise<void> {
+    await backendClient.cancelAppScheduledRenewal(organizationId);
+  },
+  async resumeSubscription(organizationId: string): Promise<void> {
+    await backendClient.resumeAppSubscription(organizationId);
+  },
+  async reconnectGithub(organizationId: string): Promise<void> {
+    await backendClient.reconnectAppGithub(organizationId);
+  },
+  async recordSeatUsage(workspaceId: string): Promise<void> {
+    await backendClient.recordAppSeatUsage(workspaceId);
+  },
+};
+
+const appClient: FoundryAppClient = frontendClientMode === "remote" ? remoteAppClient : legacyAppClient;
+
 export function useMockAppSnapshot(): FoundryAppSnapshot {
+  if (frontendClientMode === "remote") {
+    const app = useInterest(interestManager, "app", {});
+    if (app.status !== "loading") {
+      firstSnapshotDelivered = true;
+    }
+    return app.data ?? EMPTY_APP_SNAPSHOT;
+  }
+
   return useSyncExternalStore(appClient.subscribe.bind(appClient), appClient.getSnapshot.bind(appClient), appClient.getSnapshot.bind(appClient));
 }
 

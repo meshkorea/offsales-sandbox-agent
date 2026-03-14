@@ -31,15 +31,26 @@ Use `pnpm` workspaces and Turborepo.
 - Foundry is the canonical name for this product tree. Do not introduce or preserve legacy pre-Foundry naming in code, docs, commands, or runtime paths.
 - Install deps: `pnpm install`
 - Full active-workspace validation: `pnpm -w typecheck`, `pnpm -w build`, `pnpm -w test`
-- Start the full dev stack: `just foundry-dev`
+- Start the full dev stack (real backend + frontend): `just foundry-dev` — frontend on **port 4173**, backend on **port 7741** (Docker via `compose.dev.yaml`)
+- Start the mock frontend stack (no backend): `just foundry-mock` — mock frontend on **port 4174** (Docker via `compose.mock.yaml`)
 - Start the local production-build preview stack: `just foundry-preview`
 - Start only the backend locally: `just foundry-backend-start`
 - Start only the frontend locally: `pnpm --filter @sandbox-agent/foundry-frontend dev`
-- Start the frontend against the mock workbench client: `FOUNDRY_FRONTEND_CLIENT_MODE=mock pnpm --filter @sandbox-agent/foundry-frontend dev`
+- Start the mock frontend locally (no Docker): `just foundry-dev-mock` — mock frontend on **port 4174**
+- Dev and mock stacks can run simultaneously on different ports (4173 and 4174).
 - Stop the compose dev stack: `just foundry-dev-down`
-- Tail compose logs: `just foundry-dev-logs`
+- Tail compose dev logs: `just foundry-dev-logs`
+- Stop the mock stack: `just foundry-mock-down`
+- Tail mock logs: `just foundry-mock-logs`
 - Stop the preview stack: `just foundry-preview-down`
 - Tail preview logs: `just foundry-preview-logs`
+
+## Dev Environment Setup
+
+- `compose.dev.yaml` loads `foundry/.env` (optional) for credentials needed by the backend (GitHub OAuth, Stripe, Daytona, API keys, etc.).
+- The canonical source for these credentials is `~/misc/the-foundry.env`. If `foundry/.env` does not exist, copy it: `cp ~/misc/the-foundry.env foundry/.env`
+- `foundry/.env` is gitignored and must never be committed.
+- The backend does **not** hot reload. Bun's `--hot` flag causes the server to re-bind on a different port (e.g. 6421 instead of 6420), breaking all client connections while the container still exposes the original port. After backend code changes, restart the backend container: `just foundry-dev-down && just foundry-dev`.
 
 ## Railway Logs
 
@@ -64,6 +75,69 @@ Use `pnpm` workspaces and Turborepo.
 - When making UI changes, verify the live flow with `agent-browser`, take screenshots of the updated UI, and offer to open those screenshots in Preview when you finish.
 - When asked for screenshots, capture all relevant affected screens and modal states, not just a single viewport. Include empty, populated, success, and blocked/error states when they are part of the changed flow.
 - If a screenshot catches a transition frame, blank modal, or otherwise misleading state, retake it before reporting it.
+
+## Realtime Data Architecture
+
+### Core pattern: fetch initial state + subscribe to deltas
+
+All client data flows follow the same pattern:
+
+1. **Connect** to the actor via WebSocket.
+2. **Fetch initial state** via an action call to get the current materialized snapshot.
+3. **Subscribe to events** on the connection. Events carry **full replacement payloads** for the changed entity (not empty notifications, not patches — the complete new state of the thing that changed).
+4. **Unsubscribe** after a 30-second grace period when interest ends (screen navigation, component unmount). The grace period prevents thrashing during screen transitions and React double-renders.
+
+Do not use polling (`refetchInterval`), empty "go re-fetch" broadcast events, or full-snapshot re-fetches on every mutation. Every mutation broadcasts the new absolute state of the changed entity to connected clients.
+
+### Materialized state in coordinator actors
+
+- **Workspace actor** materializes sidebar-level data in its own SQLite: repo catalog, task summaries (title, status, branch, PR, updatedAt), repo summaries (overview/branch state), and session summaries (id, name, status, unread, model — no transcript). Task actors push summary changes to the workspace actor when they mutate. The workspace actor broadcasts the updated entity to connected clients. `getWorkspaceSummary` reads from local tables only — no fan-out to child actors.
+- **Task actor** materializes its own detail state (session summaries, sandbox info, diffs, file tree). `getTaskDetail` reads from the task actor's own SQLite. The task actor broadcasts updates directly to clients connected to it.
+- **Session data** lives on the task actor but is a separate subscription topic. The task topic includes `sessions_summary` (list without content). The `session` topic provides full transcript and draft state. Clients subscribe to the `session` topic for whichever session tab is active, and filter `sessionUpdated` events by session ID (ignoring events for other sessions on the same actor).
+- The expensive fan-out (querying every project/task actor) only exists as a background reconciliation/rebuild path, never on the hot read path.
+
+### Interest manager
+
+The interest manager (`packages/client`) is a global singleton that manages WebSocket connections, cached state, and subscriptions for all topics. It:
+
+- **Deduplicates** — multiple subscribers to the same topic share one connection and one cached state.
+- **Grace period (30s)** — when the last subscriber leaves, the connection and state stay alive for 30 seconds before teardown. This keeps data warm for back-navigation and prevents thrashing.
+- **Exposes a single hook** — `useInterest(topicKey, params)` returns `{ data, status, error }`. Null params = no subscription (conditional interest).
+- **Shared harness, separate implementations** — the `InterestManager` interface is shared between mock and remote implementations. The mock implementation uses in-memory state. The remote implementation uses WebSocket connections. The API/client exposure is identical for both.
+
+### Topics
+
+Each topic maps to one actor connection and one event stream:
+
+| Topic | Actor | Event | Data |
+|---|---|---|---|
+| `app` | Workspace `"app"` | `appUpdated` | Auth, orgs, onboarding |
+| `workspace` | Workspace `{workspaceId}` | `workspaceUpdated` | Repo catalog, task summaries, repo summaries |
+| `task` | Task `{workspaceId, repoId, taskId}` | `taskUpdated` | Session summaries, sandbox info, diffs, file tree |
+| `session` | Task `{workspaceId, repoId, taskId}` (filtered by sessionId) | `sessionUpdated` | Transcript, draft state |
+| `sandboxProcesses` | SandboxInstance | `processesUpdated` | Process list |
+
+The client subscribes to `app` always, `workspace` when entering a workspace, `task` when viewing a task, and `session` when viewing a specific session tab. At most 4 actor connections at a time (app + workspace + task + sandbox if terminal is open). The `session` topic reuses the task actor connection and filters by session ID.
+
+### Rules
+
+- Do not add `useQuery` with `refetchInterval` for data that should be push-based.
+- Do not broadcast empty notification events. Events must carry the full new state of the changed entity.
+- Do not re-fetch full snapshots after mutations. The mutation triggers a server-side broadcast with the new entity state; the client replaces it in local state.
+- All event subscriptions go through the interest manager. Do not create ad-hoc `handle.connect()` + `conn.on()` patterns.
+- Backend mutations that affect sidebar data (task title, status, branch, PR state) must push the updated summary to the parent workspace actor, which broadcasts to workspace subscribers.
+- Comment architecture-related code: add doc comments explaining the materialized state pattern, why deltas flow the way they do, and the relationship between parent/child actor broadcasts. New contributors should understand the data flow from comments alone.
+
+## UI System
+
+- Foundry's base UI system is `BaseUI` with `Styletron`, plus Foundry-specific theme/tokens on top. Treat that as the default UI foundation.
+- The full `BaseUI` reference for available components and guidance on animations, customization, composition, and forms is at `https://base-ui.com/llms.txt`.
+- Prefer existing `BaseUI` components and composition patterns whenever possible instead of building custom controls from scratch.
+- Reuse the established Foundry theme/token layer for colors, typography, spacing, and surfaces instead of introducing ad hoc visual values.
+- If the same UI pattern is shared with the Inspector or other consumers, prefer extracting or reusing it through `@sandbox-agent/react` rather than duplicating it in Foundry.
+- If a requested UI cannot be implemented cleanly with an existing `BaseUI` component, stop and ask the user whether they are sure they want to diverge from the system.
+- In that case, recommend the closest existing `BaseUI` components or compositions that could satisfy the need before proposing custom UI work.
+- Only introduce custom UI primitives when `BaseUI` and existing Foundry patterns are not sufficient, or when the user explicitly confirms they want the divergence.
 
 ## Runtime Policy
 
@@ -122,11 +196,13 @@ For all Rivet/RivetKit implementation:
 - Do not build blocking flows that wait on external systems to become ready or complete. Prefer push-based progression driven by actor messages, events, webhooks, or queue/workflow state changes.
 - Use workflows/background commands for any repo sync, sandbox provisioning, agent install, branch restack/rebase, or other multi-step external work. Do not keep user-facing actions/requests open while that work runs.
 - `send` policy: always `await` the `send(...)` call itself so enqueue failures surface immediately, but default to `wait: false`.
-- Only use `send(..., { wait: true })` for short, bounded mutations that should finish quickly and do not depend on external readiness, polling actors, provider setup, repo/network I/O, or long-running queue drains.
+- Only use `send(..., { wait: true })` for short, bounded local mutations (e.g. a DB write that returns a result the caller needs). Never use `wait: true` for operations that depend on external readiness, polling actors, provider setup, repo/network I/O, sandbox sessions, GitHub API calls, or long-running queue drains.
+- Never self-send with `wait: true` from inside a workflow handler — the workflow processes one message at a time, so the handler would deadlock waiting for the new message to be dequeued.
+- When an action is void-returning and triggers external work, use `wait: false` and let the UI react to state changes pushed by the workflow.
 - Request/action contract: wait only until the minimum resource needed for the client's next step exists. Example: task creation may wait for task actor creation/identity, but not for sandbox provisioning or session bootstrap.
 - Read paths must not force refresh/sync work inline. Serve the latest cached projection, mark staleness explicitly, and trigger background refresh separately when needed.
 - If a workflow needs to resume after some external work completes, model that as workflow state plus follow-up messages/events instead of holding the original request open.
-- Do not rely on retries for correctness or normal control flow. If a queue/workflow/external dependency is not ready yet, model that explicitly and resume from a push/event, instead of polling or retry loops.
+- No retries: never add retry loops (`withRetries`, `setTimeout` retry, exponential backoff) anywhere in the codebase. If an operation fails, surface the error immediately. If a dependency is not ready yet, model that explicitly with workflow state and resume from a push/event instead of polling or retry loops.
 - Actor handle policy:
 - Prefer explicit `get` or explicit `create` based on workflow intent; do not default to `getOrCreate`.
 - Use `get`/`getForId` when the actor is expected to already exist; if missing, surface an explicit `Actor not found` error with recovery context.

@@ -19,7 +19,9 @@ import {
   changeWorkbenchModel,
   closeWorkbenchSession,
   createWorkbenchSession,
-  getWorkbenchTask,
+  getSessionDetail,
+  getTaskDetail,
+  getTaskSummary,
   markWorkbenchUnread,
   publishWorkbenchPr,
   renameWorkbenchBranch,
@@ -144,14 +146,9 @@ export const task = actor({
 
     async provision(c, cmd: InitializeCommand): Promise<{ ok: true }> {
       const self = selfTask(c);
-      const result = await self.send(taskWorkflowQueueName("task.command.provision"), cmd ?? {}, {
-        wait: true,
-        timeout: 30 * 60_000,
+      await self.send(taskWorkflowQueueName("task.command.provision"), cmd ?? {}, {
+        wait: false,
       });
-      const response = expectQueueResponse<{ ok: boolean; error?: string }>(result);
-      if (!response.ok) {
-        throw new Error(response.error ?? "task provisioning failed");
-      }
       return { ok: true };
     },
 
@@ -180,47 +177,35 @@ export const task = actor({
     async push(c, cmd?: TaskActionCommand): Promise<void> {
       const self = selfTask(c);
       await self.send(taskWorkflowQueueName("task.command.push"), cmd ?? {}, {
-        wait: true,
-        timeout: 180_000,
+        wait: false,
       });
     },
 
     async sync(c, cmd?: TaskActionCommand): Promise<void> {
       const self = selfTask(c);
       await self.send(taskWorkflowQueueName("task.command.sync"), cmd ?? {}, {
-        wait: true,
-        timeout: 30_000,
+        wait: false,
       });
     },
 
     async merge(c, cmd?: TaskActionCommand): Promise<void> {
       const self = selfTask(c);
       await self.send(taskWorkflowQueueName("task.command.merge"), cmd ?? {}, {
-        wait: true,
-        timeout: 30_000,
+        wait: false,
       });
     },
 
     async archive(c, cmd?: TaskActionCommand): Promise<void> {
       const self = selfTask(c);
-      void self
-        .send(taskWorkflowQueueName("task.command.archive"), cmd ?? {}, {
-          wait: true,
-          timeout: 60_000,
-        })
-        .catch((error: unknown) => {
-          c.log.warn({
-            msg: "archive command failed",
-            error: error instanceof Error ? error.message : String(error),
-          });
-        });
+      await self.send(taskWorkflowQueueName("task.command.archive"), cmd ?? {}, {
+        wait: false,
+      });
     },
 
     async kill(c, cmd?: TaskActionCommand): Promise<void> {
       const self = selfTask(c);
       await self.send(taskWorkflowQueueName("task.command.kill"), cmd ?? {}, {
-        wait: true,
-        timeout: 60_000,
+        wait: false,
       });
     },
 
@@ -228,8 +213,16 @@ export const task = actor({
       return await getCurrentRecord({ db: c.db, state: c.state });
     },
 
-    async getWorkbench(c) {
-      return await getWorkbenchTask(c);
+    async getTaskSummary(c) {
+      return await getTaskSummary(c);
+    },
+
+    async getTaskDetail(c) {
+      return await getTaskDetail(c);
+    },
+
+    async getSessionDetail(c, input: { sessionId: string }) {
+      return await getSessionDetail(c, input.sessionId);
     },
 
     async markWorkbenchUnread(c): Promise<void> {
@@ -255,8 +248,7 @@ export const task = actor({
     async renameWorkbenchBranch(c, input: TaskWorkbenchRenameInput): Promise<void> {
       const self = selfTask(c);
       await self.send(taskWorkflowQueueName("task.command.workbench.rename_branch"), { value: input.value } satisfies TaskWorkbenchValueCommand, {
-        wait: true,
-        timeout: 5 * 60_000,
+        wait: false,
       });
     },
 
@@ -335,8 +327,7 @@ export const task = actor({
           attachments: input.attachments,
         } satisfies TaskWorkbenchSendMessageCommand,
         {
-          wait: true,
-          timeout: 10 * 60_000,
+          wait: false,
         },
       );
     },
@@ -344,8 +335,7 @@ export const task = actor({
     async stopWorkbenchSession(c, input: TaskTabCommand): Promise<void> {
       const self = selfTask(c);
       await self.send(taskWorkflowQueueName("task.command.workbench.stop_session"), { sessionId: input.tabId } satisfies TaskWorkbenchSessionCommand, {
-        wait: true,
-        timeout: 5 * 60_000,
+        wait: false,
       });
     },
 
@@ -360,8 +350,7 @@ export const task = actor({
     async closeWorkbenchSession(c, input: TaskTabCommand): Promise<void> {
       const self = selfTask(c);
       await self.send(taskWorkflowQueueName("task.command.workbench.close_session"), { sessionId: input.tabId } satisfies TaskWorkbenchSessionCommand, {
-        wait: true,
-        timeout: 5 * 60_000,
+        wait: false,
       });
     },
 
@@ -371,8 +360,7 @@ export const task = actor({
         taskWorkflowQueueName("task.command.workbench.publish_pr"),
         {},
         {
-          wait: true,
-          timeout: 10 * 60_000,
+          wait: false,
         },
       );
     },
@@ -380,8 +368,7 @@ export const task = actor({
     async revertWorkbenchFile(c, input: { path: string }): Promise<void> {
       const self = selfTask(c);
       await self.send(taskWorkflowQueueName("task.command.workbench.revert_file"), input, {
-        wait: true,
-        timeout: 5 * 60_000,
+        wait: false,
       });
     },
   },

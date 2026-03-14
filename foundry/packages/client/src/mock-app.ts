@@ -1,4 +1,5 @@
 import { injectMockLatency } from "./mock/latency.js";
+import rivetDevFixture from "../../../scripts/data/rivet-dev.json" with { type: "json" };
 
 export type MockBillingPlanId = "free" | "team";
 export type MockBillingStatus = "active" | "trialing" | "past_due" | "scheduled_cancel";
@@ -140,6 +141,69 @@ function syncStatusFromLegacy(value: unknown): MockGithubSyncStatus {
   }
 }
 
+/**
+ * Build the "rivet" mock organization from real public GitHub data.
+ * Fixture sourced from: scripts/pull-org-data.ts (run against rivet-dev).
+ * Members that don't exist in the public fixture get synthetic entries
+ * so the mock still has realistic owner/admin/member role distribution.
+ */
+function buildRivetOrganization(): MockFoundryOrganization {
+  const repos = rivetDevFixture.repos.map((r) => r.fullName);
+  const fixtureMembers: MockFoundryOrganizationMember[] = rivetDevFixture.members.map((m) => ({
+    id: `member-rivet-${m.login.toLowerCase()}`,
+    name: m.login,
+    email: `${m.login.toLowerCase()}@rivet.dev`,
+    role: "member" as const,
+    state: "active" as const,
+  }));
+
+  // Ensure we have named owner/admin roles for the mock user personas
+  // that may not appear in the public members list
+  const knownMembers: MockFoundryOrganizationMember[] = [
+    { id: "member-rivet-jamie", name: "Jamie", email: "jamie@rivet.dev", role: "owner", state: "active" },
+    { id: "member-rivet-nathan", name: "Nathan", email: "nathan@acme.dev", role: "member", state: "active" },
+  ];
+
+  // Merge: known members take priority, then fixture members not already covered
+  const knownIds = new Set(knownMembers.map((m) => m.id));
+  const members = [...knownMembers, ...fixtureMembers.filter((m) => !knownIds.has(m.id))];
+
+  return {
+    id: "rivet",
+    workspaceId: "rivet",
+    kind: "organization",
+    settings: {
+      displayName: rivetDevFixture.name ?? rivetDevFixture.login,
+      slug: "rivet",
+      primaryDomain: "rivet.dev",
+      seatAccrualMode: "first_prompt",
+      defaultModel: "o3",
+      autoImportRepos: true,
+    },
+    github: {
+      connectedAccount: rivetDevFixture.login,
+      installationStatus: "connected",
+      syncStatus: "synced",
+      importedRepoCount: repos.length,
+      lastSyncLabel: "Synced just now",
+      lastSyncAt: Date.now() - 60_000,
+    },
+    billing: {
+      planId: "team",
+      status: "trialing",
+      seatsIncluded: 5,
+      trialEndsAt: isoDate(12),
+      renewalAt: isoDate(12),
+      stripeCustomerId: "cus_mock_rivet_team",
+      paymentMethodLabel: "Visa ending in 4242",
+      invoices: [{ id: "inv-rivet-001", label: "Team pilot", issuedAt: "2026-03-04", amountUsd: 0, status: "paid" }],
+    },
+    members,
+    seatAssignments: ["jamie@rivet.dev"],
+    repoCatalog: repos,
+  };
+}
+
 function buildDefaultSnapshot(): MockFoundryAppSnapshot {
   return {
     auth: {
@@ -259,44 +323,7 @@ function buildDefaultSnapshot(): MockFoundryAppSnapshot {
         seatAssignments: ["nathan@acme.dev", "maya@acme.dev"],
         repoCatalog: ["acme/backend", "acme/frontend", "acme/infra"],
       },
-      {
-        id: "rivet",
-        workspaceId: "rivet",
-        kind: "organization",
-        settings: {
-          displayName: "Rivet",
-          slug: "rivet",
-          primaryDomain: "rivet.dev",
-          seatAccrualMode: "first_prompt",
-          defaultModel: "o3",
-          autoImportRepos: true,
-        },
-        github: {
-          connectedAccount: "rivet-dev",
-          installationStatus: "reconnect_required",
-          syncStatus: "error",
-          importedRepoCount: 4,
-          lastSyncLabel: "Sync stalled 2 hours ago",
-          lastSyncAt: Date.now() - 2 * 60 * 60_000,
-        },
-        billing: {
-          planId: "team",
-          status: "trialing",
-          seatsIncluded: 5,
-          trialEndsAt: isoDate(12),
-          renewalAt: isoDate(12),
-          stripeCustomerId: "cus_mock_rivet_team",
-          paymentMethodLabel: "Visa ending in 4242",
-          invoices: [{ id: "inv-rivet-001", label: "Team pilot", issuedAt: "2026-03-04", amountUsd: 0, status: "paid" }],
-        },
-        members: [
-          { id: "member-rivet-jamie", name: "Jamie", email: "jamie@rivet.dev", role: "owner", state: "active" },
-          { id: "member-rivet-nathan", name: "Nathan", email: "nathan@acme.dev", role: "member", state: "active" },
-          { id: "member-rivet-lena", name: "Lena", email: "lena@rivet.dev", role: "admin", state: "active" },
-        ],
-        seatAssignments: ["jamie@rivet.dev"],
-        repoCatalog: ["rivet/dashboard", "rivet/agents", "rivet/billing", "rivet/infrastructure"],
-      },
+      buildRivetOrganization(),
       {
         id: "personal-jamie",
         workspaceId: "personal-jamie",

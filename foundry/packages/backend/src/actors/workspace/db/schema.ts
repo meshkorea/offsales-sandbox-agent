@@ -20,6 +20,23 @@ export const taskLookup = sqliteTable("task_lookup", {
   repoId: text("repo_id").notNull(),
 });
 
+/**
+ * Materialized sidebar projection maintained by task actors.
+ * The source of truth still lives on each task actor; this table exists so
+ * workspace reads can stay local and avoid fan-out across child actors.
+ */
+export const taskSummaries = sqliteTable("task_summaries", {
+  taskId: text("task_id").notNull().primaryKey(),
+  repoId: text("repo_id").notNull(),
+  title: text("title").notNull(),
+  status: text("status").notNull(),
+  repoName: text("repo_name").notNull(),
+  updatedAtMs: integer("updated_at_ms").notNull(),
+  branch: text("branch"),
+  pullRequestJson: text("pull_request_json"),
+  sessionsSummaryJson: text("sessions_summary_json").notNull().default("[]"),
+});
+
 export const organizationProfile = sqliteTable("organization_profile", {
   id: text("id").notNull().primaryKey(),
   kind: text("kind").notNull(),
@@ -74,23 +91,33 @@ export const invoices = sqliteTable("invoices", {
   createdAt: integer("created_at").notNull(),
 });
 
-export const appSessions = sqliteTable("app_sessions", {
+export const authSessionIndex = sqliteTable("auth_session_index", {
+  sessionId: text("session_id").notNull().primaryKey(),
+  sessionToken: text("session_token").notNull(),
+  userId: text("user_id").notNull(),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+export const authEmailIndex = sqliteTable("auth_email_index", {
+  email: text("email").notNull().primaryKey(),
+  userId: text("user_id").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+export const authAccountIndex = sqliteTable("auth_account_index", {
   id: text("id").notNull().primaryKey(),
-  currentUserId: text("current_user_id"),
-  currentUserName: text("current_user_name"),
-  currentUserEmail: text("current_user_email"),
-  currentUserGithubLogin: text("current_user_github_login"),
-  currentUserRoleLabel: text("current_user_role_label"),
-  // Structured as a JSON array of eligible organization ids for the session.
-  eligibleOrganizationIdsJson: text("eligible_organization_ids_json").notNull(),
-  activeOrganizationId: text("active_organization_id"),
-  githubAccessToken: text("github_access_token"),
-  githubScope: text("github_scope").notNull(),
-  starterRepoStatus: text("starter_repo_status").notNull(),
-  starterRepoStarredAt: integer("starter_repo_starred_at"),
-  starterRepoSkippedAt: integer("starter_repo_skipped_at"),
-  oauthState: text("oauth_state"),
-  oauthStateExpiresAt: integer("oauth_state_expires_at"),
+  providerId: text("provider_id").notNull(),
+  accountId: text("account_id").notNull(),
+  userId: text("user_id").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+export const authVerification = sqliteTable("auth_verification", {
+  id: text("id").notNull().primaryKey(),
+  identifier: text("identifier").notNull(),
+  value: text("value").notNull(),
+  expiresAt: integer("expires_at").notNull(),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });

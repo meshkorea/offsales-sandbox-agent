@@ -79,7 +79,7 @@ pub enum Command {
     Opencode(OpencodeArgs),
     /// Manage the sandbox-agent background daemon.
     Daemon(DaemonArgs),
-    /// Install or reinstall an agent without running the server.
+    /// Install or reinstall one agent, or `all` supported agents, without running the server.
     InstallAgent(InstallAgentArgs),
     /// Inspect locally discovered credentials.
     Credentials(CredentialsArgs),
@@ -295,7 +295,10 @@ pub struct AcpCloseArgs {
 
 #[derive(Args, Debug)]
 pub struct InstallAgentArgs {
-    agent: String,
+    #[arg(required_unless_present = "all", conflicts_with = "all")]
+    agent: Option<String>,
+    #[arg(long, conflicts_with = "agent")]
+    all: bool,
     #[arg(long, short = 'r')]
     reinstall: bool,
     #[arg(long = "agent-version")]
@@ -946,24 +949,73 @@ fn load_json_payload(
 }
 
 fn install_agent_local(args: &InstallAgentArgs) -> Result<(), CliError> {
-    let agent_id = AgentId::parse(&args.agent)
-        .ok_or_else(|| CliError::Server(format!("unsupported agent: {}", args.agent)))?;
+    if args.all && (args.agent_version.is_some() || args.agent_process_version.is_some()) {
+        return Err(CliError::Server(
+            "--agent-version and --agent-process-version are only supported for single-agent installs"
+                .to_string(),
+        ));
+    }
+
+    let agents = resolve_install_agents(args)?;
 
     let manager = AgentManager::new(default_install_dir())
         .map_err(|err| CliError::Server(err.to_string()))?;
 
-    let result = manager
-        .install(
-            agent_id,
-            InstallOptions {
-                reinstall: args.reinstall,
-                version: args.agent_version.clone(),
-                agent_process_version: args.agent_process_version.clone(),
-            },
-        )
-        .map_err(|err| CliError::Server(err.to_string()))?;
+    if agents.len() == 1 {
+        let result = manager
+            .install(
+                agents[0],
+                InstallOptions {
+                    reinstall: args.reinstall,
+                    version: args.agent_version.clone(),
+                    agent_process_version: args.agent_process_version.clone(),
+                },
+            )
+            .map_err(|err| CliError::Server(err.to_string()))?;
+        let output = install_result_json(result);
+        return write_stdout_line(&serde_json::to_string_pretty(&output)?);
+    }
 
-    let output = json!({
+    let mut results = Vec::with_capacity(agents.len());
+    for agent_id in agents {
+        let result = manager
+            .install(
+                agent_id,
+                InstallOptions {
+                    reinstall: args.reinstall,
+                    version: None,
+                    agent_process_version: None,
+                },
+            )
+            .map_err(|err| CliError::Server(err.to_string()))?;
+        results.push(json!({
+            "agent": agent_id.as_str(),
+            "result": install_result_json(result),
+        }));
+    }
+
+    write_stdout_line(&serde_json::to_string_pretty(
+        &json!({ "agents": results }),
+    )?)
+}
+
+fn resolve_install_agents(args: &InstallAgentArgs) -> Result<Vec<AgentId>, CliError> {
+    if args.all {
+        return Ok(AgentId::all().to_vec());
+    }
+
+    let agent = args
+        .agent
+        .as_deref()
+        .ok_or_else(|| CliError::Server("missing agent: provide <AGENT> or --all".to_string()))?;
+
+    AgentId::parse(agent)
+        .map(|agent_id| vec![agent_id])
+        .ok_or_else(|| CliError::Server(format!("unsupported agent: {agent}")))
+}
+
+fn install_result_json(result: sandbox_agent_agent_management::agents::InstallResult) -> Value {
+    json!({
         "alreadyInstalled": result.already_installed,
         "artifacts": result.artifacts.into_iter().map(|artifact| json!({
             "kind": format!("{:?}", artifact.kind),
@@ -971,9 +1023,7 @@ fn install_agent_local(args: &InstallAgentArgs) -> Result<(), CliError> {
             "source": format!("{:?}", artifact.source),
             "version": artifact.version,
         })).collect::<Vec<_>>()
-    });
-
-    write_stdout_line(&serde_json::to_string_pretty(&output)?)
+    })
 }
 
 #[derive(Serialize)]
@@ -1415,6 +1465,60 @@ fn write_stderr_line(text: &str) -> Result<(), CliError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolve_install_agents_expands_all() {
+        assert_eq!(
+            resolve_install_agents(&InstallAgentArgs {
+                agent: None,
+                all: true,
+                reinstall: false,
+                agent_version: None,
+                agent_process_version: None,
+            })
+            .unwrap(),
+            AgentId::all().to_vec()
+        );
+    }
+
+    #[test]
+    fn resolve_install_agents_supports_single_agent() {
+        assert_eq!(
+            resolve_install_agents(&InstallAgentArgs {
+                agent: Some("codex".to_string()),
+                all: false,
+                reinstall: false,
+                agent_version: None,
+                agent_process_version: None,
+            })
+            .unwrap(),
+            vec![AgentId::Codex]
+        );
+    }
+
+    #[test]
+    fn resolve_install_agents_rejects_unknown_agent() {
+        assert!(resolve_install_agents(&InstallAgentArgs {
+            agent: Some("nope".to_string()),
+            all: false,
+            reinstall: false,
+            agent_version: None,
+            agent_process_version: None,
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn resolve_install_agents_rejects_positional_all() {
+        assert!(resolve_install_agents(&InstallAgentArgs {
+            agent: Some("all".to_string()),
+            all: false,
+            reinstall: false,
+            agent_version: None,
+            agent_process_version: None,
+        })
+        .is_err());
+    }
 
     #[test]
     fn apply_last_event_id_header_sets_header_when_provided() {

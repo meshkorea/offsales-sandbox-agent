@@ -6,6 +6,9 @@ import type {
   FoundryAppSnapshot,
   FoundryBillingPlanId,
   CreateTaskInput,
+  AppEvent,
+  SessionEvent,
+  SandboxProcessesEvent,
   TaskRecord,
   TaskSummary,
   TaskWorkbenchChangeModelInput,
@@ -20,6 +23,12 @@ import type {
   TaskWorkbenchSnapshot,
   TaskWorkbenchTabInput,
   TaskWorkbenchUpdateDraftInput,
+  TaskEvent,
+  WorkbenchTaskDetail,
+  WorkbenchTaskSummary,
+  WorkbenchSessionDetail,
+  WorkspaceEvent,
+  WorkspaceSummarySnapshot,
   HistoryEvent,
   HistoryQueryInput,
   ProviderId,
@@ -34,17 +43,9 @@ import type {
 } from "@sandbox-agent/foundry-shared";
 import type { ProcessCreateRequest, ProcessInfo, ProcessLogFollowQuery, ProcessLogsResponse, ProcessSignalQuery } from "sandbox-agent";
 import { createMockBackendClient } from "./mock/backend-client.js";
-import { sandboxInstanceKey, workspaceKey } from "./keys.js";
+import { sandboxInstanceKey, taskKey, workspaceKey } from "./keys.js";
 
 export type TaskAction = "push" | "sync" | "merge" | "archive" | "kill";
-
-type RivetMetadataResponse = {
-  runtime?: string;
-  actorNames?: Record<string, unknown>;
-  clientEndpoint?: string;
-  clientNamespace?: string;
-  clientToken?: string;
-};
 
 export interface SandboxSessionRecord {
   id: string;
@@ -68,7 +69,14 @@ export interface SandboxSessionEventRecord {
 
 export type SandboxProcessRecord = ProcessInfo;
 
+export interface ActorConn {
+  on(event: string, listener: (payload: any) => void): () => void;
+  onError(listener: (error: unknown) => void): () => void;
+  dispose(): Promise<void>;
+}
+
 interface WorkspaceHandle {
+  connect(): ActorConn;
   addRepo(input: AddRepoInput): Promise<RepoRecord>;
   listRepos(input: { workspaceId: string }): Promise<RepoRecord[]>;
   createTask(input: CreateTaskInput): Promise<TaskRecord>;
@@ -86,7 +94,10 @@ interface WorkspaceHandle {
   killTask(input: { workspaceId: string; taskId: string; reason?: string }): Promise<void>;
   useWorkspace(input: { workspaceId: string }): Promise<{ workspaceId: string }>;
   starSandboxAgentRepo(input: StarSandboxAgentRepoInput): Promise<StarSandboxAgentRepoResult>;
-  getWorkbench(input: { workspaceId: string }): Promise<TaskWorkbenchSnapshot>;
+  getWorkspaceSummary(input: { workspaceId: string }): Promise<WorkspaceSummarySnapshot>;
+  applyTaskSummaryUpdate(input: { taskSummary: WorkbenchTaskSummary }): Promise<void>;
+  removeTaskSummary(input: { taskId: string }): Promise<void>;
+  reconcileWorkbenchState(input: { workspaceId: string }): Promise<WorkspaceSummarySnapshot>;
   createWorkbenchTask(input: TaskWorkbenchCreateTaskInput): Promise<TaskWorkbenchCreateTaskResponse>;
   markWorkbenchUnread(input: TaskWorkbenchSelectInput): Promise<void>;
   renameWorkbenchTask(input: TaskWorkbenchRenameInput): Promise<void>;
@@ -103,7 +114,15 @@ interface WorkspaceHandle {
   revertWorkbenchFile(input: TaskWorkbenchDiffInput): Promise<void>;
 }
 
+interface TaskHandle {
+  getTaskSummary(): Promise<WorkbenchTaskSummary>;
+  getTaskDetail(): Promise<WorkbenchTaskDetail>;
+  getSessionDetail(input: { sessionId: string }): Promise<WorkbenchSessionDetail>;
+  connect(): ActorConn;
+}
+
 interface SandboxInstanceHandle {
+  connect(): ActorConn;
   createSession(input: {
     prompt: string;
     cwd?: string;
@@ -127,6 +146,10 @@ interface RivetClient {
   workspace: {
     getOrCreate(key?: string | string[], opts?: { createWithInput?: unknown }): WorkspaceHandle;
   };
+  task: {
+    get(key?: string | string[]): TaskHandle;
+    getOrCreate(key?: string | string[], opts?: { createWithInput?: unknown }): TaskHandle;
+  };
   sandboxInstance: {
     getOrCreate(key?: string | string[], opts?: { createWithInput?: unknown }): SandboxInstanceHandle;
   };
@@ -138,16 +161,12 @@ export interface BackendClientOptions {
   mode?: "remote" | "mock";
 }
 
-export interface BackendMetadata {
-  runtime?: string;
-  actorNames?: Record<string, unknown>;
-  clientEndpoint?: string;
-  clientNamespace?: string;
-  clientToken?: string;
-}
-
 export interface BackendClient {
   getAppSnapshot(): Promise<FoundryAppSnapshot>;
+  connectWorkspace(workspaceId: string): Promise<ActorConn>;
+  connectTask(workspaceId: string, repoId: string, taskId: string): Promise<ActorConn>;
+  connectSandbox(workspaceId: string, providerId: ProviderId, sandboxId: string): Promise<ActorConn>;
+  subscribeApp(listener: () => void): () => void;
   signInWithGithub(): Promise<void>;
   signOutApp(): Promise<FoundryAppSnapshot>;
   skipAppStarterRepo(): Promise<FoundryAppSnapshot>;
@@ -237,6 +256,9 @@ export interface BackendClient {
     sandboxId: string,
   ): Promise<{ providerId: ProviderId; sandboxId: string; state: string; at: number }>;
   getSandboxAgentConnection(workspaceId: string, providerId: ProviderId, sandboxId: string): Promise<{ endpoint: string; token?: string }>;
+  getWorkspaceSummary(workspaceId: string): Promise<WorkspaceSummarySnapshot>;
+  getTaskDetail(workspaceId: string, repoId: string, taskId: string): Promise<WorkbenchTaskDetail>;
+  getSessionDetail(workspaceId: string, repoId: string, taskId: string, sessionId: string): Promise<WorkbenchSessionDetail>;
   getWorkbench(workspaceId: string): Promise<TaskWorkbenchSnapshot>;
   subscribeWorkbench(workspaceId: string, listener: () => void): () => void;
   createWorkbenchTask(workspaceId: string, input: TaskWorkbenchCreateTaskInput): Promise<TaskWorkbenchCreateTaskResponse>;
@@ -295,118 +317,6 @@ function deriveBackendEndpoints(endpoint: string): { appEndpoint: string; rivetE
   };
 }
 
-function isLoopbackHost(hostname: string): boolean {
-  const h = hostname.toLowerCase();
-  return h === "127.0.0.1" || h === "localhost" || h === "0.0.0.0" || h === "::1";
-}
-
-function rewriteLoopbackClientEndpoint(clientEndpoint: string, fallbackOrigin: string): string {
-  const clientUrl = new URL(clientEndpoint);
-  if (!isLoopbackHost(clientUrl.hostname)) {
-    return clientUrl.toString().replace(/\/$/, "");
-  }
-
-  const originUrl = new URL(fallbackOrigin);
-  // Keep the manager port from clientEndpoint; only rewrite host/protocol to match the origin.
-  clientUrl.hostname = originUrl.hostname;
-  clientUrl.protocol = originUrl.protocol;
-  return clientUrl.toString().replace(/\/$/, "");
-}
-
-async function fetchJsonWithTimeout(url: string, timeoutMs: number): Promise<unknown> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) {
-      throw new Error(`request failed: ${res.status} ${res.statusText}`);
-    }
-    return (await res.json()) as unknown;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function fetchMetadataWithRetry(
-  endpoint: string,
-  namespace: string | undefined,
-  opts: { timeoutMs: number; requestTimeoutMs: number },
-): Promise<RivetMetadataResponse> {
-  const base = new URL(endpoint);
-  base.pathname = base.pathname.replace(/\/$/, "") + "/metadata";
-  if (namespace) {
-    base.searchParams.set("namespace", namespace);
-  }
-
-  const start = Date.now();
-  let delayMs = 250;
-  // Keep this bounded: callers (UI/CLI) should not hang forever if the backend is down.
-  for (;;) {
-    try {
-      const json = await fetchJsonWithTimeout(base.toString(), opts.requestTimeoutMs);
-      if (!json || typeof json !== "object") return {};
-      const data = json as Record<string, unknown>;
-      return {
-        runtime: typeof data.runtime === "string" ? data.runtime : undefined,
-        actorNames: data.actorNames && typeof data.actorNames === "object" ? (data.actorNames as Record<string, unknown>) : undefined,
-        clientEndpoint: typeof data.clientEndpoint === "string" ? data.clientEndpoint : undefined,
-        clientNamespace: typeof data.clientNamespace === "string" ? data.clientNamespace : undefined,
-        clientToken: typeof data.clientToken === "string" ? data.clientToken : undefined,
-      };
-    } catch (err) {
-      if (Date.now() - start > opts.timeoutMs) {
-        throw err;
-      }
-      await new Promise((r) => setTimeout(r, delayMs));
-      delayMs = Math.min(delayMs * 2, 2_000);
-    }
-  }
-}
-
-export async function readBackendMetadata(input: { endpoint: string; namespace?: string; timeoutMs?: number }): Promise<BackendMetadata> {
-  const base = new URL(input.endpoint);
-  base.pathname = base.pathname.replace(/\/$/, "") + "/metadata";
-  if (input.namespace) {
-    base.searchParams.set("namespace", input.namespace);
-  }
-
-  const json = await fetchJsonWithTimeout(base.toString(), input.timeoutMs ?? 4_000);
-  if (!json || typeof json !== "object") {
-    return {};
-  }
-  const data = json as Record<string, unknown>;
-  return {
-    runtime: typeof data.runtime === "string" ? data.runtime : undefined,
-    actorNames: data.actorNames && typeof data.actorNames === "object" ? (data.actorNames as Record<string, unknown>) : undefined,
-    clientEndpoint: typeof data.clientEndpoint === "string" ? data.clientEndpoint : undefined,
-    clientNamespace: typeof data.clientNamespace === "string" ? data.clientNamespace : undefined,
-    clientToken: typeof data.clientToken === "string" ? data.clientToken : undefined,
-  };
-}
-
-export async function checkBackendHealth(input: { endpoint: string; namespace?: string; timeoutMs?: number }): Promise<boolean> {
-  try {
-    const metadata = await readBackendMetadata(input);
-    return metadata.runtime === "rivetkit" && Boolean(metadata.actorNames);
-  } catch {
-    return false;
-  }
-}
-
-async function probeMetadataEndpoint(endpoint: string, namespace: string | undefined, timeoutMs: number): Promise<boolean> {
-  try {
-    const base = new URL(endpoint);
-    base.pathname = base.pathname.replace(/\/$/, "") + "/metadata";
-    if (namespace) {
-      base.searchParams.set("namespace", namespace);
-    }
-    await fetchJsonWithTimeout(base.toString(), timeoutMs);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export function createBackendClient(options: BackendClientOptions): BackendClient {
   if (options.mode === "mock") {
     return createMockBackendClient(options.defaultWorkspaceId);
@@ -415,8 +325,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
   const endpoints = deriveBackendEndpoints(options.endpoint);
   const rivetApiEndpoint = endpoints.rivetEndpoint;
   const appApiEndpoint = endpoints.appEndpoint;
-  let clientPromise: Promise<RivetClient> | null = null;
-  let appSessionId = typeof window !== "undefined" ? window.localStorage.getItem("sandbox-agent-foundry:remote-app-session") : null;
+  const client = createClient({ endpoint: rivetApiEndpoint }) as unknown as RivetClient;
   const workbenchSubscriptions = new Map<
     string,
     {
@@ -431,34 +340,13 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       disposeConnPromise: Promise<(() => Promise<void>) | null> | null;
     }
   >();
-
-  const persistAppSessionId = (nextSessionId: string | null): void => {
-    appSessionId = nextSessionId;
-    if (typeof window === "undefined") {
-      return;
-    }
-    if (nextSessionId) {
-      window.localStorage.setItem("sandbox-agent-foundry:remote-app-session", nextSessionId);
-    } else {
-      window.localStorage.removeItem("sandbox-agent-foundry:remote-app-session");
-    }
+  const appSubscriptions = {
+    listeners: new Set<() => void>(),
+    disposeConnPromise: null as Promise<(() => Promise<void>) | null> | null,
   };
-
-  if (typeof window !== "undefined") {
-    const url = new URL(window.location.href);
-    const sessionFromUrl = url.searchParams.get("foundrySession");
-    if (sessionFromUrl) {
-      persistAppSessionId(sessionFromUrl);
-      url.searchParams.delete("foundrySession");
-      window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
-    }
-  }
 
   const appRequest = async <T>(path: string, init?: RequestInit): Promise<T> => {
     const headers = new Headers(init?.headers);
-    if (appSessionId) {
-      headers.set("x-foundry-session", appSessionId);
-    }
     if (init?.body && !headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json");
     }
@@ -468,10 +356,6 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       headers,
       credentials: "include",
     });
-    const nextSessionId = res.headers.get("x-foundry-session");
-    if (nextSessionId) {
-      persistAppSessionId(nextSessionId);
-    }
     if (!res.ok) {
       throw new Error(`app request failed: ${res.status} ${res.statusText}`);
     }
@@ -485,51 +369,14 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     }
   };
 
-  const getClient = async (): Promise<RivetClient> => {
-    if (clientPromise) {
-      return clientPromise;
-    }
-
-    clientPromise = (async () => {
-      // Use the serverless /metadata endpoint to discover the manager endpoint.
-      // If the server reports a loopback clientEndpoint (127.0.0.1), rewrite to the same host
-      // as the configured endpoint so remote browsers/clients can connect.
-      const configured = new URL(rivetApiEndpoint);
-      const configuredOrigin = `${configured.protocol}//${configured.host}`;
-
-      const initialNamespace = undefined;
-      const metadata = await fetchMetadataWithRetry(rivetApiEndpoint, initialNamespace, {
-        timeoutMs: 30_000,
-        requestTimeoutMs: 8_000,
-      });
-
-      // Candidate endpoint: manager endpoint if provided, otherwise stick to the configured endpoint.
-      const candidateEndpoint = metadata.clientEndpoint ? rewriteLoopbackClientEndpoint(metadata.clientEndpoint, configuredOrigin) : rivetApiEndpoint;
-
-      // If the manager port isn't reachable from this client (common behind reverse proxies),
-      // fall back to the configured serverless endpoint to avoid hanging requests.
-      const shouldUseCandidate = metadata.clientEndpoint ? await probeMetadataEndpoint(candidateEndpoint, metadata.clientNamespace, 1_500) : true;
-      const resolvedEndpoint = shouldUseCandidate ? candidateEndpoint : rivetApiEndpoint;
-
-      return createClient({
-        endpoint: resolvedEndpoint,
-        namespace: metadata.clientNamespace,
-        token: metadata.clientToken,
-        // Prevent rivetkit from overriding back to a loopback endpoint (or to an unreachable manager).
-        disableMetadataLookup: true,
-      }) as unknown as RivetClient;
-    })();
-
-    return clientPromise;
-  };
-
   const workspace = async (workspaceId: string): Promise<WorkspaceHandle> =>
-    (await getClient()).workspace.getOrCreate(workspaceKey(workspaceId), {
+    client.workspace.getOrCreate(workspaceKey(workspaceId), {
       createWithInput: workspaceId,
     });
 
+  const task = async (workspaceId: string, repoId: string, taskId: string): Promise<TaskHandle> => client.task.get(taskKey(workspaceId, repoId, taskId));
+
   const sandboxByKey = async (workspaceId: string, providerId: ProviderId, sandboxId: string): Promise<SandboxInstanceHandle> => {
-    const client = await getClient();
     return (client as any).sandboxInstance.get(sandboxInstanceKey(workspaceId, providerId, sandboxId));
   };
 
@@ -557,7 +404,6 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
             (sb as any).sandboxActorId.length > 0,
         ) as { sandboxActorId?: string } | undefined;
         if (sandbox?.sandboxActorId) {
-          const client = await getClient();
           return (client as any).sandboxInstance.getForId(sandbox.sandboxActorId);
         }
       } catch (error) {
@@ -591,6 +437,91 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       }
       return await run(fallback);
     }
+  };
+
+  const connectWorkspace = async (workspaceId: string): Promise<ActorConn> => {
+    return (await workspace(workspaceId)).connect() as ActorConn;
+  };
+
+  const connectTask = async (workspaceId: string, repoId: string, taskIdValue: string): Promise<ActorConn> => {
+    return (await task(workspaceId, repoId, taskIdValue)).connect() as ActorConn;
+  };
+
+  const connectSandbox = async (workspaceId: string, providerId: ProviderId, sandboxId: string): Promise<ActorConn> => {
+    try {
+      return (await sandboxByKey(workspaceId, providerId, sandboxId)).connect() as ActorConn;
+    } catch (error) {
+      if (!isActorNotFoundError(error)) {
+        throw error;
+      }
+      const fallback = await sandboxByActorIdFromTask(workspaceId, providerId, sandboxId);
+      if (!fallback) {
+        throw error;
+      }
+      return fallback.connect() as ActorConn;
+    }
+  };
+
+  const getWorkbenchCompat = async (workspaceId: string): Promise<TaskWorkbenchSnapshot> => {
+    const summary = await (await workspace(workspaceId)).getWorkspaceSummary({ workspaceId });
+    const tasks = await Promise.all(
+      summary.taskSummaries.map(async (taskSummary) => {
+        const detail = await (await task(workspaceId, taskSummary.repoId, taskSummary.id)).getTaskDetail();
+        const sessionDetails = await Promise.all(
+          detail.sessionsSummary.map(async (session) => {
+            const full = await (await task(workspaceId, detail.repoId, detail.id)).getSessionDetail({ sessionId: session.id });
+            return [session.id, full] as const;
+          }),
+        );
+        const sessionDetailsById = new Map(sessionDetails);
+        return {
+          id: detail.id,
+          repoId: detail.repoId,
+          title: detail.title,
+          status: detail.status,
+          repoName: detail.repoName,
+          updatedAtMs: detail.updatedAtMs,
+          branch: detail.branch,
+          pullRequest: detail.pullRequest,
+          tabs: detail.sessionsSummary.map((session) => {
+            const full = sessionDetailsById.get(session.id);
+            return {
+              id: session.id,
+              sessionId: session.sessionId,
+              sessionName: session.sessionName,
+              agent: session.agent,
+              model: session.model,
+              status: session.status,
+              thinkingSinceMs: session.thinkingSinceMs,
+              unread: session.unread,
+              created: session.created,
+              draft: full?.draft ?? { text: "", attachments: [], updatedAtMs: null },
+              transcript: full?.transcript ?? [],
+            };
+          }),
+          fileChanges: detail.fileChanges,
+          diffs: detail.diffs,
+          fileTree: detail.fileTree,
+          minutesUsed: detail.minutesUsed,
+        };
+      }),
+    );
+
+    const projects = summary.repos
+      .map((repo) => ({
+        id: repo.id,
+        label: repo.label,
+        updatedAtMs: tasks.filter((task) => task.repoId === repo.id).reduce((latest, task) => Math.max(latest, task.updatedAtMs), repo.latestActivityMs),
+        tasks: tasks.filter((task) => task.repoId === repo.id).sort((left, right) => right.updatedAtMs - left.updatedAtMs),
+      }))
+      .filter((repo) => repo.tasks.length > 0);
+
+    return {
+      workspaceId,
+      repos: summary.repos.map((repo) => ({ id: repo.id, label: repo.label })),
+      projects,
+      tasks: tasks.sort((left, right) => right.updatedAtMs - left.updatedAtMs),
+    };
   };
 
   const subscribeWorkbench = (workspaceId: string, listener: () => void): (() => void) => {
@@ -698,17 +629,74 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     };
   };
 
+  const subscribeApp = (listener: () => void): (() => void) => {
+    appSubscriptions.listeners.add(listener);
+
+    if (!appSubscriptions.disposeConnPromise) {
+      appSubscriptions.disposeConnPromise = (async () => {
+        const handle = await workspace("app");
+        const conn = (handle as any).connect();
+        const unsubscribeEvent = conn.on("appUpdated", () => {
+          for (const currentListener of [...appSubscriptions.listeners]) {
+            currentListener();
+          }
+        });
+        const unsubscribeError = conn.onError(() => {});
+        return async () => {
+          unsubscribeEvent();
+          unsubscribeError();
+          await conn.dispose();
+        };
+      })().catch(() => null);
+    }
+
+    return () => {
+      appSubscriptions.listeners.delete(listener);
+      if (appSubscriptions.listeners.size > 0) {
+        return;
+      }
+
+      void appSubscriptions.disposeConnPromise?.then(async (disposeConn) => {
+        await disposeConn?.();
+      });
+      appSubscriptions.disposeConnPromise = null;
+    };
+  };
+
   return {
     async getAppSnapshot(): Promise<FoundryAppSnapshot> {
       return await appRequest<FoundryAppSnapshot>("/app/snapshot");
     },
 
+    async connectWorkspace(workspaceId: string): Promise<ActorConn> {
+      return await connectWorkspace(workspaceId);
+    },
+
+    async connectTask(workspaceId: string, repoId: string, taskIdValue: string): Promise<ActorConn> {
+      return await connectTask(workspaceId, repoId, taskIdValue);
+    },
+
+    async connectSandbox(workspaceId: string, providerId: ProviderId, sandboxId: string): Promise<ActorConn> {
+      return await connectSandbox(workspaceId, providerId, sandboxId);
+    },
+
+    subscribeApp(listener: () => void): () => void {
+      return subscribeApp(listener);
+    },
+
     async signInWithGithub(): Promise<void> {
+      const callbackURL = typeof window !== "undefined" ? `${window.location.origin}/organizations` : `${appApiEndpoint.replace(/\/$/, "")}/organizations`;
+      const response = await appRequest<{ url: string; redirect?: boolean }>("/auth/sign-in/social", {
+        method: "POST",
+        body: JSON.stringify({
+          provider: "github",
+          callbackURL,
+          disableRedirect: true,
+        }),
+      });
       if (typeof window !== "undefined") {
-        window.location.assign(`${appApiEndpoint}/auth/github/start`);
-        return;
+        window.location.assign(response.url);
       }
-      await redirectTo("/auth/github/start");
     },
 
     async signOutApp(): Promise<FoundryAppSnapshot> {
@@ -1009,8 +997,20 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       return await withSandboxHandle(workspaceId, providerId, sandboxId, async (handle) => handle.sandboxAgentConnection());
     },
 
+    async getWorkspaceSummary(workspaceId: string): Promise<WorkspaceSummarySnapshot> {
+      return (await workspace(workspaceId)).getWorkspaceSummary({ workspaceId });
+    },
+
+    async getTaskDetail(workspaceId: string, repoId: string, taskIdValue: string): Promise<WorkbenchTaskDetail> {
+      return (await task(workspaceId, repoId, taskIdValue)).getTaskDetail();
+    },
+
+    async getSessionDetail(workspaceId: string, repoId: string, taskIdValue: string, sessionId: string): Promise<WorkbenchSessionDetail> {
+      return (await task(workspaceId, repoId, taskIdValue)).getSessionDetail({ sessionId });
+    },
+
     async getWorkbench(workspaceId: string): Promise<TaskWorkbenchSnapshot> {
-      return (await workspace(workspaceId)).getWorkbench({ workspaceId });
+      return await getWorkbenchCompat(workspaceId);
     },
 
     subscribeWorkbench(workspaceId: string, listener: () => void): () => void {

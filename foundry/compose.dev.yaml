@@ -7,6 +7,9 @@ services:
       dockerfile: foundry/docker/backend.dev.Dockerfile
     image: foundry-backend-dev
     working_dir: /app
+    env_file:
+      - path: .env
+        required: false
     environment:
       HF_BACKEND_HOST: "0.0.0.0"
       HF_BACKEND_PORT: "7741"
@@ -41,6 +44,7 @@ services:
       HF_DAYTONA_ENDPOINT: "${HF_DAYTONA_ENDPOINT:-}"
       HF_DAYTONA_API_KEY: "${HF_DAYTONA_API_KEY:-}"
     ports:
+      - "6420:6420"
       - "7741:7741"
     volumes:
       - "..:/app"

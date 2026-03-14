@@ -262,11 +262,11 @@ export class GitHubAppClient {
   }
 
   async listOrganizations(accessToken: string): Promise<GitHubOrgIdentity[]> {
-    const organizations = await this.paginate<{ id: number; login: string; description?: string | null }>("/user/orgs?per_page=100", accessToken);
+    const organizations = await this.paginate<{ id: number; login: string; name?: string | null }>("/user/orgs?per_page=100", accessToken);
     return organizations.map((organization) => ({
       id: String(organization.id),
       login: organization.login,
-      name: organization.description?.trim() || organization.login,
+      name: organization.name?.trim() || organization.login,
     }));
   }
 

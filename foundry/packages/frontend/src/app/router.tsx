@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect } from "react";
 import { setFrontendErrorContext } from "@sandbox-agent/foundry-frontend-errors/client";
 import type { FoundryBillingPlanId } from "@sandbox-agent/foundry-shared";
+import { useInterest } from "@sandbox-agent/foundry-client";
 import { Navigate, Outlet, createRootRoute, createRoute, createRouter, useRouterState } from "@tanstack/react-router";
 import { MockLayout } from "../components/mock-layout";
 import {
@@ -12,8 +13,8 @@ import {
   MockSignInPage,
 } from "../components/mock-onboarding";
 import { defaultWorkspaceId, isMockFrontendClient } from "../lib/env";
+import { interestManager } from "../lib/interest";
 import { activeMockOrganization, getMockOrganizationById, isAppSnapshotBootstrapping, useMockAppClient, useMockAppSnapshot } from "../lib/mock-app";
-import { getTaskWorkbenchClient } from "../lib/workbench";
 
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -324,7 +325,7 @@ function AppWorkspaceGate({ workspaceId, children }: { workspaceId: string; chil
 }
 
 function RepoRouteInner({ workspaceId, repoId }: { workspaceId: string; repoId: string }) {
-  const taskWorkbenchClient = getTaskWorkbenchClient(workspaceId);
+  const workspaceState = useInterest(interestManager, "workspace", { workspaceId });
   useEffect(() => {
     setFrontendErrorContext({
       workspaceId,
@@ -332,7 +333,7 @@ function RepoRouteInner({ workspaceId, repoId }: { workspaceId: string; repoId: 
       repoId,
     });
   }, [repoId, workspaceId]);
-  const activeTaskId = taskWorkbenchClient.getSnapshot().tasks.find((task) => task.repoId === repoId)?.id;
+  const activeTaskId = workspaceState.data?.taskSummaries.find((task) => task.repoId === repoId)?.id;
   if (!activeTaskId) {
     return <Navigate to="/workspaces/$workspaceId" params={{ workspaceId }} replace />;
   }

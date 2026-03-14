@@ -15,10 +15,12 @@
   },
   "dependencies": {
     "@sandbox-agent/foundry-shared": "workspace:*",
+    "react": "^19.1.1",
     "rivetkit": "2.1.6",
     "sandbox-agent": "workspace:*"
   },
   "devDependencies": {
+    "@types/react": "^19.1.12",
     "tsup": "^8.5.0"
   }
 }

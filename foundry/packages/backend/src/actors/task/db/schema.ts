@@ -28,6 +28,10 @@ export const taskRuntime = sqliteTable(
     activeSwitchTarget: text("active_switch_target"),
     activeCwd: text("active_cwd"),
     statusMessage: text("status_message"),
+    gitStateJson: text("git_state_json"),
+    gitStateUpdatedAt: integer("git_state_updated_at"),
+    provisionStage: text("provision_stage"),
+    provisionStageUpdatedAt: integer("provision_stage_updated_at"),
     updatedAt: integer("updated_at").notNull(),
   },
   (table) => [check("task_runtime_singleton_id_check", sql`${table.id} = 1`)],
@@ -46,8 +50,13 @@ export const taskSandboxes = sqliteTable("task_sandboxes", {
 
 export const taskWorkbenchSessions = sqliteTable("task_workbench_sessions", {
   sessionId: text("session_id").notNull().primaryKey(),
+  sandboxSessionId: text("sandbox_session_id"),
   sessionName: text("session_name").notNull(),
   model: text("model").notNull(),
+  status: text("status").notNull().default("ready"),
+  errorMessage: text("error_message"),
+  transcriptJson: text("transcript_json").notNull().default("[]"),
+  transcriptUpdatedAt: integer("transcript_updated_at"),
   unread: integer("unread").notNull().default(0),
   draftText: text("draft_text").notNull().default(""),
   // Structured by the workbench composer attachment payload format.
