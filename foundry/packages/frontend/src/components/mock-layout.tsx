@@ -40,6 +40,7 @@ import {
 import { activeMockOrganization, useMockAppSnapshot } from "../lib/mock-app";
 import { backendClient } from "../lib/backend";
 import { interestManager } from "../lib/interest";
+import { describeTaskState, isProvisioningTaskStatus } from "../features/tasks/status";
 
 function firstAgentTabId(task: Task): string | null {
   return task.tabs[0]?.id ?? null;
@@ -124,10 +125,6 @@ function toLegacyTask(
   };
 }
 
-function isProvisioningTaskStatus(status: string | null | undefined): boolean {
-  return status === "new" || String(status ?? "").startsWith("init_");
-}
-
 function sessionStateMessage(tab: Task["tabs"][number] | null | undefined): string | null {
   if (!tab) {
     return null;
@@ -176,6 +173,7 @@ interface WorkbenchActions {
 const TranscriptPanel = memo(function TranscriptPanel({
   taskWorkbenchClient,
   task,
+  hasSandbox,
   activeTabId,
   lastAgentTabId,
   openDiffs,
@@ -193,6 +191,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
 }: {
   taskWorkbenchClient: WorkbenchActions;
   task: Task;
+  hasSandbox: boolean;
   activeTabId: string | null;
   lastAgentTabId: string | null;
   openDiffs: string[];
@@ -226,8 +225,10 @@ const TranscriptPanel = memo(function TranscriptPanel({
   const isTerminal = task.status === "archived";
   const historyEvents = useMemo(() => buildHistoryEvents(task.tabs), [task.tabs]);
   const activeMessages = useMemo(() => buildDisplayMessages(activeAgentTab), [activeAgentTab]);
-  const taskProvisioning = isProvisioningTaskStatus(task.runtimeStatus ?? task.status);
-  const taskProvisioningMessage = task.statusMessage ?? "Provisioning sandbox...";
+  const taskRuntimeStatus = task.runtimeStatus ?? task.status;
+  const taskState = describeTaskState(taskRuntimeStatus, task.statusMessage ?? null);
+  const taskProvisioning = isProvisioningTaskStatus(taskRuntimeStatus);
+  const taskProvisioningMessage = taskState.detail;
   const activeSessionMessage = sessionStateMessage(activeAgentTab);
   const showPendingSessionState =
     !activeDiff &&
@@ -574,6 +575,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
     <SPanel>
       <TranscriptHeader
         task={task}
+        hasSandbox={hasSandbox}
         activeTab={activeAgentTab}
         editingField={editingField}
         editValue={editValue}
@@ -657,7 +659,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
                 {taskProvisioning ? (
                   <>
                     <SpinnerDot size={16} />
-                    <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 600 }}>Provisioning task</h2>
+                    <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 600 }}>{taskState.title}</h2>
                     <p style={{ margin: 0, opacity: 0.75 }}>{taskProvisioningMessage}</p>
                   </>
                 ) : (
@@ -1130,6 +1132,22 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
         }
       : null,
   );
+  const activeSandbox = useMemo(() => {
+    if (!taskState.data?.activeSandboxId) return null;
+    return taskState.data.sandboxes?.find((s) => s.sandboxId === taskState.data!.activeSandboxId) ?? null;
+  }, [taskState.data?.activeSandboxId, taskState.data?.sandboxes]);
+  const sandboxState = useInterest(
+    interestManager,
+    "sandboxProcesses",
+    activeSandbox
+      ? {
+          workspaceId,
+          providerId: activeSandbox.providerId,
+          sandboxId: activeSandbox.sandboxId,
+        }
+      : null,
+  );
+  const hasSandbox = Boolean(activeSandbox) && sandboxState.status !== "error";
   const tasks = useMemo(() => {
     const sessionCache = new Map<string, { draft: Task["tabs"][number]["draft"]; transcript: Task["tabs"][number]["transcript"] }>();
     if (selectedTaskSummary && taskState.data) {
@@ -1387,7 +1405,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
         const { taskId, tabId } = await taskWorkbenchClient.createTask({
           repoId,
           task: "New task",
-          model: "gpt-4o",
+          model: "gpt-5.3-codex",
           title: "New task",
         });
         await navigate({
@@ -1787,6 +1805,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
             workspaceId={workspaceId}
             snapshot={{ workspaceId, repos: workspaceRepos, projects: rawProjects, tasks } as TaskWorkbenchSnapshot}
             organization={activeOrg}
+            focusedTask={null}
           />
         )}
       </>
@@ -1888,6 +1907,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
             <TranscriptPanel
               taskWorkbenchClient={taskWorkbenchClient}
               task={activeTask}
+              hasSandbox={hasSandbox}
               activeTabId={activeTabId}
               lastAgentTabId={lastAgentTabId}
               openDiffs={openDiffs}
@@ -1978,6 +1998,30 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
             workspaceId={workspaceId}
             snapshot={{ workspaceId, repos: workspaceRepos, projects: rawProjects, tasks } as TaskWorkbenchSnapshot}
             organization={activeOrg}
+            focusedTask={{
+              id: activeTask.id,
+              repoId: activeTask.repoId,
+              title: activeTask.title,
+              status: activeTask.status,
+              runtimeStatus: activeTask.runtimeStatus ?? null,
+              statusMessage: activeTask.statusMessage ?? null,
+              branch: activeTask.branch ?? null,
+              activeSandboxId: activeTask.activeSandboxId ?? null,
+              activeSessionId: selectedSessionId ?? activeTask.tabs[0]?.id ?? null,
+              sandboxes: [],
+              sessions:
+                activeTask.tabs?.map((tab) => ({
+                  id: tab.id,
+                  sessionId: tab.sessionId ?? null,
+                  sessionName: tab.sessionName ?? tab.id,
+                  agent: tab.agent,
+                  model: tab.model,
+                  status: tab.status,
+                  thinkingSinceMs: tab.thinkingSinceMs ?? null,
+                  unread: tab.unread ?? false,
+                  created: tab.created ?? false,
+                })) ?? [],
+            }}
           />
         )}
       </Shell>

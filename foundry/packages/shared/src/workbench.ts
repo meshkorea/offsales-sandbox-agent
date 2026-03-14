@@ -2,7 +2,15 @@ import type { AgentType, ProviderId, TaskStatus } from "./contracts.js";
 
 export type WorkbenchTaskStatus = TaskStatus | "new";
 export type WorkbenchAgentKind = "Claude" | "Codex" | "Cursor";
-export type WorkbenchModelId = "claude-sonnet-4" | "claude-opus-4" | "gpt-4o" | "o3";
+export type WorkbenchModelId =
+  | "claude-sonnet-4"
+  | "claude-opus-4"
+  | "gpt-5.3-codex"
+  | "gpt-5.4"
+  | "gpt-5.2-codex"
+  | "gpt-5.1-codex-max"
+  | "gpt-5.2"
+  | "gpt-5.1-codex-mini";
 export type WorkbenchSessionStatus = "pending_provision" | "pending_session_create" | "ready" | "running" | "idle" | "error";
 
 export interface WorkbenchTranscriptEvent {

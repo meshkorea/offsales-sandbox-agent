@@ -139,7 +139,7 @@ export const task = actor({
       const self = selfTask(c);
       const result = await self.send(taskWorkflowQueueName("task.command.initialize"), cmd ?? {}, {
         wait: true,
-        timeout: 60_000,
+        timeout: 5 * 60_000,
       });
       return expectQueueResponse<TaskRecord>(result);
     },
