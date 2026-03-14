@@ -114,6 +114,22 @@ interface WorkspaceHandle {
   revertWorkbenchFile(input: TaskWorkbenchDiffInput): Promise<void>;
 }
 
+interface AppWorkspaceHandle {
+  connect(): ActorConn;
+  getAppSnapshot(input: { sessionId: string }): Promise<FoundryAppSnapshot>;
+  skipAppStarterRepo(input: { sessionId: string }): Promise<FoundryAppSnapshot>;
+  starAppStarterRepo(input: { sessionId: string; organizationId: string }): Promise<FoundryAppSnapshot>;
+  selectAppOrganization(input: { sessionId: string; organizationId: string }): Promise<FoundryAppSnapshot>;
+  updateAppOrganizationProfile(input: UpdateFoundryOrganizationProfileInput & { sessionId: string }): Promise<FoundryAppSnapshot>;
+  triggerAppRepoImport(input: { sessionId: string; organizationId: string }): Promise<FoundryAppSnapshot>;
+  beginAppGithubInstall(input: { sessionId: string; organizationId: string }): Promise<{ url: string }>;
+  createAppCheckoutSession(input: { sessionId: string; organizationId: string; planId: FoundryBillingPlanId }): Promise<{ url: string }>;
+  createAppBillingPortalSession(input: { sessionId: string; organizationId: string }): Promise<{ url: string }>;
+  cancelAppScheduledRenewal(input: { sessionId: string; organizationId: string }): Promise<FoundryAppSnapshot>;
+  resumeAppSubscription(input: { sessionId: string; organizationId: string }): Promise<FoundryAppSnapshot>;
+  recordAppSeatUsage(input: { sessionId: string; workspaceId: string }): Promise<FoundryAppSnapshot>;
+}
+
 interface TaskHandle {
   getTaskSummary(): Promise<WorkbenchTaskSummary>;
   getTaskDetail(): Promise<WorkbenchTaskDetail>;
@@ -317,6 +333,24 @@ function deriveBackendEndpoints(endpoint: string): { appEndpoint: string; rivetE
   };
 }
 
+function signedOutAppSnapshot(): FoundryAppSnapshot {
+  return {
+    auth: { status: "signed_out", currentUserId: null },
+    activeOrganizationId: null,
+    onboarding: {
+      starterRepo: {
+        repoFullName: "rivet-dev/sandbox-agent",
+        repoUrl: "https://github.com/rivet-dev/sandbox-agent",
+        status: "pending",
+        starredAt: null,
+        skippedAt: null,
+      },
+    },
+    users: [],
+    organizations: [],
+  };
+}
+
 export function createBackendClient(options: BackendClientOptions): BackendClient {
   if (options.mode === "mock") {
     return createMockBackendClient(options.defaultWorkspaceId);
@@ -362,17 +396,30 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     return (await res.json()) as T;
   };
 
-  const redirectTo = async (path: string, init?: RequestInit): Promise<void> => {
-    const response = await appRequest<{ url: string }>(path, init);
-    if (typeof window !== "undefined") {
-      window.location.assign(response.url);
+  const getSessionId = async (): Promise<string | null> => {
+    const res = await fetch(`${appApiEndpoint}/auth/get-session`, {
+      credentials: "include",
+    });
+    if (res.status === 401) {
+      return null;
     }
+    if (!res.ok) {
+      throw new Error(`auth session request failed: ${res.status} ${res.statusText}`);
+    }
+    const data = (await res.json().catch(() => null)) as { session?: { id?: string | null } | null } | null;
+    const sessionId = data?.session?.id;
+    return typeof sessionId === "string" && sessionId.length > 0 ? sessionId : null;
   };
 
   const workspace = async (workspaceId: string): Promise<WorkspaceHandle> =>
     client.workspace.getOrCreate(workspaceKey(workspaceId), {
       createWithInput: workspaceId,
     });
+
+  const appWorkspace = async (): Promise<AppWorkspaceHandle> =>
+    client.workspace.getOrCreate(workspaceKey("app"), {
+      createWithInput: "app",
+    }) as unknown as AppWorkspaceHandle;
 
   const task = async (workspaceId: string, repoId: string, taskId: string): Promise<TaskHandle> => client.task.get(taskKey(workspaceId, repoId, taskId));
 
@@ -634,7 +681,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 
     if (!appSubscriptions.disposeConnPromise) {
       appSubscriptions.disposeConnPromise = (async () => {
-        const handle = await workspace("app");
+        const handle = await appWorkspace();
         const conn = (handle as any).connect();
         const unsubscribeEvent = conn.on("appUpdated", () => {
           for (const currentListener of [...appSubscriptions.listeners]) {
@@ -665,7 +712,11 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 
   return {
     async getAppSnapshot(): Promise<FoundryAppSnapshot> {
-      return await appRequest<FoundryAppSnapshot>("/app/snapshot");
+      const sessionId = await getSessionId();
+      if (!sessionId) {
+        return signedOutAppSnapshot();
+      }
+      return await (await appWorkspace()).getAppSnapshot({ sessionId });
     },
 
     async connectWorkspace(workspaceId: string): Promise<ActorConn> {
@@ -704,75 +755,106 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     },
 
     async skipAppStarterRepo(): Promise<FoundryAppSnapshot> {
-      return await appRequest<FoundryAppSnapshot>("/app/onboarding/starter-repo/skip", {
-        method: "POST",
-      });
+      const sessionId = await getSessionId();
+      if (!sessionId) {
+        throw new Error("No active auth session");
+      }
+      return await (await appWorkspace()).skipAppStarterRepo({ sessionId });
     },
 
     async starAppStarterRepo(organizationId: string): Promise<FoundryAppSnapshot> {
-      return await appRequest<FoundryAppSnapshot>(`/app/organizations/${organizationId}/starter-repo/star`, {
-        method: "POST",
-      });
+      const sessionId = await getSessionId();
+      if (!sessionId) {
+        throw new Error("No active auth session");
+      }
+      return await (await appWorkspace()).starAppStarterRepo({ sessionId, organizationId });
     },
 
     async selectAppOrganization(organizationId: string): Promise<FoundryAppSnapshot> {
-      return await appRequest<FoundryAppSnapshot>(`/app/organizations/${organizationId}/select`, {
-        method: "POST",
-      });
+      const sessionId = await getSessionId();
+      if (!sessionId) {
+        throw new Error("No active auth session");
+      }
+      return await (await appWorkspace()).selectAppOrganization({ sessionId, organizationId });
     },
 
     async updateAppOrganizationProfile(input: UpdateFoundryOrganizationProfileInput): Promise<FoundryAppSnapshot> {
-      return await appRequest<FoundryAppSnapshot>(`/app/organizations/${input.organizationId}/profile`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          displayName: input.displayName,
-          slug: input.slug,
-          primaryDomain: input.primaryDomain,
-        }),
+      const sessionId = await getSessionId();
+      if (!sessionId) {
+        throw new Error("No active auth session");
+      }
+      return await (await appWorkspace()).updateAppOrganizationProfile({
+        sessionId,
+        organizationId: input.organizationId,
+        displayName: input.displayName,
+        slug: input.slug,
+        primaryDomain: input.primaryDomain,
       });
     },
 
     async triggerAppRepoImport(organizationId: string): Promise<FoundryAppSnapshot> {
-      return await appRequest<FoundryAppSnapshot>(`/app/organizations/${organizationId}/import`, {
-        method: "POST",
-      });
+      const sessionId = await getSessionId();
+      if (!sessionId) {
+        throw new Error("No active auth session");
+      }
+      return await (await appWorkspace()).triggerAppRepoImport({ sessionId, organizationId });
     },
 
     async reconnectAppGithub(organizationId: string): Promise<void> {
-      await redirectTo(`/app/organizations/${organizationId}/reconnect`, {
-        method: "POST",
-      });
+      const sessionId = await getSessionId();
+      if (!sessionId) {
+        throw new Error("No active auth session");
+      }
+      const response = await (await appWorkspace()).beginAppGithubInstall({ sessionId, organizationId });
+      if (typeof window !== "undefined") {
+        window.location.assign(response.url);
+      }
     },
 
     async completeAppHostedCheckout(organizationId: string, planId: FoundryBillingPlanId): Promise<void> {
-      await redirectTo(`/app/organizations/${organizationId}/billing/checkout`, {
-        method: "POST",
-        body: JSON.stringify({ planId }),
-      });
+      const sessionId = await getSessionId();
+      if (!sessionId) {
+        throw new Error("No active auth session");
+      }
+      const response = await (await appWorkspace()).createAppCheckoutSession({ sessionId, organizationId, planId });
+      if (typeof window !== "undefined") {
+        window.location.assign(response.url);
+      }
     },
 
     async openAppBillingPortal(organizationId: string): Promise<void> {
-      await redirectTo(`/app/organizations/${organizationId}/billing/portal`, {
-        method: "POST",
-      });
+      const sessionId = await getSessionId();
+      if (!sessionId) {
+        throw new Error("No active auth session");
+      }
+      const response = await (await appWorkspace()).createAppBillingPortalSession({ sessionId, organizationId });
+      if (typeof window !== "undefined") {
+        window.location.assign(response.url);
+      }
     },
 
     async cancelAppScheduledRenewal(organizationId: string): Promise<FoundryAppSnapshot> {
-      return await appRequest<FoundryAppSnapshot>(`/app/organizations/${organizationId}/billing/cancel`, {
-        method: "POST",
-      });
+      const sessionId = await getSessionId();
+      if (!sessionId) {
+        throw new Error("No active auth session");
+      }
+      return await (await appWorkspace()).cancelAppScheduledRenewal({ sessionId, organizationId });
     },
 
     async resumeAppSubscription(organizationId: string): Promise<FoundryAppSnapshot> {
-      return await appRequest<FoundryAppSnapshot>(`/app/organizations/${organizationId}/billing/resume`, {
-        method: "POST",
-      });
+      const sessionId = await getSessionId();
+      if (!sessionId) {
+        throw new Error("No active auth session");
+      }
+      return await (await appWorkspace()).resumeAppSubscription({ sessionId, organizationId });
     },
 
     async recordAppSeatUsage(workspaceId: string): Promise<FoundryAppSnapshot> {
-      return await appRequest<FoundryAppSnapshot>(`/app/workspaces/${workspaceId}/seat-usage`, {
-        method: "POST",
-      });
+      const sessionId = await getSessionId();
+      if (!sessionId) {
+        throw new Error("No active auth session");
+      }
+      return await (await appWorkspace()).recordAppSeatUsage({ sessionId, workspaceId });
     },
 
     async addRepo(workspaceId: string, remoteUrl: string): Promise<RepoRecord> {

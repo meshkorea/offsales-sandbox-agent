@@ -15,9 +15,7 @@
     "paths": {
       "@sandbox-agent/foundry-client": ["packages/client/src/index.ts"],
       "@sandbox-agent/foundry-shared": ["packages/shared/src/index.ts"],
-      "@sandbox-agent/foundry-backend": ["packages/backend/src/index.ts"],
-      "@sandbox-agent/foundry-frontend-errors": ["packages/frontend-errors/src/index.ts"],
-      "@sandbox-agent/foundry-frontend-errors/*": ["packages/frontend-errors/src/*"]
+      "@sandbox-agent/foundry-backend": ["packages/backend/src/index.ts"]
     },
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true

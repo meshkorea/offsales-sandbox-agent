@@ -12,7 +12,6 @@ COPY rivet-checkout /workspace/rivet-checkout
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @sandbox-agent/foundry-shared build
 RUN pnpm --filter @sandbox-agent/foundry-client build
-RUN pnpm --filter @sandbox-agent/foundry-frontend-errors build
 RUN pnpm --filter @sandbox-agent/foundry-frontend build
 
 FROM nginx:1.27-alpine

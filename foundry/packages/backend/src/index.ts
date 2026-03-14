@@ -9,7 +9,6 @@ import { createBackends, createNotificationService } from "./notifications/index
 import { createDefaultDriver } from "./driver.js";
 import { createProviderRegistry } from "./providers/index.js";
 import { createClient } from "rivetkit/client";
-import type { FoundryBillingPlanId } from "@sandbox-agent/foundry-shared";
 import { initBetterAuthService } from "./services/better-auth.js";
 import { createDefaultAppShellServices } from "./services/app-shell-runtime.js";
 import { APP_SHELL_WORKSPACE_ID } from "./actors/workspace/app-shell.js";
@@ -205,23 +204,6 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     }
   };
 
-  const appWorkspaceAction = async <T>(action: string, run: (workspace: any) => Promise<T>, context: AppWorkspaceLogContext = {}): Promise<T> => {
-    try {
-      return await run(await appWorkspace({ ...context, action }));
-    } catch (error) {
-      logger.error(
-        {
-          ...context,
-          action,
-          errorMessage: error instanceof Error ? error.message : String(error),
-          errorStack: error instanceof Error ? error.stack : undefined,
-        },
-        "app_workspace_action_failed",
-      );
-      throw error;
-    }
-  };
-
   const requestLogContext = (c: any, sessionId?: string): AppWorkspaceLogContext => ({
     ...requestHeaderContext(c),
     method: c.req.method,
@@ -234,30 +216,6 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     const session = await betterAuth.resolveSession(c.req.raw.headers);
     return session?.session?.id ?? null;
   };
-
-  app.get("/v1/app/snapshot", async (c) => {
-    const sessionId = await resolveSessionId(c);
-    if (!sessionId) {
-      return c.json({
-        auth: { status: "signed_out", currentUserId: null },
-        activeOrganizationId: null,
-        onboarding: {
-          starterRepo: {
-            repoFullName: "rivet-dev/sandbox-agent",
-            repoUrl: "https://github.com/rivet-dev/sandbox-agent",
-            status: "pending",
-            starredAt: null,
-            skippedAt: null,
-          },
-        },
-        users: [],
-        organizations: [],
-      });
-    }
-    return c.json(
-      await appWorkspaceAction("getAppSnapshot", async (workspace) => await workspace.getAppSnapshot({ sessionId }), requestLogContext(c, sessionId)),
-    );
-  });
 
   app.all("/v1/auth/*", async (c) => {
     return await betterAuth.auth.handler(c.req.raw);
@@ -289,126 +247,6 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     });
   });
 
-  app.post("/v1/app/onboarding/starter-repo/skip", async (c) => {
-    const sessionId = await resolveSessionId(c);
-    if (!sessionId) {
-      return c.text("Unauthorized", 401);
-    }
-    return c.json(
-      await appWorkspaceAction("skipAppStarterRepo", async (workspace) => await workspace.skipAppStarterRepo({ sessionId }), requestLogContext(c, sessionId)),
-    );
-  });
-
-  app.post("/v1/app/organizations/:organizationId/starter-repo/star", async (c) => {
-    const sessionId = await resolveSessionId(c);
-    if (!sessionId) {
-      return c.text("Unauthorized", 401);
-    }
-    return c.json(
-      await appWorkspaceAction(
-        "starAppStarterRepo",
-        async (workspace) =>
-          await workspace.starAppStarterRepo({
-            sessionId,
-            organizationId: c.req.param("organizationId"),
-          }),
-        requestLogContext(c, sessionId),
-      ),
-    );
-  });
-
-  app.post("/v1/app/organizations/:organizationId/select", async (c) => {
-    const sessionId = await resolveSessionId(c);
-    if (!sessionId) {
-      return c.text("Unauthorized", 401);
-    }
-    return c.json(
-      await appWorkspaceAction(
-        "selectAppOrganization",
-        async (workspace) =>
-          await workspace.selectAppOrganization({
-            sessionId,
-            organizationId: c.req.param("organizationId"),
-          }),
-        requestLogContext(c, sessionId),
-      ),
-    );
-  });
-
-  app.patch("/v1/app/organizations/:organizationId/profile", async (c) => {
-    const sessionId = await resolveSessionId(c);
-    if (!sessionId) {
-      return c.text("Unauthorized", 401);
-    }
-    const body = await c.req.json();
-    return c.json(
-      await appWorkspaceAction(
-        "updateAppOrganizationProfile",
-        async (workspace) =>
-          await workspace.updateAppOrganizationProfile({
-            sessionId,
-            organizationId: c.req.param("organizationId"),
-            displayName: typeof body?.displayName === "string" ? body.displayName : "",
-            slug: typeof body?.slug === "string" ? body.slug : "",
-            primaryDomain: typeof body?.primaryDomain === "string" ? body.primaryDomain : "",
-          }),
-        requestLogContext(c, sessionId),
-      ),
-    );
-  });
-
-  app.post("/v1/app/organizations/:organizationId/import", async (c) => {
-    const sessionId = await resolveSessionId(c);
-    if (!sessionId) {
-      return c.text("Unauthorized", 401);
-    }
-    return c.json(
-      await appWorkspaceAction(
-        "triggerAppRepoImport",
-        async (workspace) =>
-          await workspace.triggerAppRepoImport({
-            sessionId,
-            organizationId: c.req.param("organizationId"),
-          }),
-        requestLogContext(c, sessionId),
-      ),
-    );
-  });
-
-  app.post("/v1/app/organizations/:organizationId/reconnect", async (c) => {
-    const sessionId = await resolveSessionId(c);
-    if (!sessionId) {
-      return c.text("Unauthorized", 401);
-    }
-    return c.json(
-      await appWorkspaceAction(
-        "beginAppGithubInstall",
-        async (workspace) =>
-          await workspace.beginAppGithubInstall({
-            sessionId,
-            organizationId: c.req.param("organizationId"),
-          }),
-        requestLogContext(c, sessionId),
-      ),
-    );
-  });
-
-  app.post("/v1/app/organizations/:organizationId/billing/checkout", async (c) => {
-    const sessionId = await resolveSessionId(c);
-    if (!sessionId) {
-      return c.text("Unauthorized", 401);
-    }
-    const body = await c.req.json().catch(() => ({}));
-    const planId = body?.planId === "free" || body?.planId === "team" ? (body.planId as FoundryBillingPlanId) : "team";
-    return c.json(
-      await (await appWorkspace(requestLogContext(c, sessionId))).createAppCheckoutSession({
-        sessionId,
-        organizationId: c.req.param("organizationId"),
-        planId,
-      }),
-    );
-  });
-
   app.get("/v1/billing/checkout/complete", async (c) => {
     const organizationId = c.req.query("organizationId");
     const checkoutSessionId = c.req.query("session_id");
@@ -425,58 +263,6 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
       checkoutSessionId,
     });
     return Response.redirect(result.redirectTo, 302);
-  });
-
-  app.post("/v1/app/organizations/:organizationId/billing/portal", async (c) => {
-    const sessionId = await resolveSessionId(c);
-    if (!sessionId) {
-      return c.text("Unauthorized", 401);
-    }
-    return c.json(
-      await (await appWorkspace(requestLogContext(c, sessionId))).createAppBillingPortalSession({
-        sessionId,
-        organizationId: c.req.param("organizationId"),
-      }),
-    );
-  });
-
-  app.post("/v1/app/organizations/:organizationId/billing/cancel", async (c) => {
-    const sessionId = await resolveSessionId(c);
-    if (!sessionId) {
-      return c.text("Unauthorized", 401);
-    }
-    return c.json(
-      await (await appWorkspace(requestLogContext(c, sessionId))).cancelAppScheduledRenewal({
-        sessionId,
-        organizationId: c.req.param("organizationId"),
-      }),
-    );
-  });
-
-  app.post("/v1/app/organizations/:organizationId/billing/resume", async (c) => {
-    const sessionId = await resolveSessionId(c);
-    if (!sessionId) {
-      return c.text("Unauthorized", 401);
-    }
-    return c.json(
-      await (await appWorkspace(requestLogContext(c, sessionId))).resumeAppSubscription({
-        sessionId,
-        organizationId: c.req.param("organizationId"),
-      }),
-    );
-  });
-
-  app.post("/v1/app/workspaces/:workspaceId/seat-usage", async (c) => {
-    const sessionId = await resolveSessionId(c);
-    if (!sessionId) {
-      return c.text("Unauthorized", 401);
-    }
-    return c.json(
-      await (await appWorkspace(requestLogContext(c, sessionId))).recordAppSeatUsage({
-        sessionId,
-        workspaceId: c.req.param("workspaceId"),
-      }),
-    );
   });
 
   const handleStripeWebhook = async (c: any) => {
