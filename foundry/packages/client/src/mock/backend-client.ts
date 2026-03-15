@@ -246,7 +246,6 @@ export function createMockBackendClient(defaultOrganizationId = "default"): Back
         };
       }),
       taskSummaries,
-      openPullRequests: [],
     };
   };
 
@@ -464,7 +463,7 @@ export function createMockBackendClient(defaultOrganizationId = "default"): Back
     async getRepoOverview(_organizationId: string, _repoId: string): Promise<RepoOverview> {
       notSupported("getRepoOverview");
     },
-    async getTask(_organizationId: string, taskId: string): Promise<TaskRecord> {
+    async getTask(_organizationId: string, _repoId: string, taskId: string): Promise<TaskRecord> {
       return buildTaskRecord(taskId);
     },
 
@@ -472,7 +471,7 @@ export function createMockBackendClient(defaultOrganizationId = "default"): Back
       return [];
     },
 
-    async switchTask(_organizationId: string, taskId: string): Promise<SwitchResult> {
+    async switchTask(_organizationId: string, _repoId: string, taskId: string): Promise<SwitchResult> {
       return {
         organizationId: defaultOrganizationId,
         taskId,
@@ -481,14 +480,14 @@ export function createMockBackendClient(defaultOrganizationId = "default"): Back
       };
     },
 
-    async attachTask(_organizationId: string, taskId: string): Promise<{ target: string; sessionId: string | null }> {
+    async attachTask(_organizationId: string, _repoId: string, taskId: string): Promise<{ target: string; sessionId: string | null }> {
       return {
         target: `mock://${taskId}`,
         sessionId: requireTask(taskId).sessions[0]?.sessionId ?? null,
       };
     },
 
-    async runAction(_organizationId: string, _taskId: string): Promise<void> {
+    async runAction(_organizationId: string, _repoId: string, _taskId: string): Promise<void> {
       notSupported("runAction");
     },
 

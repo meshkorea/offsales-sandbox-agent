@@ -244,6 +244,7 @@ export interface TaskWorkspaceRenameInput {
 }
 
 export interface TaskWorkspaceSendMessageInput {
+  repoId: string;
   taskId: string;
   sessionId: string;
   text: string;
@@ -252,6 +253,7 @@ export interface TaskWorkspaceSendMessageInput {
 }
 
 export interface TaskWorkspaceSessionInput {
+  repoId: string;
   taskId: string;
   sessionId: string;
   authSessionId?: string;

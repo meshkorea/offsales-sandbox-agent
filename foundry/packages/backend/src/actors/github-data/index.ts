@@ -4,7 +4,7 @@ import { actor, queue } from "rivetkit";
 import { workflow, Loop } from "rivetkit/workflow";
 import type { FoundryOrganization } from "@sandbox-agent/foundry-shared";
 import { getActorRuntimeContext } from "../context.js";
-import { getOrCreateOrganization, getTask } from "../handles.js";
+import { getOrCreateOrganization, getOrCreateRepository, getTask } from "../handles.js";
 import { repoIdFromRemote } from "../../services/repo.js";
 import { resolveOrganizationGithubAuth } from "../../services/github-auth.js";
 import { githubDataDb } from "./db/db.js";
@@ -259,12 +259,15 @@ async function replacePullRequests(c: any, pullRequests: GithubPullRequestRecord
 }
 
 async function refreshTaskSummaryForBranch(c: any, repoId: string, branchName: string) {
-  const organization = await getOrCreateOrganization(c, c.state.organizationId);
-  await organization.refreshTaskSummaryForGithubBranch({ repoId, branchName });
+  const repositoryRecord = await c.db.select().from(githubRepositories).where(eq(githubRepositories.repoId, repoId)).get();
+  if (!repositoryRecord) {
+    return;
+  }
+  const repository = await getOrCreateRepository(c, c.state.organizationId, repoId, repositoryRecord.cloneUrl);
+  await repository.refreshTaskSummaryForBranch({ branchName });
 }
 
 async function emitPullRequestChangeEvents(c: any, beforeRows: any[], afterRows: any[]) {
-  const organization = await getOrCreateOrganization(c, c.state.organizationId);
   const beforeById = new Map(beforeRows.map((row) => [row.prId, row]));
   const afterById = new Map(afterRows.map((row) => [row.prId, row]));
 
@@ -283,9 +286,6 @@ async function emitPullRequestChangeEvents(c: any, beforeRows: any[], afterRows:
     if (!changed) {
       continue;
     }
-    await organization.applyOpenPullRequestUpdate({
-      pullRequest: pullRequestSummaryFromRow(row),
-    });
     await refreshTaskSummaryForBranch(c, row.repoId, row.headRefName);
   }
 
@@ -293,15 +293,17 @@ async function emitPullRequestChangeEvents(c: any, beforeRows: any[], afterRows:
     if (afterById.has(prId)) {
       continue;
     }
-    await organization.removeOpenPullRequest({ prId });
     await refreshTaskSummaryForBranch(c, row.repoId, row.headRefName);
   }
 }
 
 async function autoArchiveTaskForClosedPullRequest(c: any, row: any) {
-  const organization = await getOrCreateOrganization(c, c.state.organizationId);
-  const match = await organization.findTaskForGithubBranch({
-    repoId: row.repoId,
+  const repositoryRecord = await c.db.select().from(githubRepositories).where(eq(githubRepositories.repoId, row.repoId)).get();
+  if (!repositoryRecord) {
+    return;
+  }
+  const repository = await getOrCreateRepository(c, c.state.organizationId, row.repoId, repositoryRecord.cloneUrl);
+  const match = await repository.findTaskForBranch({
     branchName: row.headRefName,
   });
   if (!match?.taskId) {

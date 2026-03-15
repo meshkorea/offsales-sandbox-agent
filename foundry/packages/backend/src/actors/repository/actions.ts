@@ -179,7 +179,6 @@ function parseJsonValue<T>(value: string | null | undefined, fallback: T): T {
 function taskSummaryRowFromSummary(taskSummary: WorkspaceTaskSummary) {
   return {
     taskId: taskSummary.id,
-    repoId: taskSummary.repoId,
     title: taskSummary.title,
     status: taskSummary.status,
     repoName: taskSummary.repoName,
@@ -187,20 +186,6 @@ function taskSummaryRowFromSummary(taskSummary: WorkspaceTaskSummary) {
     branch: taskSummary.branch,
     pullRequestJson: JSON.stringify(taskSummary.pullRequest),
     sessionsSummaryJson: JSON.stringify(taskSummary.sessionsSummary),
-  };
-}
-
-function workspaceTaskSummaryFromRow(row: any): WorkspaceTaskSummary {
-  return {
-    id: row.taskId,
-    repoId: row.repoId,
-    title: row.title,
-    status: row.status,
-    repoName: row.repoName,
-    updatedAtMs: row.updatedAtMs,
-    branch: row.branch ?? null,
-    pullRequest: parseJsonValue(row.pullRequestJson, null),
-    sessionsSummary: parseJsonValue<WorkspaceSessionSummary[]>(row.sessionsSummaryJson, []),
   };
 }
 
@@ -418,7 +403,7 @@ async function listTaskSummaries(c: any, includeArchived = false): Promise<TaskS
 
 async function listWorkspaceTaskSummaries(c: any): Promise<WorkspaceTaskSummary[]> {
   const rows = await c.db.select().from(tasks).orderBy(desc(tasks.updatedAtMs)).all();
-  return rows.map(workspaceTaskSummaryFromRow);
+  return rows.map((row) => taskSummaryFromRow(c, row));
 }
 
 function sortOverviewBranches(
@@ -612,12 +597,12 @@ export const repositoryActions = {
     await notifyOrganizationSnapshotChanged(c);
   },
 
-  async findTaskForGithubBranch(c: any, input: { branchName: string }): Promise<{ taskId: string | null }> {
+  async findTaskForBranch(c: any, input: { branchName: string }): Promise<{ taskId: string | null }> {
     const row = await c.db.select({ taskId: tasks.taskId }).from(tasks).where(eq(tasks.branch, input.branchName)).get();
     return { taskId: row?.taskId ?? null };
   },
 
-  async refreshTaskSummaryForGithubBranch(c: any, input: { branchName: string }): Promise<void> {
+  async refreshTaskSummaryForBranch(c: any, input: { branchName: string }): Promise<void> {
     const rows = await c.db.select({ taskId: tasks.taskId }).from(tasks).where(eq(tasks.branch, input.branchName)).all();
 
     for (const row of rows) {

@@ -31,7 +31,7 @@ import type {
   OrganizationUseInput,
 } from "@sandbox-agent/foundry-shared";
 import { getActorRuntimeContext } from "../context.js";
-import { getGithubData, getOrCreateAuditLog, getOrCreateGithubData, getTask as getTaskHandle, getOrCreateRepository, selfOrganization } from "../handles.js";
+import { getOrCreateAuditLog, getOrCreateGithubData, getTask as getTaskHandle, getOrCreateRepository, selfOrganization } from "../handles.js";
 import { logActorWarning, resolveErrorMessage } from "../logging.js";
 import { defaultSandboxProviderId } from "../../sandbox-config.js";
 import { repoIdFromRemote } from "../../services/repo.js";

@@ -250,19 +250,19 @@ interface WorkspaceActions {
     onBranch?: string;
     model?: ModelId;
   }): Promise<{ taskId: string; sessionId?: string }>;
-  markTaskUnread(input: { taskId: string }): Promise<void>;
-  renameTask(input: { taskId: string; value: string }): Promise<void>;
-  archiveTask(input: { taskId: string }): Promise<void>;
-  publishPr(input: { taskId: string }): Promise<void>;
-  revertFile(input: { taskId: string; path: string }): Promise<void>;
-  updateDraft(input: { taskId: string; sessionId: string; text: string; attachments: LineAttachment[] }): Promise<void>;
-  sendMessage(input: { taskId: string; sessionId: string; text: string; attachments: LineAttachment[] }): Promise<void>;
-  stopAgent(input: { taskId: string; sessionId: string }): Promise<void>;
-  setSessionUnread(input: { taskId: string; sessionId: string; unread: boolean }): Promise<void>;
-  renameSession(input: { taskId: string; sessionId: string; title: string }): Promise<void>;
-  closeSession(input: { taskId: string; sessionId: string }): Promise<void>;
-  addSession(input: { taskId: string; model?: string }): Promise<{ sessionId: string }>;
-  changeModel(input: { taskId: string; sessionId: string; model: ModelId }): Promise<void>;
+  markTaskUnread(input: { repoId: string; taskId: string }): Promise<void>;
+  renameTask(input: { repoId: string; taskId: string; value: string }): Promise<void>;
+  archiveTask(input: { repoId: string; taskId: string }): Promise<void>;
+  publishPr(input: { repoId: string; taskId: string }): Promise<void>;
+  revertFile(input: { repoId: string; taskId: string; path: string }): Promise<void>;
+  updateDraft(input: { repoId: string; taskId: string; sessionId: string; text: string; attachments: LineAttachment[] }): Promise<void>;
+  sendMessage(input: { repoId: string; taskId: string; sessionId: string; text: string; attachments: LineAttachment[] }): Promise<void>;
+  stopAgent(input: { repoId: string; taskId: string; sessionId: string }): Promise<void>;
+  setSessionUnread(input: { repoId: string; taskId: string; sessionId: string; unread: boolean }): Promise<void>;
+  renameSession(input: { repoId: string; taskId: string; sessionId: string; title: string }): Promise<void>;
+  closeSession(input: { repoId: string; taskId: string; sessionId: string }): Promise<void>;
+  addSession(input: { repoId: string; taskId: string; model?: string }): Promise<{ sessionId: string }>;
+  changeModel(input: { repoId: string; taskId: string; sessionId: string; model: ModelId }): Promise<void>;
   adminReloadGithubOrganization(): Promise<void>;
   adminReloadGithubPullRequests(): Promise<void>;
   adminReloadGithubRepository(repoId: string): Promise<void>;
@@ -439,6 +439,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
     }
 
     void taskWorkspaceClient.setSessionUnread({
+      repoId: task.repoId,
       taskId: task.id,
       sessionId: activeAgentSession.id,
       unread: false,
@@ -462,7 +463,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
         return;
       }
 
-      void taskWorkspaceClient.renameTask({ taskId: task.id, value });
+      void taskWorkspaceClient.renameTask({ repoId: task.repoId, taskId: task.id, value });
       setEditingField(null);
     },
     [editValue, task.id],
@@ -473,6 +474,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
   const flushDraft = useCallback(
     (text: string, nextAttachments: LineAttachment[], sessionId: string) => {
       void taskWorkspaceClient.updateDraft({
+        repoId: task.repoId,
         taskId: task.id,
         sessionId,
         text,
@@ -534,6 +536,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
     onSetActiveSessionId(promptSession.id);
     onSetLastAgentSessionId(promptSession.id);
     void taskWorkspaceClient.sendMessage({
+      repoId: task.repoId,
       taskId: task.id,
       sessionId: promptSession.id,
       text,
@@ -547,6 +550,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
     }
 
     void taskWorkspaceClient.stopAgent({
+      repoId: task.repoId,
       taskId: task.id,
       sessionId: promptSession.id,
     });
@@ -561,6 +565,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
         const session = task.sessions.find((candidate) => candidate.id === sessionId);
         if (session?.unread) {
           void taskWorkspaceClient.setSessionUnread({
+            repoId: task.repoId,
             taskId: task.id,
             sessionId,
             unread: false,
@@ -574,9 +579,9 @@ const TranscriptPanel = memo(function TranscriptPanel({
 
   const setSessionUnread = useCallback(
     (sessionId: string, unread: boolean) => {
-      void taskWorkspaceClient.setSessionUnread({ taskId: task.id, sessionId, unread });
+      void taskWorkspaceClient.setSessionUnread({ repoId: task.repoId, taskId: task.id, sessionId, unread });
     },
-    [task.id],
+    [task.id, task.repoId],
   );
 
   const startRenamingSession = useCallback(
@@ -609,6 +614,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
     }
 
     void taskWorkspaceClient.renameSession({
+      repoId: task.repoId,
       taskId: task.id,
       sessionId: editingSessionId,
       title: trimmedName,
@@ -629,9 +635,9 @@ const TranscriptPanel = memo(function TranscriptPanel({
       }
 
       onSyncRouteSession(task.id, nextSessionId);
-      void taskWorkspaceClient.closeSession({ taskId: task.id, sessionId });
+      void taskWorkspaceClient.closeSession({ repoId: task.repoId, taskId: task.id, sessionId });
     },
-    [activeSessionId, task.id, task.sessions, lastAgentSessionId, onSetActiveSessionId, onSetLastAgentSessionId, onSyncRouteSession],
+    [activeSessionId, task.id, task.repoId, task.sessions, lastAgentSessionId, onSetActiveSessionId, onSetLastAgentSessionId, onSyncRouteSession],
   );
 
   const closeDiffTab = useCallback(
@@ -649,12 +655,12 @@ const TranscriptPanel = memo(function TranscriptPanel({
 
   const addSession = useCallback(() => {
     void (async () => {
-      const { sessionId } = await taskWorkspaceClient.addSession({ taskId: task.id });
+      const { sessionId } = await taskWorkspaceClient.addSession({ repoId: task.repoId, taskId: task.id });
       onSetLastAgentSessionId(sessionId);
       onSetActiveSessionId(sessionId);
       onSyncRouteSession(task.id, sessionId);
     })();
-  }, [task.id, onSetActiveSessionId, onSetLastAgentSessionId, onSyncRouteSession]);
+  }, [task.id, task.repoId, onSetActiveSessionId, onSetLastAgentSessionId, onSyncRouteSession]);
 
   const changeModel = useCallback(
     (model: ModelId) => {
@@ -663,6 +669,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
       }
 
       void taskWorkspaceClient.changeModel({
+        repoId: task.repoId,
         taskId: task.id,
         sessionId: promptSession.id,
         model,
@@ -1663,7 +1670,7 @@ export function MockLayout({ organizationId, selectedTaskId, selectedSessionId }
     autoCreatingSessionForTaskRef.current.add(activeTask.id);
     void (async () => {
       try {
-        const { sessionId } = await taskWorkspaceClient.addSession({ taskId: activeTask.id });
+        const { sessionId } = await taskWorkspaceClient.addSession({ repoId: activeTask.repoId, taskId: activeTask.id });
         syncRouteSession(activeTask.id, sessionId, true);
       } catch (error) {
         logger.error(
@@ -1755,9 +1762,16 @@ export function MockLayout({ organizationId, selectedTaskId, selectedSessionId }
     [materializeOpenPullRequest, navigate, openPullRequestsByTaskId, tasks, organizationId],
   );
 
-  const markTaskUnread = useCallback((id: string) => {
-    void taskWorkspaceClient.markTaskUnread({ taskId: id });
-  }, []);
+  const markTaskUnread = useCallback(
+    (id: string) => {
+      const task = tasks.find((candidate) => candidate.id === id);
+      if (!task) {
+        return;
+      }
+      void taskWorkspaceClient.markTaskUnread({ repoId: task.repoId, taskId: id });
+    },
+    [tasks],
+  );
 
   const renameTask = useCallback(
     (id: string) => {
@@ -1776,7 +1790,7 @@ export function MockLayout({ organizationId, selectedTaskId, selectedSessionId }
         return;
       }
 
-      void taskWorkspaceClient.renameTask({ taskId: id, value: trimmedTitle });
+      void taskWorkspaceClient.renameTask({ repoId: currentTask.repoId, taskId: id, value: trimmedTitle });
     },
     [tasks],
   );
@@ -1785,14 +1799,14 @@ export function MockLayout({ organizationId, selectedTaskId, selectedSessionId }
     if (!activeTask) {
       throw new Error("Cannot archive without an active task");
     }
-    void taskWorkspaceClient.archiveTask({ taskId: activeTask.id });
+    void taskWorkspaceClient.archiveTask({ repoId: activeTask.repoId, taskId: activeTask.id });
   }, [activeTask]);
 
   const publishPr = useCallback(() => {
     if (!activeTask) {
       throw new Error("Cannot publish PR without an active task");
     }
-    void taskWorkspaceClient.publishPr({ taskId: activeTask.id });
+    void taskWorkspaceClient.publishPr({ repoId: activeTask.repoId, taskId: activeTask.id });
   }, [activeTask]);
 
   const revertFile = useCallback(
@@ -1813,6 +1827,7 @@ export function MockLayout({ organizationId, selectedTaskId, selectedSessionId }
       }));
 
       void taskWorkspaceClient.revertFile({
+        repoId: activeTask.repoId,
         taskId: activeTask.id,
         path,
       });
