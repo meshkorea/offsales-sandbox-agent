@@ -104,15 +104,16 @@ export interface WorkspaceParsedDiffLine {
 
 export interface WorkspacePullRequestSummary {
   number: number;
-  title: string;
-  state: string;
-  url: string;
-  headRefName: string;
-  baseRefName: string;
-  repoFullName: string;
-  authorLogin: string | null;
-  isDraft: boolean;
-  updatedAtMs: number;
+  status: "draft" | "ready";
+  title?: string;
+  state?: string;
+  url?: string;
+  headRefName?: string;
+  baseRefName?: string;
+  repoFullName?: string;
+  authorLogin?: string | null;
+  isDraft?: boolean;
+  updatedAtMs?: number;
 }
 
 export interface WorkspaceSandboxSummary {
@@ -241,6 +242,7 @@ export interface TaskWorkspaceRenameInput {
   repoId: string;
   taskId: string;
   value: string;
+  authSessionId?: string;
 }
 
 export interface TaskWorkspaceSendMessageInput {

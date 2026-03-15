@@ -113,7 +113,7 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
   },
 
   "task.command.workspace.mark_unread": async (loopCtx, msg) => {
-    await loopCtx.step("workspace-mark-unread", async () => markWorkspaceUnread(loopCtx));
+    await loopCtx.step("workspace-mark-unread", async () => markWorkspaceUnread(loopCtx, msg.body?.authSessionId));
     await msg.complete({ ok: true });
   },
 
@@ -127,7 +127,7 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
       const created = await loopCtx.step({
         name: "workspace-create-session",
         timeout: 5 * 60_000,
-        run: async () => createWorkspaceSession(loopCtx, msg.body?.model),
+        run: async () => createWorkspaceSession(loopCtx, msg.body?.model, msg.body?.authSessionId),
       });
       await msg.complete(created);
     } catch (error) {
@@ -140,12 +140,12 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
       const created = await loopCtx.step({
         name: "workspace-create-session-for-send",
         timeout: 5 * 60_000,
-        run: async () => createWorkspaceSession(loopCtx, msg.body?.model),
+        run: async () => createWorkspaceSession(loopCtx, msg.body?.model, msg.body?.authSessionId),
       });
       await loopCtx.step({
         name: "workspace-send-initial-message",
         timeout: 5 * 60_000,
-        run: async () => sendWorkspaceMessage(loopCtx, created.sessionId, msg.body.text, []),
+        run: async () => sendWorkspaceMessage(loopCtx, created.sessionId, msg.body.text, [], msg.body?.authSessionId),
       });
     } catch (error) {
       logActorWarning("task.workflow", "create_session_and_send failed", {
@@ -159,7 +159,7 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
     await loopCtx.step({
       name: "workspace-ensure-session",
       timeout: 5 * 60_000,
-      run: async () => ensureWorkspaceSession(loopCtx, msg.body.sessionId, msg.body?.model),
+      run: async () => ensureWorkspaceSession(loopCtx, msg.body.sessionId, msg.body?.model, msg.body?.authSessionId),
     });
     await msg.complete({ ok: true });
   },
@@ -170,12 +170,16 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
   },
 
   "task.command.workspace.set_session_unread": async (loopCtx, msg) => {
-    await loopCtx.step("workspace-set-session-unread", async () => setWorkspaceSessionUnread(loopCtx, msg.body.sessionId, msg.body.unread));
+    await loopCtx.step("workspace-set-session-unread", async () =>
+      setWorkspaceSessionUnread(loopCtx, msg.body.sessionId, msg.body.unread, msg.body?.authSessionId),
+    );
     await msg.complete({ ok: true });
   },
 
   "task.command.workspace.update_draft": async (loopCtx, msg) => {
-    await loopCtx.step("workspace-update-draft", async () => updateWorkspaceDraft(loopCtx, msg.body.sessionId, msg.body.text, msg.body.attachments));
+    await loopCtx.step("workspace-update-draft", async () =>
+      updateWorkspaceDraft(loopCtx, msg.body.sessionId, msg.body.text, msg.body.attachments, msg.body?.authSessionId),
+    );
     await msg.complete({ ok: true });
   },
 
@@ -189,7 +193,7 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
       await loopCtx.step({
         name: "workspace-send-message",
         timeout: 10 * 60_000,
-        run: async () => sendWorkspaceMessage(loopCtx, msg.body.sessionId, msg.body.text, msg.body.attachments),
+        run: async () => sendWorkspaceMessage(loopCtx, msg.body.sessionId, msg.body.text, msg.body.attachments, msg.body?.authSessionId),
       });
       await msg.complete({ ok: true });
     } catch (error) {
@@ -233,7 +237,7 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
     await loopCtx.step({
       name: "workspace-close-session",
       timeout: 5 * 60_000,
-      run: async () => closeWorkspaceSession(loopCtx, msg.body.sessionId),
+      run: async () => closeWorkspaceSession(loopCtx, msg.body.sessionId, msg.body?.authSessionId),
     });
     await msg.complete({ ok: true });
   },

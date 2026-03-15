@@ -32,7 +32,6 @@ CREATE TABLE \`task_index\` (
 --> statement-breakpoint
 CREATE TABLE \`tasks\` (
 	\`task_id\` text PRIMARY KEY NOT NULL,
-	\`repo_id\` text NOT NULL,
 	\`title\` text NOT NULL,
 	\`status\` text NOT NULL,
 	\`repo_name\` text NOT NULL,

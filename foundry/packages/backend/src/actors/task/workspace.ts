@@ -1328,14 +1328,6 @@ export async function publishWorkspacePr(c: any): Promise<void> {
     githubToken: auth?.githubToken ?? null,
     baseBranch: metadata.defaultBranch ?? undefined,
   });
-  await c.db
-    .update(taskTable)
-    .set({
-      prSubmitted: 1,
-      updatedAt: Date.now(),
-    })
-    .where(eq(taskTable.id, 1))
-    .run();
   await broadcastTaskUpdate(c);
 }
 

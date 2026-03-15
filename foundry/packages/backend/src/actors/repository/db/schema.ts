@@ -41,19 +41,3 @@ export const tasks = sqliteTable("tasks", {
   pullRequestJson: text("pull_request_json"),
   sessionsSummaryJson: text("sessions_summary_json").notNull().default("[]"),
 });
-
-/**
- * Materialized task summary projection owned by the repository coordinator.
- * Task actors push updates here; organization reads fan in through repositories.
- */
-export const tasks = sqliteTable("tasks", {
-  taskId: text("task_id").notNull().primaryKey(),
-  repoId: text("repo_id").notNull(),
-  title: text("title").notNull(),
-  status: text("status").notNull(),
-  repoName: text("repo_name").notNull(),
-  updatedAtMs: integer("updated_at_ms").notNull(),
-  branch: text("branch"),
-  pullRequestJson: text("pull_request_json"),
-  sessionsSummaryJson: text("sessions_summary_json").notNull().default("[]"),
-});

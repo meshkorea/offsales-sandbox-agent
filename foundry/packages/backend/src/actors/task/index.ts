@@ -57,6 +57,7 @@ interface TaskActionCommand {
 
 interface TaskSessionCommand {
   sessionId: string;
+  authSessionId?: string;
 }
 
 interface TaskStatusSyncCommand {
