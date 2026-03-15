@@ -87,7 +87,7 @@ export function summarizeTasks(rows: TaskRecord[]): TaskSummary {
 
   for (const row of rows) {
     byStatus[groupTaskStatus(row.status)] += 1;
-    byProvider[row.providerId] = (byProvider[row.providerId] ?? 0) + 1;
+    byProvider[row.sandboxProviderId] = (byProvider[row.sandboxProviderId] ?? 0) + 1;
   }
 
   return {

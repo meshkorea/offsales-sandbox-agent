@@ -15,7 +15,7 @@ export const ConfigSchema = z.object({
     })
     .optional(),
   notify: z.array(NotifyBackendSchema).default(["terminal"]),
-  workspace: z
+  organization: z
     .object({
       default: z.string().min(1).default("default"),
     })
@@ -39,7 +39,7 @@ export const ConfigSchema = z.object({
       backup_interval_secs: 3600,
       backup_retention_days: 7,
     }),
-  providers: z
+  sandboxProviders: z
     .object({
       local: z
         .object({

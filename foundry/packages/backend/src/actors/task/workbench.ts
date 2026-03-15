@@ -3,10 +3,11 @@ import { randomUUID } from "node:crypto";
 import { basename, dirname } from "node:path";
 import { asc, eq } from "drizzle-orm";
 import { getActorRuntimeContext } from "../context.js";
-import { getOrCreateProject, getOrCreateTaskSandbox, getOrCreateWorkspace, getTaskSandbox, selfTask } from "../handles.js";
+import { getOrCreateRepository, getOrCreateTaskSandbox, getOrCreateOrganization, getTaskSandbox, selfTask } from "../handles.js";
 import { SANDBOX_REPO_CWD } from "../sandbox/index.js";
 import { resolveSandboxProviderId } from "../../sandbox-config.js";
-import { resolveWorkspaceGithubAuth } from "../../services/github-auth.js";
+import { resolveOrganizationGithubAuth } from "../../services/github-auth.js";
+import { githubRepoFullNameFromRemote } from "../../services/repo.js";
 import { task as taskTable, taskRuntime, taskSandboxes, taskWorkbenchSessions } from "./db/schema.js";
 import { getCurrentRecord } from "./workflow/common.js";
 
@@ -172,8 +173,7 @@ async function listSessionMetaRows(c: any, options?: { includeClosed?: boolean }
   const mapped = rows.map((row: any) => ({
     ...row,
     id: row.sessionId,
-    sessionId: row.sandboxSessionId ?? null,
-    tabId: row.sessionId,
+    sessionId: row.sessionId,
     sandboxSessionId: row.sandboxSessionId ?? null,
     status: row.status ?? "ready",
     errorMessage: row.errorMessage ?? null,
@@ -209,8 +209,7 @@ async function readSessionMeta(c: any, sessionId: string): Promise<any | null> {
   return {
     ...row,
     id: row.sessionId,
-    sessionId: row.sandboxSessionId ?? null,
-    tabId: row.sessionId,
+    sessionId: row.sessionId,
     sandboxSessionId: row.sandboxSessionId ?? null,
     status: row.status ?? "ready",
     errorMessage: row.errorMessage ?? null,
@@ -227,7 +226,7 @@ async function readSessionMeta(c: any, sessionId: string): Promise<any | null> {
 async function ensureSessionMeta(
   c: any,
   params: {
-    tabId: string;
+    sessionId: string;
     sandboxSessionId?: string | null;
     model?: string;
     sessionName?: string;
@@ -238,7 +237,7 @@ async function ensureSessionMeta(
   },
 ): Promise<any> {
   await ensureWorkbenchSessionTable(c);
-  const existing = await readSessionMeta(c, params.tabId);
+  const existing = await readSessionMeta(c, params.sessionId);
   if (existing) {
     return existing;
   }
@@ -251,7 +250,7 @@ async function ensureSessionMeta(
   await c.db
     .insert(taskWorkbenchSessions)
     .values({
-      sessionId: params.tabId,
+      sessionId: params.sessionId,
       sandboxSessionId: params.sandboxSessionId ?? null,
       sessionName,
       model,
@@ -271,20 +270,20 @@ async function ensureSessionMeta(
     })
     .run();
 
-  return await readSessionMeta(c, params.tabId);
+  return await readSessionMeta(c, params.sessionId);
 }
 
-async function updateSessionMeta(c: any, tabId: string, values: Record<string, unknown>): Promise<any> {
-  await ensureSessionMeta(c, { tabId });
+async function updateSessionMeta(c: any, sessionId: string, values: Record<string, unknown>): Promise<any> {
+  await ensureSessionMeta(c, { sessionId });
   await c.db
     .update(taskWorkbenchSessions)
     .set({
       ...values,
       updatedAt: Date.now(),
     })
-    .where(eq(taskWorkbenchSessions.sessionId, tabId))
+    .where(eq(taskWorkbenchSessions.sessionId, sessionId))
     .run();
-  return await readSessionMeta(c, tabId);
+  return await readSessionMeta(c, sessionId);
 }
 
 async function readSessionMetaBySandboxSessionId(c: any, sandboxSessionId: string): Promise<any | null> {
@@ -296,33 +295,25 @@ async function readSessionMetaBySandboxSessionId(c: any, sandboxSessionId: strin
   return await readSessionMeta(c, row.sessionId);
 }
 
-async function requireReadySessionMeta(c: any, tabId: string): Promise<any> {
-  const meta = await readSessionMeta(c, tabId);
+async function requireReadySessionMeta(c: any, sessionId: string): Promise<any> {
+  const meta = await readSessionMeta(c, sessionId);
   if (!meta) {
-    throw new Error(`Unknown workbench tab: ${tabId}`);
+    throw new Error(`Unknown workbench session: ${sessionId}`);
   }
   if (meta.status !== "ready" || !meta.sandboxSessionId) {
-    throw new Error(meta.errorMessage ?? "This workbench tab is still preparing");
+    throw new Error(meta.errorMessage ?? "This workbench session is still preparing");
   }
   return meta;
 }
 
-async function ensureReadySessionMeta(c: any, tabId: string): Promise<any> {
-  const meta = await readSessionMeta(c, tabId);
+export function requireSendableSessionMeta(meta: any, sessionId: string): any {
   if (!meta) {
-    throw new Error(`Unknown workbench tab: ${tabId}`);
+    throw new Error(`Unknown workbench session: ${sessionId}`);
   }
-
-  if (meta.status === "ready" && meta.sandboxSessionId) {
-    return meta;
+  if (meta.status !== "ready" || !meta.sandboxSessionId) {
+    throw new Error(`Session is not ready (status: ${meta.status}). Wait for session provisioning to complete.`);
   }
-
-  if (meta.status === "error") {
-    throw new Error(meta.errorMessage ?? "This workbench tab failed to prepare");
-  }
-
-  await ensureWorkbenchSession(c, tabId);
-  return await requireReadySessionMeta(c, tabId);
+  return meta;
 }
 
 function shellFragment(parts: string[]): string {
@@ -339,23 +330,23 @@ async function getTaskSandboxRuntime(
 ): Promise<{
   sandbox: any;
   sandboxId: string;
-  providerId: string;
+  sandboxProviderId: string;
   switchTarget: string;
   cwd: string;
 }> {
   const { config } = getActorRuntimeContext();
   const sandboxId = stableSandboxId(c);
-  const providerId = resolveSandboxProviderId(config, record.providerId ?? c.state.providerId ?? null);
-  const sandbox = await getOrCreateTaskSandbox(c, c.state.workspaceId, sandboxId, {});
+  const sandboxProviderId = resolveSandboxProviderId(config, record.sandboxProviderId ?? c.state.sandboxProviderId ?? null);
+  const sandbox = await getOrCreateTaskSandbox(c, c.state.organizationId, sandboxId, {});
   const actorId = typeof sandbox.resolve === "function" ? await sandbox.resolve().catch(() => null) : null;
-  const switchTarget = providerId === "local" ? `sandbox://local/${sandboxId}` : `sandbox://e2b/${sandboxId}`;
+  const switchTarget = sandboxProviderId === "local" ? `sandbox://local/${sandboxId}` : `sandbox://e2b/${sandboxId}`;
   const now = Date.now();
 
   await c.db
     .insert(taskSandboxes)
     .values({
       sandboxId,
-      providerId,
+      sandboxProviderId,
       sandboxActorId: typeof actorId === "string" ? actorId : null,
       switchTarget,
       cwd: SANDBOX_REPO_CWD,
@@ -366,7 +357,7 @@ async function getTaskSandboxRuntime(
     .onConflictDoUpdate({
       target: taskSandboxes.sandboxId,
       set: {
-        providerId,
+        sandboxProviderId,
         sandboxActorId: typeof actorId === "string" ? actorId : null,
         switchTarget,
         cwd: SANDBOX_REPO_CWD,
@@ -389,7 +380,7 @@ async function getTaskSandboxRuntime(
   return {
     sandbox,
     sandboxId,
-    providerId,
+    sandboxProviderId,
     switchTarget,
     cwd: SANDBOX_REPO_CWD,
   };
@@ -400,17 +391,10 @@ async function ensureSandboxRepo(c: any, sandbox: any, record: any): Promise<voi
     throw new Error("cannot prepare a sandbox repo before the task branch exists");
   }
 
-  const { driver } = getActorRuntimeContext();
-  const auth = await resolveWorkspaceGithubAuth(c, c.state.workspaceId);
-  let repoLocalPath = c.state.repoLocalPath;
-  if (!repoLocalPath) {
-    const project = await getOrCreateProject(c, c.state.workspaceId, c.state.repoId, c.state.repoRemote);
-    const ensured = await project.ensure({ remoteUrl: c.state.repoRemote });
-    repoLocalPath = ensured.localPath;
-    c.state.repoLocalPath = repoLocalPath;
-  }
-
-  const baseRef = await driver.git.remoteDefaultBaseRef(repoLocalPath);
+  const auth = await resolveOrganizationGithubAuth(c, c.state.organizationId);
+  const repository = await getOrCreateRepository(c, c.state.organizationId, c.state.repoId, c.state.repoRemote);
+  const metadata = await repository.getRepositoryMetadata({});
+  const baseRef = metadata.defaultBranch ?? "main";
   const sandboxRepoRoot = dirname(SANDBOX_REPO_CWD);
   const script = [
     "set -euo pipefail",
@@ -665,7 +649,7 @@ async function readSessionTranscript(c: any, record: any, sessionId: string) {
     return [];
   }
 
-  const sandbox = getTaskSandbox(c, c.state.workspaceId, sandboxId);
+  const sandbox = getTaskSandbox(c, c.state.organizationId, sandboxId);
   const page = await sandbox.getEvents({
     sessionId,
     limit: 100,
@@ -681,8 +665,8 @@ async function readSessionTranscript(c: any, record: any, sessionId: string) {
   }));
 }
 
-async function writeSessionTranscript(c: any, tabId: string, transcript: Array<any>): Promise<void> {
-  await updateSessionMeta(c, tabId, {
+async function writeSessionTranscript(c: any, sessionId: string, transcript: Array<any>): Promise<void> {
+  await updateSessionMeta(c, sessionId, {
     transcriptJson: JSON.stringify(transcript),
     transcriptUpdatedAt: Date.now(),
   });
@@ -697,12 +681,12 @@ async function enqueueWorkbenchRefresh(
   await self.send(command, body, { wait: false });
 }
 
-async function enqueueWorkbenchEnsureSession(c: any, tabId: string): Promise<void> {
+async function enqueueWorkbenchEnsureSession(c: any, sessionId: string): Promise<void> {
   const self = selfTask(c);
   await self.send(
     "task.command.workbench.ensure_session",
     {
-      tabId,
+      sessionId,
     },
     {
       wait: false,
@@ -750,8 +734,8 @@ async function readPullRequestSummary(c: any, branchName: string | null) {
   }
 
   try {
-    const project = await getOrCreateProject(c, c.state.workspaceId, c.state.repoId, c.state.repoRemote);
-    return await project.getPullRequestForBranch({ branchName });
+    const repository = await getOrCreateRepository(c, c.state.organizationId, c.state.repoId, c.state.repoRemote);
+    return await repository.getPullRequestForBranch({ branchName });
   } catch {
     return null;
   }
@@ -762,7 +746,7 @@ export async function ensureWorkbenchSeeded(c: any): Promise<any> {
   const record = await getCurrentRecord({ db: c.db, state: c.state });
   if (record.activeSessionId) {
     await ensureSessionMeta(c, {
-      tabId: record.activeSessionId,
+      sessionId: record.activeSessionId,
       sandboxSessionId: record.activeSessionId,
       model: defaultModelForAgent(record.agentType),
       sessionName: "Session 1",
@@ -791,7 +775,8 @@ function buildSessionSummary(record: any, meta: any): any {
 
   return {
     id: meta.id,
-    sessionId: derivedSandboxSessionId,
+    sessionId: meta.sessionId,
+    sandboxSessionId: derivedSandboxSessionId,
     sessionName: meta.sessionName,
     agent: agentKindForModel(meta.model),
     model: meta.model,
@@ -806,9 +791,8 @@ function buildSessionSummary(record: any, meta: any): any {
 function buildSessionDetailFromMeta(record: any, meta: any): any {
   const summary = buildSessionSummary(record, meta);
   return {
-    sessionId: meta.tabId,
-    tabId: meta.tabId,
-    sandboxSessionId: summary.sessionId,
+    sessionId: meta.sessionId,
+    sandboxSessionId: summary.sandboxSessionId ?? null,
     sessionName: summary.sessionName,
     agent: summary.agent,
     model: summary.model,
@@ -828,7 +812,7 @@ function buildSessionDetailFromMeta(record: any, meta: any): any {
 
 /**
  * Builds a WorkbenchTaskSummary from local task actor state. Task actors push
- * this to the parent workspace actor so workspace sidebar reads stay local.
+ * this to the parent organization actor so organization sidebar reads stay local.
  */
 export async function buildTaskSummary(c: any): Promise<any> {
   const record = await ensureWorkbenchSeeded(c);
@@ -874,7 +858,7 @@ export async function buildTaskDetail(c: any): Promise<any> {
     fileTree: gitState.fileTree,
     minutesUsed: 0,
     sandboxes: (record.sandboxes ?? []).map((sandbox: any) => ({
-      providerId: sandbox.providerId,
+      sandboxProviderId: sandbox.sandboxProviderId,
       sandboxId: sandbox.sandboxId,
       cwd: sandbox.cwd ?? null,
     })),
@@ -883,13 +867,13 @@ export async function buildTaskDetail(c: any): Promise<any> {
 }
 
 /**
- * Builds a WorkbenchSessionDetail for a specific session tab.
+ * Builds a WorkbenchSessionDetail for a specific session.
  */
-export async function buildSessionDetail(c: any, tabId: string): Promise<any> {
+export async function buildSessionDetail(c: any, sessionId: string): Promise<any> {
   const record = await ensureWorkbenchSeeded(c);
-  const meta = await readSessionMeta(c, tabId);
+  const meta = await readSessionMeta(c, sessionId);
   if (!meta || meta.closed) {
-    throw new Error(`Unknown workbench session tab: ${tabId}`);
+    throw new Error(`Unknown workbench session: ${sessionId}`);
   }
 
   if (!meta.sandboxSessionId) {
@@ -899,7 +883,7 @@ export async function buildSessionDetail(c: any, tabId: string): Promise<any> {
   try {
     const transcript = await readSessionTranscript(c, record, meta.sandboxSessionId);
     if (JSON.stringify(meta.transcript ?? []) !== JSON.stringify(transcript)) {
-      await writeSessionTranscript(c, meta.tabId, transcript);
+      await writeSessionTranscript(c, meta.sessionId, transcript);
       return buildSessionDetailFromMeta(record, {
         ...meta,
         transcript,
@@ -921,21 +905,21 @@ export async function getTaskDetail(c: any): Promise<any> {
   return await buildTaskDetail(c);
 }
 
-export async function getSessionDetail(c: any, tabId: string): Promise<any> {
-  return await buildSessionDetail(c, tabId);
+export async function getSessionDetail(c: any, sessionId: string): Promise<any> {
+  return await buildSessionDetail(c, sessionId);
 }
 
 /**
  * Replaces the old notifyWorkbenchUpdated pattern.
  *
  * The task actor emits two kinds of updates:
- * - Push summary state up to the parent workspace actor so the sidebar
+ * - Push summary state up to the parent organization actor so the sidebar
  *   materialized projection stays current.
  * - Broadcast full detail/session payloads down to direct task subscribers.
  */
 export async function broadcastTaskUpdate(c: any, options?: { sessionId?: string }): Promise<void> {
-  const workspace = await getOrCreateWorkspace(c, c.state.workspaceId);
-  await workspace.applyTaskSummaryUpdate({ taskSummary: await buildTaskSummary(c) });
+  const organization = await getOrCreateOrganization(c, c.state.organizationId);
+  await organization.applyTaskSummaryUpdate({ taskSummary: await buildTaskSummary(c) });
   c.broadcast("taskUpdated", {
     type: "taskDetailUpdated",
     detail: await buildTaskDetail(c),
@@ -964,8 +948,8 @@ export async function refreshWorkbenchSessionTranscript(c: any, sessionId: strin
   }
 
   const transcript = await readSessionTranscript(c, record, meta.sandboxSessionId);
-  await writeSessionTranscript(c, meta.tabId, transcript);
-  await broadcastTaskUpdate(c, { sessionId: meta.tabId });
+  await writeSessionTranscript(c, meta.sessionId, transcript);
+  await broadcastTaskUpdate(c, { sessionId: meta.sessionId });
 }
 
 export async function renameWorkbenchTask(c: any, value: string): Promise<void> {
@@ -1029,31 +1013,31 @@ export async function renameWorkbenchBranch(c: any, value: string): Promise<void
     .run();
   c.state.branchName = nextBranch;
 
-  const project = await getOrCreateProject(c, c.state.workspaceId, c.state.repoId, c.state.repoRemote);
-  await project.registerTaskBranch({
+  const repository = await getOrCreateRepository(c, c.state.organizationId, c.state.repoId, c.state.repoRemote);
+  await repository.registerTaskBranch({
     taskId: c.state.taskId,
     branchName: nextBranch,
   });
   await broadcastTaskUpdate(c);
 }
 
-export async function createWorkbenchSession(c: any, model?: string): Promise<{ tabId: string }> {
-  const tabId = `tab-${randomUUID()}`;
+export async function createWorkbenchSession(c: any, model?: string): Promise<{ sessionId: string }> {
+  const sessionId = `session-${randomUUID()}`;
   const record = await ensureWorkbenchSeeded(c);
   await ensureSessionMeta(c, {
-    tabId,
+    sessionId,
     model: model ?? defaultModelForAgent(record.agentType),
     sandboxSessionId: null,
     status: pendingWorkbenchSessionStatus(record),
     created: false,
   });
-  await broadcastTaskUpdate(c, { sessionId: tabId });
-  await enqueueWorkbenchEnsureSession(c, tabId);
-  return { tabId };
+  await broadcastTaskUpdate(c, { sessionId: sessionId });
+  await enqueueWorkbenchEnsureSession(c, sessionId);
+  return { sessionId };
 }
 
-export async function ensureWorkbenchSession(c: any, tabId: string, model?: string): Promise<void> {
-  const meta = await readSessionMeta(c, tabId);
+export async function ensureWorkbenchSession(c: any, sessionId: string, model?: string): Promise<void> {
+  const meta = await readSessionMeta(c, sessionId);
   if (!meta || meta.closed) {
     return;
   }
@@ -1063,12 +1047,12 @@ export async function ensureWorkbenchSession(c: any, tabId: string, model?: stri
     await enqueueWorkbenchRefresh(c, "task.command.workbench.refresh_session_transcript", {
       sessionId: meta.sandboxSessionId,
     });
-    await broadcastTaskUpdate(c, { sessionId: tabId });
+    await broadcastTaskUpdate(c, { sessionId: sessionId });
     return;
   }
 
-  await updateSessionMeta(c, tabId, {
-    sandboxSessionId: meta.sandboxSessionId ?? tabId,
+  await updateSessionMeta(c, sessionId, {
+    sandboxSessionId: meta.sandboxSessionId ?? sessionId,
     status: "pending_session_create",
     errorMessage: null,
   });
@@ -1077,7 +1061,7 @@ export async function ensureWorkbenchSession(c: any, tabId: string, model?: stri
     const runtime = await getTaskSandboxRuntime(c, record);
     await ensureSandboxRepo(c, runtime.sandbox, record);
     await runtime.sandbox.createSession({
-      id: meta.sandboxSessionId ?? tabId,
+      id: meta.sandboxSessionId ?? sessionId,
       agent: agentTypeForModel(model ?? meta.model ?? defaultModelForAgent(record.agentType)),
       model: model ?? meta.model ?? defaultModelForAgent(record.agentType),
       sessionInit: {
@@ -1085,22 +1069,22 @@ export async function ensureWorkbenchSession(c: any, tabId: string, model?: stri
       },
     });
 
-    await updateSessionMeta(c, tabId, {
-      sandboxSessionId: meta.sandboxSessionId ?? tabId,
+    await updateSessionMeta(c, sessionId, {
+      sandboxSessionId: meta.sandboxSessionId ?? sessionId,
       status: "ready",
       errorMessage: null,
     });
     await enqueueWorkbenchRefresh(c, "task.command.workbench.refresh_session_transcript", {
-      sessionId: meta.sandboxSessionId ?? tabId,
+      sessionId: meta.sandboxSessionId ?? sessionId,
     });
   } catch (error) {
-    await updateSessionMeta(c, tabId, {
+    await updateSessionMeta(c, sessionId, {
       status: "error",
       errorMessage: error instanceof Error ? error.message : String(error),
     });
   }
 
-  await broadcastTaskUpdate(c, { sessionId: tabId });
+  await broadcastTaskUpdate(c, { sessionId: sessionId });
 }
 
 export async function enqueuePendingWorkbenchSessions(c: any): Promise<void> {
@@ -1113,7 +1097,7 @@ export async function enqueuePendingWorkbenchSessions(c: any): Promise<void> {
     await self.send(
       "task.command.workbench.ensure_session",
       {
-        tabId: row.tabId,
+        sessionId: row.sessionId,
         model: row.model,
       },
       {
@@ -1167,7 +1151,7 @@ export async function changeWorkbenchModel(c: any, sessionId: string, model: str
   let shouldEnsure = nextMeta.status === "pending_provision" || nextMeta.status === "pending_session_create" || nextMeta.status === "error";
 
   if (shouldRecreateSessionForModelChange(nextMeta)) {
-    const sandbox = getTaskSandbox(c, c.state.workspaceId, stableSandboxId(c));
+    const sandbox = getTaskSandbox(c, c.state.organizationId, stableSandboxId(c));
     await sandbox.destroySession(nextMeta.sandboxSessionId);
     nextMeta = await updateSessionMeta(c, sessionId, {
       sandboxSessionId: null,
@@ -1179,7 +1163,7 @@ export async function changeWorkbenchModel(c: any, sessionId: string, model: str
     });
     shouldEnsure = true;
   } else if (nextMeta.status === "ready" && nextMeta.sandboxSessionId) {
-    const sandbox = getTaskSandbox(c, c.state.workspaceId, stableSandboxId(c));
+    const sandbox = getTaskSandbox(c, c.state.organizationId, stableSandboxId(c));
     if (typeof sandbox.rawSendSessionMethod === "function") {
       try {
         await sandbox.rawSendSessionMethod(nextMeta.sandboxSessionId, "session/set_config_option", {
@@ -1204,7 +1188,7 @@ export async function changeWorkbenchModel(c: any, sessionId: string, model: str
 }
 
 export async function sendWorkbenchMessage(c: any, sessionId: string, text: string, attachments: Array<any>): Promise<void> {
-  const meta = await ensureReadySessionMeta(c, sessionId);
+  const meta = requireSendableSessionMeta(await readSessionMeta(c, sessionId), sessionId);
   const record = await ensureWorkbenchSeeded(c);
   const runtime = await getTaskSandboxRuntime(c, record);
   await ensureSandboxRepo(c, runtime.sandbox, record);
@@ -1253,7 +1237,7 @@ export async function sendWorkbenchMessage(c: any, sessionId: string, text: stri
 
 export async function stopWorkbenchSession(c: any, sessionId: string): Promise<void> {
   const meta = await requireReadySessionMeta(c, sessionId);
-  const sandbox = getTaskSandbox(c, c.state.workspaceId, stableSandboxId(c));
+  const sandbox = getTaskSandbox(c, c.state.organizationId, stableSandboxId(c));
   await sandbox.destroySession(meta.sandboxSessionId);
   await updateSessionMeta(c, sessionId, {
     thinkingSinceMs: null,
@@ -1263,7 +1247,7 @@ export async function stopWorkbenchSession(c: any, sessionId: string): Promise<v
 
 export async function syncWorkbenchSessionStatus(c: any, sessionId: string, status: "running" | "idle" | "error", at: number): Promise<void> {
   const record = await ensureWorkbenchSeeded(c);
-  const meta = (await readSessionMetaBySandboxSessionId(c, sessionId)) ?? (await ensureSessionMeta(c, { tabId: sessionId, sandboxSessionId: sessionId }));
+  const meta = (await readSessionMetaBySandboxSessionId(c, sessionId)) ?? (await ensureSessionMeta(c, { sessionId: sessionId, sandboxSessionId: sessionId }));
   let changed = false;
 
   if (record.activeSessionId === sessionId || record.activeSessionId === meta.sandboxSessionId) {
@@ -1317,13 +1301,13 @@ export async function syncWorkbenchSessionStatus(c: any, sessionId: string, stat
   }
 
   if (changed) {
+    await enqueueWorkbenchRefresh(c, "task.command.workbench.refresh_session_transcript", {
+      sessionId,
+    });
     if (status !== "running") {
-      await enqueueWorkbenchRefresh(c, "task.command.workbench.refresh_session_transcript", {
-        sessionId,
-      });
       await enqueueWorkbenchRefresh(c, "task.command.workbench.refresh_derived", {});
     }
-    await broadcastTaskUpdate(c, { sessionId: meta.tabId });
+    await broadcastTaskUpdate(c, { sessionId: meta.sessionId });
   }
 }
 
@@ -1339,7 +1323,7 @@ export async function closeWorkbenchSession(c: any, sessionId: string): Promise<
     return;
   }
   if (meta.sandboxSessionId) {
-    const sandbox = getTaskSandbox(c, c.state.workspaceId, stableSandboxId(c));
+    const sandbox = getTaskSandbox(c, c.state.organizationId, stableSandboxId(c));
     await sandbox.destroySession(meta.sandboxSessionId);
   }
   await updateSessionMeta(c, sessionId, {
@@ -1365,10 +1349,10 @@ export async function markWorkbenchUnread(c: any): Promise<void> {
   if (!latest) {
     return;
   }
-  await updateSessionMeta(c, latest.tabId, {
+  await updateSessionMeta(c, latest.sessionId, {
     unread: 1,
   });
-  await broadcastTaskUpdate(c, { sessionId: latest.tabId });
+  await broadcastTaskUpdate(c, { sessionId: latest.sessionId });
 }
 
 export async function publishWorkbenchPr(c: any): Promise<void> {
@@ -1376,17 +1360,17 @@ export async function publishWorkbenchPr(c: any): Promise<void> {
   if (!record.branchName) {
     throw new Error("cannot publish PR without a branch");
   }
-  let repoLocalPath = c.state.repoLocalPath;
-  if (!repoLocalPath) {
-    const project = await getOrCreateProject(c, c.state.workspaceId, c.state.repoId, c.state.repoRemote);
-    const result = await project.ensure({ remoteUrl: c.state.repoRemote });
-    repoLocalPath = result.localPath;
-    c.state.repoLocalPath = repoLocalPath;
+  const repository = await getOrCreateRepository(c, c.state.organizationId, c.state.repoId, c.state.repoRemote);
+  const metadata = await repository.getRepositoryMetadata({});
+  const repoFullName = metadata.fullName ?? githubRepoFullNameFromRemote(c.state.repoRemote);
+  if (!repoFullName) {
+    throw new Error(`Unable to resolve GitHub repository for ${c.state.repoRemote}`);
   }
   const { driver } = getActorRuntimeContext();
-  const auth = await resolveWorkspaceGithubAuth(c, c.state.workspaceId);
-  const created = await driver.github.createPr(repoLocalPath, record.branchName, record.title ?? c.state.task, undefined, {
+  const auth = await resolveOrganizationGithubAuth(c, c.state.organizationId);
+  await driver.github.createPr(repoFullName, record.branchName, record.title ?? c.state.task, undefined, {
     githubToken: auth?.githubToken ?? null,
+    baseBranch: metadata.defaultBranch ?? undefined,
   });
   await c.db
     .update(taskTable)

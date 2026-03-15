@@ -3,14 +3,14 @@ import type { TaskRecord } from "@sandbox-agent/foundry-shared";
 import { filterTasks, formatRelativeAge, fuzzyMatch, summarizeTasks } from "../src/view-model.js";
 
 const sample: TaskRecord = {
-  workspaceId: "default",
+  organizationId: "default",
   repoId: "repo-a",
   repoRemote: "https://example.com/repo-a.git",
   taskId: "task-1",
   branchName: "feature/test",
   title: "Test Title",
   task: "Do test",
-  providerId: "local",
+  sandboxProviderId: "local",
   status: "running",
   statusMessage: null,
   activeSandboxId: "sandbox-1",
@@ -18,7 +18,7 @@ const sample: TaskRecord = {
   sandboxes: [
     {
       sandboxId: "sandbox-1",
-      providerId: "local",
+      sandboxProviderId: "local",
       sandboxActorId: null,
       switchTarget: "sandbox://local/sandbox-1",
       cwd: null,
@@ -59,7 +59,7 @@ describe("search helpers", () => {
       },
     ];
     expect(filterTasks(rows, "doc")).toHaveLength(1);
-    expect(filterTasks(rows, "h2")).toHaveLength(1);
+    expect(filterTasks(rows, "intro")).toHaveLength(1);
     expect(filterTasks(rows, "test")).toHaveLength(2);
   });
 });
@@ -73,8 +73,8 @@ describe("summary helpers", () => {
   it("summarizes by status and provider", () => {
     const rows: TaskRecord[] = [
       sample,
-      { ...sample, taskId: "task-2", status: "idle", providerId: "local" },
-      { ...sample, taskId: "task-3", status: "error", providerId: "local" },
+      { ...sample, taskId: "task-2", status: "idle", sandboxProviderId: "local" },
+      { ...sample, taskId: "task-3", status: "error", sandboxProviderId: "local" },
     ];
 
     const summary = summarizeTasks(rows);

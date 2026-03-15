@@ -2,7 +2,11 @@ import { logger } from "../logging.js";
 
 export function resolveErrorMessage(error: unknown): string {
   if (error instanceof Error) {
-    return error.message;
+    let msg = error.message;
+    if (error.cause) {
+      msg += ` [cause: ${resolveErrorMessage(error.cause)}]`;
+    }
+    return msg;
   }
   return String(error);
 }

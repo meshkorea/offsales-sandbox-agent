@@ -6,6 +6,18 @@ const journal = {
       tag: "0000_github_data",
       breakpoints: true,
     },
+    {
+      idx: 1,
+      when: 1773810002000,
+      tag: "0001_default_branch",
+      breakpoints: true,
+    },
+    {
+      idx: 2,
+      when: 1773810300000,
+      tag: "0002_github_branches",
+      breakpoints: true,
+    },
   ],
 } as const;
 
@@ -54,6 +66,16 @@ CREATE TABLE \`github_pull_requests\` (
 	\`base_ref_name\` text NOT NULL,
 	\`author_login\` text,
 	\`is_draft\` integer NOT NULL,
+	\`updated_at\` integer NOT NULL
+);
+`,
+    m0001: `ALTER TABLE \`github_repositories\` ADD \`default_branch\` text NOT NULL DEFAULT 'main';
+`,
+    m0002: `CREATE TABLE \`github_branches\` (
+	\`branch_id\` text PRIMARY KEY NOT NULL,
+	\`repo_id\` text NOT NULL,
+	\`branch_name\` text NOT NULL,
+	\`commit_sha\` text NOT NULL,
 	\`updated_at\` integer NOT NULL
 );
 `,

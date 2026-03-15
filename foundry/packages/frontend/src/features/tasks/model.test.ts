@@ -3,14 +3,14 @@ import type { TaskRecord } from "@sandbox-agent/foundry-shared";
 import { formatDiffStat, groupTasksByRepo } from "./model";
 
 const base: TaskRecord = {
-  workspaceId: "default",
+  organizationId: "default",
   repoId: "repo-a",
   repoRemote: "https://example.com/repo-a.git",
   taskId: "task-1",
   branchName: "feature/one",
   title: "Feature one",
   task: "Ship one",
-  providerId: "local",
+  sandboxProviderId: "local",
   status: "running",
   statusMessage: null,
   activeSandboxId: "sandbox-1",
@@ -18,7 +18,7 @@ const base: TaskRecord = {
   sandboxes: [
     {
       sandboxId: "sandbox-1",
-      providerId: "local",
+      sandboxProviderId: "local",
       sandboxActorId: null,
       switchTarget: "sandbox://local/sandbox-1",
       cwd: null,

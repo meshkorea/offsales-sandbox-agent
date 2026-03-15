@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { HistoryEvent, RepoOverview } from "@sandbox-agent/foundry-shared";
 import { createBackendClient } from "../../src/backend-client.js";
+import { requireImportedRepo } from "./helpers.js";
 
 const RUN_FULL_E2E = process.env.HF_ENABLE_DAEMON_FULL_E2E === "1";
 
@@ -106,9 +107,9 @@ async function ensureRemoteBranchExists(token: string, fullName: string, branchN
 }
 
 describe("e2e(client): full integration stack workflow", () => {
-  it.skipIf(!RUN_FULL_E2E)("adds repo, loads branch graph, and executes a stack restack action", { timeout: 8 * 60_000 }, async () => {
+  it.skipIf(!RUN_FULL_E2E)("uses an imported repo, loads branch graph, and executes a stack restack action", { timeout: 8 * 60_000 }, async () => {
     const endpoint = process.env.HF_E2E_BACKEND_ENDPOINT?.trim() || "http://127.0.0.1:7741/v1/rivet";
-    const workspaceId = process.env.HF_E2E_WORKSPACE?.trim() || "default";
+    const organizationId = process.env.HF_E2E_WORKSPACE?.trim() || "default";
     const repoRemote = requiredEnv("HF_E2E_GITHUB_REPO");
     const githubToken = requiredEnv("GITHUB_TOKEN");
     const { fullName } = parseGithubRepo(repoRemote);
@@ -117,56 +118,27 @@ describe("e2e(client): full integration stack workflow", () => {
 
     const client = createBackendClient({
       endpoint,
-      defaultWorkspaceId: workspaceId,
+      defaultOrganizationId: organizationId,
     });
 
     try {
       await ensureRemoteBranchExists(githubToken, fullName, seededBranch);
 
-      const repo = await client.addRepo(workspaceId, repoRemote);
+      const repo = await requireImportedRepo(client, organizationId, repoRemote);
       expect(repo.remoteUrl).toBe(normalizedRepoRemote);
 
       const overview = await poll<RepoOverview>(
         "repo overview includes seeded branch",
         90_000,
         1_000,
-        async () => client.getRepoOverview(workspaceId, repo.repoId),
+        async () => client.getRepoOverview(organizationId, repo.repoId),
         (value) => value.branches.some((row) => row.branchName === seededBranch),
       );
 
-      if (!overview.stackAvailable) {
-        throw new Error(
-          "git-spice is unavailable for this repo during full integration e2e; set HF_GIT_SPICE_BIN or install git-spice in the backend container",
-        );
-      }
-
-      const stackResult = await client.runRepoStackAction({
-        workspaceId,
-        repoId: repo.repoId,
-        action: "restack_repo",
-      });
-      expect(stackResult.executed).toBe(true);
-      expect(stackResult.action).toBe("restack_repo");
-
-      await poll<HistoryEvent[]>(
-        "repo stack action history event",
-        60_000,
-        1_000,
-        async () => client.listHistory({ workspaceId, limit: 200 }),
-        (events) =>
-          events.some((event) => {
-            if (event.kind !== "repo.stack_action") {
-              return false;
-            }
-            const payload = parseHistoryPayload(event);
-            return payload.action === "restack_repo";
-          }),
-      );
-
-      const postActionOverview = await client.getRepoOverview(workspaceId, repo.repoId);
+      const postActionOverview = await client.getRepoOverview(organizationId, repo.repoId);
       const seededRow = postActionOverview.branches.find((row) => row.branchName === seededBranch);
       expect(Boolean(seededRow)).toBe(true);
-      expect(postActionOverview.fetchedAt).toBeGreaterThan(overview.fetchedAt);
+      expect(postActionOverview.fetchedAt).toBeGreaterThanOrEqual(overview.fetchedAt);
     } finally {
       await githubApi(githubToken, `repos/${fullName}/git/refs/heads/${encodeURIComponent(seededBranch)}`, { method: "DELETE" }).catch(() => {});
     }

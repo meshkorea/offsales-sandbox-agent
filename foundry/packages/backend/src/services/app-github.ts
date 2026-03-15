@@ -38,6 +38,12 @@ export interface GitHubRepositoryRecord {
   fullName: string;
   cloneUrl: string;
   private: boolean;
+  defaultBranch: string;
+}
+
+export interface GitHubBranchRecord {
+  name: string;
+  commitSha: string;
 }
 
 export interface GitHubMemberRecord {
@@ -341,12 +347,14 @@ export class GitHubAppClient {
       full_name: string;
       clone_url: string;
       private: boolean;
+      default_branch: string;
     }>("/user/repos?per_page=100&affiliation=owner,collaborator,organization_member&sort=updated", accessToken);
 
     return repositories.map((repository) => ({
       fullName: repository.full_name,
       cloneUrl: repository.clone_url,
       private: repository.private,
+      defaultBranch: repository.default_branch,
     }));
   }
 
@@ -356,12 +364,14 @@ export class GitHubAppClient {
       full_name: string;
       clone_url: string;
       private: boolean;
+      default_branch: string;
     }>("/installation/repositories?per_page=100", accessToken);
 
     return repositories.map((repository) => ({
       fullName: repository.full_name,
       cloneUrl: repository.clone_url,
       private: repository.private,
+      defaultBranch: repository.default_branch,
     }));
   }
 
@@ -371,11 +381,13 @@ export class GitHubAppClient {
         full_name: string;
         clone_url: string;
         private: boolean;
+        default_branch: string;
       }>(`/repos/${fullName}`, accessToken);
       return {
         fullName: repository.full_name,
         cloneUrl: repository.clone_url,
         private: repository.private,
+        defaultBranch: repository.default_branch,
       };
     } catch (error) {
       if (error instanceof GitHubAppError && error.status === 404) {
@@ -388,6 +400,15 @@ export class GitHubAppClient {
   async getInstallationRepository(installationId: number, fullName: string): Promise<GitHubRepositoryRecord | null> {
     const accessToken = await this.createInstallationAccessToken(installationId);
     return await this.getUserRepository(accessToken, fullName);
+  }
+
+  async listUserRepositoryBranches(accessToken: string, fullName: string): Promise<GitHubBranchRecord[]> {
+    return await this.listRepositoryBranches(accessToken, fullName);
+  }
+
+  async listInstallationRepositoryBranches(installationId: number, fullName: string): Promise<GitHubBranchRecord[]> {
+    const accessToken = await this.createInstallationAccessToken(installationId);
+    return await this.listRepositoryBranches(accessToken, fullName);
   }
 
   async listOrganizationMembers(accessToken: string, organizationLogin: string): Promise<GitHubMemberRecord[]> {
@@ -686,6 +707,20 @@ export class GitHubAppClient {
       items,
       nextUrl: parseNextLink(response.headers.get("link")),
     };
+  }
+
+  private async listRepositoryBranches(accessToken: string, fullName: string): Promise<GitHubBranchRecord[]> {
+    const branches = await this.paginate<{
+      name: string;
+      commit?: { sha?: string | null } | null;
+    }>(`/repos/${fullName}/branches?per_page=100`, accessToken);
+
+    return branches
+      .map((branch) => ({
+        name: branch.name?.trim() ?? "",
+        commitSha: branch.commit?.sha?.trim() ?? "",
+      }))
+      .filter((branch) => branch.name.length > 0 && branch.commitSha.length > 0);
   }
 }
 

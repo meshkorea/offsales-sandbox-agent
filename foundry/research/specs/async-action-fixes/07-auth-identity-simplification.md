@@ -17,8 +17,8 @@ Authentication and user identity are conflated into a single `appSessions` table
 ## Current Code Context
 
 - Custom OAuth flow: `foundry/packages/backend/src/services/app-github.ts` (`buildAuthorizeUrl`, `exchangeCode`, `getViewer`)
-- Session + identity management: `foundry/packages/backend/src/actors/workspace/app-shell.ts` (`ensureAppSession`, `updateAppSession`, `initGithubSession`, `syncGithubOrganizations`)
-- Session schema: `foundry/packages/backend/src/actors/workspace/db/schema.ts` (`appSessions` table)
+- Session + identity management: `foundry/packages/backend/src/actors/organization/app-shell.ts` (`ensureAppSession`, `updateAppSession`, `initGithubSession`, `syncGithubOrganizations`)
+- Session schema: `foundry/packages/backend/src/actors/organization/db/schema.ts` (`appSessions` table)
 - Shared types: `foundry/packages/shared/src/app-shell.ts` (`FoundryUser`, `FoundryAppSnapshot`)
 - HTTP routes: `foundry/packages/backend/src/index.ts` (`resolveSessionId`, `/v1/auth/github/*`, all `/v1/app/*` routes)
 - Frontend session persistence: `foundry/packages/client/src/backend-client.ts` (`persistAppSessionId`, `x-foundry-session` header, `foundrySession` URL param extraction)
@@ -41,7 +41,7 @@ Authentication and user identity are conflated into a single `appSessions` table
 - BetterAuth uses a custom adapter that routes all DB operations through RivetKit actors.
 - Each user has their own actor. BetterAuth's `user`, `session`, and `account` tables live in the per-user actor's SQLite via `c.db`.
 - The adapter resolves which actor to target based on the primary key BetterAuth passes for each operation (user ID, session ID, account ID).
-- A lightweight **session index** on the app-shell workspace actor maps session tokens → user actor identity, so inbound requests can be routed to the correct user actor without knowing the user ID upfront.
+- A lightweight **session index** on the app-shell organization actor maps session tokens → user actor identity, so inbound requests can be routed to the correct user actor without knowing the user ID upfront.
 
 ### Canonical user record
 
@@ -70,9 +70,9 @@ BetterAuth expects a single database. Foundry uses per-actor SQLite — each act
 
 When an HTTP request arrives, the backend has a session token but doesn't know the user ID yet. BetterAuth calls adapter methods like `findSession(sessionId)` to resolve this. But which actor holds that session row?
 
-**Solution: session index on the app-shell workspace actor.**
+**Solution: session index on the app-shell organization actor.**
 
-The app-shell workspace actor (which already handles auth routing) maintains a lightweight index table:
+The app-shell organization actor (which already handles auth routing) maintains a lightweight index table:
 
 ```
 sessionIndex
@@ -83,7 +83,7 @@ sessionIndex
 
 The adapter flow for session lookup:
 1. BetterAuth calls `findSession(sessionId)`.
-2. Adapter queries `sessionIndex` on the workspace actor to resolve `userActorKey`.
+2. Adapter queries `sessionIndex` on the organization actor to resolve `userActorKey`.
 3. Adapter gets the user actor handle and queries BetterAuth's `session` table in that actor's `c.db`.
 
 The adapter flow for user creation (OAuth callback):
@@ -91,12 +91,12 @@ The adapter flow for user creation (OAuth callback):
 2. Adapter resolves the GitHub numeric ID from the user data.
 3. Adapter creates/gets the user actor keyed by GitHub ID.
 4. Adapter inserts into BetterAuth's `user` table in that actor's `c.db`.
-5. When `createSession` follows, adapter writes to the user actor's `session` table AND inserts into the workspace actor's `sessionIndex`.
+5. When `createSession` follows, adapter writes to the user actor's `session` table AND inserts into the organization actor's `sessionIndex`.
 
 ### User actor shape
 
 ```text
-UserActor (key: ["ws", workspaceId, "user", githubNumericId])
+UserActor (key: ["ws", organizationId, "user", githubNumericId])
 ├── BetterAuth tables: user, session, account (managed by BetterAuth schema)
 ├── userProfiles (app-specific: eligibleOrganizationIds, starterRepoStatus, roleLabel)
 └── sessionState (app-specific: activeOrganizationId per session)
@@ -127,15 +127,15 @@ The adapter must inspect `model` and `where` to determine the target actor:
 | Model | Routing strategy |
 |-------|-----------------|
 | `user` (by id) | User actor key derived directly from user ID |
-| `user` (by email) | `emailIndex` on workspace actor → user actor key |
-| `session` (by token) | `sessionIndex` on workspace actor → user actor key |
-| `session` (by id) | `sessionIndex` on workspace actor → user actor key |
+| `user` (by email) | `emailIndex` on organization actor → user actor key |
+| `session` (by token) | `sessionIndex` on organization actor → user actor key |
+| `session` (by id) | `sessionIndex` on organization actor → user actor key |
 | `session` (by userId) | User actor key derived directly from userId |
 | `account` | Always has `userId` in where or data → user actor key |
-| `verification` | Workspace actor (not user-scoped — used for email verification, password reset) |
+| `verification` | Organization actor (not user-scoped — used for email verification, password reset) |
 
-On `create` for `session` model: write to user actor's `session` table AND insert into workspace actor's `sessionIndex`.
-On `delete` for `session` model: delete from user actor's `session` table AND remove from workspace actor's `sessionIndex`.
+On `create` for `session` model: write to user actor's `session` table AND insert into organization actor's `sessionIndex`.
+On `delete` for `session` model: delete from user actor's `session` table AND remove from organization actor's `sessionIndex`.
 
 #### Adapter construction
 
@@ -188,14 +188,14 @@ session: {
 
 #### BetterAuth core tables
 
-Four tables, all in the per-user actor's SQLite (except `verification` which goes on workspace actor):
+Four tables, all in the per-user actor's SQLite (except `verification` which goes on organization actor):
 
 **`user`**: `id`, `name`, `email`, `emailVerified`, `image`, `createdAt`, `updatedAt`
 **`session`**: `id`, `token`, `userId`, `expiresAt`, `ipAddress?`, `userAgent?`, `createdAt`, `updatedAt`
 **`account`**: `id`, `userId`, `accountId` (GitHub numeric ID), `providerId` ("github"), `accessToken?`, `refreshToken?`, `scope?`, `createdAt`, `updatedAt`
 **`verification`**: `id`, `identifier`, `value`, `expiresAt`, `createdAt`, `updatedAt`
 
-For `findUserByEmail`, a secondary index (email → user actor key) is needed on the workspace actor alongside `sessionIndex`.
+For `findUserByEmail`, a secondary index (email → user actor key) is needed on the organization actor alongside `sessionIndex`.
 
 ## Implementation Plan
 
@@ -210,12 +210,12 @@ Research confirms:
 
 1. **Prototype the adapter + user actor end-to-end** — wire up `createAdapterFactory` with a minimal actor-routed implementation. Confirm that BetterAuth's GitHub OAuth flow completes successfully with user/session/account records landing in the correct per-user actor's SQLite.
 2. **Verify `findOne` for session model** — confirm the `where` clause BetterAuth passes for session lookup includes the `token` field (not just `id`), so the adapter can route via `sessionIndex` keyed by token.
-3. **Measure cookie-cached vs uncached request latency** — confirm that with cookie caching enabled, the adapter is not called on every request, and that the uncached fallback (workspace actor index → user actor → session table) is acceptable.
+3. **Measure cookie-cached vs uncached request latency** — confirm that with cookie caching enabled, the adapter is not called on every request, and that the uncached fallback (organization actor index → user actor → session table) is acceptable.
 
 ### Phase 1: User actor + adapter infrastructure (no behavior change)
 
 1. **Install `better-auth` package** in `packages/backend`.
-2. **Define `UserActor`** with actor key `["ws", workspaceId, "user", githubNumericId]`. Include BetterAuth's required tables (`user`, `session`, `account`) plus app-specific tables in its schema.
+2. **Define `UserActor`** with actor key `["ws", organizationId, "user", githubNumericId]`. Include BetterAuth's required tables (`user`, `session`, `account`) plus app-specific tables in its schema.
 3. **Create `userProfiles` table** in user actor schema:
    ```
    userProfiles
@@ -237,7 +237,7 @@ Research confirms:
    ├── createdAt (integer)
    ├── updatedAt (integer)
    ```
-5. **Create `sessionIndex` and `emailIndex` tables** on the app-shell workspace actor:
+5. **Create `sessionIndex` and `emailIndex` tables** on the app-shell organization actor:
    ```
    sessionIndex
    ├── sessionId (text, PK)
@@ -256,7 +256,7 @@ Research confirms:
 ### Phase 2: Migrate OAuth flow to BetterAuth
 
 1. **Replace `startAppGithubAuth`** — delegate to BetterAuth's GitHub OAuth initiation instead of hand-rolling `buildAuthorizeUrl` + `oauthState` + `oauthStateExpiresAt`.
-2. **Replace `completeAppGithubAuth`** — delegate to BetterAuth's callback handler. BetterAuth creates/updates the user record in the user actor and creates a signed session. The adapter writes to `sessionIndex` on the workspace actor.
+2. **Replace `completeAppGithubAuth`** — delegate to BetterAuth's callback handler. BetterAuth creates/updates the user record in the user actor and creates a signed session. The adapter writes to `sessionIndex` on the organization actor.
 3. **After BetterAuth callback completes**, populate `userProfiles` in the user actor with app-specific fields and enqueue the slow org sync (same background workflow pattern as today).
 4. **Replace `signOutApp`** — delegate to BetterAuth session invalidation. Adapter removes entry from `sessionIndex`.
 5. **Update `resolveSessionId`** in `index.ts` — validate the session via BetterAuth (which routes through the adapter → `sessionIndex` → user actor). BetterAuth verifies the signature and checks expiration.
@@ -288,18 +288,18 @@ Research confirms:
 ## Constraints
 
 - **Actor-routed adapter.** BetterAuth does not natively support per-user actor databases. The custom adapter must route every DB operation to the correct actor. This adds a layer of indirection and latency (actor handle resolution + message) on adapter calls.
-- **Session index cost is mitigated by cookie caching.** With `cookieCache` enabled, BetterAuth validates sessions from a signed cookie on most requests — the adapter (and thus the `sessionIndex` lookup + user actor round-trip) is only called when the cache expires or on writes. Without caching, every authenticated request would hit the workspace actor's `sessionIndex` table then the user actor.
-- **Two-actor write on session create/destroy.** Creating or destroying a session requires writing to both the user actor (BetterAuth's `session` table) and the workspace actor (`sessionIndex`). These must be consistent — if the user actor write succeeds but the index write fails, the session exists but is unreachable.
+- **Session index cost is mitigated by cookie caching.** With `cookieCache` enabled, BetterAuth validates sessions from a signed cookie on most requests — the adapter (and thus the `sessionIndex` lookup + user actor round-trip) is only called when the cache expires or on writes. Without caching, every authenticated request would hit the organization actor's `sessionIndex` table then the user actor.
+- **Two-actor write on session create/destroy.** Creating or destroying a session requires writing to both the user actor (BetterAuth's `session` table) and the organization actor (`sessionIndex`). These must be consistent — if the user actor write succeeds but the index write fails, the session exists but is unreachable.
 - **Background org sync pattern must be preserved.** The fast-path/slow-path split (`initGithubSession` returns immediately, `syncGithubOrganizations` runs in workflow queue) is critical for avoiding proxy timeout retries. BetterAuth handles the OAuth exchange, but the org sync stays as a background workflow.
 - **`GitHubAppClient` is still needed.** BetterAuth replaces the OAuth user-auth flow, but installation tokens, webhook verification, repo listing, and org listing are GitHub App operations that BetterAuth does not cover.
 - **User ID migration.** Changing user IDs from `user-${slugify(login)}` to GitHub numeric IDs affects `organizationMembers`, `seatAssignments`, and any cross-actor references to user IDs. Existing data needs a migration path.
-- **`findUserByEmail` requires a secondary index.** BetterAuth sometimes looks up users by email (e.g., account linking). An `emailIndex` table on the workspace actor is needed. This must be kept in sync with the user actor's email field.
+- **`findUserByEmail` requires a secondary index.** BetterAuth sometimes looks up users by email (e.g., account linking). An `emailIndex` table on the organization actor is needed. This must be kept in sync with the user actor's email field.
 
 ## Risk Assessment
 
 - **Adapter call context — RESOLVED.** Research confirms BetterAuth adapter methods are plain async functions with no request context dependency. The adapter closes over the RivetKit registry at init time and resolves actor handles on demand. No ambient `c` context needed.
 - **Hot-path latency — MITIGATED.** Cookie caching (`cookieCache` with `strategy: "compact"`) means most authenticated requests validate the session from a signed cookie without calling the adapter at all. The adapter (and thus the actor round-trip) is only hit when the cache expires (configurable, e.g., every 5 minutes) or on writes. This makes the session index + user actor lookup acceptable.
-- **Two-actor consistency.** Session create/destroy touches two actors (user actor + workspace index). If either write fails, the system is in an inconsistent state. Recommended: write index first, then user actor. A dangling index entry pointing to a nonexistent session is benign — BetterAuth treats it as "session not found" and the user just re-authenticates.
+- **Two-actor consistency.** Session create/destroy touches two actors (user actor + organization index). If either write fails, the system is in an inconsistent state. Recommended: write index first, then user actor. A dangling index entry pointing to a nonexistent session is benign — BetterAuth treats it as "session not found" and the user just re-authenticates.
 - **Cookie vs header auth.** BetterAuth defaults to HTTP-only cookies (`better-auth.session_token`). The current system uses a custom `x-foundry-session` header with `localStorage`. BetterAuth supports `bearer` token mode for programmatic clients via its `bearer` plugin. Enable both for browser + API access.
 - **Dev bootstrap flow.** `bootstrapAppGithubSession` bypasses the normal OAuth flow for local development. BetterAuth supports programmatic session creation via its internal adapter — the dev path can call the adapter's `create` method directly for the `session` and `account` models.
 - **Actor lifecycle for users.** User actors are long-lived but low-traffic. RivetKit will idle/unload them. With cookie caching, cold-start only happens when the cache expires — not on every request. Acceptable.

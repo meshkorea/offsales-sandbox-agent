@@ -1,6 +1,6 @@
 import type {
   WorkbenchAgentKind as AgentKind,
-  WorkbenchAgentTab as AgentTab,
+  WorkbenchSession as AgentSession,
   WorkbenchDiffLineKind as DiffLineKind,
   WorkbenchFileTreeNode as FileTreeNode,
   WorkbenchTask as Task,
@@ -9,7 +9,7 @@ import type {
   WorkbenchModelGroup as ModelGroup,
   WorkbenchModelId as ModelId,
   WorkbenchParsedDiffLine as ParsedDiffLine,
-  WorkbenchProjectSection,
+  WorkbenchRepositorySection,
   WorkbenchRepo,
   WorkbenchTranscriptEvent as TranscriptEvent,
 } from "@sandbox-agent/foundry-shared";
@@ -186,17 +186,17 @@ function historyDetail(event: TranscriptEvent): string {
   return content || "Untitled event";
 }
 
-export function buildHistoryEvents(tabs: AgentTab[]): HistoryEvent[] {
-  return tabs
-    .flatMap((tab) =>
-      tab.transcript
+export function buildHistoryEvents(sessions: AgentSession[]): HistoryEvent[] {
+  return sessions
+    .flatMap((session) =>
+      session.transcript
         .filter((event) => event.sender === "client")
         .map((event) => ({
-          id: `history-${tab.id}-${event.id}`,
+          id: `history-${session.id}-${event.id}`,
           messageId: event.id,
           preview: historyPreview(event),
-          sessionName: tab.sessionName,
-          tabId: tab.id,
+          sessionName: session.sessionName,
+          sessionId: session.id,
           createdAtMs: event.createdAt,
           detail: historyDetail(event),
         })),
@@ -316,7 +316,7 @@ export function buildInitialTasks(): Task[] {
       updatedAtMs: minutesAgo(8),
       branch: "NathanFlurry/pi-bootstrap-fix",
       pullRequest: { number: 227, status: "ready" },
-      tabs: [
+      sessions: [
         {
           id: "t1",
           sessionId: "t1",
@@ -485,7 +485,7 @@ export function buildInitialTasks(): Task[] {
       updatedAtMs: minutesAgo(3),
       branch: "feat/builtin-agent-skills",
       pullRequest: { number: 223, status: "draft" },
-      tabs: [
+      sessions: [
         {
           id: "t3",
           sessionId: "t3",
@@ -585,7 +585,7 @@ export function buildInitialTasks(): Task[] {
       updatedAtMs: minutesAgo(45),
       branch: "hooks-example",
       pullRequest: { number: 225, status: "ready" },
-      tabs: [
+      sessions: [
         {
           id: "t4",
           sessionId: "t4",
@@ -660,7 +660,7 @@ export function buildInitialTasks(): Task[] {
       updatedAtMs: minutesAgo(15),
       branch: "actor-reschedule-endpoint",
       pullRequest: { number: 4400, status: "ready" },
-      tabs: [
+      sessions: [
         {
           id: "t5",
           sessionId: "t5",
@@ -794,7 +794,7 @@ export function buildInitialTasks(): Task[] {
       updatedAtMs: minutesAgo(35),
       branch: "feat/dynamic-actors",
       pullRequest: { number: 4395, status: "draft" },
-      tabs: [
+      sessions: [
         {
           id: "t6",
           sessionId: "t6",
@@ -851,7 +851,7 @@ export function buildInitialTasks(): Task[] {
       updatedAtMs: minutesAgo(25),
       branch: "fix-use-full-cloud-run-pool-name",
       pullRequest: { number: 235, status: "ready" },
-      tabs: [
+      sessions: [
         {
           id: "t7",
           sessionId: "t7",
@@ -960,7 +960,7 @@ export function buildInitialTasks(): Task[] {
       updatedAtMs: minutesAgo(50),
       branch: "fix-guard-support-https-targets",
       pullRequest: { number: 125, status: "ready" },
-      tabs: [
+      sessions: [
         {
           id: "t8",
           sessionId: "t8",
@@ -1074,7 +1074,7 @@ export function buildInitialTasks(): Task[] {
       updatedAtMs: minutesAgo(2 * 24 * 60),
       branch: "chore-move-compute-gateway-to",
       pullRequest: { number: 123, status: "ready" },
-      tabs: [
+      sessions: [
         {
           id: "t9",
           sessionId: "t9",
@@ -1116,7 +1116,7 @@ export function buildInitialTasks(): Task[] {
       updatedAtMs: minutesAgo(90),
       branch: "fix/namespace-isolation",
       pullRequest: null,
-      tabs: [
+      sessions: [
         {
           id: "t10",
           sessionId: "t10",
@@ -1172,9 +1172,9 @@ export function buildInitialTasks(): Task[] {
       updatedAtMs: minutesAgo(2),
       branch: "fix/auth-middleware",
       pullRequest: null,
-      tabs: [
+      sessions: [
         {
-          id: "status-error-tab",
+          id: "status-error-session",
           sessionId: "status-error-session",
           sessionName: "Auth fix",
           agent: "Claude",
@@ -1204,10 +1204,11 @@ export function buildInitialTasks(): Task[] {
       updatedAtMs: minutesAgo(0),
       branch: null,
       pullRequest: null,
-      tabs: [
+      sessions: [
         {
-          id: "status-prov-tab",
-          sessionId: null,
+          id: "status-prov-session",
+          sessionId: "status-prov-session",
+          sandboxSessionId: null,
           sessionName: "Session 1",
           agent: "Claude",
           model: "claude-sonnet-4",
@@ -1263,9 +1264,9 @@ export function buildInitialTasks(): Task[] {
       updatedAtMs: minutesAgo(1),
       branch: "refactor/ws-handler",
       pullRequest: null,
-      tabs: [
+      sessions: [
         {
-          id: "status-run-tab",
+          id: "status-run-session",
           sessionId: "status-run-session",
           sessionName: "WS refactor",
           agent: "Codex",
@@ -1275,7 +1276,7 @@ export function buildInitialTasks(): Task[] {
           unread: false,
           created: true,
           draft: { text: "", attachments: [], updatedAtMs: null },
-          transcript: transcriptFromLegacyMessages("status-run-tab", [
+          transcript: transcriptFromLegacyMessages("status-run-session", [
             {
               id: "sr1",
               role: "user",
@@ -1297,7 +1298,7 @@ export function buildInitialTasks(): Task[] {
 /**
  * Build repos list from the rivet-dev fixture data (scripts/data/rivet-dev.json).
  * Uses real public repos so the mock sidebar matches what an actual rivet-dev
- * workspace would show after a GitHub sync.
+ * organization would show after a GitHub sync.
  */
 function buildMockRepos(): WorkbenchRepo[] {
   return rivetDevFixture.repos.map((r) => ({
@@ -1314,7 +1315,7 @@ function repoIdFromFullName(fullName: string): string {
 
 /**
  * Build task entries from open PR fixture data.
- * Maps to the backend's PR sync behavior (ProjectPrSyncActor) where PRs
+ * Maps to the backend's PR sync behavior (RepositoryPrSyncActor) where PRs
  * appear as first-class sidebar items even without an associated task.
  * Each open PR gets a lightweight task entry so it shows in the sidebar.
  */
@@ -1339,7 +1340,7 @@ function buildPrTasks(): Task[] {
         updatedAtMs: new Date(pr.updatedAt).getTime(),
         branch: pr.headRefName,
         pullRequest: { number: pr.number, status: pr.draft ? ("draft" as const) : ("ready" as const) },
-        tabs: [],
+        sessions: [],
         fileChanges: [],
         diffs: {},
         fileTree: [],
@@ -1352,15 +1353,15 @@ export function buildInitialMockLayoutViewModel(): TaskWorkbenchSnapshot {
   const repos = buildMockRepos();
   const tasks = [...buildInitialTasks(), ...buildPrTasks()];
   return {
-    workspaceId: "default",
+    organizationId: "default",
     repos,
-    projects: groupWorkbenchProjects(repos, tasks),
+    repositories: groupWorkbenchRepositories(repos, tasks),
     tasks,
   };
 }
 
-export function groupWorkbenchProjects(repos: WorkbenchRepo[], tasks: Task[]): WorkbenchProjectSection[] {
-  const grouped = new Map<string, WorkbenchProjectSection>();
+export function groupWorkbenchRepositories(repos: WorkbenchRepo[], tasks: Task[]): WorkbenchRepositorySection[] {
+  const grouped = new Map<string, WorkbenchRepositorySection>();
 
   for (const repo of repos) {
     grouped.set(repo.id, {
@@ -1385,11 +1386,11 @@ export function groupWorkbenchProjects(repos: WorkbenchRepo[], tasks: Task[]): W
   }
 
   return [...grouped.values()]
-    .map((project) => ({
-      ...project,
-      tasks: [...project.tasks].sort((a, b) => b.updatedAtMs - a.updatedAtMs),
-      updatedAtMs: project.tasks.length > 0 ? Math.max(...project.tasks.map((task) => task.updatedAtMs)) : project.updatedAtMs,
+    .map((repository) => ({
+      ...repository,
+      tasks: [...repository.tasks].sort((a, b) => b.updatedAtMs - a.updatedAtMs),
+      updatedAtMs: repository.tasks.length > 0 ? Math.max(...repository.tasks.map((task) => task.updatedAtMs)) : repository.updatedAtMs,
     }))
-    .filter((project) => project.tasks.length > 0)
+    .filter((repository) => repository.tasks.length > 0)
     .sort((a, b) => b.updatedAtMs - a.updatedAtMs);
 }

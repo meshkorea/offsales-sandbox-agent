@@ -6,7 +6,7 @@ function makeConfig(overrides?: Partial<AppConfig>): AppConfig {
   return ConfigSchema.parse({
     auto_submit: true,
     notify: ["terminal"],
-    workspace: { default: "default" },
+    organization: { default: "default" },
     backend: {
       host: "127.0.0.1",
       port: 7741,
@@ -16,7 +16,7 @@ function makeConfig(overrides?: Partial<AppConfig>): AppConfig {
       backup_interval_secs: 3600,
       backup_retention_days: 7,
     },
-    providers: {
+    sandboxProviders: {
       local: {},
       e2b: {},
     },
@@ -33,7 +33,7 @@ describe("sandbox config", () => {
 
   it("prefers e2b when an api key is configured", () => {
     const config = makeConfig({
-      providers: {
+      sandboxProviders: {
         local: {},
         e2b: { apiKey: "test-token" },
       },

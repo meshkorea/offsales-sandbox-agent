@@ -12,10 +12,10 @@ Use TypeScript for all source code.
 
 Use `pnpm` workspaces and Turborepo.
 
-- Workspace root uses `pnpm-workspace.yaml` and `turbo.json`.
+- Repository root uses `pnpm-workspace.yaml` and `turbo.json`.
 - Packages live in `packages/*`.
 - `core` is renamed to `shared`.
-- `packages/cli` is disabled and excluded from active workspace validation.
+- `packages/cli` is disabled and excluded from active monorepo validation.
 - Integrations and providers live under `packages/backend/src/{integrations,providers}`.
 
 ## CLI Status
@@ -23,14 +23,14 @@ Use `pnpm` workspaces and Turborepo.
 - `packages/cli` is fully disabled for active development.
 - Do not implement new behavior in `packages/cli` unless explicitly requested.
 - Frontend is the primary product surface; prioritize `packages/frontend` + supporting `packages/client`/`packages/backend`.
-- Workspace `build`, `typecheck`, and `test` intentionally exclude `@sandbox-agent/foundry-cli`.
-- `pnpm-workspace.yaml` excludes `packages/cli` from workspace package resolution.
+- Monorepo `build`, `typecheck`, and `test` intentionally exclude `@sandbox-agent/foundry-cli`.
+- `pnpm-workspace.yaml` excludes `packages/cli` from monorepo package resolution.
 
 ## Common Commands
 
 - Foundry is the canonical name for this product tree. Do not introduce or preserve legacy pre-Foundry naming in code, docs, commands, or runtime paths.
 - Install deps: `pnpm install`
-- Full active-workspace validation: `pnpm -w typecheck`, `pnpm -w build`, `pnpm -w test`
+- Full active-monorepo validation: `pnpm -w typecheck`, `pnpm -w build`, `pnpm -w test`
 - Start the full dev stack (real backend + frontend): `just foundry-dev` — frontend on **port 4173**, backend on **port 7741** (Docker via `compose.dev.yaml`)
 - Start the mock frontend stack (no backend): `just foundry-mock` — mock frontend on **port 4174** (Docker via `compose.mock.yaml`)
 - Start the local production-build preview stack: `just foundry-preview`
@@ -59,9 +59,9 @@ Use `pnpm` workspaces and Turborepo.
 
 ## Railway Logs
 
-- Production Foundry Railway logs can be read from a linked workspace with `railway logs --deployment --lines 200` or `railway logs <deployment-id> --deployment --lines 200`.
+- Production Foundry Railway logs can be read from a linked checkout with `railway logs --deployment --lines 200` or `railway logs <deployment-id> --deployment --lines 200`.
 - Production deploys should go through `git push` to the deployment branch/workflow. Do not use `railway up` for Foundry deploys.
-- If Railway logs fail because the workspace is not linked to the correct project/service/environment, run:
+- If Railway logs fail because the checkout is not linked to the correct Railway project/service/environment, run:
   `railway link --project 33e3e2df-32c5-41c5-a4af-dca8654acb1d --environment cf387142-61fd-4668-8cf7-b3559e0983cb --service 91c7e450-d6d2-481a-b2a4-0a916f4160fc`
 - That links this directory to the `sandbox-agent` project, `production` environment, and `foundry-api` service.
 - Production proxy chain: `api.sandboxagent.dev` routes through Cloudflare → Fastly/Varnish → Railway. When debugging request duplication, timeouts, or retry behavior, check headers like `cf-ray`, `x-varnish`, `x-railway-edge`, and `cdn-loop` to identify which layer is involved.
@@ -96,19 +96,19 @@ Do not use polling (`refetchInterval`), empty "go re-fetch" broadcast events, or
 
 ### Materialized state in coordinator actors
 
-- **Workspace actor** materializes sidebar-level data in its own SQLite: repo catalog, task summaries (title, status, branch, PR, updatedAt), repo summaries (overview/branch state), and session summaries (id, name, status, unread, model — no transcript). Task actors push summary changes to the workspace actor when they mutate. The workspace actor broadcasts the updated entity to connected clients. `getWorkspaceSummary` reads from local tables only — no fan-out to child actors.
+- **Organization actor** materializes sidebar-level data in its own SQLite: repo catalog, task summaries (title, status, branch, PR, updatedAt), repo summaries (overview/branch state), and session summaries (id, name, status, unread, model — no transcript). Task actors push summary changes to the organization actor when they mutate. The organization actor broadcasts the updated entity to connected clients. `getOrganizationSummary` reads from local tables only — no fan-out to child actors.
 - **Task actor** materializes its own detail state (session summaries, sandbox info, diffs, file tree). `getTaskDetail` reads from the task actor's own SQLite. The task actor broadcasts updates directly to clients connected to it.
-- **Session data** lives on the task actor but is a separate subscription topic. The task topic includes `sessions_summary` (list without content). The `session` topic provides full transcript and draft state. Clients subscribe to the `session` topic for whichever session tab is active, and filter `sessionUpdated` events by session ID (ignoring events for other sessions on the same actor).
-- The expensive fan-out (querying every project/task actor) only exists as a background reconciliation/rebuild path, never on the hot read path.
+- **Session data** lives on the task actor but is a separate subscription topic. The task topic includes `sessions_summary` (list without content). The `session` topic provides full transcript and draft state. Clients subscribe to the `session` topic for whichever session is active, and filter `sessionUpdated` events by session ID (ignoring events for other sessions on the same actor).
+- The expensive fan-out (querying every repository/task actor) only exists as a background reconciliation/rebuild path, never on the hot read path.
 
-### Interest manager
+### Subscription manager
 
-The interest manager (`packages/client`) is a global singleton that manages WebSocket connections, cached state, and subscriptions for all topics. It:
+The subscription manager (`packages/client`) is a global singleton that manages WebSocket connections, cached state, and subscriptions for all topics. It:
 
 - **Deduplicates** — multiple subscribers to the same topic share one connection and one cached state.
 - **Grace period (30s)** — when the last subscriber leaves, the connection and state stay alive for 30 seconds before teardown. This keeps data warm for back-navigation and prevents thrashing.
-- **Exposes a single hook** — `useInterest(topicKey, params)` returns `{ data, status, error }`. Null params = no subscription (conditional interest).
-- **Shared harness, separate implementations** — the `InterestManager` interface is shared between mock and remote implementations. The mock implementation uses in-memory state. The remote implementation uses WebSocket connections. The API/client exposure is identical for both.
+- **Exposes a single hook** — `useSubscription(topicKey, params)` returns `{ data, status, error }`. Null params = no subscription (conditional subscription).
+- **Shared harness, separate implementations** — the `SubscriptionManager` interface is shared between mock and remote implementations. The mock implementation uses in-memory state. The remote implementation uses WebSocket connections. The API/client exposure is identical for both.
 
 ### Topics
 
@@ -116,22 +116,30 @@ Each topic maps to one actor connection and one event stream:
 
 | Topic | Actor | Event | Data |
 |---|---|---|---|
-| `app` | Workspace `"app"` | `appUpdated` | Auth, orgs, onboarding |
-| `workspace` | Workspace `{workspaceId}` | `workspaceUpdated` | Repo catalog, task summaries, repo summaries |
-| `task` | Task `{workspaceId, repoId, taskId}` | `taskUpdated` | Session summaries, sandbox info, diffs, file tree |
-| `session` | Task `{workspaceId, repoId, taskId}` (filtered by sessionId) | `sessionUpdated` | Transcript, draft state |
+| `app` | Organization `"app"` | `appUpdated` | Auth, orgs, onboarding |
+| `organization` | Organization `{organizationId}` | `organizationUpdated` | Repo catalog, task summaries, repo summaries |
+| `task` | Task `{organizationId, repoId, taskId}` | `taskUpdated` | Session summaries, sandbox info, diffs, file tree |
+| `session` | Task `{organizationId, repoId, taskId}` (filtered by sessionId) | `sessionUpdated` | Transcript, draft state |
 | `sandboxProcesses` | SandboxInstance | `processesUpdated` | Process list |
 
-The client subscribes to `app` always, `workspace` when entering a workspace, `task` when viewing a task, and `session` when viewing a specific session tab. At most 4 actor connections at a time (app + workspace + task + sandbox if terminal is open). The `session` topic reuses the task actor connection and filters by session ID.
+The client subscribes to `app` always, `organization` when entering an organization, `task` when viewing a task, and `session` when viewing a specific session. At most 4 actor connections at a time (app + organization + task + sandbox if terminal is open). The `session` topic reuses the task actor connection and filters by session ID.
 
 ### Rules
 
 - Do not add `useQuery` with `refetchInterval` for data that should be push-based.
 - Do not broadcast empty notification events. Events must carry the full new state of the changed entity.
 - Do not re-fetch full snapshots after mutations. The mutation triggers a server-side broadcast with the new entity state; the client replaces it in local state.
-- All event subscriptions go through the interest manager. Do not create ad-hoc `handle.connect()` + `conn.on()` patterns.
-- Backend mutations that affect sidebar data (task title, status, branch, PR state) must push the updated summary to the parent workspace actor, which broadcasts to workspace subscribers.
+- All event subscriptions go through the subscription manager. Do not create ad-hoc `handle.connect()` + `conn.on()` patterns.
+- Backend mutations that affect sidebar data (task title, status, branch, PR state) must push the updated summary to the parent organization actor, which broadcasts to organization subscribers.
 - Comment architecture-related code: add doc comments explaining the materialized state pattern, why deltas flow the way they do, and the relationship between parent/child actor broadcasts. New contributors should understand the data flow from comments alone.
+
+## Git State Policy
+
+- The backend stores zero git state. No local clones, no refs, no working trees, and no git-spice.
+- Repository metadata (branches, default branch, pull requests) comes from GitHub API data and webhook events already flowing into the system.
+- All git operations that require a working tree run inside the task's sandbox via `executeInSandbox()`.
+- Do not add backend git clone paths, `git fetch`, `git for-each-ref`, or direct backend git CLI calls. If you need git data, either read stored GitHub metadata or run the command inside a sandbox.
+- The `BackendDriver` has no `GitDriver` or `StackDriver`. Only `GithubDriver` and `TmuxDriver` remain.
 
 ## UI System
 
@@ -166,14 +174,14 @@ For all Rivet/RivetKit implementation:
 2. SQLite is **per actor instance** (per actor key), not a shared backend-global database:
    - Each actor instance gets its own SQLite DB.
    - Schema design should assume a single actor instance owns the entire DB.
-   - Do not add `workspaceId`/`repoId`/`taskId` columns just to "namespace" rows for a given actor instance; use actor state and/or the actor key instead.
-   - Example: the `task` actor instance already represents `(workspaceId, repoId, taskId)`, so its SQLite tables should not need those columns for primary keys.
+   - Do not add `organizationId`/`repoId`/`taskId` columns just to "namespace" rows for a given actor instance; use actor state and/or the actor key instead.
+   - Example: the `task` actor instance already represents `(organizationId, repoId, taskId)`, so its SQLite tables should not need those columns for primary keys.
 3. Do not use backend-global SQLite singletons; database access must go through actor `db` providers (`c.db`).
-4. The default dependency source for RivetKit is the published `rivetkit` package so workspace installs and CI remain self-contained.
+4. The default dependency source for RivetKit is the published `rivetkit` package so monorepo installs and CI remain self-contained.
 5. When working on coordinated RivetKit changes, you may temporarily relink to a local checkout instead of the published package.
-   - Dedicated local checkout for this workspace: `/Users/nathan/conductor/workspaces/task/rivet-checkout`
+   - Dedicated local checkout for this repo: `/Users/nathan/conductor/workspaces/task/rivet-checkout`
    - Preferred local link target: `../rivet-checkout/rivetkit-typescript/packages/rivetkit`
-   - Sub-packages (`@rivetkit/sqlite-vfs`, etc.) resolve transitively from the RivetKit workspace when using the local checkout.
+   - Sub-packages (`@rivetkit/sqlite-vfs`, etc.) resolve transitively from the RivetKit monorepo when using the local checkout.
 6. Before using a local checkout, build RivetKit in the rivet repo:
    ```bash
    cd ../rivet-checkout/rivetkit-typescript
@@ -187,17 +195,17 @@ For all Rivet/RivetKit implementation:
 - Do not add an extra proxy or manager-specific route layer in the backend.
 - Let RivetKit own metadata/public endpoint behavior for `/v1/rivet`.
 
-## Workspace + Actor Rules
+## Organization + Actor Rules
 
-- Everything is scoped to a workspace.
-- Workspace resolution order: `--workspace` flag -> config default -> `"default"`.
-- `ControlPlaneActor` is replaced by `WorkspaceActor` (workspace coordinator).
-- Every actor key must be prefixed with workspace namespace (`["ws", workspaceId, ...]`).
+- Everything is scoped to an organization.
+- Organization resolution order: `--organization` flag -> config default -> `"default"`.
+- `ControlPlaneActor` is replaced by `OrganizationActor` (organization coordinator).
+- Every actor key must be prefixed with organization namespace (`["org", organizationId, ...]`).
 - CLI/TUI/GUI must use `@sandbox-agent/foundry-client` (`packages/client`) for backend access; `rivetkit/client` imports are only allowed inside `packages/client`.
 - Do not add custom backend REST endpoints (no `/v1/*` shim layer).
 - We own the sandbox-agent project; treat sandbox-agent defects as first-party bugs and fix them instead of working around them.
 - Keep strict single-writer ownership: each table/row has exactly one actor writer.
-- Parent actors (`workspace`, `project`, `task`, `history`, `sandbox-instance`) use command-only loops with no timeout.
+- Parent actors (`organization`, `repository`, `task`, `history`, `sandbox-instance`) use command-only loops with no timeout.
 - Periodic syncing lives in dedicated child actors with one timeout cadence each.
 - Do not build blocking flows that wait on external systems to become ready or complete. Prefer push-based progression driven by actor messages, events, webhooks, or queue/workflow state changes.
 - Use workflows/background commands for any repo sync, sandbox provisioning, agent install, branch restack/rebase, or other multi-step external work. Do not keep user-facing actions/requests open while that work runs.
@@ -218,19 +226,25 @@ Action handlers must return fast. The pattern:
 3. **Validating preconditions** — check state synchronously in the action handler *before* enqueuing. If a precondition isn't met (e.g. session not ready, task not initialized), throw an error immediately. Do not implicitly provision missing dependencies or poll for readiness inside the action handler. It is the client's responsibility to ensure preconditions are met before calling the action.
 
 Examples:
-- `createTask` → `wait: true` (returns `{ taskId }`), then enqueue provisioning with `wait: false`. Client sees task appear immediately with pending status, observes `ready` via workspace events.
+- `createTask` → `wait: true` (returns `{ taskId }`), then enqueue provisioning with `wait: false`. Client sees task appear immediately with pending status, observes `ready` via organization events.
 - `sendWorkbenchMessage` → validate session is `ready` (throw if not), enqueue with `wait: false`. Client observes session transition to `running` → `idle` via session events.
 - `createWorkbenchSession` → `wait: true` (returns `{ tabId }`), enqueue sandbox provisioning with `wait: false`. Client observes `pending_provision` → `ready` via task events.
 
 Never use `wait: true` for operations that depend on external readiness, sandbox I/O, agent responses, git network operations, polling loops, or long-running queue drains. Never hold an action open while waiting for an external system to become ready — that is a polling/retry loop in disguise.
 
+### Timeout policy
+
+All `wait: true` sends must have an explicit `timeout`. Maximum timeout for any `wait: true` send is **10 seconds** (`10_000`). If an operation cannot reliably complete within 10 seconds, it must be restructured: write the initial record to the DB, return it to the caller, and continue the work asynchronously with `wait: false`. The client observes completion via push events.
+
+`wait: false` sends do not need a timeout (the enqueue is instant; the work runs in the workflow loop with its own step-level timeouts).
+
 ### Task creation: resolve metadata before creating the actor
 
-When creating a task, all deterministic metadata (title, branch name) must be resolved synchronously in the parent actor (project) *before* the task actor is created. The task actor must never be created with null `branchName` or `title`.
+When creating a task, all deterministic metadata (title, branch name) must be resolved synchronously in the parent actor (repository) *before* the task actor is created. The task actor must never be created with null `branchName` or `title`.
 
 - Title is derived from the task description via `deriveFallbackTitle()` — pure string manipulation, no external I/O.
-- Branch name is derived from the title via `sanitizeBranchName()` + conflict checking against remote branches and the project's task index.
-- The project actor already has the repo clone and task index. Do the git fetch + name resolution there.
+- Branch name is derived from the title via `sanitizeBranchName()` + conflict checking against the repository's task index.
+- The repository actor already has the task index and GitHub-backed default branch metadata. Resolve the branch name there without local git fetches.
 - Do not defer naming to a background provision workflow. Do not poll for names to become available.
 - The `onBranch` path (attaching to an existing branch) and the new-task path should both produce a fully-named task record on return.
 - Actor handle policy:
@@ -239,8 +253,7 @@ When creating a task, all deterministic metadata (title, branch name) must be re
 - Use create semantics only on explicit provisioning/create paths where creating a new actor instance is intended.
 - `getOrCreate` is a last resort for create paths when an explicit create API is unavailable; never use it in read/command paths.
 - For long-lived cross-actor links (for example sandbox/session runtime access), persist actor identity (`actorId`) and keep a fallback lookup path by actor id.
-- Docker dev: `compose.dev.yaml` mounts a named volume at `/root/.local/share/foundry/repos` to persist backend-managed git clones across restarts. Code must still work if this volume is not present (create directories as needed).
-- RivetKit actor `c.state` is durable, but in Docker it is stored under `/root/.local/share/rivetkit`. If that path is not persisted, actor state-derived indexes (for example, in `project` actor state) can be lost after container recreation even when other data still exists.
+- RivetKit actor `c.state` is durable, but in Docker it is stored under `/root/.local/share/rivetkit`. If that path is not persisted, actor state-derived indexes can be lost after container recreation even when other data still exists.
 - Workflow history divergence policy:
 - Production: never auto-delete actor state to resolve `HistoryDivergedError`; ship explicit workflow migrations (`ctx.removed(...)`, step compatibility).
 - Development: manual local state reset is allowed as an operator recovery path when migrations are not yet available.
@@ -259,9 +272,9 @@ When creating a task, all deterministic metadata (title, branch name) must be re
   - Secrets (e.g. `OPENAI_API_KEY`, `GITHUB_TOKEN`/`GH_TOKEN`) must be provided via environment variables, never hardcoded in the repo.
   - `~/misc/env.txt` and `~/misc/the-foundry.env` contain the expected local OpenAI + GitHub OAuth/App config for dev.
   - For local GitHub webhook development, use the configured Smee proxy (`SMEE_URL`) to forward deliveries into `POST /v1/webhooks/github`. Check `.env` / `foundry/.env` if you need the current channel URL.
-  - If GitHub repos, PRs, or install state are not showing up, verify that the GitHub App is installed for the workspace and that webhook delivery is enabled and healthy. Foundry depends on webhook events for GitHub-backed state; missing webhooks means the product will appear broken.
+  - If GitHub repos, PRs, or install state are not showing up, verify that the GitHub App is installed for the organization and that webhook delivery is enabled and healthy. Foundry depends on webhook events for GitHub-backed state; missing webhooks means the product will appear broken.
   - Do not assume `gh auth token` is sufficient for Foundry task provisioning against private repos. Sandbox/bootstrap git clone, push, and PR flows require a repo-capable `GITHUB_TOKEN`/`GH_TOKEN` in the backend container.
-  - Preferred product behavior for org workspaces is to mint a GitHub App installation token from the workspace installation and inject it into backend/sandbox git operations. Do not rely on an operator's ambient CLI auth as the long-term solution.
+  - Preferred product behavior for organizations is to mint a GitHub App installation token from the organization installation and inject it into backend/sandbox git operations. Do not rely on an operator's ambient CLI auth as the long-term solution.
 - Treat client E2E tests in `packages/client/test` as the primary end-to-end source of truth for product behavior.
 - Keep backend tests small and targeted. Only retain backend-only tests for invariants or persistence rules that are not well-covered through client E2E.
 - Do not keep large browser E2E suites around in a broken state. If a frontend browser E2E is not maintained and producing signal, remove it until it can be replaced with a reliable test.

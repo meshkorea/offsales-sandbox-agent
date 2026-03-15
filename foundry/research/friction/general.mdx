@@ -15,8 +15,8 @@ The root cause of the duplicate HTTP request is unknown. It is not `appWorkspace
 ### Attempted Fix / Workaround
 
 1. Made `completeAppGithubAuth` clear `oauthState`/`oauthStateExpiresAt` immediately after validation and before `exchangeCode`, so any duplicate request fails the state check instead of hitting GitHub with a consumed code.
-2. Split `syncGithubSessionFromToken` into a fast path (`initGithubSession` — exchange code, get viewer, store token+identity) and a slow path (`syncGithubOrganizations` — list orgs, list installations, sync each workspace).
-3. `completeAppGithubAuth` now uses the fast path and enqueues the slow org sync to the workspace workflow queue (`workspace.command.syncGithubSession`, fire-and-forget). The HTTP callback returns a 302 redirect in ~2s instead of ~18s, eliminating the proxy timeout window.
+2. Split `syncGithubSessionFromToken` into a fast path (`initGithubSession` — exchange code, get viewer, store token+identity) and a slow path (`syncGithubOrganizations` — list orgs, list installations, sync each organization).
+3. `completeAppGithubAuth` now uses the fast path and enqueues the slow org sync to the organization workflow queue (`organization.command.syncGithubSession`, fire-and-forget). The HTTP callback returns a 302 redirect in ~2s instead of ~18s, eliminating the proxy timeout window.
 4. The frontend already polls `getAppSnapshot` every 500ms when any org has `syncStatus === "syncing"`, so the deferred sync is transparent to the user.
 5. `bootstrapAppGithubSession` (dev-only) still calls the full synchronous `syncGithubSessionFromToken` since proxy timeouts are not a concern in dev and it needs the session fully populated before returning.
 
@@ -38,14 +38,14 @@ Verifying the BaseUI frontend against the real `rivet-dev/sandbox-agent-testing`
 
 Three separate issues stacked together during live verification:
 
-1. A half-created task actor remained in project indexes after earlier runtime failures. The actor state existed, but its durable task row did not, so repo overview polling spammed `Task not found` and kept trying to load an orphaned task.
+1. A half-created task actor remained in repository indexes after earlier runtime failures. The actor state existed, but its durable task row did not, so repo overview polling spammed `Task not found` and kept trying to load an orphaned task.
 2. Rebuilding the backend container outside `just dev` dropped injected GitHub auth, which made repo overview fall back to `Open PRs 0` until `GITHUB_TOKEN`/`GH_TOKEN` were passed back into `docker compose`.
 3. In the create-task modal, the BaseUI-controlled form looked populated in the browser, but submit gating/click behavior was unreliable under browser automation, making it hard to distinguish frontend state bugs from backend failures.
 
 ### Attempted Fix / Workaround
 
-1. Updated project-actor stale task pruning to treat `Task not found:` the same as actor-not-found and rebuilt the backend image.
-2. Recovered the orphaned task by forcing an initialize attempt, which surfaced a missing `body?.providerId` guard in the task init workflow and led to pruning the stale project index row.
+1. Updated repository-actor stale task pruning to treat `Task not found:` the same as actor-not-found and rebuilt the backend image.
+2. Recovered the orphaned task by forcing an initialize attempt, which surfaced a missing `body?.providerId` guard in the task init workflow and led to pruning the stale repository index row.
 3. Recreated the backend with `GITHUB_TOKEN="$(gh auth token)" GH_TOKEN="$(gh auth token)" docker compose ... up -d --build backend` so PR sync could see live GitHub data again.
 4. Used `agent-browser` plus screenshots to separate working paths (repo overview + PR visibility) from the remaining broken path (modal submit / task creation UI).
 
@@ -80,22 +80,22 @@ The Docker dev backend container was starting on Bun `1.2.23` and accepting TCP 
 
 ### What I Was Working On
 
-Implementing Daytona snapshot-based sandbox creation and running required workspace validation.
+Implementing Daytona snapshot-based sandbox creation and running required organization validation.
 
 ### Friction / Issue
 
-The workspace `node_modules` tree is partially root-owned in this environment. `pnpm install`/cleanup failed with `EACCES` and left missing local tool entrypoints (for example `turbo`/`typescript`), which blocked `pnpm -w typecheck/build/test` from running end-to-end.
+The organization `node_modules` tree is partially root-owned in this environment. `pnpm install`/cleanup failed with `EACCES` and left missing local tool entrypoints (for example `turbo`/`typescript`), which blocked `pnpm -w typecheck/build/test` from running end-to-end.
 
 ### Attempted Fix / Workaround
 
-1. Attempted workspace reinstall (`pnpm install`, `CI=true pnpm install`) and package-level reinstall.
+1. Attempted organization reinstall (`pnpm install`, `CI=true pnpm install`) and package-level reinstall.
 2. Attempted cleanup/recreate of `node_modules`, but root-owned files could not be removed.
 3. Added temporary local shims for missing tool entrypoints to continue targeted validation.
 
 ### Outcome
 
 - Daytona-specific changes and backend tests were validated.
-- Full workspace validation remains blocked until `node_modules` ownership is repaired (or container is recreated).
+- Full organization validation remains blocked until `node_modules` ownership is repaired (or container is recreated).
 
 ## 2026-02-16 - uncommitted
 
@@ -187,7 +187,7 @@ Vitest ESM module namespace exports are non-configurable, so `vi.spyOn(childProc
 ### Outcome
 
 - Backend manager tests are stable under ESM.
-- Full workspace tests pass with lifecycle coverage for outdated-backend restart behavior.
+- Full organization tests pass with lifecycle coverage for outdated-backend restart behavior.
 
 ## 2026-02-08 - uncommitted
 
@@ -202,8 +202,8 @@ The environment did not provide `rg`, and docs/policy files still described Rust
 ### Attempted Fix / Workaround
 
 1. Switched repository discovery to `find`/`grep`.
-2. Rewrote project guidance files (`CLAUDE.md`, `skills/SKILL.md`, docs, `SPEC.md`) to match the TypeScript architecture.
-3. Added missing TUI test coverage so workspace-wide test runs no longer fail on packages without tests.
+2. Rewrote repository guidance files (`CLAUDE.md`, `skills/SKILL.md`, docs, `SPEC.md`) to match the TypeScript architecture.
+3. Added missing TUI test coverage so monorepo-wide test runs no longer fail on packages without tests.
 
 ### Outcome
 
@@ -214,7 +214,7 @@ The environment did not provide `rg`, and docs/policy files still described Rust
 
 ### What I Was Working On
 
-Running full workspace test validation (`pnpm -w test`) for the migrated monorepo.
+Running full organization test validation (`pnpm -w test`) for the migrated monorepo.
 
 ### Friction / Issue
 
@@ -228,7 +228,7 @@ Backend integration tests depend on native `better-sqlite3` bindings, which were
 
 ### Outcome
 
-- Full workspace test suite passes consistently.
+- Full organization test suite passes consistently.
 - Backend unit coverage always runs; DB integration tests run automatically on environments with native bindings.
 
 ## 2026-02-09 - aab1012 (working tree)
@@ -309,13 +309,13 @@ Running backend tests with the integration flag enabled triggered unrelated acto
 ### Attempted Fix / Workaround
 
 1. Switched to package-targeted test runs for deterministic coverage (`@sandbox-agent/foundry-backend` + `@sandbox-agent/foundry-frontend`).
-2. Relied on required workspace validation (`pnpm -w typecheck`, `pnpm -w build`, `pnpm -w test`) plus targeted stack test files.
+2. Relied on required organization validation (`pnpm -w typecheck`, `pnpm -w build`, `pnpm -w test`) plus targeted stack test files.
 3. Stopped the runaway integration run and recorded this friction for follow-up.
 
 ### Outcome
 
 - New stack-focused tests pass in deterministic targeted runs.
-- Full required workspace checks pass.
+- Full required organization checks pass.
 - Integration-gated suite remains noisy and needs separate stabilization.
 
 ## 2026-03-05 - uncommitted
@@ -326,7 +326,7 @@ Reviewing architecture for simplification opportunities.
 
 ### Friction / Issue
 
-Considered merging `projectPrSync` (30s) and `projectBranchSync` (5s) into a single `projectSync` actor that polls at the faster cadence and does PR fetches every Nth tick. This would reduce actor count by one per repo but violates the single-responsibility-per-actor pattern established in the codebase. Mixed cadences within one actor add conditional tick logic, make the polling intervals harder to reason about independently, and couple two unrelated data sources (git branches vs GitHub API) into one failure domain.
+Considered merging `repositoryPrSync` (30s) and `repositoryBranchSync` (5s) into a single `repositorySync` actor that polls at the faster cadence and does PR fetches every Nth tick. This would reduce actor count by one per repo but violates the single-responsibility-per-actor pattern established in the codebase. Mixed cadences within one actor add conditional tick logic, make the polling intervals harder to reason about independently, and couple two unrelated data sources (git branches vs GitHub API) into one failure domain.
 
 ### Attempted Fix / Workaround
 
@@ -334,7 +334,7 @@ None — rejected the idea during review.
 
 ### Outcome
 
-- Keep `projectPrSync` and `projectBranchSync` as separate actors.
+- Keep `repositoryPrSync` and `repositoryBranchSync` as separate actors.
 - Single-responsibility-per-sync-actor is the right pattern for this codebase.
 
 ## 2026-03-06 - 77341ff
@@ -345,13 +345,13 @@ Bringing up the Docker-based local dev stack with `just dev` after the BaseUI fr
 
 ### Friction / Issue
 
-Docker Desktop recovered, but the frontend container failed immediately with `Cannot find module @rollup/rollup-linux-arm64-gnu`. The dev compose setup bind-mounted the host workspace into `/app`, so the Linux container picked up macOS `node_modules` and missed Rollup's Linux optional package.
+Docker Desktop recovered, but the frontend container failed immediately with `Cannot find module @rollup/rollup-linux-arm64-gnu`. The dev compose setup bind-mounted the host organization into `/app`, so the Linux container picked up macOS `node_modules` and missed Rollup's Linux optional package.
 
 ### Attempted Fix / Workaround
 
 1. Confirmed Docker itself was healthy again by checking the Unix socket, `docker version`, and the backend health endpoint.
 2. Reproduced the frontend crash inside `docker compose`.
-3. Changed the frontend dev service to use named volumes for workspace `node_modules` and the pnpm store, and to run `pnpm install --frozen-lockfile` inside the container before starting Vite.
+3. Changed the frontend dev service to use named volumes for organization `node_modules` and the pnpm store, and to run `pnpm install --frozen-lockfile` inside the container before starting Vite.
 
 ### Outcome
 

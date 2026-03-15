@@ -65,7 +65,7 @@ export interface FoundryOrganizationSettings {
 
 export interface FoundryOrganization {
   id: string;
-  workspaceId: string;
+  organizationId: string;
   kind: FoundryOrganizationKind;
   settings: FoundryOrganizationSettings;
   github: FoundryGithubState;

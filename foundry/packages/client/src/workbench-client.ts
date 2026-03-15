@@ -1,5 +1,5 @@
 import type {
-  TaskWorkbenchAddTabResponse,
+  TaskWorkbenchAddSessionResponse,
   TaskWorkbenchChangeModelInput,
   TaskWorkbenchCreateTaskInput,
   TaskWorkbenchCreateTaskResponse,
@@ -10,7 +10,7 @@ import type {
   TaskWorkbenchSetSessionUnreadInput,
   TaskWorkbenchSendMessageInput,
   TaskWorkbenchSnapshot,
-  TaskWorkbenchTabInput,
+  TaskWorkbenchSessionInput,
   TaskWorkbenchUpdateDraftInput,
 } from "@sandbox-agent/foundry-shared";
 import type { BackendClient } from "./backend-client.js";
@@ -22,7 +22,7 @@ export type TaskWorkbenchClientMode = "mock" | "remote";
 export interface CreateTaskWorkbenchClientOptions {
   mode: TaskWorkbenchClientMode;
   backend?: BackendClient;
-  workspaceId?: string;
+  organizationId?: string;
 }
 
 export interface TaskWorkbenchClient {
@@ -37,11 +37,11 @@ export interface TaskWorkbenchClient {
   revertFile(input: TaskWorkbenchDiffInput): Promise<void>;
   updateDraft(input: TaskWorkbenchUpdateDraftInput): Promise<void>;
   sendMessage(input: TaskWorkbenchSendMessageInput): Promise<void>;
-  stopAgent(input: TaskWorkbenchTabInput): Promise<void>;
+  stopAgent(input: TaskWorkbenchSessionInput): Promise<void>;
   setSessionUnread(input: TaskWorkbenchSetSessionUnreadInput): Promise<void>;
   renameSession(input: TaskWorkbenchRenameSessionInput): Promise<void>;
-  closeTab(input: TaskWorkbenchTabInput): Promise<void>;
-  addTab(input: TaskWorkbenchSelectInput): Promise<TaskWorkbenchAddTabResponse>;
+  closeSession(input: TaskWorkbenchSessionInput): Promise<void>;
+  addSession(input: TaskWorkbenchSelectInput): Promise<TaskWorkbenchAddSessionResponse>;
   changeModel(input: TaskWorkbenchChangeModelInput): Promise<void>;
 }
 
@@ -53,12 +53,12 @@ export function createTaskWorkbenchClient(options: CreateTaskWorkbenchClientOpti
   if (!options.backend) {
     throw new Error("Remote task workbench client requires a backend client");
   }
-  if (!options.workspaceId) {
-    throw new Error("Remote task workbench client requires a workspace id");
+  if (!options.organizationId) {
+    throw new Error("Remote task workbench client requires a organization id");
   }
 
   return createRemoteWorkbenchClient({
     backend: options.backend,
-    workspaceId: options.workspaceId,
+    organizationId: options.organizationId,
   });
 }

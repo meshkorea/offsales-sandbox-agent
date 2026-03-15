@@ -17,7 +17,7 @@ The remote workbench client refreshes after each action and on update events, so
 
 ## Current Code Context
 
-- Workspace workbench snapshot builder: `foundry/packages/backend/src/actors/workspace/actions.ts`
+- Organization workbench snapshot builder: `foundry/packages/backend/src/actors/organization/actions.ts`
 - Task workbench snapshot builder: `foundry/packages/backend/src/actors/task/workbench.ts`
 - Sandbox session event persistence: `foundry/packages/backend/src/actors/sandbox-instance/persist.ts`
 - Remote workbench client refresh loop: `foundry/packages/client/src/remote/workbench-client.ts`
@@ -43,7 +43,7 @@ The remote workbench client refreshes after each action and on update events, so
 
 ## Files Likely To Change
 
-- `foundry/packages/backend/src/actors/workspace/actions.ts`
+- `foundry/packages/backend/src/actors/organization/actions.ts`
 - `foundry/packages/backend/src/actors/task/workbench.ts`
 - `foundry/packages/backend/src/actors/task/db/schema.ts`
 - `foundry/packages/backend/src/actors/task/db/migrations.ts`

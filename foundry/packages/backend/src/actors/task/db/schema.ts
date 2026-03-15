@@ -9,7 +9,7 @@ export const task = sqliteTable(
     branchName: text("branch_name"),
     title: text("title"),
     task: text("task").notNull(),
-    providerId: text("provider_id").notNull(),
+    sandboxProviderId: text("sandbox_provider_id").notNull(),
     status: text("status").notNull(),
     agentType: text("agent_type").default("claude"),
     prSubmitted: integer("pr_submitted").default(0),
@@ -39,7 +39,7 @@ export const taskRuntime = sqliteTable(
 
 export const taskSandboxes = sqliteTable("task_sandboxes", {
   sandboxId: text("sandbox_id").notNull().primaryKey(),
-  providerId: text("provider_id").notNull(),
+  sandboxProviderId: text("sandbox_provider_id").notNull(),
   sandboxActorId: text("sandbox_actor_id"),
   switchTarget: text("switch_target").notNull(),
   cwd: text("cwd"),

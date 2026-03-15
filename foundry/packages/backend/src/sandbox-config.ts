@@ -1,10 +1,10 @@
-import type { AppConfig, ProviderId } from "@sandbox-agent/foundry-shared";
+import type { AppConfig, SandboxProviderId } from "@sandbox-agent/foundry-shared";
 
 function hasE2BApiKey(config: AppConfig): boolean {
-  return Boolean(config.providers.e2b.apiKey?.trim());
+  return Boolean(config.sandboxProviders.e2b.apiKey?.trim());
 }
 
-function forcedSandboxProviderId(): ProviderId | null {
+function forcedSandboxProviderId(): SandboxProviderId | null {
   const raw = process.env.FOUNDRY_SANDBOX_PROVIDER?.trim() ?? process.env.HF_SANDBOX_PROVIDER?.trim() ?? null;
   if (raw === "local" || raw === "e2b") {
     return raw;
@@ -12,7 +12,7 @@ function forcedSandboxProviderId(): ProviderId | null {
   return null;
 }
 
-export function defaultSandboxProviderId(config: AppConfig): ProviderId {
+export function defaultSandboxProviderId(config: AppConfig): SandboxProviderId {
   const forced = forcedSandboxProviderId();
   if (forced === "local") {
     return "local";
@@ -26,11 +26,11 @@ export function defaultSandboxProviderId(config: AppConfig): ProviderId {
   return hasE2BApiKey(config) ? "e2b" : "local";
 }
 
-export function availableSandboxProviderIds(config: AppConfig): ProviderId[] {
+export function availableSandboxProviderIds(config: AppConfig): SandboxProviderId[] {
   return hasE2BApiKey(config) ? ["e2b", "local"] : ["local"];
 }
 
-export function resolveSandboxProviderId(config: AppConfig, requested?: ProviderId | null): ProviderId {
+export function resolveSandboxProviderId(config: AppConfig, requested?: SandboxProviderId | null): SandboxProviderId {
   if (requested === "e2b" && !hasE2BApiKey(config)) {
     throw new Error("E2B provider is not configured. Set E2B_API_KEY before selecting the e2b provider.");
   }

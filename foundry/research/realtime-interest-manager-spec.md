@@ -4,7 +4,7 @@
 
 Replace the current polling + empty-notification + full-refetch architecture with a push-based realtime system. The client subscribes to topics, receives the initial state, and then receives full replacement payloads for changed entities over WebSocket. No polling. No re-fetching.
 
-This spec covers three layers: backend (materialized state + broadcast), client library (interest manager), and frontend (hook consumption). Comment architecture-related code throughout so new contributors can understand the data flow from comments alone.
+This spec covers three layers: backend (materialized state + broadcast), client library (subscription manager), and frontend (hook consumption). Comment architecture-related code throughout so new contributors can understand the data flow from comments alone.
 
 ---
 
@@ -17,7 +17,7 @@ This spec covers three layers: backend (materialized state + broadcast), client 
 Currently `WorkbenchTask` is a single flat type carrying everything (sidebar fields + transcripts + diffs + file tree). Split it:
 
 ```typescript
-/** Sidebar-level task data. Materialized in the workspace actor's SQLite. */
+/** Sidebar-level task data. Materialized in the organization actor's SQLite. */
 export interface WorkbenchTaskSummary {
   id: string;
   repoId: string;
@@ -44,7 +44,7 @@ export interface WorkbenchSessionSummary {
   created: boolean;
 }
 
-/** Repo-level summary for workspace sidebar. */
+/** Repo-level summary for organization sidebar. */
 export interface WorkbenchRepoSummary {
   id: string;
   label: string;
@@ -93,9 +93,9 @@ export interface WorkbenchSessionDetail {
   transcript: WorkbenchTranscriptEvent[];
 }
 
-/** Workspace-level snapshot — initial fetch for the workspace topic. */
-export interface WorkspaceSummarySnapshot {
-  workspaceId: string;
+/** Organization-level snapshot — initial fetch for the organization topic. */
+export interface OrganizationSummarySnapshot {
+  organizationId: string;
   repos: WorkbenchRepoSummary[];
   taskSummaries: WorkbenchTaskSummary[];
 }
@@ -110,8 +110,8 @@ Remove the old `TaskWorkbenchSnapshot` type and `WorkbenchTask` type once migrat
 Each event carries the full new state of the changed entity — not a patch, not an empty notification.
 
 ```typescript
-/** Workspace-level events broadcast by the workspace actor. */
-export type WorkspaceEvent =
+/** Organization-level events broadcast by the organization actor. */
+export type OrganizationEvent =
   | { type: "taskSummaryUpdated"; taskSummary: WorkbenchTaskSummary }
   | { type: "taskRemoved"; taskId: string }
   | { type: "repoAdded"; repo: WorkbenchRepoSummary }
@@ -126,7 +126,7 @@ export type TaskEvent =
 export type SessionEvent =
   | { type: "sessionUpdated"; session: WorkbenchSessionDetail };
 
-/** App-level events broadcast by the app workspace actor. */
+/** App-level events broadcast by the app organization actor. */
 export type AppEvent =
   | { type: "appUpdated"; snapshot: FoundryAppSnapshot };
 
@@ -139,13 +139,13 @@ export type SandboxProcessesEvent =
 
 ## 2. Backend: Materialized State + Broadcasts
 
-### 2.1 Workspace actor — materialized sidebar state
+### 2.1 Organization actor — materialized sidebar state
 
 **Files:**
-- `packages/backend/src/actors/workspace/db/schema.ts` — add tables
-- `packages/backend/src/actors/workspace/actions.ts` — replace `buildWorkbenchSnapshot`, add delta handlers
+- `packages/backend/src/actors/organization/db/schema.ts` — add tables
+- `packages/backend/src/actors/organization/actions.ts` — replace `buildWorkbenchSnapshot`, add delta handlers
 
-Add to workspace actor SQLite schema:
+Add to organization actor SQLite schema:
 
 ```typescript
 export const taskSummaries = sqliteTable("task_summaries", {
@@ -161,7 +161,7 @@ export const taskSummaries = sqliteTable("task_summaries", {
 });
 ```
 
-New workspace actions:
+New organization actions:
 
 ```typescript
 /**
@@ -176,23 +176,23 @@ async applyTaskSummaryUpdate(c, input: { taskSummary: WorkbenchTaskSummary }) {
   await c.db.insert(taskSummaries).values(toRow(input.taskSummary))
     .onConflictDoUpdate({ target: taskSummaries.taskId, set: toRow(input.taskSummary) }).run();
   // Broadcast to connected clients
-  c.broadcast("workspaceUpdated", { type: "taskSummaryUpdated", taskSummary: input.taskSummary });
+  c.broadcast("organizationUpdated", { type: "taskSummaryUpdated", taskSummary: input.taskSummary });
 }
 
 async removeTaskSummary(c, input: { taskId: string }) {
   await c.db.delete(taskSummaries).where(eq(taskSummaries.taskId, input.taskId)).run();
-  c.broadcast("workspaceUpdated", { type: "taskRemoved", taskId: input.taskId });
+  c.broadcast("organizationUpdated", { type: "taskRemoved", taskId: input.taskId });
 }
 
 /**
- * Initial fetch for the workspace topic.
+ * Initial fetch for the organization topic.
  * Reads entirely from local SQLite — no fan-out to child actors.
  */
-async getWorkspaceSummary(c, input: { workspaceId: string }): Promise<WorkspaceSummarySnapshot> {
+async getWorkspaceSummary(c, input: { organizationId: string }): Promise<OrganizationSummarySnapshot> {
   const repoRows = await c.db.select().from(repos).orderBy(desc(repos.updatedAt)).all();
   const taskRows = await c.db.select().from(taskSummaries).orderBy(desc(taskSummaries.updatedAtMs)).all();
   return {
-    workspaceId: c.state.workspaceId,
+    organizationId: c.state.organizationId,
     repos: repoRows.map(toRepoSummary),
     taskSummaries: taskRows.map(toTaskSummary),
   };
@@ -201,7 +201,7 @@ async getWorkspaceSummary(c, input: { workspaceId: string }): Promise<WorkspaceS
 
 Replace `buildWorkbenchSnapshot` (the fan-out) — keep it only as a `reconcileWorkbenchState` background action for recovery/rebuild.
 
-### 2.2 Task actor — push summaries to workspace + broadcast detail
+### 2.2 Task actor — push summaries to organization + broadcast detail
 
 **Files:**
 - `packages/backend/src/actors/task/workbench.ts` — replace `notifyWorkbenchUpdated` calls
@@ -209,7 +209,7 @@ Replace `buildWorkbenchSnapshot` (the fan-out) — keep it only as a `reconcileW
 Every place that currently calls `notifyWorkbenchUpdated(c)` (there are ~20 call sites) must instead:
 
 1. Build the current `WorkbenchTaskSummary` from local state.
-2. Push it to the workspace actor: `workspace.applyTaskSummaryUpdate({ taskSummary })`.
+2. Push it to the organization actor: `organization.applyTaskSummaryUpdate({ taskSummary })`.
 3. Build the current `WorkbenchTaskDetail` from local state.
 4. Broadcast to directly-connected clients: `c.broadcast("taskUpdated", { type: "taskDetailUpdated", detail })`.
 5. If session state changed, also broadcast: `c.broadcast("sessionUpdated", { type: "sessionUpdated", session: buildSessionDetail(c, sessionId) })`.
@@ -219,7 +219,7 @@ Add helper functions:
 ```typescript
 /**
  * Builds a WorkbenchTaskSummary from local task actor state.
- * This is what gets pushed to the workspace actor for sidebar materialization.
+ * This is what gets pushed to the organization actor for sidebar materialization.
  */
 function buildTaskSummary(c: any): WorkbenchTaskSummary { ... }
 
@@ -237,12 +237,12 @@ function buildSessionDetail(c: any, sessionId: string): WorkbenchSessionDetail {
 
 /**
  * Replaces the old notifyWorkbenchUpdated pattern.
- * Pushes summary to workspace actor + broadcasts detail to direct subscribers.
+ * Pushes summary to organization actor + broadcasts detail to direct subscribers.
  */
 async function broadcastTaskUpdate(c: any, options?: { sessionId?: string }) {
-  // Push summary to parent workspace actor
-  const workspace = await getOrCreateWorkspace(c, c.state.workspaceId);
-  await workspace.applyTaskSummaryUpdate({ taskSummary: buildTaskSummary(c) });
+  // Push summary to parent organization actor
+  const organization = await getOrCreateOrganization(c, c.state.organizationId);
+  await organization.applyTaskSummaryUpdate({ taskSummary: buildTaskSummary(c) });
 
   // Broadcast detail to clients connected to this task
   c.broadcast("taskUpdated", { type: "taskDetailUpdated", detail: buildTaskDetail(c) });
@@ -273,9 +273,9 @@ async getTaskDetail(c): Promise<WorkbenchTaskDetail> { ... }
 async getSessionDetail(c, input: { sessionId: string }): Promise<WorkbenchSessionDetail> { ... }
 ```
 
-### 2.4 App workspace actor
+### 2.4 App organization actor
 
-**File:** `packages/backend/src/actors/workspace/app-shell.ts`
+**File:** `packages/backend/src/actors/organization/app-shell.ts`
 
 Change `c.broadcast("appUpdated", { at: Date.now(), sessionId })` to:
 ```typescript
@@ -304,12 +304,12 @@ function broadcastProcessesUpdated(c: any): void {
 
 ```typescript
 /**
- * Topic definitions for the interest manager.
+ * Topic definitions for the subscription manager.
  *
  * Each topic defines how to connect to an actor, fetch initial state,
  * which event to listen for, and how to apply incoming events to cached state.
  *
- * The interest manager uses these definitions to manage WebSocket connections,
+ * The subscription manager uses these definitions to manage WebSocket connections,
  * cached state, and subscriptions for all realtime data flows.
  */
 
@@ -331,10 +331,10 @@ export interface TopicDefinition<TData, TParams, TEvent> {
 }
 
 export interface AppTopicParams {}
-export interface WorkspaceTopicParams { workspaceId: string }
-export interface TaskTopicParams { workspaceId: string; repoId: string; taskId: string }
-export interface SessionTopicParams { workspaceId: string; repoId: string; taskId: string; sessionId: string }
-export interface SandboxProcessesTopicParams { workspaceId: string; providerId: string; sandboxId: string }
+export interface OrganizationTopicParams { organizationId: string }
+export interface TaskTopicParams { organizationId: string; repoId: string; taskId: string }
+export interface SessionTopicParams { organizationId: string; repoId: string; taskId: string; sessionId: string }
+export interface SandboxProcessesTopicParams { organizationId: string; providerId: string; sandboxId: string }
 
 export const topicDefinitions = {
   app: {
@@ -345,12 +345,12 @@ export const topicDefinitions = {
     applyEvent: (_current, event: AppEvent) => event.snapshot,
   } satisfies TopicDefinition<FoundryAppSnapshot, AppTopicParams, AppEvent>,
 
-  workspace: {
-    key: (p) => `workspace:${p.workspaceId}`,
-    event: "workspaceUpdated",
-    connect: (b, p) => b.connectWorkspace(p.workspaceId),
-    fetchInitial: (b, p) => b.getWorkspaceSummary(p.workspaceId),
-    applyEvent: (current, event: WorkspaceEvent) => {
+  organization: {
+    key: (p) => `organization:${p.organizationId}`,
+    event: "organizationUpdated",
+    connect: (b, p) => b.connectWorkspace(p.organizationId),
+    fetchInitial: (b, p) => b.getWorkspaceSummary(p.organizationId),
+    applyEvent: (current, event: OrganizationEvent) => {
       switch (event.type) {
         case "taskSummaryUpdated":
           return {
@@ -375,22 +375,22 @@ export const topicDefinitions = {
           };
       }
     },
-  } satisfies TopicDefinition<WorkspaceSummarySnapshot, WorkspaceTopicParams, WorkspaceEvent>,
+  } satisfies TopicDefinition<OrganizationSummarySnapshot, OrganizationTopicParams, OrganizationEvent>,
 
   task: {
-    key: (p) => `task:${p.workspaceId}:${p.taskId}`,
+    key: (p) => `task:${p.organizationId}:${p.taskId}`,
     event: "taskUpdated",
-    connect: (b, p) => b.connectTask(p.workspaceId, p.repoId, p.taskId),
-    fetchInitial: (b, p) => b.getTaskDetail(p.workspaceId, p.repoId, p.taskId),
+    connect: (b, p) => b.connectTask(p.organizationId, p.repoId, p.taskId),
+    fetchInitial: (b, p) => b.getTaskDetail(p.organizationId, p.repoId, p.taskId),
     applyEvent: (_current, event: TaskEvent) => event.detail,
   } satisfies TopicDefinition<WorkbenchTaskDetail, TaskTopicParams, TaskEvent>,
 
   session: {
-    key: (p) => `session:${p.workspaceId}:${p.taskId}:${p.sessionId}`,
+    key: (p) => `session:${p.organizationId}:${p.taskId}:${p.sessionId}`,
     event: "sessionUpdated",
     // Reuses the task actor connection — same actor, different event.
-    connect: (b, p) => b.connectTask(p.workspaceId, p.repoId, p.taskId),
-    fetchInitial: (b, p) => b.getSessionDetail(p.workspaceId, p.repoId, p.taskId, p.sessionId),
+    connect: (b, p) => b.connectTask(p.organizationId, p.repoId, p.taskId),
+    fetchInitial: (b, p) => b.getSessionDetail(p.organizationId, p.repoId, p.taskId, p.sessionId),
     applyEvent: (current, event: SessionEvent) => {
       // Filter: only apply if this event is for our session
       if (event.session.sessionId !== current.sessionId) return current;
@@ -399,10 +399,10 @@ export const topicDefinitions = {
   } satisfies TopicDefinition<WorkbenchSessionDetail, SessionTopicParams, SessionEvent>,
 
   sandboxProcesses: {
-    key: (p) => `sandbox:${p.workspaceId}:${p.sandboxId}`,
+    key: (p) => `sandbox:${p.organizationId}:${p.sandboxId}`,
     event: "processesUpdated",
-    connect: (b, p) => b.connectSandbox(p.workspaceId, p.providerId, p.sandboxId),
-    fetchInitial: (b, p) => b.listSandboxProcesses(p.workspaceId, p.providerId, p.sandboxId),
+    connect: (b, p) => b.connectSandbox(p.organizationId, p.providerId, p.sandboxId),
+    fetchInitial: (b, p) => b.listSandboxProcesses(p.organizationId, p.providerId, p.sandboxId),
     applyEvent: (_current, event: SandboxProcessesEvent) => event.processes,
   } satisfies TopicDefinition<SandboxProcessRecord[], SandboxProcessesTopicParams, SandboxProcessesEvent>,
 } as const;
@@ -413,16 +413,16 @@ export type TopicParams<K extends TopicKey> = Parameters<(typeof topicDefinition
 export type TopicData<K extends TopicKey> = Awaited<ReturnType<(typeof topicDefinitions)[K]["fetchInitial"]>>;
 ```
 
-### 3.2 Interest manager interface
+### 3.2 Subscription manager interface
 
 **File:** `packages/client/src/interest/manager.ts` (new)
 
 ```typescript
 /**
- * The InterestManager owns all realtime actor connections and cached state.
+ * The SubscriptionManager owns all realtime actor connections and cached state.
  *
  * Architecture:
- * - Each topic (app, workspace, task, session, sandboxProcesses) maps to an actor + event.
+ * - Each topic (app, organization, task, session, sandboxProcesses) maps to an actor + event.
  * - On first subscription, the manager opens a WebSocket connection, fetches initial state,
  *   and listens for events. Events carry full replacement payloads for the changed entity.
  * - Multiple subscribers to the same topic share one connection and one cached state.
@@ -430,7 +430,7 @@ export type TopicData<K extends TopicKey> = Awaited<ReturnType<(typeof topicDefi
  *   to avoid thrashing during screen navigation or React double-renders.
  * - The interface is identical for mock and remote implementations.
  */
-export interface InterestManager {
+export interface SubscriptionManager {
   /**
    * Subscribe to a topic. Returns an unsubscribe function.
    * On first subscriber: opens connection, fetches initial state, starts listening.
@@ -472,10 +472,10 @@ export interface TopicState<K extends TopicKey> {
 const GRACE_PERIOD_MS = 30_000;
 
 /**
- * Remote implementation of InterestManager.
+ * Remote implementation of SubscriptionManager.
  * Manages WebSocket connections to RivetKit actors via BackendClient.
  */
-export class RemoteInterestManager implements InterestManager {
+export class RemoteSubscriptionManager implements SubscriptionManager {
   private entries = new Map<string, TopicEntry<any, any, any>>();
 
   constructor(private backend: BackendClient) {}
@@ -634,7 +634,7 @@ class TopicEntry<TData, TParams, TEvent> {
 
 **File:** `packages/client/src/interest/mock-manager.ts` (new)
 
-Same `InterestManager` interface. Uses in-memory state. Topic definitions provide mock data. Mutations call `applyEvent` directly on the entry to simulate broadcasts. No WebSocket connections.
+Same `SubscriptionManager` interface. Uses in-memory state. Topic definitions provide mock data. Mutations call `applyEvent` directly on the entry to simulate broadcasts. No WebSocket connections.
 
 ### 3.5 React hook
 
@@ -651,17 +651,17 @@ import { useSyncExternalStore, useMemo } from "react";
  * - Multiple components subscribing to the same topic share one connection.
  *
  * @example
- * // Subscribe to workspace sidebar data
- * const workspace = useInterest("workspace", { workspaceId });
+ * // Subscribe to organization sidebar data
+ * const organization = useSubscription("organization", { organizationId });
  *
  * // Subscribe to task detail (only when viewing a task)
- * const task = useInterest("task", selectedTaskId ? { workspaceId, repoId, taskId } : null);
+ * const task = useSubscription("task", selectedTaskId ? { organizationId, repoId, taskId } : null);
  *
  * // Subscribe to active session content
- * const session = useInterest("session", activeSessionId ? { workspaceId, repoId, taskId, sessionId } : null);
+ * const session = useSubscription("session", activeSessionId ? { organizationId, repoId, taskId, sessionId } : null);
  */
-export function useInterest<K extends TopicKey>(
-  manager: InterestManager,
+export function useSubscription<K extends TopicKey>(
+  manager: SubscriptionManager,
   topicKey: K,
   params: TopicParams<K> | null,
 ): TopicState<K> {
@@ -698,18 +698,18 @@ Add to the `BackendClient` interface:
 
 ```typescript
 // New connection methods (return WebSocket-based ActorConn)
-connectWorkspace(workspaceId: string): Promise<ActorConn>;
-connectTask(workspaceId: string, repoId: string, taskId: string): Promise<ActorConn>;
-connectSandbox(workspaceId: string, providerId: string, sandboxId: string): Promise<ActorConn>;
+connectWorkspace(organizationId: string): Promise<ActorConn>;
+connectTask(organizationId: string, repoId: string, taskId: string): Promise<ActorConn>;
+connectSandbox(organizationId: string, providerId: string, sandboxId: string): Promise<ActorConn>;
 
 // New fetch methods (read from materialized state)
-getWorkspaceSummary(workspaceId: string): Promise<WorkspaceSummarySnapshot>;
-getTaskDetail(workspaceId: string, repoId: string, taskId: string): Promise<WorkbenchTaskDetail>;
-getSessionDetail(workspaceId: string, repoId: string, taskId: string, sessionId: string): Promise<WorkbenchSessionDetail>;
+getWorkspaceSummary(organizationId: string): Promise<OrganizationSummarySnapshot>;
+getTaskDetail(organizationId: string, repoId: string, taskId: string): Promise<WorkbenchTaskDetail>;
+getSessionDetail(organizationId: string, repoId: string, taskId: string, sessionId: string): Promise<WorkbenchSessionDetail>;
 ```
 
 Remove:
-- `subscribeWorkbench`, `subscribeApp`, `subscribeSandboxProcesses` (replaced by interest manager)
+- `subscribeWorkbench`, `subscribeApp`, `subscribeSandboxProcesses` (replaced by subscription manager)
 - `getWorkbench` (replaced by `getWorkspaceSummary` + `getTaskDetail`)
 
 ---
@@ -721,16 +721,16 @@ Remove:
 **File:** `packages/frontend/src/lib/interest.ts` (new)
 
 ```typescript
-import { RemoteInterestManager } from "@sandbox-agent/foundry-client";
+import { RemoteSubscriptionManager } from "@sandbox-agent/foundry-client";
 import { backendClient } from "./backend";
 
-export const interestManager = new RemoteInterestManager(backendClient);
+export const subscriptionManager = new RemoteSubscriptionManager(backendClient);
 ```
 
 Or for mock mode:
 ```typescript
-import { MockInterestManager } from "@sandbox-agent/foundry-client";
-export const interestManager = new MockInterestManager();
+import { MockSubscriptionManager } from "@sandbox-agent/foundry-client";
+export const subscriptionManager = new MockSubscriptionManager();
 ```
 
 ### 4.2 Replace MockLayout workbench subscription
@@ -739,7 +739,7 @@ export const interestManager = new MockInterestManager();
 
 Before:
 ```typescript
-const taskWorkbenchClient = useMemo(() => getTaskWorkbenchClient(workspaceId), [workspaceId]);
+const taskWorkbenchClient = useMemo(() => getTaskWorkbenchClient(organizationId), [organizationId]);
 const viewModel = useSyncExternalStore(
   taskWorkbenchClient.subscribe.bind(taskWorkbenchClient),
   taskWorkbenchClient.getSnapshot.bind(taskWorkbenchClient),
@@ -749,9 +749,9 @@ const tasks = viewModel.tasks ?? [];
 
 After:
 ```typescript
-const workspace = useInterest(interestManager, "workspace", { workspaceId });
-const taskSummaries = workspace.data?.taskSummaries ?? [];
-const repos = workspace.data?.repos ?? [];
+const organization = useSubscription(subscriptionManager, "organization", { organizationId });
+const taskSummaries = organization.data?.taskSummaries ?? [];
+const repos = organization.data?.repos ?? [];
 ```
 
 ### 4.3 Replace MockLayout task detail
@@ -759,8 +759,8 @@ const repos = workspace.data?.repos ?? [];
 When a task is selected, subscribe to its detail:
 
 ```typescript
-const taskDetail = useInterest(interestManager, "task",
-  selectedTaskId ? { workspaceId, repoId: activeRepoId, taskId: selectedTaskId } : null
+const taskDetail = useSubscription(subscriptionManager, "task",
+  selectedTaskId ? { organizationId, repoId: activeRepoId, taskId: selectedTaskId } : null
 );
 ```
 
@@ -769,25 +769,25 @@ const taskDetail = useInterest(interestManager, "task",
 When a session tab is active:
 
 ```typescript
-const sessionDetail = useInterest(interestManager, "session",
-  activeSessionId ? { workspaceId, repoId, taskId, sessionId: activeSessionId } : null
+const sessionDetail = useSubscription(subscriptionManager, "session",
+  activeSessionId ? { organizationId, repoId, taskId, sessionId: activeSessionId } : null
 );
 ```
 
-### 4.5 Replace workspace-dashboard.tsx polling
+### 4.5 Replace organization-dashboard.tsx polling
 
 Remove ALL `useQuery` with `refetchInterval` in this file:
-- `tasksQuery` (2.5s polling) → `useInterest("workspace", ...)`
-- `taskDetailQuery` (2.5s polling) → `useInterest("task", ...)`
-- `reposQuery` (10s polling) → `useInterest("workspace", ...)`
-- `repoOverviewQuery` (5s polling) → `useInterest("workspace", ...)`
-- `sessionsQuery` (3s polling) → `useInterest("task", ...)` (sessionsSummary field)
-- `eventsQuery` (2.5s polling) → `useInterest("session", ...)`
+- `tasksQuery` (2.5s polling) → `useSubscription("organization", ...)`
+- `taskDetailQuery` (2.5s polling) → `useSubscription("task", ...)`
+- `reposQuery` (10s polling) → `useSubscription("organization", ...)`
+- `repoOverviewQuery` (5s polling) → `useSubscription("organization", ...)`
+- `sessionsQuery` (3s polling) → `useSubscription("task", ...)` (sessionsSummary field)
+- `eventsQuery` (2.5s polling) → `useSubscription("session", ...)`
 
 ### 4.6 Replace terminal-pane.tsx polling
 
-- `taskQuery` (2s polling) → `useInterest("task", ...)`
-- `processesQuery` (3s polling) → `useInterest("sandboxProcesses", ...)`
+- `taskQuery` (2s polling) → `useSubscription("task", ...)`
+- `processesQuery` (3s polling) → `useSubscription("sandboxProcesses", ...)`
 - Remove `subscribeSandboxProcesses` useEffect
 
 ### 4.7 Replace app client subscription
@@ -804,14 +804,14 @@ export function useMockAppSnapshot(): FoundryAppSnapshot {
 After:
 ```typescript
 export function useAppSnapshot(): FoundryAppSnapshot {
-  const app = useInterest(interestManager, "app", {});
+  const app = useSubscription(subscriptionManager, "app", {});
   return app.data ?? DEFAULT_APP_SNAPSHOT;
 }
 ```
 
 ### 4.8 Mutations
 
-Mutations (`createTask`, `renameTask`, `sendMessage`, etc.) no longer need manual `refetch()` or `refresh()` calls after completion. The backend mutation triggers a broadcast, which the interest manager receives and applies automatically.
+Mutations (`createTask`, `renameTask`, `sendMessage`, etc.) no longer need manual `refetch()` or `refresh()` calls after completion. The backend mutation triggers a broadcast, which the subscription manager receives and applies automatically.
 
 Before:
 ```typescript
@@ -841,24 +841,24 @@ const createSession = useMutation({
 
 | File/Code | Reason |
 |---|---|
-| `packages/client/src/remote/workbench-client.ts` | Replaced by interest manager `workspace` + `task` topics |
-| `packages/client/src/remote/app-client.ts` | Replaced by interest manager `app` topic |
+| `packages/client/src/remote/workbench-client.ts` | Replaced by subscription manager `organization` + `task` topics |
+| `packages/client/src/remote/app-client.ts` | Replaced by subscription manager `app` topic |
 | `packages/client/src/workbench-client.ts` | Factory for above — no longer needed |
 | `packages/client/src/app-client.ts` | Factory for above — no longer needed |
-| `packages/frontend/src/lib/workbench.ts` | Workbench client singleton — replaced by interest manager |
-| `subscribeWorkbench` in `backend-client.ts` | Replaced by `connectWorkspace` + interest manager |
-| `subscribeSandboxProcesses` in `backend-client.ts` | Replaced by `connectSandbox` + interest manager |
-| `subscribeApp` in `backend-client.ts` | Replaced by `connectWorkspace("app")` + interest manager |
-| `buildWorkbenchSnapshot` in `workspace/actions.ts` | Replaced by `getWorkspaceSummary` (local reads). Keep as `reconcileWorkbenchState` for recovery only. |
-| `notifyWorkbenchUpdated` in `workspace/actions.ts` | Replaced by `applyTaskSummaryUpdate` + `c.broadcast` with payload |
+| `packages/frontend/src/lib/workbench.ts` | Workbench client singleton — replaced by subscription manager |
+| `subscribeWorkbench` in `backend-client.ts` | Replaced by `connectWorkspace` + subscription manager |
+| `subscribeSandboxProcesses` in `backend-client.ts` | Replaced by `connectSandbox` + subscription manager |
+| `subscribeApp` in `backend-client.ts` | Replaced by `connectWorkspace("app")` + subscription manager |
+| `buildWorkbenchSnapshot` in `organization/actions.ts` | Replaced by `getWorkspaceSummary` (local reads). Keep as `reconcileWorkbenchState` for recovery only. |
+| `notifyWorkbenchUpdated` in `organization/actions.ts` | Replaced by `applyTaskSummaryUpdate` + `c.broadcast` with payload |
 | `notifyWorkbenchUpdated` in `task/workbench.ts` | Replaced by `broadcastTaskUpdate` helper |
-| `TaskWorkbenchSnapshot` in `shared/workbench.ts` | Replaced by `WorkspaceSummarySnapshot` + `WorkbenchTaskDetail` |
+| `TaskWorkbenchSnapshot` in `shared/workbench.ts` | Replaced by `OrganizationSummarySnapshot` + `WorkbenchTaskDetail` |
 | `WorkbenchTask` in `shared/workbench.ts` | Split into `WorkbenchTaskSummary` + `WorkbenchTaskDetail` |
-| `getWorkbench` action on workspace actor | Replaced by `getWorkspaceSummary` |
-| `TaskWorkbenchClient` interface | Replaced by `InterestManager` + `useInterest` hook |
-| All `useQuery` with `refetchInterval` in `workspace-dashboard.tsx` | Replaced by `useInterest` |
-| All `useQuery` with `refetchInterval` in `terminal-pane.tsx` | Replaced by `useInterest` |
-| Mock workbench client (`packages/client/src/mock/workbench-client.ts`) | Replaced by `MockInterestManager` |
+| `getWorkbench` action on organization actor | Replaced by `getWorkspaceSummary` |
+| `TaskWorkbenchClient` interface | Replaced by `SubscriptionManager` + `useSubscription` hook |
+| All `useQuery` with `refetchInterval` in `organization-dashboard.tsx` | Replaced by `useSubscription` |
+| All `useQuery` with `refetchInterval` in `terminal-pane.tsx` | Replaced by `useSubscription` |
+| Mock workbench client (`packages/client/src/mock/workbench-client.ts`) | Replaced by `MockSubscriptionManager` |
 
 ---
 
@@ -867,27 +867,27 @@ const createSession = useMutation({
 Implement in this order to keep the system working at each step:
 
 ### Phase 1: Types and backend materialization
-1. Add new types to `packages/shared` (`WorkbenchTaskSummary`, `WorkbenchTaskDetail`, `WorkbenchSessionSummary`, `WorkbenchSessionDetail`, `WorkspaceSummarySnapshot`, event types).
-2. Add `taskSummaries` table to workspace actor schema.
-3. Add `applyTaskSummaryUpdate`, `removeTaskSummary`, `getWorkspaceSummary` actions to workspace actor.
+1. Add new types to `packages/shared` (`WorkbenchTaskSummary`, `WorkbenchTaskDetail`, `WorkbenchSessionSummary`, `WorkbenchSessionDetail`, `OrganizationSummarySnapshot`, event types).
+2. Add `taskSummaries` table to organization actor schema.
+3. Add `applyTaskSummaryUpdate`, `removeTaskSummary`, `getWorkspaceSummary` actions to organization actor.
 4. Add `getTaskDetail`, `getSessionDetail` actions to task actor.
 5. Replace all `notifyWorkbenchUpdated` call sites with `broadcastTaskUpdate` that pushes summary + broadcasts detail with payload.
 6. Change app actor broadcast to include snapshot payload.
 7. Change sandbox actor broadcast to include process list payload.
 8. Add one-time reconciliation action to populate `taskSummaries` table from existing task actors (run on startup or on-demand).
 
-### Phase 2: Client interest manager
-9. Add `InterestManager` interface, `RemoteInterestManager`, `MockInterestManager` to `packages/client`.
+### Phase 2: Client subscription manager
+9. Add `SubscriptionManager` interface, `RemoteSubscriptionManager`, `MockSubscriptionManager` to `packages/client`.
 10. Add topic definitions registry.
-11. Add `useInterest` hook.
+11. Add `useSubscription` hook.
 12. Add `connectWorkspace`, `connectTask`, `connectSandbox`, `getWorkspaceSummary`, `getTaskDetail`, `getSessionDetail` to `BackendClient`.
 
 ### Phase 3: Frontend migration
-13. Replace `useMockAppSnapshot` with `useInterest("app", ...)`.
-14. Replace `MockLayout` workbench subscription with `useInterest("workspace", ...)`.
-15. Replace task detail view with `useInterest("task", ...)` + `useInterest("session", ...)`.
-16. Replace `workspace-dashboard.tsx` polling queries with `useInterest`.
-17. Replace `terminal-pane.tsx` polling queries with `useInterest`.
+13. Replace `useMockAppSnapshot` with `useSubscription("app", ...)`.
+14. Replace `MockLayout` workbench subscription with `useSubscription("organization", ...)`.
+15. Replace task detail view with `useSubscription("task", ...)` + `useSubscription("session", ...)`.
+16. Replace `organization-dashboard.tsx` polling queries with `useSubscription`.
+17. Replace `terminal-pane.tsx` polling queries with `useSubscription`.
 18. Remove manual `refetch()` calls from mutations.
 
 ### Phase 4: Cleanup
@@ -902,10 +902,10 @@ Implement in this order to keep the system working at each step:
 Add doc comments at these locations:
 
 - **Topic definitions** — explain the materialized state pattern, why events carry full entity state instead of patches, and the relationship between topics.
-- **`broadcastTaskUpdate` helper** — explain the dual-broadcast pattern (push summary to workspace + broadcast detail to direct subscribers).
-- **`InterestManager` interface** — explain the grace period, deduplication, and why mock/remote share the same interface.
-- **`useInterest` hook** — explain `useSyncExternalStore` integration, null params for conditional interest, and how params key stabilization works.
-- **Workspace actor `taskSummaries` table** — explain this is a materialized read projection maintained by task actor pushes, not a source of truth.
+- **`broadcastTaskUpdate` helper** — explain the dual-broadcast pattern (push summary to organization + broadcast detail to direct subscribers).
+- **`SubscriptionManager` interface** — explain the grace period, deduplication, and why mock/remote share the same interface.
+- **`useSubscription` hook** — explain `useSyncExternalStore` integration, null params for conditional interest, and how params key stabilization works.
+- **Organization actor `taskSummaries` table** — explain this is a materialized read projection maintained by task actor pushes, not a source of truth.
 - **`applyTaskSummaryUpdate` action** — explain this is the write path for the materialized projection, called by task actors, not by clients.
 - **`getWorkspaceSummary` action** — explain this reads from local SQLite only, no fan-out, and why that's the correct pattern.
 
@@ -913,7 +913,7 @@ Add doc comments at these locations:
 
 ## 8. Testing
 
-- Interest manager unit tests: subscribe/unsubscribe lifecycle, grace period, deduplication, event application.
-- Mock implementation tests: verify same behavior as remote through shared test suite against the `InterestManager` interface.
+- Subscription manager unit tests: subscribe/unsubscribe lifecycle, grace period, deduplication, event application.
+- Mock implementation tests: verify same behavior as remote through shared test suite against the `SubscriptionManager` interface.
 - Backend integration: verify `applyTaskSummaryUpdate` correctly materializes and broadcasts.
 - E2E: verify that a task mutation (e.g. rename) updates the sidebar in realtime without polling.

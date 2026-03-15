@@ -3,14 +3,14 @@ import { cors } from "hono/cors";
 import { randomUUID } from "node:crypto";
 import { initActorRuntimeContext } from "./actors/context.js";
 import { registry } from "./actors/index.js";
-import { workspaceKey } from "./actors/keys.js";
+import { organizationKey } from "./actors/keys.js";
 import { loadConfig } from "./config/backend.js";
 import { createBackends, createNotificationService } from "./notifications/index.js";
 import { createDefaultDriver } from "./driver.js";
 import { createClient } from "rivetkit/client";
 import { initBetterAuthService } from "./services/better-auth.js";
 import { createDefaultAppShellServices } from "./services/app-shell-runtime.js";
-import { APP_SHELL_WORKSPACE_ID } from "./actors/workspace/app-shell.js";
+import { APP_SHELL_ORGANIZATION_ID } from "./actors/organization/app-shell.js";
 import { logger } from "./logging.js";
 
 export interface BackendStartOptions {
@@ -18,7 +18,7 @@ export interface BackendStartOptions {
   port?: number;
 }
 
-interface AppWorkspaceLogContext {
+interface AppOrganizationLogContext {
   action?: string;
   cfConnectingIp?: string;
   cfRay?: string;
@@ -68,8 +68,8 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     return undefined;
   };
 
-  config.providers.e2b.apiKey = envFirst("E2B_API_KEY") ?? config.providers.e2b.apiKey;
-  config.providers.e2b.template = envFirst("HF_E2B_TEMPLATE", "E2B_TEMPLATE") ?? config.providers.e2b.template;
+  config.sandboxProviders.e2b.apiKey = envFirst("E2B_API_KEY") ?? config.sandboxProviders.e2b.apiKey;
+  config.sandboxProviders.e2b.template = envFirst("HF_E2B_TEMPLATE", "E2B_TEMPLATE") ?? config.sandboxProviders.e2b.template;
 
   const driver = createDefaultDriver();
   const backends = await createBackends(config.notify);
@@ -85,7 +85,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     appUrl: appShellServices.appUrl,
   });
 
-  const requestHeaderContext = (c: any): AppWorkspaceLogContext => ({
+  const requestHeaderContext = (c: any): AppOrganizationLogContext => ({
     cfConnectingIp: c.req.header("cf-connecting-ip") ?? undefined,
     cfRay: c.req.header("cf-ray") ?? undefined,
     forwardedFor: c.req.header("x-forwarded-for") ?? undefined,
@@ -164,27 +164,27 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     );
   });
 
-  // Cache the app workspace actor handle for the lifetime of this backend process.
-  // The "app" workspace is a singleton coordinator for auth indexes, org state, and
+  // Cache the app organization actor handle for the lifetime of this backend process.
+  // The "app" organization is a singleton coordinator for auth indexes, org state, and
   // billing. Caching avoids repeated getOrCreate round-trips on every HTTP request.
-  let cachedAppWorkspace: any | null = null;
+  let cachedAppOrganization: any | null = null;
 
-  const appWorkspace = async (context: AppWorkspaceLogContext = {}) => {
-    if (cachedAppWorkspace) return cachedAppWorkspace;
+  const appOrganization = async (context: AppOrganizationLogContext = {}) => {
+    if (cachedAppOrganization) return cachedAppOrganization;
 
     const start = performance.now();
     try {
-      const handle = await actorClient.workspace.getOrCreate(workspaceKey(APP_SHELL_WORKSPACE_ID), {
-        createWithInput: APP_SHELL_WORKSPACE_ID,
+      const handle = await actorClient.organization.getOrCreate(organizationKey(APP_SHELL_ORGANIZATION_ID), {
+        createWithInput: APP_SHELL_ORGANIZATION_ID,
       });
-      cachedAppWorkspace = handle;
+      cachedAppOrganization = handle;
       logger.info(
         {
           ...context,
           cache: "miss",
           durationMs: Math.round((performance.now() - start) * 100) / 100,
         },
-        "app_workspace_resolve",
+        "app_organization_resolve",
       );
       return handle;
     } catch (error) {
@@ -196,13 +196,13 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
           errorMessage: error instanceof Error ? error.message : String(error),
           errorStack: error instanceof Error ? error.stack : undefined,
         },
-        "app_workspace_resolve_failed",
+        "app_organization_resolve_failed",
       );
       throw error;
     }
   };
 
-  const requestLogContext = (c: any, sessionId?: string): AppWorkspaceLogContext => ({
+  const requestLogContext = (c: any, sessionId?: string): AppOrganizationLogContext => ({
     ...requestHeaderContext(c),
     method: c.req.method,
     path: c.req.path,
@@ -255,7 +255,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
     if (!sessionId) {
       return c.text("Unauthorized", 401);
     }
-    const result = await (await appWorkspace(requestLogContext(c, sessionId))).finalizeAppCheckoutSession({
+    const result = await (await appOrganization(requestLogContext(c, sessionId))).finalizeAppCheckoutSession({
       organizationId,
       sessionId,
       checkoutSessionId,
@@ -265,7 +265,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
 
   const handleStripeWebhook = async (c: any) => {
     const payload = await c.req.text();
-    await (await appWorkspace(requestLogContext(c))).handleAppStripeWebhook({
+    await (await appOrganization(requestLogContext(c))).handleAppStripeWebhook({
       payload,
       signatureHeader: c.req.header("stripe-signature") ?? null,
     });
@@ -276,7 +276,7 @@ export async function startBackend(options: BackendStartOptions = {}): Promise<v
 
   app.post("/v1/webhooks/github", async (c) => {
     const payload = await c.req.text();
-    await (await appWorkspace(requestLogContext(c))).handleAppGithubWebhook({
+    await (await appOrganization(requestLogContext(c))).handleAppGithubWebhook({
       payload,
       signatureHeader: c.req.header("x-hub-signature-256") ?? null,
       eventHeader: c.req.header("x-github-event") ?? null,

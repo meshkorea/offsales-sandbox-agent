@@ -24,7 +24,6 @@ services:
       - "7841:7841"
     volumes:
       - "${HOME}/.codex:/root/.codex"
-      - "foundry_preview_git_repos:/root/.local/share/foundry/repos"
       - "foundry_preview_rivetkit_storage:/root/.local/share/foundry/rivetkit"
 
   frontend:
@@ -38,5 +37,4 @@ services:
       - "4273:4273"
 
 volumes:
-  foundry_preview_git_repos: {}
   foundry_preview_rivetkit_storage: {}

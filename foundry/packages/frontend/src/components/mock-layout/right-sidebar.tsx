@@ -94,7 +94,7 @@ const FileTree = memo(function FileTree({
 
 export const RightSidebar = memo(function RightSidebar({
   task,
-  activeTabId,
+  activeSessionId,
   onOpenDiff,
   onArchive,
   onRevertFile,
@@ -102,7 +102,7 @@ export const RightSidebar = memo(function RightSidebar({
   onToggleSidebar,
 }: {
   task: Task;
-  activeTabId: string | null;
+  activeSessionId: string | null;
   onOpenDiff: (path: string) => void;
   onArchive: () => void;
   onRevertFile: (path: string) => void;
@@ -400,7 +400,7 @@ export const RightSidebar = memo(function RightSidebar({
                 </div>
               ) : null}
               {task.fileChanges.map((file) => {
-                const isActive = activeTabId === diffTabId(file.path);
+                const isActive = activeSessionId === diffTabId(file.path);
                 const TypeIcon = file.type === "A" ? FilePlus : file.type === "D" ? FileX : FileCode;
                 const iconColor = file.type === "A" ? t.statusSuccess : file.type === "D" ? t.statusError : t.textTertiary;
                 return (

@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect } from "react";
 import type { FoundryBillingPlanId } from "@sandbox-agent/foundry-shared";
-import { useInterest } from "@sandbox-agent/foundry-client";
+import { useSubscription } from "@sandbox-agent/foundry-client";
 import { Navigate, Outlet, createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
 import { MockLayout } from "../components/mock-layout";
 import {
@@ -11,8 +11,8 @@ import {
   MockOrganizationSettingsPage,
   MockSignInPage,
 } from "../components/mock-onboarding";
-import { defaultWorkspaceId, isMockFrontendClient } from "../lib/env";
-import { interestManager } from "../lib/interest";
+import { defaultOrganizationId, isMockFrontendClient } from "../lib/env";
+import { subscriptionManager } from "../lib/subscription";
 import { activeMockOrganization, getMockOrganizationById, isAppSnapshotBootstrapping, useMockAppClient, useMockAppSnapshot } from "../lib/mock-app";
 
 const rootRoute = createRootRoute({
@@ -61,20 +61,20 @@ const organizationCheckoutRoute = createRoute({
   component: OrganizationCheckoutRoute,
 });
 
-const workspaceRoute = createRoute({
+const organizationRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/workspaces/$workspaceId",
-  component: WorkspaceLayoutRoute,
+  path: "/organizations/$organizationId",
+  component: OrganizationLayoutRoute,
 });
 
-const workspaceIndexRoute = createRoute({
-  getParentRoute: () => workspaceRoute,
+const organizationIndexRoute = createRoute({
+  getParentRoute: () => organizationRoute,
   path: "/",
-  component: WorkspaceRoute,
+  component: OrganizationRoute,
 });
 
 const taskRoute = createRoute({
-  getParentRoute: () => workspaceRoute,
+  getParentRoute: () => organizationRoute,
   path: "tasks/$taskId",
   validateSearch: (search: Record<string, unknown>) => ({
     sessionId: typeof search.sessionId === "string" && search.sessionId.trim().length > 0 ? search.sessionId : undefined,
@@ -83,7 +83,7 @@ const taskRoute = createRoute({
 });
 
 const repoRoute = createRoute({
-  getParentRoute: () => workspaceRoute,
+  getParentRoute: () => organizationRoute,
   path: "repos/$repoId",
   component: RepoRoute,
 });
@@ -96,7 +96,7 @@ const routeTree = rootRoute.addChildren([
   organizationSettingsRoute,
   organizationBillingRoute,
   organizationCheckoutRoute,
-  workspaceRoute.addChildren([workspaceIndexRoute, taskRoute, repoRoute]),
+  organizationRoute.addChildren([organizationIndexRoute, taskRoute, repoRoute]),
 ]);
 
 export const router = createRouter({ routeTree });
@@ -107,7 +107,7 @@ declare module "@tanstack/react-router" {
   }
 }
 
-function WorkspaceLayoutRoute() {
+function OrganizationLayoutRoute() {
   return <Outlet />;
 }
 
@@ -142,7 +142,7 @@ function IndexRoute() {
 
   const activeOrganization = activeMockOrganization(snapshot);
   if (activeOrganization) {
-    return <Navigate to="/workspaces/$workspaceId" params={{ workspaceId: activeOrganization.workspaceId }} replace />;
+    return <Navigate to="/organizations/$organizationId" params={{ organizationId: activeOrganization.organizationId }} replace />;
   }
 
   return <Navigate to="/organizations" replace />;
@@ -238,54 +238,54 @@ function OrganizationCheckoutRoute() {
   return <MockHostedCheckoutPage organization={organization} planId={planId as FoundryBillingPlanId} />;
 }
 
-function WorkspaceRoute() {
-  const { workspaceId } = workspaceRoute.useParams();
+function OrganizationRoute() {
+  const { organizationId } = organizationRoute.useParams();
   return (
-    <AppWorkspaceGate workspaceId={workspaceId}>
-      <WorkspaceView workspaceId={workspaceId} selectedTaskId={null} selectedSessionId={null} />
-    </AppWorkspaceGate>
+    <AppOrganizationGate organizationId={organizationId}>
+      <OrganizationView organizationId={organizationId} selectedTaskId={null} selectedSessionId={null} />
+    </AppOrganizationGate>
   );
 }
 
-function WorkspaceView({
-  workspaceId,
+function OrganizationView({
+  organizationId,
   selectedTaskId,
   selectedSessionId,
 }: {
-  workspaceId: string;
+  organizationId: string;
   selectedTaskId: string | null;
   selectedSessionId: string | null;
 }) {
-  return <MockLayout workspaceId={workspaceId} selectedTaskId={selectedTaskId} selectedSessionId={selectedSessionId} />;
+  return <MockLayout organizationId={organizationId} selectedTaskId={selectedTaskId} selectedSessionId={selectedSessionId} />;
 }
 
 function TaskRoute() {
-  const { workspaceId, taskId } = taskRoute.useParams();
+  const { organizationId, taskId } = taskRoute.useParams();
   const { sessionId } = taskRoute.useSearch();
   return (
-    <AppWorkspaceGate workspaceId={workspaceId}>
-      <TaskView workspaceId={workspaceId} taskId={taskId} sessionId={sessionId ?? null} />
-    </AppWorkspaceGate>
+    <AppOrganizationGate organizationId={organizationId}>
+      <TaskView organizationId={organizationId} taskId={taskId} sessionId={sessionId ?? null} />
+    </AppOrganizationGate>
   );
 }
 
-function TaskView({ workspaceId, taskId, sessionId }: { workspaceId: string; taskId: string; sessionId: string | null }) {
-  return <MockLayout workspaceId={workspaceId} selectedTaskId={taskId} selectedSessionId={sessionId} />;
+function TaskView({ organizationId, taskId, sessionId }: { organizationId: string; taskId: string; sessionId: string | null }) {
+  return <MockLayout organizationId={organizationId} selectedTaskId={taskId} selectedSessionId={sessionId} />;
 }
 
 function RepoRoute() {
-  const { workspaceId, repoId } = repoRoute.useParams();
+  const { organizationId, repoId } = repoRoute.useParams();
   return (
-    <AppWorkspaceGate workspaceId={workspaceId}>
-      <RepoRouteInner workspaceId={workspaceId} repoId={repoId} />
-    </AppWorkspaceGate>
+    <AppOrganizationGate organizationId={organizationId}>
+      <RepoRouteInner organizationId={organizationId} repoId={repoId} />
+    </AppOrganizationGate>
   );
 }
 
-function AppWorkspaceGate({ workspaceId, children }: { workspaceId: string; children: ReactNode }) {
+function AppOrganizationGate({ organizationId, children }: { organizationId: string; children: ReactNode }) {
   const client = useMockAppClient();
   const snapshot = useMockAppSnapshot();
-  const organization = snapshot.organizations.find((candidate) => candidate.workspaceId === workspaceId) ?? null;
+  const organization = snapshot.organizations.find((candidate) => candidate.organizationId === organizationId) ?? null;
 
   useEffect(() => {
     if (organization && snapshot.activeOrganizationId !== organization.id) {
@@ -294,7 +294,7 @@ function AppWorkspaceGate({ workspaceId, children }: { workspaceId: string; chil
   }, [client, organization, snapshot.activeOrganizationId]);
 
   if (!isMockFrontendClient && isAppSnapshotBootstrapping(snapshot)) {
-    return <AppLoadingScreen label="Loading workspace..." />;
+    return <AppLoadingScreen label="Loading organization..." />;
   }
 
   if (snapshot.auth.status === "signed_out") {
@@ -308,13 +308,15 @@ function AppWorkspaceGate({ workspaceId, children }: { workspaceId: string; chil
   return <>{children}</>;
 }
 
-function RepoRouteInner({ workspaceId, repoId }: { workspaceId: string; repoId: string }) {
-  const workspaceState = useInterest(interestManager, "workspace", { workspaceId });
-  const activeTaskId = workspaceState.data?.taskSummaries.find((task) => task.repoId === repoId)?.id;
+function RepoRouteInner({ organizationId, repoId }: { organizationId: string; repoId: string }) {
+  const organizationState = useSubscription(subscriptionManager, "organization", { organizationId });
+  const activeTaskId = organizationState.data?.taskSummaries.find((task) => task.repoId === repoId)?.id;
   if (!activeTaskId) {
-    return <Navigate to="/workspaces/$workspaceId" params={{ workspaceId }} replace />;
+    return <Navigate to="/organizations/$organizationId" params={{ organizationId }} replace />;
   }
-  return <Navigate to="/workspaces/$workspaceId/tasks/$taskId" params={{ workspaceId, taskId: activeTaskId }} search={{ sessionId: undefined }} replace />;
+  return (
+    <Navigate to="/organizations/$organizationId/tasks/$taskId" params={{ organizationId, taskId: activeTaskId }} search={{ sessionId: undefined }} replace />
+  );
 }
 
 function RootLayout() {

@@ -1,262 +1,80 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
-
 interface GithubAuthOptions {
   githubToken?: string | null;
+  baseBranch?: string | null;
 }
 
-function ghEnv(options?: GithubAuthOptions): Record<string, string> {
-  const env: Record<string, string> = { ...(process.env as Record<string, string>) };
+function authHeaders(options?: GithubAuthOptions): HeadersInit {
   const token = options?.githubToken?.trim();
-  if (token) {
-    env.GH_TOKEN = token;
-    env.GITHUB_TOKEN = token;
+  if (!token) {
+    throw new Error("GitHub token is required for this operation");
   }
-  return env;
-}
-
-export interface PullRequestSnapshot {
-  number: number;
-  headRefName: string;
-  state: string;
-  title: string;
-  url: string;
-  author: string;
-  isDraft: boolean;
-  ciStatus: string | null;
-  reviewStatus: string | null;
-  reviewer: string | null;
-}
-
-interface GhPrListItem {
-  number: number;
-  headRefName: string;
-  state: string;
-  title: string;
-  url?: string;
-  author?: { login?: string };
-  isDraft?: boolean;
-  statusCheckRollup?: Array<{
-    state?: string;
-    status?: string;
-    conclusion?: string;
-    __typename?: string;
-  }>;
-  reviews?: Array<{
-    state?: string;
-    author?: { login?: string };
-  }>;
-}
-
-function parseCiStatus(checks: GhPrListItem["statusCheckRollup"]): string | null {
-  if (!checks || checks.length === 0) return null;
-
-  let total = 0;
-  let successes = 0;
-  let hasRunning = false;
-
-  for (const check of checks) {
-    total++;
-    const conclusion = check.conclusion?.toUpperCase();
-    const state = check.state?.toUpperCase();
-    const status = check.status?.toUpperCase();
-
-    if (conclusion === "SUCCESS" || state === "SUCCESS") {
-      successes++;
-    } else if (status === "IN_PROGRESS" || status === "QUEUED" || status === "PENDING" || state === "PENDING") {
-      hasRunning = true;
-    }
-  }
-
-  if (hasRunning && successes < total) {
-    return "running";
-  }
-
-  return `${successes}/${total}`;
-}
-
-function parseReviewStatus(reviews: GhPrListItem["reviews"]): { status: string | null; reviewer: string | null } {
-  if (!reviews || reviews.length === 0) {
-    return { status: null, reviewer: null };
-  }
-
-  // Build a map of latest review per author
-  const latestByAuthor = new Map<string, { state: string; login: string }>();
-  for (const review of reviews) {
-    const login = review.author?.login ?? "unknown";
-    const state = review.state?.toUpperCase() ?? "";
-    if (state === "COMMENTED") continue; // Skip comments, only track actionable reviews
-    latestByAuthor.set(login, { state, login });
-  }
-
-  // Check for CHANGES_REQUESTED first (takes priority), then APPROVED
-  for (const [, entry] of latestByAuthor) {
-    if (entry.state === "CHANGES_REQUESTED") {
-      return { status: "CHANGES_REQUESTED", reviewer: entry.login };
-    }
-  }
-
-  for (const [, entry] of latestByAuthor) {
-    if (entry.state === "APPROVED") {
-      return { status: "APPROVED", reviewer: entry.login };
-    }
-  }
-
-  // If there are reviews but none are APPROVED or CHANGES_REQUESTED
-  if (latestByAuthor.size > 0) {
-    const first = latestByAuthor.values().next().value;
-    return { status: "PENDING", reviewer: first?.login ?? null };
-  }
-
-  return { status: null, reviewer: null };
-}
-
-function snapshotFromGhItem(item: GhPrListItem): PullRequestSnapshot {
-  const { status: reviewStatus, reviewer } = parseReviewStatus(item.reviews);
   return {
-    number: item.number,
-    headRefName: item.headRefName,
-    state: item.state,
-    title: item.title,
-    url: item.url ?? "",
-    author: item.author?.login ?? "",
-    isDraft: item.isDraft ?? false,
-    ciStatus: parseCiStatus(item.statusCheckRollup),
-    reviewStatus,
-    reviewer,
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${token}`,
+    "X-GitHub-Api-Version": "2022-11-28",
   };
 }
 
-const PR_JSON_FIELDS = "number,headRefName,state,title,url,author,isDraft,statusCheckRollup,reviews";
-
-export async function listPullRequests(repoPath: string, options?: GithubAuthOptions): Promise<PullRequestSnapshot[]> {
-  try {
-    const { stdout } = await execFileAsync("gh", ["pr", "list", "--json", PR_JSON_FIELDS, "--limit", "200"], {
-      maxBuffer: 1024 * 1024 * 4,
-      cwd: repoPath,
-      env: ghEnv(options),
-    });
-
-    const parsed = JSON.parse(stdout) as GhPrListItem[];
-
-    return parsed.map((item) => {
-      // Handle fork PRs where headRefName may contain "owner:branch"
-      const headRefName = item.headRefName.includes(":") ? (item.headRefName.split(":").pop() ?? item.headRefName) : item.headRefName;
-
-      return snapshotFromGhItem({ ...item, headRefName });
-    });
-  } catch {
-    return [];
-  }
-}
-
-export async function getPrInfo(repoPath: string, branchName: string, options?: GithubAuthOptions): Promise<PullRequestSnapshot | null> {
-  try {
-    const { stdout } = await execFileAsync("gh", ["pr", "view", branchName, "--json", PR_JSON_FIELDS], {
-      maxBuffer: 1024 * 1024 * 4,
-      cwd: repoPath,
-      env: ghEnv(options),
-    });
-
-    const item = JSON.parse(stdout) as GhPrListItem;
-    return snapshotFromGhItem(item);
-  } catch {
-    return null;
-  }
+async function githubRequest(path: string, init: RequestInit, options?: GithubAuthOptions): Promise<Response> {
+  return await fetch(`https://api.github.com${path}`, {
+    ...init,
+    headers: {
+      ...authHeaders(options),
+      ...(init.headers ?? {}),
+    },
+  });
 }
 
 export async function createPr(
-  repoPath: string,
+  repoFullName: string,
   headBranch: string,
   title: string,
   body?: string,
   options?: GithubAuthOptions,
 ): Promise<{ number: number; url: string }> {
-  const args = ["pr", "create", "--title", title, "--head", headBranch];
-  if (body) {
-    args.push("--body", body);
-  } else {
-    args.push("--body", "");
+  const baseBranch = options?.baseBranch?.trim() || "main";
+  const response = await githubRequest(
+    `/repos/${repoFullName}/pulls`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        title,
+        head: headBranch,
+        base: baseBranch,
+        body: body ?? "",
+      }),
+    },
+    options,
+  );
+
+  const payload = (await response.json()) as { number?: number; html_url?: string; message?: string };
+  if (!response.ok || !payload.number || !payload.html_url) {
+    throw new Error(payload.message ?? `Failed to create pull request for ${repoFullName}`);
   }
 
-  const { stdout } = await execFileAsync("gh", args, {
-    maxBuffer: 1024 * 1024,
-    cwd: repoPath,
-    env: ghEnv(options),
-  });
-
-  // gh pr create outputs the PR URL on success
-  const url = stdout.trim();
-  // Extract PR number from URL: https://github.com/owner/repo/pull/123
-  const numberMatch = url.match(/\/pull\/(\d+)/);
-  const number = numberMatch ? parseInt(numberMatch[1]!, 10) : 0;
-
-  return { number, url };
+  return {
+    number: payload.number,
+    url: payload.html_url,
+  };
 }
 
 export async function starRepository(repoFullName: string, options?: GithubAuthOptions): Promise<void> {
-  try {
-    await execFileAsync("gh", ["api", "--method", "PUT", `user/starred/${repoFullName}`], {
-      maxBuffer: 1024 * 1024,
-      env: ghEnv(options),
-    });
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : `Failed to star GitHub repository ${repoFullName}. Ensure GitHub auth is configured for the backend.`;
-    throw new Error(message);
-  }
-}
+  const response = await githubRequest(
+    `/user/starred/${repoFullName}`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Length": "0",
+      },
+    },
+    options,
+  );
 
-export async function getAllowedMergeMethod(repoPath: string, options?: GithubAuthOptions): Promise<"squash" | "rebase" | "merge"> {
-  try {
-    // Get the repo owner/name from gh
-    const { stdout: repoJson } = await execFileAsync("gh", ["repo", "view", "--json", "owner,name"], { cwd: repoPath, env: ghEnv(options) });
-    const repo = JSON.parse(repoJson) as { owner: { login: string }; name: string };
-    const repoFullName = `${repo.owner.login}/${repo.name}`;
-
-    const { stdout } = await execFileAsync("gh", ["api", `repos/${repoFullName}`, "--jq", ".allow_squash_merge, .allow_rebase_merge, .allow_merge_commit"], {
-      maxBuffer: 1024 * 1024,
-      cwd: repoPath,
-      env: ghEnv(options),
-    });
-
-    const lines = stdout.trim().split("\n");
-    const allowSquash = lines[0]?.trim() === "true";
-    const allowRebase = lines[1]?.trim() === "true";
-    const allowMerge = lines[2]?.trim() === "true";
-
-    if (allowSquash) return "squash";
-    if (allowRebase) return "rebase";
-    if (allowMerge) return "merge";
-    return "squash";
-  } catch {
-    return "squash";
-  }
-}
-
-export async function mergePr(repoPath: string, prNumber: number, options?: GithubAuthOptions): Promise<void> {
-  const method = await getAllowedMergeMethod(repoPath, options);
-  await execFileAsync("gh", ["pr", "merge", String(prNumber), `--${method}`, "--delete-branch"], { cwd: repoPath, env: ghEnv(options) });
-}
-
-export async function isPrMerged(repoPath: string, branchName: string, options?: GithubAuthOptions): Promise<boolean> {
-  try {
-    const { stdout } = await execFileAsync("gh", ["pr", "view", branchName, "--json", "state"], { cwd: repoPath, env: ghEnv(options) });
-    const parsed = JSON.parse(stdout) as { state: string };
-    return parsed.state.toUpperCase() === "MERGED";
-  } catch {
-    return false;
-  }
-}
-
-export async function getPrTitle(repoPath: string, branchName: string): Promise<string | null> {
-  try {
-    const { stdout } = await execFileAsync("gh", ["pr", "view", branchName, "--json", "title"], { cwd: repoPath });
-    const parsed = JSON.parse(stdout) as { title: string };
-    return parsed.title;
-  } catch {
-    return null;
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(payload?.message ?? `Failed to star GitHub repository ${repoFullName}`);
   }
 }

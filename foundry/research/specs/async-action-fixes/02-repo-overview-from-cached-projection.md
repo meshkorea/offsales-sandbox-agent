@@ -15,11 +15,11 @@ The frontend polls repo overview repeatedly, so this design multiplies slow work
 
 ## Current Code Context
 
-- Workspace overview entry point: `foundry/packages/backend/src/actors/workspace/actions.ts`
-- Project overview implementation: `foundry/packages/backend/src/actors/project/actions.ts`
-- Branch sync poller: `foundry/packages/backend/src/actors/project-branch-sync/index.ts`
-- PR sync poller: `foundry/packages/backend/src/actors/project-pr-sync/index.ts`
-- Repo overview client polling: `foundry/packages/frontend/src/components/workspace-dashboard.tsx`
+- Organization overview entry point: `foundry/packages/backend/src/actors/organization/actions.ts`
+- Repository overview implementation: `foundry/packages/backend/src/actors/repository/actions.ts`
+- Branch sync poller: `foundry/packages/backend/src/actors/repository-branch-sync/index.ts`
+- PR sync poller: `foundry/packages/backend/src/actors/repository-pr-sync/index.ts`
+- Repo overview client polling: `foundry/packages/frontend/src/components/organization-dashboard.tsx`
 
 ## Target Contract
 
@@ -30,27 +30,27 @@ The frontend polls repo overview repeatedly, so this design multiplies slow work
 ## Proposed Fix
 
 1. Remove inline `forceProjectSync()` from `getRepoOverview`.
-2. Add freshness fields to the project projection, for example:
+2. Add freshness fields to the repository projection, for example:
    - `branchSyncAt`
    - `prSyncAt`
    - `branchSyncStatus`
    - `prSyncStatus`
 3. Let the existing polling actors own cache refresh.
-4. If the client needs a manual refresh, add a non-blocking command such as `project.requestOverviewRefresh` that:
+4. If the client needs a manual refresh, add a non-blocking command such as `repository.requestOverviewRefresh` that:
    - enqueues refresh work
    - updates sync status to `queued` or `running`
    - returns immediately
-5. Keep `getRepoOverview` as a pure read over project SQLite state.
+5. Keep `getRepoOverview` as a pure read over repository SQLite state.
 
 ## Files Likely To Change
 
-- `foundry/packages/backend/src/actors/workspace/actions.ts`
-- `foundry/packages/backend/src/actors/project/actions.ts`
-- `foundry/packages/backend/src/actors/project/db/schema.ts`
-- `foundry/packages/backend/src/actors/project/db/migrations.ts`
-- `foundry/packages/backend/src/actors/project-branch-sync/index.ts`
-- `foundry/packages/backend/src/actors/project-pr-sync/index.ts`
-- `foundry/packages/frontend/src/components/workspace-dashboard.tsx`
+- `foundry/packages/backend/src/actors/organization/actions.ts`
+- `foundry/packages/backend/src/actors/repository/actions.ts`
+- `foundry/packages/backend/src/actors/repository/db/schema.ts`
+- `foundry/packages/backend/src/actors/repository/db/migrations.ts`
+- `foundry/packages/backend/src/actors/repository-branch-sync/index.ts`
+- `foundry/packages/backend/src/actors/repository-pr-sync/index.ts`
+- `foundry/packages/frontend/src/components/organization-dashboard.tsx`
 
 ## Client Impact
 

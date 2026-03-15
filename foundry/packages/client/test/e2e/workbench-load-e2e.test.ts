@@ -2,12 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   createFoundryLogger,
   type TaskWorkbenchSnapshot,
-  type WorkbenchAgentTab,
+  type WorkbenchSession,
   type WorkbenchTask,
   type WorkbenchModelId,
   type WorkbenchTranscriptEvent,
 } from "@sandbox-agent/foundry-shared";
 import { createBackendClient } from "../../src/backend-client.js";
+import { requireImportedRepo } from "./helpers.js";
 
 const RUN_WORKBENCH_LOAD_E2E = process.env.HF_ENABLE_DAEMON_WORKBENCH_LOAD_E2E === "1";
 const logger = createFoundryLogger({
@@ -79,10 +80,10 @@ function findTask(snapshot: TaskWorkbenchSnapshot, taskId: string): WorkbenchTas
   return task;
 }
 
-function findTab(task: WorkbenchTask, tabId: string): WorkbenchAgentTab {
-  const tab = task.tabs.find((candidate) => candidate.id === tabId);
+function findTab(task: WorkbenchTask, sessionId: string): WorkbenchSession {
+  const tab = task.sessions.find((candidate) => candidate.id === sessionId);
   if (!tab) {
-    throw new Error(`tab ${tabId} missing from task ${task.id}`);
+    throw new Error(`tab ${sessionId} missing from task ${task.id}`);
   }
   return tab;
 }
@@ -151,7 +152,7 @@ function average(values: number[]): number {
 
 async function measureWorkbenchSnapshot(
   client: ReturnType<typeof createBackendClient>,
-  workspaceId: string,
+  organizationId: string,
   iterations: number,
 ): Promise<{
   avgMs: number;
@@ -166,19 +167,19 @@ async function measureWorkbenchSnapshot(
 
   for (let index = 0; index < iterations; index += 1) {
     const startedAt = performance.now();
-    snapshot = await client.getWorkbench(workspaceId);
+    snapshot = await client.getWorkbench(organizationId);
     durations.push(performance.now() - startedAt);
   }
 
   const finalSnapshot = snapshot ?? {
-    workspaceId,
+    organizationId,
     repos: [],
-    projects: [],
+    repositories: [],
     tasks: [],
   };
   const payloadBytes = Buffer.byteLength(JSON.stringify(finalSnapshot), "utf8");
-  const tabCount = finalSnapshot.tasks.reduce((sum, task) => sum + task.tabs.length, 0);
-  const transcriptEventCount = finalSnapshot.tasks.reduce((sum, task) => sum + task.tabs.reduce((tabSum, tab) => tabSum + tab.transcript.length, 0), 0);
+  const tabCount = finalSnapshot.tasks.reduce((sum, task) => sum + task.sessions.length, 0);
+  const transcriptEventCount = finalSnapshot.tasks.reduce((sum, task) => sum + task.sessions.reduce((tabSum, tab) => tabSum + tab.transcript.length, 0), 0);
 
   return {
     avgMs: Math.round(average(durations)),
@@ -193,7 +194,7 @@ async function measureWorkbenchSnapshot(
 describe("e2e(client): workbench load", () => {
   it.skipIf(!RUN_WORKBENCH_LOAD_E2E)("runs a simple sequential load profile against the real backend", { timeout: 30 * 60_000 }, async () => {
     const endpoint = process.env.HF_E2E_BACKEND_ENDPOINT?.trim() || "http://127.0.0.1:7741/v1/rivet";
-    const workspaceId = process.env.HF_E2E_WORKSPACE?.trim() || "default";
+    const organizationId = process.env.HF_E2E_WORKSPACE?.trim() || "default";
     const repoRemote = requiredEnv("HF_E2E_GITHUB_REPO");
     const model = workbenchModelEnv("HF_E2E_MODEL", "gpt-5.3-codex");
     const taskCount = intEnv("HF_LOAD_TASK_COUNT", 3);
@@ -202,10 +203,10 @@ describe("e2e(client): workbench load", () => {
 
     const client = createBackendClient({
       endpoint,
-      defaultWorkspaceId: workspaceId,
+      defaultOrganizationId: organizationId,
     });
 
-    const repo = await client.addRepo(workspaceId, repoRemote);
+    const repo = await requireImportedRepo(client, organizationId, repoRemote);
     const createTaskLatencies: number[] = [];
     const provisionLatencies: number[] = [];
     const createSessionLatencies: number[] = [];
@@ -219,14 +220,14 @@ describe("e2e(client): workbench load", () => {
       transcriptEventCount: number;
     }> = [];
 
-    snapshotSeries.push(await measureWorkbenchSnapshot(client, workspaceId, 2));
+    snapshotSeries.push(await measureWorkbenchSnapshot(client, organizationId, 2));
 
     for (let taskIndex = 0; taskIndex < taskCount; taskIndex += 1) {
       const runId = `load-${taskIndex}-${Date.now().toString(36)}`;
       const initialReply = `LOAD_INIT_${runId}`;
 
       const createStartedAt = performance.now();
-      const created = await client.createWorkbenchTask(workspaceId, {
+      const created = await client.createWorkbenchTask(organizationId, {
         repoId: repo.repoId,
         title: `Workbench Load ${runId}`,
         branch: `load/${runId}`,
@@ -240,30 +241,30 @@ describe("e2e(client): workbench load", () => {
         `task ${runId} provisioning`,
         12 * 60_000,
         pollIntervalMs,
-        async () => findTask(await client.getWorkbench(workspaceId), created.taskId),
+        async () => findTask(await client.getWorkbench(organizationId), created.taskId),
         (task) => {
-          const tab = task.tabs[0];
+          const tab = task.sessions[0];
           return Boolean(tab && task.status === "idle" && tab.status === "idle" && transcriptIncludesAgentText(tab.transcript, initialReply));
         },
       );
       provisionLatencies.push(performance.now() - provisionStartedAt);
 
-      expect(provisioned.tabs.length).toBeGreaterThan(0);
-      const primaryTab = provisioned.tabs[0]!;
+      expect(provisioned.sessions.length).toBeGreaterThan(0);
+      const primaryTab = provisioned.sessions[0]!;
       expect(transcriptIncludesAgentText(primaryTab.transcript, initialReply)).toBe(true);
 
       for (let sessionIndex = 0; sessionIndex < extraSessionCount; sessionIndex += 1) {
         const expectedReply = `LOAD_REPLY_${runId}_${sessionIndex}`;
         const createSessionStartedAt = performance.now();
-        const createdSession = await client.createWorkbenchSession(workspaceId, {
+        const createdSession = await client.createWorkbenchSession(organizationId, {
           taskId: created.taskId,
           model,
         });
         createSessionLatencies.push(performance.now() - createSessionStartedAt);
 
-        await client.sendWorkbenchMessage(workspaceId, {
+        await client.sendWorkbenchMessage(organizationId, {
           taskId: created.taskId,
-          tabId: createdSession.tabId,
+          sessionId: createdSession.sessionId,
           text: `Run pwd in the repo, then reply with exactly: ${expectedReply}`,
           attachments: [],
         });
@@ -273,18 +274,18 @@ describe("e2e(client): workbench load", () => {
           `task ${runId} session ${sessionIndex} reply`,
           10 * 60_000,
           pollIntervalMs,
-          async () => findTask(await client.getWorkbench(workspaceId), created.taskId),
+          async () => findTask(await client.getWorkbench(organizationId), created.taskId),
           (task) => {
-            const tab = findTab(task, createdSession.tabId);
+            const tab = findTab(task, createdSession.sessionId);
             return tab.status === "idle" && transcriptIncludesAgentText(tab.transcript, expectedReply);
           },
         );
         messageRoundTripLatencies.push(performance.now() - messageStartedAt);
 
-        expect(transcriptIncludesAgentText(findTab(withReply, createdSession.tabId).transcript, expectedReply)).toBe(true);
+        expect(transcriptIncludesAgentText(findTab(withReply, createdSession.sessionId).transcript, expectedReply)).toBe(true);
       }
 
-      const snapshotMetrics = await measureWorkbenchSnapshot(client, workspaceId, 3);
+      const snapshotMetrics = await measureWorkbenchSnapshot(client, organizationId, 3);
       snapshotSeries.push(snapshotMetrics);
       logger.info(
         {

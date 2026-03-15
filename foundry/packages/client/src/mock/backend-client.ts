@@ -1,5 +1,4 @@
 import type {
-  AddRepoInput,
   AppEvent,
   CreateTaskInput,
   FoundryAppSnapshot,
@@ -17,21 +16,19 @@ import type {
   TaskWorkbenchSetSessionUnreadInput,
   TaskWorkbenchSendMessageInput,
   TaskWorkbenchSnapshot,
-  TaskWorkbenchTabInput,
+  TaskWorkbenchSessionInput,
   TaskWorkbenchUpdateDraftInput,
   TaskEvent,
   WorkbenchSessionDetail,
   WorkbenchTaskDetail,
   WorkbenchTaskSummary,
-  WorkspaceEvent,
-  WorkspaceSummarySnapshot,
+  OrganizationEvent,
+  OrganizationSummarySnapshot,
   HistoryEvent,
   HistoryQueryInput,
-  ProviderId,
+  SandboxProviderId,
   RepoOverview,
   RepoRecord,
-  RepoStackActionInput,
-  RepoStackActionResult,
   StarSandboxAgentRepoResult,
   SwitchResult,
 } from "@sandbox-agent/foundry-shared";
@@ -91,7 +88,7 @@ function toTaskStatus(status: TaskRecord["status"], archived: boolean): TaskReco
   return status;
 }
 
-export function createMockBackendClient(defaultWorkspaceId = "default"): BackendClient {
+export function createMockBackendClient(defaultOrganizationId = "default"): BackendClient {
   const workbench = getSharedMockWorkbenchClient();
   const listenersBySandboxId = new Map<string, Set<() => void>>();
   const processesBySandboxId = new Map<string, MockProcessRecord[]>();
@@ -176,9 +173,10 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
     updatedAtMs: task.updatedAtMs,
     branch: task.branch,
     pullRequest: task.pullRequest,
-    sessionsSummary: task.tabs.map((tab) => ({
+    sessionsSummary: task.sessions.map((tab) => ({
       id: tab.id,
       sessionId: tab.sessionId,
+      sandboxSessionId: tab.sandboxSessionId ?? tab.sessionId,
       sessionName: tab.sessionName,
       agent: tab.agent,
       model: tab.model,
@@ -192,10 +190,10 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
   const buildTaskDetail = (task: TaskWorkbenchSnapshot["tasks"][number]): WorkbenchTaskDetail => ({
     ...buildTaskSummary(task),
     task: task.title,
-    agentType: task.tabs[0]?.agent === "Codex" ? "codex" : "claude",
+    agentType: task.sessions[0]?.agent === "Codex" ? "codex" : "claude",
     runtimeStatus: toTaskStatus(task.status === "archived" ? "archived" : "running", task.status === "archived"),
     statusMessage: task.status === "archived" ? "archived" : "mock sandbox ready",
-    activeSessionId: task.tabs[0]?.sessionId ?? null,
+    activeSessionId: task.sessions[0]?.sessionId ?? null,
     diffStat: task.fileChanges.length > 0 ? `+${task.fileChanges.length}/-${task.fileChanges.length}` : "+0/-0",
     prUrl: task.pullRequest ? `https://example.test/pr/${task.pullRequest.number}` : null,
     reviewStatus: null,
@@ -205,7 +203,7 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
     minutesUsed: task.minutesUsed,
     sandboxes: [
       {
-        providerId: "local",
+        sandboxProviderId: "local",
         sandboxId: task.id,
         cwd: mockCwd(task.repoName, task.id),
       },
@@ -213,15 +211,14 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
     activeSandboxId: task.id,
   });
 
-  const buildSessionDetail = (task: TaskWorkbenchSnapshot["tasks"][number], tabId: string): WorkbenchSessionDetail => {
-    const tab = task.tabs.find((candidate) => candidate.id === tabId);
+  const buildSessionDetail = (task: TaskWorkbenchSnapshot["tasks"][number], sessionId: string): WorkbenchSessionDetail => {
+    const tab = task.sessions.find((candidate) => candidate.id === sessionId);
     if (!tab) {
-      throw new Error(`Unknown mock tab ${tabId} for task ${task.id}`);
+      throw new Error(`Unknown mock session ${sessionId} for task ${task.id}`);
     }
     return {
       sessionId: tab.id,
-      tabId: tab.id,
-      sandboxSessionId: tab.sessionId,
+      sandboxSessionId: tab.sandboxSessionId ?? tab.sessionId,
       sessionName: tab.sessionName,
       agent: tab.agent,
       model: tab.model,
@@ -234,11 +231,11 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
     };
   };
 
-  const buildWorkspaceSummary = (): WorkspaceSummarySnapshot => {
+  const buildOrganizationSummary = (): OrganizationSummarySnapshot => {
     const snapshot = workbench.getSnapshot();
     const taskSummaries = snapshot.tasks.map(buildTaskSummary);
     return {
-      workspaceId: defaultWorkspaceId,
+      organizationId: defaultOrganizationId,
       repos: snapshot.repos.map((repo) => {
         const repoTasks = taskSummaries.filter((task) => task.repoId === repo.id);
         return {
@@ -253,39 +250,40 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
     };
   };
 
-  const workspaceScope = (workspaceId: string): string => `workspace:${workspaceId}`;
-  const taskScope = (workspaceId: string, repoId: string, taskId: string): string => `task:${workspaceId}:${repoId}:${taskId}`;
-  const sandboxScope = (workspaceId: string, providerId: string, sandboxId: string): string => `sandbox:${workspaceId}:${providerId}:${sandboxId}`;
+  const organizationScope = (organizationId: string): string => `organization:${organizationId}`;
+  const taskScope = (organizationId: string, repoId: string, taskId: string): string => `task:${organizationId}:${repoId}:${taskId}`;
+  const sandboxScope = (organizationId: string, sandboxProviderId: string, sandboxId: string): string =>
+    `sandbox:${organizationId}:${sandboxProviderId}:${sandboxId}`;
 
-  const emitWorkspaceSnapshot = (): void => {
-    const summary = buildWorkspaceSummary();
+  const emitOrganizationSnapshot = (): void => {
+    const summary = buildOrganizationSummary();
     const latestTask = [...summary.taskSummaries].sort((left, right) => right.updatedAtMs - left.updatedAtMs)[0] ?? null;
     if (latestTask) {
-      emitConnectionEvent(workspaceScope(defaultWorkspaceId), "workspaceUpdated", {
+      emitConnectionEvent(organizationScope(defaultOrganizationId), "organizationUpdated", {
         type: "taskSummaryUpdated",
         taskSummary: latestTask,
-      } satisfies WorkspaceEvent);
+      } satisfies OrganizationEvent);
     }
   };
 
   const emitTaskUpdate = (taskId: string): void => {
     const task = requireTask(taskId);
-    emitConnectionEvent(taskScope(defaultWorkspaceId, task.repoId, task.id), "taskUpdated", {
+    emitConnectionEvent(taskScope(defaultOrganizationId, task.repoId, task.id), "taskUpdated", {
       type: "taskDetailUpdated",
       detail: buildTaskDetail(task),
     } satisfies TaskEvent);
   };
 
-  const emitSessionUpdate = (taskId: string, tabId: string): void => {
+  const emitSessionUpdate = (taskId: string, sessionId: string): void => {
     const task = requireTask(taskId);
-    emitConnectionEvent(taskScope(defaultWorkspaceId, task.repoId, task.id), "sessionUpdated", {
+    emitConnectionEvent(taskScope(defaultOrganizationId, task.repoId, task.id), "sessionUpdated", {
       type: "sessionUpdated",
-      session: buildSessionDetail(task, tabId),
+      session: buildSessionDetail(task, sessionId),
     } satisfies SessionEvent);
   };
 
   const emitSandboxProcessesUpdate = (sandboxId: string): void => {
-    emitConnectionEvent(sandboxScope(defaultWorkspaceId, "local", sandboxId), "processesUpdated", {
+    emitConnectionEvent(sandboxScope(defaultOrganizationId, "local", sandboxId), "processesUpdated", {
       type: "processesUpdated",
       processes: ensureProcessList(sandboxId).map((process) => cloneProcess(process)),
     } satisfies SandboxProcessesEvent);
@@ -296,22 +294,22 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
     const cwd = mockCwd(task.repoName, task.id);
     const archived = task.status === "archived";
     return {
-      workspaceId: defaultWorkspaceId,
+      organizationId: defaultOrganizationId,
       repoId: task.repoId,
       repoRemote: mockRepoRemote(task.repoName),
       taskId: task.id,
       branchName: task.branch,
       title: task.title,
       task: task.title,
-      providerId: "local",
+      sandboxProviderId: "local",
       status: toTaskStatus(archived ? "archived" : "running", archived),
       statusMessage: archived ? "archived" : "mock sandbox ready",
       activeSandboxId: task.id,
-      activeSessionId: task.tabs[0]?.sessionId ?? null,
+      activeSessionId: task.sessions[0]?.sessionId ?? null,
       sandboxes: [
         {
           sandboxId: task.id,
-          providerId: "local",
+          sandboxProviderId: "local",
           sandboxActorId: "mock-sandbox",
           switchTarget: `mock://${task.id}`,
           cwd,
@@ -319,7 +317,7 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
           updatedAt: task.updatedAtMs,
         },
       ],
-      agentType: task.tabs[0]?.agent === "Codex" ? "codex" : "claude",
+      agentType: task.sessions[0]?.agent === "Codex" ? "codex" : "claude",
       prSubmitted: Boolean(task.pullRequest),
       diffStat: task.fileChanges.length > 0 ? `+${task.fileChanges.length}/-${task.fileChanges.length}` : "+0/-0",
       prUrl: task.pullRequest ? `https://example.test/pr/${task.pullRequest.number}` : null,
@@ -366,16 +364,16 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
       return unsupportedAppSnapshot();
     },
 
-    async connectWorkspace(workspaceId: string): Promise<ActorConn> {
-      return createConn(workspaceScope(workspaceId));
+    async connectOrganization(organizationId: string): Promise<ActorConn> {
+      return createConn(organizationScope(organizationId));
     },
 
-    async connectTask(workspaceId: string, repoId: string, taskId: string): Promise<ActorConn> {
-      return createConn(taskScope(workspaceId, repoId, taskId));
+    async connectTask(organizationId: string, repoId: string, taskId: string): Promise<ActorConn> {
+      return createConn(taskScope(organizationId, repoId, taskId));
     },
 
-    async connectSandbox(workspaceId: string, providerId: ProviderId, sandboxId: string): Promise<ActorConn> {
-      return createConn(sandboxScope(workspaceId, providerId, sandboxId));
+    async connectSandbox(organizationId: string, sandboxProviderId: SandboxProviderId, sandboxId: string): Promise<ActorConn> {
+      return createConn(sandboxScope(organizationId, sandboxProviderId, sandboxId));
     },
 
     subscribeApp(): () => void {
@@ -434,13 +432,9 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
       return unsupportedAppSnapshot();
     },
 
-    async addRepo(_workspaceId: string, _remoteUrl: string): Promise<RepoRecord> {
-      notSupported("addRepo");
-    },
-
-    async listRepos(_workspaceId: string): Promise<RepoRecord[]> {
+    async listRepos(_organizationId: string): Promise<RepoRecord[]> {
       return workbench.getSnapshot().repos.map((repo) => ({
-        workspaceId: defaultWorkspaceId,
+        organizationId: defaultOrganizationId,
         repoId: repo.id,
         remoteUrl: mockRepoRemote(repo.label),
         createdAt: nowMs(),
@@ -452,12 +446,12 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
       notSupported("createTask");
     },
 
-    async listTasks(_workspaceId: string, repoId?: string): Promise<TaskSummary[]> {
+    async listTasks(_organizationId: string, repoId?: string): Promise<TaskSummary[]> {
       return workbench
         .getSnapshot()
         .tasks.filter((task) => !repoId || task.repoId === repoId)
         .map((task) => ({
-          workspaceId: defaultWorkspaceId,
+          organizationId: defaultOrganizationId,
           repoId: task.repoId,
           taskId: task.id,
           branchName: task.branch,
@@ -467,15 +461,10 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
         }));
     },
 
-    async getRepoOverview(_workspaceId: string, _repoId: string): Promise<RepoOverview> {
+    async getRepoOverview(_organizationId: string, _repoId: string): Promise<RepoOverview> {
       notSupported("getRepoOverview");
     },
-
-    async runRepoStackAction(_input: RepoStackActionInput): Promise<RepoStackActionResult> {
-      notSupported("runRepoStackAction");
-    },
-
-    async getTask(_workspaceId: string, taskId: string): Promise<TaskRecord> {
+    async getTask(_organizationId: string, taskId: string): Promise<TaskRecord> {
       return buildTaskRecord(taskId);
     },
 
@@ -483,23 +472,23 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
       return [];
     },
 
-    async switchTask(_workspaceId: string, taskId: string): Promise<SwitchResult> {
+    async switchTask(_organizationId: string, taskId: string): Promise<SwitchResult> {
       return {
-        workspaceId: defaultWorkspaceId,
+        organizationId: defaultOrganizationId,
         taskId,
-        providerId: "local",
+        sandboxProviderId: "local",
         switchTarget: `mock://${taskId}`,
       };
     },
 
-    async attachTask(_workspaceId: string, taskId: string): Promise<{ target: string; sessionId: string | null }> {
+    async attachTask(_organizationId: string, taskId: string): Promise<{ target: string; sessionId: string | null }> {
       return {
         target: `mock://${taskId}`,
-        sessionId: requireTask(taskId).tabs[0]?.sessionId ?? null,
+        sessionId: requireTask(taskId).sessions[0]?.sessionId ?? null,
       };
     },
 
-    async runAction(_workspaceId: string, _taskId: string): Promise<void> {
+    async runAction(_organizationId: string, _taskId: string): Promise<void> {
       notSupported("runAction");
     },
 
@@ -516,8 +505,8 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
     },
 
     async createSandboxProcess(input: {
-      workspaceId: string;
-      providerId: ProviderId;
+      organizationId: string;
+      sandboxProviderId: SandboxProviderId;
       sandboxId: string;
       request: ProcessCreateRequest;
     }): Promise<SandboxProcessRecord> {
@@ -529,15 +518,15 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
       return cloneProcess(created);
     },
 
-    async listSandboxProcesses(_workspaceId: string, _providerId: ProviderId, sandboxId: string): Promise<{ processes: SandboxProcessRecord[] }> {
+    async listSandboxProcesses(_organizationId: string, _providerId: SandboxProviderId, sandboxId: string): Promise<{ processes: SandboxProcessRecord[] }> {
       return {
         processes: ensureProcessList(sandboxId).map((process) => cloneProcess(process)),
       };
     },
 
     async getSandboxProcessLogs(
-      _workspaceId: string,
-      _providerId: ProviderId,
+      _organizationId: string,
+      _providerId: SandboxProviderId,
       sandboxId: string,
       processId: string,
       query?: ProcessLogFollowQuery,
@@ -564,8 +553,8 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
     },
 
     async stopSandboxProcess(
-      _workspaceId: string,
-      _providerId: ProviderId,
+      _organizationId: string,
+      _providerId: SandboxProviderId,
       sandboxId: string,
       processId: string,
       _query?: ProcessSignalQuery,
@@ -583,8 +572,8 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
     },
 
     async killSandboxProcess(
-      _workspaceId: string,
-      _providerId: ProviderId,
+      _organizationId: string,
+      _providerId: SandboxProviderId,
       sandboxId: string,
       processId: string,
       _query?: ProcessSignalQuery,
@@ -601,7 +590,7 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
       return cloneProcess(process);
     },
 
-    async deleteSandboxProcess(_workspaceId: string, _providerId: ProviderId, sandboxId: string, processId: string): Promise<void> {
+    async deleteSandboxProcess(_organizationId: string, _providerId: SandboxProviderId, sandboxId: string, processId: string): Promise<void> {
       processesBySandboxId.set(
         sandboxId,
         ensureProcessList(sandboxId).filter((candidate) => candidate.id !== processId),
@@ -609,7 +598,7 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
       notifySandbox(sandboxId);
     },
 
-    subscribeSandboxProcesses(_workspaceId: string, _providerId: ProviderId, sandboxId: string, listener: () => void): () => void {
+    subscribeSandboxProcesses(_organizationId: string, _providerId: SandboxProviderId, sandboxId: string, listener: () => void): () => void {
       let listeners = listenersBySandboxId.get(sandboxId);
       if (!listeners) {
         listeners = new Set();
@@ -637,26 +626,26 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
     },
 
     async sandboxProviderState(
-      _workspaceId: string,
-      _providerId: ProviderId,
+      _organizationId: string,
+      _providerId: SandboxProviderId,
       sandboxId: string,
-    ): Promise<{ providerId: ProviderId; sandboxId: string; state: string; at: number }> {
-      return { providerId: "local", sandboxId, state: "running", at: nowMs() };
+    ): Promise<{ sandboxProviderId: SandboxProviderId; sandboxId: string; state: string; at: number }> {
+      return { sandboxProviderId: "local", sandboxId, state: "running", at: nowMs() };
     },
 
     async getSandboxAgentConnection(): Promise<{ endpoint: string; token?: string }> {
       return { endpoint: "mock://terminal-unavailable" };
     },
 
-    async getWorkspaceSummary(): Promise<WorkspaceSummarySnapshot> {
-      return buildWorkspaceSummary();
+    async getOrganizationSummary(): Promise<OrganizationSummarySnapshot> {
+      return buildOrganizationSummary();
     },
 
-    async getTaskDetail(_workspaceId: string, _repoId: string, taskId: string): Promise<WorkbenchTaskDetail> {
+    async getTaskDetail(_organizationId: string, _repoId: string, taskId: string): Promise<WorkbenchTaskDetail> {
       return buildTaskDetail(requireTask(taskId));
     },
 
-    async getSessionDetail(_workspaceId: string, _repoId: string, taskId: string, sessionId: string): Promise<WorkbenchSessionDetail> {
+    async getSessionDetail(_organizationId: string, _repoId: string, taskId: string, sessionId: string): Promise<WorkbenchSessionDetail> {
       return buildSessionDetail(requireTask(taskId), sessionId);
     },
 
@@ -664,103 +653,103 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
       return workbench.getSnapshot();
     },
 
-    subscribeWorkbench(_workspaceId: string, listener: () => void): () => void {
+    subscribeWorkbench(_organizationId: string, listener: () => void): () => void {
       return workbench.subscribe(listener);
     },
 
-    async createWorkbenchTask(_workspaceId: string, input: TaskWorkbenchCreateTaskInput): Promise<TaskWorkbenchCreateTaskResponse> {
+    async createWorkbenchTask(_organizationId: string, input: TaskWorkbenchCreateTaskInput): Promise<TaskWorkbenchCreateTaskResponse> {
       const created = await workbench.createTask(input);
-      emitWorkspaceSnapshot();
+      emitOrganizationSnapshot();
       emitTaskUpdate(created.taskId);
-      if (created.tabId) {
-        emitSessionUpdate(created.taskId, created.tabId);
+      if (created.sessionId) {
+        emitSessionUpdate(created.taskId, created.sessionId);
       }
       return created;
     },
 
-    async markWorkbenchUnread(_workspaceId: string, input: TaskWorkbenchSelectInput): Promise<void> {
+    async markWorkbenchUnread(_organizationId: string, input: TaskWorkbenchSelectInput): Promise<void> {
       await workbench.markTaskUnread(input);
-      emitWorkspaceSnapshot();
+      emitOrganizationSnapshot();
       emitTaskUpdate(input.taskId);
     },
 
-    async renameWorkbenchTask(_workspaceId: string, input: TaskWorkbenchRenameInput): Promise<void> {
+    async renameWorkbenchTask(_organizationId: string, input: TaskWorkbenchRenameInput): Promise<void> {
       await workbench.renameTask(input);
-      emitWorkspaceSnapshot();
+      emitOrganizationSnapshot();
       emitTaskUpdate(input.taskId);
     },
 
-    async renameWorkbenchBranch(_workspaceId: string, input: TaskWorkbenchRenameInput): Promise<void> {
+    async renameWorkbenchBranch(_organizationId: string, input: TaskWorkbenchRenameInput): Promise<void> {
       await workbench.renameBranch(input);
-      emitWorkspaceSnapshot();
+      emitOrganizationSnapshot();
       emitTaskUpdate(input.taskId);
     },
 
-    async createWorkbenchSession(_workspaceId: string, input: TaskWorkbenchSelectInput & { model?: string }): Promise<{ tabId: string }> {
-      const created = await workbench.addTab(input);
-      emitWorkspaceSnapshot();
+    async createWorkbenchSession(_organizationId: string, input: TaskWorkbenchSelectInput & { model?: string }): Promise<{ sessionId: string }> {
+      const created = await workbench.addSession(input);
+      emitOrganizationSnapshot();
       emitTaskUpdate(input.taskId);
-      emitSessionUpdate(input.taskId, created.tabId);
+      emitSessionUpdate(input.taskId, created.sessionId);
       return created;
     },
 
-    async renameWorkbenchSession(_workspaceId: string, input: TaskWorkbenchRenameSessionInput): Promise<void> {
+    async renameWorkbenchSession(_organizationId: string, input: TaskWorkbenchRenameSessionInput): Promise<void> {
       await workbench.renameSession(input);
-      emitWorkspaceSnapshot();
+      emitOrganizationSnapshot();
       emitTaskUpdate(input.taskId);
-      emitSessionUpdate(input.taskId, input.tabId);
+      emitSessionUpdate(input.taskId, input.sessionId);
     },
 
-    async setWorkbenchSessionUnread(_workspaceId: string, input: TaskWorkbenchSetSessionUnreadInput): Promise<void> {
+    async setWorkbenchSessionUnread(_organizationId: string, input: TaskWorkbenchSetSessionUnreadInput): Promise<void> {
       await workbench.setSessionUnread(input);
-      emitWorkspaceSnapshot();
+      emitOrganizationSnapshot();
       emitTaskUpdate(input.taskId);
-      emitSessionUpdate(input.taskId, input.tabId);
+      emitSessionUpdate(input.taskId, input.sessionId);
     },
 
-    async updateWorkbenchDraft(_workspaceId: string, input: TaskWorkbenchUpdateDraftInput): Promise<void> {
+    async updateWorkbenchDraft(_organizationId: string, input: TaskWorkbenchUpdateDraftInput): Promise<void> {
       await workbench.updateDraft(input);
-      emitWorkspaceSnapshot();
+      emitOrganizationSnapshot();
       emitTaskUpdate(input.taskId);
-      emitSessionUpdate(input.taskId, input.tabId);
+      emitSessionUpdate(input.taskId, input.sessionId);
     },
 
-    async changeWorkbenchModel(_workspaceId: string, input: TaskWorkbenchChangeModelInput): Promise<void> {
+    async changeWorkbenchModel(_organizationId: string, input: TaskWorkbenchChangeModelInput): Promise<void> {
       await workbench.changeModel(input);
-      emitWorkspaceSnapshot();
+      emitOrganizationSnapshot();
       emitTaskUpdate(input.taskId);
-      emitSessionUpdate(input.taskId, input.tabId);
+      emitSessionUpdate(input.taskId, input.sessionId);
     },
 
-    async sendWorkbenchMessage(_workspaceId: string, input: TaskWorkbenchSendMessageInput): Promise<void> {
+    async sendWorkbenchMessage(_organizationId: string, input: TaskWorkbenchSendMessageInput): Promise<void> {
       await workbench.sendMessage(input);
-      emitWorkspaceSnapshot();
+      emitOrganizationSnapshot();
       emitTaskUpdate(input.taskId);
-      emitSessionUpdate(input.taskId, input.tabId);
+      emitSessionUpdate(input.taskId, input.sessionId);
     },
 
-    async stopWorkbenchSession(_workspaceId: string, input: TaskWorkbenchTabInput): Promise<void> {
+    async stopWorkbenchSession(_organizationId: string, input: TaskWorkbenchSessionInput): Promise<void> {
       await workbench.stopAgent(input);
-      emitWorkspaceSnapshot();
+      emitOrganizationSnapshot();
       emitTaskUpdate(input.taskId);
-      emitSessionUpdate(input.taskId, input.tabId);
+      emitSessionUpdate(input.taskId, input.sessionId);
     },
 
-    async closeWorkbenchSession(_workspaceId: string, input: TaskWorkbenchTabInput): Promise<void> {
-      await workbench.closeTab(input);
-      emitWorkspaceSnapshot();
+    async closeWorkbenchSession(_organizationId: string, input: TaskWorkbenchSessionInput): Promise<void> {
+      await workbench.closeSession(input);
+      emitOrganizationSnapshot();
       emitTaskUpdate(input.taskId);
     },
 
-    async publishWorkbenchPr(_workspaceId: string, input: TaskWorkbenchSelectInput): Promise<void> {
+    async publishWorkbenchPr(_organizationId: string, input: TaskWorkbenchSelectInput): Promise<void> {
       await workbench.publishPr(input);
-      emitWorkspaceSnapshot();
+      emitOrganizationSnapshot();
       emitTaskUpdate(input.taskId);
     },
 
-    async revertWorkbenchFile(_workspaceId: string, input: TaskWorkbenchDiffInput): Promise<void> {
+    async revertWorkbenchFile(_organizationId: string, input: TaskWorkbenchDiffInput): Promise<void> {
       await workbench.revertFile(input);
-      emitWorkspaceSnapshot();
+      emitOrganizationSnapshot();
       emitTaskUpdate(input.taskId);
     },
 
@@ -776,8 +765,8 @@ export function createMockBackendClient(defaultWorkspaceId = "default"): Backend
       return { ok: true };
     },
 
-    async useWorkspace(workspaceId: string): Promise<{ workspaceId: string }> {
-      return { workspaceId };
+    async useOrganization(organizationId: string): Promise<{ organizationId: string }> {
+      return { organizationId };
     },
 
     async starSandboxAgentRepo(): Promise<StarSandboxAgentRepoResult> {

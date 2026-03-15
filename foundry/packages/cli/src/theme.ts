@@ -588,7 +588,7 @@ function pointer(obj: JsonObject, parts: string[]): unknown {
 function opencodeConfigPaths(baseDir: string): string[] {
   const paths: string[] = [];
 
-  const rootish = opencodeProjectConfigPaths(baseDir);
+  const rootish = opencodeRepositoryConfigPaths(baseDir);
   paths.push(...rootish);
 
   const configDir = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
@@ -611,12 +611,12 @@ function opencodeThemeDirs(configDir: string | undefined, baseDir: string): stri
   dirs.push(join(xdgConfig, "opencode", "themes"));
   dirs.push(join(homedir(), ".opencode", "themes"));
 
-  dirs.push(...opencodeProjectThemeDirs(baseDir));
+  dirs.push(...opencodeRepositoryThemeDirs(baseDir));
 
   return dirs;
 }
 
-function opencodeProjectConfigPaths(baseDir: string): string[] {
+function opencodeRepositoryConfigPaths(baseDir: string): string[] {
   const dirs = ancestorDirs(baseDir);
   const out: string[] = [];
   for (const dir of dirs) {
@@ -628,7 +628,7 @@ function opencodeProjectConfigPaths(baseDir: string): string[] {
   return out;
 }
 
-function opencodeProjectThemeDirs(baseDir: string): string[] {
+function opencodeRepositoryThemeDirs(baseDir: string): string[] {
   const dirs = ancestorDirs(baseDir);
   const out: string[] = [];
   for (const dir of dirs) {

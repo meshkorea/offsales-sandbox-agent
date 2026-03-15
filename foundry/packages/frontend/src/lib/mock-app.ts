@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import {
   createFoundryAppClient,
-  useInterest,
+  useSubscription,
   currentFoundryOrganization,
   currentFoundryUser,
   eligibleFoundryOrganizations,
@@ -9,7 +9,7 @@ import {
 } from "@sandbox-agent/foundry-client";
 import type { FoundryAppSnapshot, FoundryBillingPlanId, FoundryOrganization, UpdateFoundryOrganizationProfileInput } from "@sandbox-agent/foundry-shared";
 import { backendClient } from "./backend";
-import { interestManager } from "./interest";
+import { subscriptionManager } from "./subscription";
 import { frontendClientMode } from "./env";
 
 const REMOTE_APP_SESSION_STORAGE_KEY = "sandbox-agent-foundry:remote-app-session";
@@ -37,10 +37,10 @@ const legacyAppClient: FoundryAppClient = createFoundryAppClient({
 
 const remoteAppClient: FoundryAppClient = {
   getSnapshot(): FoundryAppSnapshot {
-    return interestManager.getSnapshot("app", {}) ?? EMPTY_APP_SNAPSHOT;
+    return subscriptionManager.getSnapshot("app", {}) ?? EMPTY_APP_SNAPSHOT;
   },
   subscribe(listener: () => void): () => void {
-    return interestManager.subscribe("app", {}, listener);
+    return subscriptionManager.subscribe("app", {}, listener);
   },
   async signInWithGithub(userId?: string): Promise<void> {
     void userId;
@@ -79,8 +79,8 @@ const remoteAppClient: FoundryAppClient = {
   async reconnectGithub(organizationId: string): Promise<void> {
     await backendClient.reconnectAppGithub(organizationId);
   },
-  async recordSeatUsage(workspaceId: string): Promise<void> {
-    await backendClient.recordAppSeatUsage(workspaceId);
+  async recordSeatUsage(organizationId: string): Promise<void> {
+    await backendClient.recordAppSeatUsage(organizationId);
   },
 };
 
@@ -88,7 +88,7 @@ const appClient: FoundryAppClient = frontendClientMode === "remote" ? remoteAppC
 
 export function useMockAppSnapshot(): FoundryAppSnapshot {
   if (frontendClientMode === "remote") {
-    const app = useInterest(interestManager, "app", {});
+    const app = useSubscription(subscriptionManager, "app", {});
     if (app.status !== "loading") {
       firstSnapshotDelivered = true;
     }

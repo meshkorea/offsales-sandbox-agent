@@ -10,6 +10,12 @@ const journal = {
       tag: "0000_charming_maestro",
       breakpoints: true,
     },
+    {
+      idx: 1,
+      when: 1773810000000,
+      tag: "0001_sandbox_provider_columns",
+      breakpoints: true,
+    },
   ],
 } as const;
 
@@ -63,9 +69,13 @@ CREATE TABLE \`task_workbench_sessions\` (
 	\`created\` integer DEFAULT 1 NOT NULL,
 	\`closed\` integer DEFAULT 0 NOT NULL,
 	\`thinking_since_ms\` integer,
-	\`created_at\` integer NOT NULL,
+\`created_at\` integer NOT NULL,
 	\`updated_at\` integer NOT NULL
 );
+`,
+    m0001: `ALTER TABLE \`task\` RENAME COLUMN \`provider_id\` TO \`sandbox_provider_id\`;
+--> statement-breakpoint
+ALTER TABLE \`task_sandboxes\` RENAME COLUMN \`provider_id\` TO \`sandbox_provider_id\`;
 `,
   } as const,
 };

@@ -8,7 +8,7 @@ import { historyDb } from "./db/db.js";
 import { events } from "./db/schema.js";
 
 export interface HistoryInput {
-  workspaceId: string;
+  organizationId: string;
   repoId: string;
 }
 
@@ -70,7 +70,7 @@ export const history = actor({
     icon: "database",
   },
   createState: (_c, input: HistoryInput) => ({
-    workspaceId: input.workspaceId,
+    organizationId: input.organizationId,
     repoId: input.repoId,
   }),
   actions: {
@@ -106,7 +106,7 @@ export const history = actor({
 
       return rows.map((row) => ({
         ...row,
-        workspaceId: c.state.workspaceId,
+        organizationId: c.state.organizationId,
         repoId: c.state.repoId,
       }));
     },

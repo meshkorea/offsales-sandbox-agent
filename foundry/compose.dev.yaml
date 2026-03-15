@@ -14,6 +14,10 @@ services:
       HF_BACKEND_HOST: "0.0.0.0"
       HF_BACKEND_PORT: "7741"
       RIVETKIT_STORAGE_PATH: "/root/.local/share/foundry/rivetkit"
+      RIVET_LOG_ERROR_STACK: "${RIVET_LOG_ERROR_STACK:-1}"
+      RIVET_LOG_LEVEL: "${RIVET_LOG_LEVEL:-debug}"
+      RIVET_LOG_TIMESTAMP: "${RIVET_LOG_TIMESTAMP:-1}"
+      FOUNDRY_LOG_LEVEL: "${FOUNDRY_LOG_LEVEL:-debug}"
       # Pass through credentials needed for agent execution + PR creation in dev/e2e.
       # Do not hardcode secrets; set these in your environment when starting compose.
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
@@ -64,8 +68,6 @@ services:
       - "foundry_backend_persist_rivet_node_modules:/app/sdks/persist-rivet/node_modules"
       - "foundry_backend_typescript_node_modules:/app/sdks/typescript/node_modules"
       - "foundry_backend_pnpm_store:/root/.local/share/pnpm/store"
-      # Persist backend-managed local git clones across container restarts.
-      - "foundry_git_repos:/root/.local/share/foundry/repos"
       # Persist RivetKit local storage across container restarts.
       - "foundry_rivetkit_storage:/root/.local/share/foundry/rivetkit"
 
@@ -86,7 +88,7 @@ services:
       # Ensure logs in .foundry/ persist on the host even if we change source mounts later.
       - "./.foundry:/app/foundry/.foundry"
       - "../../../task/rivet-checkout:/task/rivet-checkout:ro"
-      # Use Linux-native workspace dependencies inside the container instead of host node_modules.
+      # Use Linux-native repo dependencies inside the container instead of host node_modules.
       - "foundry_node_modules:/app/node_modules"
       - "foundry_client_node_modules:/app/foundry/packages/client/node_modules"
       - "foundry_frontend_node_modules:/app/foundry/packages/frontend/node_modules"
@@ -121,7 +123,6 @@ volumes:
   foundry_backend_persist_rivet_node_modules: {}
   foundry_backend_typescript_node_modules: {}
   foundry_backend_pnpm_store: {}
-  foundry_git_repos: {}
   foundry_rivetkit_storage: {}
   foundry_node_modules: {}
   foundry_client_node_modules: {}

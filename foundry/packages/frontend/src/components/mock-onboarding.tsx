@@ -103,8 +103,8 @@ function formatDate(value: string | null): string {
   return dateFormatter.format(new Date(value));
 }
 
-function workspacePath(organization: FoundryOrganization): string {
-  return `/workspaces/${organization.workspaceId}`;
+function organizationPath(organization: FoundryOrganization): string {
+  return `/organizations/${organization.organizationId}`;
 }
 
 function settingsPath(organization: FoundryOrganization): string {
@@ -121,7 +121,7 @@ function checkoutPath(organization: FoundryOrganization, planId: FoundryBillingP
 
 function statusBadge(t: FoundryTokens, organization: FoundryOrganization) {
   if (organization.kind === "personal") {
-    return <span style={badgeStyle(t, "rgba(24, 140, 255, 0.18)", "#b9d8ff")}>Personal workspace</span>;
+    return <span style={badgeStyle(t, "rgba(24, 140, 255, 0.18)", "#b9d8ff")}>Personal organization</span>;
   }
   return <span style={badgeStyle(t, "rgba(255, 79, 0, 0.16)", "#ffd6c7")}>GitHub organization</span>;
 }
@@ -347,11 +347,11 @@ export function MockOrganizationSelectorPage() {
             />
             <rect x="19.25" y="18.25" width="91.5" height="91.5" rx="25.75" stroke="#F0F0F0" strokeWidth="8.5" />
           </svg>
-          <h1 style={{ fontSize: "20px", fontWeight: 600, margin: "0 0 6px 0", letterSpacing: "-0.01em" }}>Select a workspace</h1>
+          <h1 style={{ fontSize: "20px", fontWeight: 600, margin: "0 0 6px 0", letterSpacing: "-0.01em" }}>Select a organization</h1>
           <p style={{ fontSize: "13px", color: t.textTertiary, margin: 0 }}>Choose where you want to work.</p>
         </div>
 
-        {/* Workspace list */}
+        {/* Organization list */}
         <div
           style={{
             display: "flex",
@@ -368,7 +368,7 @@ export function MockOrganizationSelectorPage() {
               onClick={() => {
                 void (async () => {
                   await client.selectOrganization(organization.id);
-                  await navigate({ to: workspacePath(organization) });
+                  await navigate({ to: organizationPath(organization) });
                 })();
               }}
               style={{
@@ -580,13 +580,13 @@ function SettingsLayout({
             overflowY: "auto",
           }}
         >
-          {/* Back to workspace */}
+          {/* Back to organization */}
           <button
             type="button"
             onClick={() => {
               void (async () => {
                 await client.selectOrganization(organization.id);
-                await navigate({ to: workspacePath(organization) });
+                await navigate({ to: organizationPath(organization) });
               })();
             }}
             style={{
@@ -599,7 +599,7 @@ function SettingsLayout({
             }}
           >
             <ArrowLeft size={12} />
-            Back to workspace
+            Back to organization
           </button>
 
           {/* User header */}
@@ -775,7 +775,7 @@ export function MockOrganizationSettingsPage({ organization }: { organization: F
               <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "16px" }}>
                 {[
                   "Hand off tasks to teammates for review or continuation",
-                  "Shared workspace with unified billing across your org",
+                  "Shared organization with unified billing across your org",
                   "200 task hours per seat, with bulk hour purchases available",
                   "Collaborative task history and audit trail",
                 ].map((feature) => (
@@ -1132,7 +1132,7 @@ export function MockAccountSettingsPage() {
             }}
           >
             <ArrowLeft size={12} />
-            Back to workspace
+            Back to organization
           </button>
 
           <div style={{ padding: "2px 10px 12px", display: "flex", flexDirection: "column", gap: "1px" }}>

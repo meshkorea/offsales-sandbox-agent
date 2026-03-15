@@ -8,7 +8,7 @@ import { ensureBackendRunning, getBackendStatus, parseBackendPort, stopBackend }
 import { writeStderr, writeStdout } from "./io.js";
 import { openEditorForTask } from "./task-editor.js";
 import { spawnCreateTmuxWindow } from "./tmux.js";
-import { loadConfig, resolveWorkspace, saveConfig } from "./workspace/config.js";
+import { loadConfig, resolveOrganization, saveConfig } from "./organization/config.js";
 
 async function ensureBunRuntime(): Promise<void> {
   if (typeof (globalThis as { Bun?: unknown }).Bun !== "undefined") {
@@ -41,9 +41,9 @@ async function ensureBunRuntime(): Promise<void> {
   throw new Error("hf requires Bun runtime. Set HF_BUN or install Bun at ~/.bun/bin/bun.");
 }
 
-async function runTuiCommand(config: ReturnType<typeof loadConfig>, workspaceId: string): Promise<void> {
+async function runTuiCommand(config: ReturnType<typeof loadConfig>, organizationId: string): Promise<void> {
   const mod = await import("./tui.js");
-  await mod.runTui(config, workspaceId);
+  await mod.runTui(config, organizationId);
 }
 
 function readOption(args: string[], flag: string): string | undefined {
@@ -87,6 +87,92 @@ function positionals(args: string[]): string[] {
   return out;
 }
 
+function normalizeRepoSelector(value: string): string {
+  let normalized = value.trim();
+  if (!normalized) {
+    return "";
+  }
+
+  normalized = normalized.replace(/\/+$/, "");
+  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(normalized)) {
+    return `https://github.com/${normalized}.git`;
+  }
+
+  if (/^(?:www\.)?github\.com\/.+/i.test(normalized)) {
+    normalized = `https://${normalized.replace(/^www\./i, "")}`;
+  }
+
+  try {
+    if (/^https?:\/\//i.test(normalized)) {
+      const url = new URL(normalized);
+      const hostname = url.hostname.replace(/^www\./i, "");
+      if (hostname.toLowerCase() === "github.com") {
+        const parts = url.pathname.split("/").filter(Boolean);
+        if (parts.length >= 2) {
+          return `${url.protocol}//${hostname}/${parts[0]}/${(parts[1] ?? "").replace(/\.git$/i, "")}.git`;
+        }
+      }
+      url.search = "";
+      url.hash = "";
+      return url.toString().replace(/\/+$/, "");
+    }
+  } catch {
+    // Keep the selector as-is for matching below.
+  }
+
+  return normalized;
+}
+
+function githubRepoFullNameFromSelector(value: string): string | null {
+  const normalized = normalizeRepoSelector(value);
+  try {
+    const url = new URL(normalized);
+    if (url.hostname.replace(/^www\./i, "").toLowerCase() !== "github.com") {
+      return null;
+    }
+    const parts = url.pathname.replace(/\/+$/, "").split("/").filter(Boolean);
+    if (parts.length < 2) {
+      return null;
+    }
+    return `${parts[0]}/${(parts[1] ?? "").replace(/\.git$/i, "")}`;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveImportedRepo(
+  client: ReturnType<typeof createBackendClientFromConfig>,
+  organizationId: string,
+  repoSelector: string,
+): Promise<Awaited<ReturnType<typeof client.listRepos>>[number]> {
+  const selector = repoSelector.trim();
+  if (!selector) {
+    throw new Error("Missing required --repo <repo-id|git-remote|owner/repo>");
+  }
+
+  const normalizedSelector = normalizeRepoSelector(selector);
+  const selectorFullName = githubRepoFullNameFromSelector(selector);
+  const repos = await client.listRepos(organizationId);
+  const match = repos.find((repo) => {
+    if (repo.repoId === selector) {
+      return true;
+    }
+    if (normalizeRepoSelector(repo.remoteUrl) === normalizedSelector) {
+      return true;
+    }
+    const repoFullName = githubRepoFullNameFromSelector(repo.remoteUrl);
+    return Boolean(selectorFullName && repoFullName && repoFullName === selectorFullName);
+  });
+
+  if (!match) {
+    throw new Error(
+      `Repo not available in organization ${organizationId}: ${repoSelector}. Create it in GitHub first, then sync repos in Foundry before running hf create.`,
+    );
+  }
+
+  return match;
+}
+
 function printUsage(): void {
   writeStdout(`
 Usage:
@@ -94,22 +180,22 @@ Usage:
   hf backend stop [--host HOST] [--port PORT]
   hf backend status
   hf backend inspect
-  hf status [--workspace WS] [--json]
-  hf history [--workspace WS] [--limit N] [--branch NAME] [--task ID] [--json]
-  hf workspace use <name>
-  hf tui [--workspace WS]
+  hf status [--organization ORG] [--json]
+  hf history [--organization ORG] [--limit N] [--branch NAME] [--task ID] [--json]
+  hf organization use <name>
+  hf tui [--organization ORG]
 
-  hf create [task] [--workspace WS] --repo <git-remote> [--name NAME|--branch NAME] [--title TITLE] [--agent claude|codex] [--on BRANCH]
-  hf list [--workspace WS] [--format table|json] [--full]
-  hf switch [task-id | -] [--workspace WS]
-  hf attach <task-id> [--workspace WS]
-  hf merge <task-id> [--workspace WS]
-  hf archive <task-id> [--workspace WS]
-  hf push <task-id> [--workspace WS]
-  hf sync <task-id> [--workspace WS]
-  hf kill <task-id> [--workspace WS] [--delete-branch] [--abandon]
-  hf prune [--workspace WS] [--dry-run] [--yes]
-  hf statusline [--workspace WS] [--format table|claude-code]
+  hf create [task] [--organization ORG] --repo <repo-id|git-remote|owner/repo> [--name NAME|--branch NAME] [--title TITLE] [--agent claude|codex] [--on BRANCH]
+  hf list [--organization ORG] [--format table|json] [--full]
+  hf switch [task-id | -] [--organization ORG]
+  hf attach <task-id> [--organization ORG]
+  hf merge <task-id> [--organization ORG]
+  hf archive <task-id> [--organization ORG]
+  hf push <task-id> [--organization ORG]
+  hf sync <task-id> [--organization ORG]
+  hf kill <task-id> [--organization ORG] [--delete-branch] [--abandon]
+  hf prune [--organization ORG] [--dry-run] [--yes]
+  hf statusline [--organization ORG] [--format table|claude-code]
   hf db path
   hf db nuke
 
@@ -123,19 +209,19 @@ Tips:
 function printStatusUsage(): void {
   writeStdout(`
 Usage:
-  hf status [--workspace WS] [--json]
+  hf status [--organization ORG] [--json]
 
 Text Output:
-  workspace=<workspace-id>
+  organization=<organization-id>
   backend running=<true|false> pid=<pid|unknown> version=<version|unknown>
   tasks total=<number>
   status queued=<n> running=<n> idle=<n> archived=<n> killed=<n> error=<n>
-  providers <provider-id>=<count> ...
-  providers -
+  sandboxProviders <provider-id>=<count> ...
+  sandboxProviders -
 
 JSON Output:
   {
-    "workspaceId": "default",
+    "organizationId": "default",
     "backend": { ...backend status object... },
     "tasks": {
       "total": 4,
@@ -149,7 +235,7 @@ JSON Output:
 function printHistoryUsage(): void {
   writeStdout(`
 Usage:
-  hf history [--workspace WS] [--limit N] [--branch NAME] [--task ID] [--json]
+  hf history [--organization ORG] [--limit N] [--branch NAME] [--task ID] [--json]
 
 Text Output:
   <iso8601>\t<event-kind>\t<branch|task|repo|->\t<payload-json>
@@ -164,16 +250,21 @@ JSON Output:
   [
     {
       "id": "...",
-      "workspaceId": "default",
+      "organizationId": "default",
       "kind": "task.created",
       "taskId": "...",
       "repoId": "...",
       "branchName": "feature/foo",
-      "payloadJson": "{\\"providerId\\":\\"local\\"}",
+      "payloadJson": "{\\"sandboxProviderId\\":\\"local\\"}",
       "createdAt": 1770607522229
     }
   ]
 `);
+}
+
+async function listDetailedTasks(client: ReturnType<typeof createBackendClientFromConfig>, organizationId: string): Promise<TaskRecord[]> {
+  const rows = await client.listTasks(organizationId);
+  return await Promise.all(rows.map(async (row) => await client.getTask(organizationId, row.taskId)));
 }
 
 async function handleBackend(args: string[]): Promise<void> {
@@ -232,38 +323,38 @@ async function handleBackend(args: string[]): Promise<void> {
   throw new Error(`Unknown backend subcommand: ${sub}`);
 }
 
-async function handleWorkspace(args: string[]): Promise<void> {
+async function handleOrganization(args: string[]): Promise<void> {
   const sub = args[0];
   if (sub !== "use") {
-    throw new Error("Usage: hf workspace use <name>");
+    throw new Error("Usage: hf organization use <name>");
   }
 
   const name = args[1];
   if (!name) {
-    throw new Error("Missing workspace name");
+    throw new Error("Missing organization name");
   }
 
   const config = loadConfig();
-  config.workspace.default = name;
+  config.organization.default = name;
   saveConfig(config);
 
   const client = createBackendClientFromConfig(config);
   try {
-    await client.useWorkspace(name);
+    await client.useOrganization(name);
   } catch {
     // Backend may not be running yet. Config is already updated.
   }
 
-  writeStdout(`workspace=${name}`);
+  writeStdout(`organization=${name}`);
 }
 
 async function handleList(args: string[]): Promise<void> {
   const config = loadConfig();
-  const workspaceId = resolveWorkspace(readOption(args, "--workspace"), config);
+  const organizationId = resolveOrganization(readOption(args, "--organization"), config);
   const format = readOption(args, "--format") ?? "table";
   const full = hasFlag(args, "--full");
   const client = createBackendClientFromConfig(config);
-  const rows = await client.listTasks(workspaceId);
+  const rows = await listDetailedTasks(client, organizationId);
 
   if (format === "json") {
     writeStdout(JSON.stringify(rows, null, 2));
@@ -277,10 +368,10 @@ async function handleList(args: string[]): Promise<void> {
 
   for (const row of rows) {
     const age = formatRelativeAge(row.updatedAt);
-    let line = `${row.taskId}\t${row.branchName}\t${row.status}\t${row.providerId}\t${age}`;
+    let line = `${row.taskId}\t${row.branchName}\t${row.status}\t${row.sandboxProviderId}\t${age}`;
     if (full) {
-      const task = row.task.length > 60 ? `${row.task.slice(0, 57)}...` : row.task;
-      line += `\t${row.title}\t${task}\t${row.activeSessionId ?? "-"}\t${row.activeSandboxId ?? "-"}`;
+      const preview = row.task.length > 60 ? `${row.task.slice(0, 57)}...` : row.task;
+      line += `\t${row.title}\t${preview}\t${row.activeSessionId ?? "-"}\t${row.activeSandboxId ?? "-"}`;
     }
     writeStdout(line);
   }
@@ -292,9 +383,9 @@ async function handlePush(args: string[]): Promise<void> {
     throw new Error("Missing task id for push");
   }
   const config = loadConfig();
-  const workspaceId = resolveWorkspace(readOption(args, "--workspace"), config);
+  const organizationId = resolveOrganization(readOption(args, "--organization"), config);
   const client = createBackendClientFromConfig(config);
-  await client.runAction(workspaceId, taskId, "push");
+  await client.runAction(organizationId, taskId, "push");
   writeStdout("ok");
 }
 
@@ -304,9 +395,9 @@ async function handleSync(args: string[]): Promise<void> {
     throw new Error("Missing task id for sync");
   }
   const config = loadConfig();
-  const workspaceId = resolveWorkspace(readOption(args, "--workspace"), config);
+  const organizationId = resolveOrganization(readOption(args, "--organization"), config);
   const client = createBackendClientFromConfig(config);
-  await client.runAction(workspaceId, taskId, "sync");
+  await client.runAction(organizationId, taskId, "sync");
   writeStdout("ok");
 }
 
@@ -316,7 +407,7 @@ async function handleKill(args: string[]): Promise<void> {
     throw new Error("Missing task id for kill");
   }
   const config = loadConfig();
-  const workspaceId = resolveWorkspace(readOption(args, "--workspace"), config);
+  const organizationId = resolveOrganization(readOption(args, "--organization"), config);
   const deleteBranch = hasFlag(args, "--delete-branch");
   const abandon = hasFlag(args, "--abandon");
 
@@ -328,17 +419,17 @@ async function handleKill(args: string[]): Promise<void> {
   }
 
   const client = createBackendClientFromConfig(config);
-  await client.runAction(workspaceId, taskId, "kill");
+  await client.runAction(organizationId, taskId, "kill");
   writeStdout("ok");
 }
 
 async function handlePrune(args: string[]): Promise<void> {
   const config = loadConfig();
-  const workspaceId = resolveWorkspace(readOption(args, "--workspace"), config);
+  const organizationId = resolveOrganization(readOption(args, "--organization"), config);
   const dryRun = hasFlag(args, "--dry-run");
   const yes = hasFlag(args, "--yes");
   const client = createBackendClientFromConfig(config);
-  const rows = await client.listTasks(workspaceId);
+  const rows = await listDetailedTasks(client, organizationId);
   const prunable = rows.filter((r) => r.status === "archived" || r.status === "killed");
 
   if (prunable.length === 0) {
@@ -366,10 +457,10 @@ async function handlePrune(args: string[]): Promise<void> {
 
 async function handleStatusline(args: string[]): Promise<void> {
   const config = loadConfig();
-  const workspaceId = resolveWorkspace(readOption(args, "--workspace"), config);
+  const organizationId = resolveOrganization(readOption(args, "--organization"), config);
   const format = readOption(args, "--format") ?? "table";
   const client = createBackendClientFromConfig(config);
-  const rows = await client.listTasks(workspaceId);
+  const rows = await listDetailedTasks(client, organizationId);
   const summary = summarizeTasks(rows);
   const running = summary.byStatus.running;
   const idle = summary.byStatus.idle;
@@ -402,7 +493,7 @@ async function handleDb(args: string[]): Promise<void> {
 
 async function waitForTaskReady(
   client: ReturnType<typeof createBackendClientFromConfig>,
-  workspaceId: string,
+  organizationId: string,
   taskId: string,
   timeoutMs: number,
 ): Promise<TaskRecord> {
@@ -410,7 +501,7 @@ async function waitForTaskReady(
   let delayMs = 250;
 
   for (;;) {
-    const record = await client.getTask(workspaceId, taskId);
+    const record = await client.getTask(organizationId, taskId);
     const hasName = Boolean(record.branchName && record.title);
     const hasSandbox = Boolean(record.activeSandboxId);
 
@@ -432,11 +523,11 @@ async function waitForTaskReady(
 
 async function handleCreate(args: string[]): Promise<void> {
   const config = loadConfig();
-  const workspaceId = resolveWorkspace(readOption(args, "--workspace"), config);
+  const organizationId = resolveOrganization(readOption(args, "--organization"), config);
 
-  const repoRemote = readOption(args, "--repo");
-  if (!repoRemote) {
-    throw new Error("Missing required --repo <git-remote>");
+  const repoSelector = readOption(args, "--repo");
+  if (!repoSelector) {
+    throw new Error("Missing required --repo <repo-id|git-remote|owner/repo>");
   }
   const explicitBranchName = readOption(args, "--name") ?? readOption(args, "--branch");
   const explicitTitle = readOption(args, "--title");
@@ -446,15 +537,15 @@ async function handleCreate(args: string[]): Promise<void> {
   const onBranch = readOption(args, "--on");
 
   const taskFromArgs = positionals(args).join(" ").trim();
-  const task = taskFromArgs || openEditorForTask();
+  const taskPrompt = taskFromArgs || openEditorForTask();
 
   const client = createBackendClientFromConfig(config);
-  const repo = await client.addRepo(workspaceId, repoRemote);
+  const repo = await resolveImportedRepo(client, organizationId, repoSelector);
 
   const payload = CreateTaskInputSchema.parse({
-    workspaceId,
+    organizationId,
     repoId: repo.repoId,
-    task,
+    task: taskPrompt,
     explicitTitle: explicitTitle || undefined,
     explicitBranchName: explicitBranchName || undefined,
     agentType,
@@ -462,30 +553,30 @@ async function handleCreate(args: string[]): Promise<void> {
   });
 
   const created = await client.createTask(payload);
-  const task = await waitForTaskReady(client, workspaceId, created.taskId, 180_000);
-  const switched = await client.switchTask(workspaceId, task.taskId);
-  const attached = await client.attachTask(workspaceId, task.taskId);
+  const createdTask = await waitForTaskReady(client, organizationId, created.taskId, 180_000);
+  const switched = await client.switchTask(organizationId, createdTask.taskId);
+  const attached = await client.attachTask(organizationId, createdTask.taskId);
 
-  writeStdout(`Branch:   ${task.branchName ?? "-"}`);
-  writeStdout(`Task:  ${task.taskId}`);
-  writeStdout(`Provider: ${task.providerId}`);
+  writeStdout(`Branch:   ${createdTask.branchName ?? "-"}`);
+  writeStdout(`Task:  ${createdTask.taskId}`);
+  writeStdout(`Provider: ${createdTask.sandboxProviderId}`);
   writeStdout(`Session:  ${attached.sessionId ?? "none"}`);
   writeStdout(`Target:   ${switched.switchTarget || attached.target}`);
-  writeStdout(`Title:    ${task.title ?? "-"}`);
+  writeStdout(`Title:    ${createdTask.title ?? "-"}`);
 
   const tmuxResult = spawnCreateTmuxWindow({
-    branchName: task.branchName ?? task.taskId,
+    branchName: createdTask.branchName ?? createdTask.taskId,
     targetPath: switched.switchTarget || attached.target,
     sessionId: attached.sessionId,
   });
 
   if (tmuxResult.created) {
-    writeStdout(`Window:   created (${task.branchName})`);
+    writeStdout(`Window:   created (${createdTask.branchName})`);
     return;
   }
 
   writeStdout("");
-  writeStdout(`Run: hf switch ${task.taskId}`);
+  writeStdout(`Run: hf switch ${createdTask.taskId}`);
   if ((switched.switchTarget || attached.target).startsWith("/")) {
     writeStdout(`cd ${switched.switchTarget || attached.target}`);
   }
@@ -493,8 +584,8 @@ async function handleCreate(args: string[]): Promise<void> {
 
 async function handleTui(args: string[]): Promise<void> {
   const config = loadConfig();
-  const workspaceId = resolveWorkspace(readOption(args, "--workspace"), config);
-  await runTuiCommand(config, workspaceId);
+  const organizationId = resolveOrganization(readOption(args, "--organization"), config);
+  await runTuiCommand(config, organizationId);
 }
 
 async function handleStatus(args: string[]): Promise<void> {
@@ -504,17 +595,17 @@ async function handleStatus(args: string[]): Promise<void> {
   }
 
   const config = loadConfig();
-  const workspaceId = resolveWorkspace(readOption(args, "--workspace"), config);
+  const organizationId = resolveOrganization(readOption(args, "--organization"), config);
   const client = createBackendClientFromConfig(config);
   const backendStatus = await getBackendStatus(config.backend.host, config.backend.port);
-  const rows = await client.listTasks(workspaceId);
+  const rows = await listDetailedTasks(client, organizationId);
   const summary = summarizeTasks(rows);
 
   if (hasFlag(args, "--json")) {
     writeStdout(
       JSON.stringify(
         {
-          workspaceId,
+          organizationId,
           backend: backendStatus,
           tasks: {
             total: summary.total,
@@ -529,7 +620,7 @@ async function handleStatus(args: string[]): Promise<void> {
     return;
   }
 
-  writeStdout(`workspace=${workspaceId}`);
+  writeStdout(`organization=${organizationId}`);
   writeStdout(`backend running=${backendStatus.running} pid=${backendStatus.pid ?? "unknown"} version=${backendStatus.version ?? "unknown"}`);
   writeStdout(`tasks total=${summary.total}`);
   writeStdout(
@@ -538,7 +629,7 @@ async function handleStatus(args: string[]): Promise<void> {
   const providerSummary = Object.entries(summary.byProvider)
     .map(([provider, count]) => `${provider}=${count}`)
     .join(" ");
-  writeStdout(`providers ${providerSummary || "-"}`);
+  writeStdout(`sandboxProviders ${providerSummary || "-"}`);
 }
 
 async function handleHistory(args: string[]): Promise<void> {
@@ -548,13 +639,13 @@ async function handleHistory(args: string[]): Promise<void> {
   }
 
   const config = loadConfig();
-  const workspaceId = resolveWorkspace(readOption(args, "--workspace"), config);
+  const organizationId = resolveOrganization(readOption(args, "--organization"), config);
   const limit = parseIntOption(readOption(args, "--limit"), 20, "limit");
   const branch = readOption(args, "--branch");
   const taskId = readOption(args, "--task");
   const client = createBackendClientFromConfig(config);
   const rows = await client.listHistory({
-    workspaceId,
+    organizationId,
     limit,
     branch: branch || undefined,
     taskId: taskId || undefined,
@@ -593,11 +684,11 @@ async function handleSwitchLike(cmd: string, args: string[]): Promise<void> {
   }
 
   const config = loadConfig();
-  const workspaceId = resolveWorkspace(readOption(args, "--workspace"), config);
+  const organizationId = resolveOrganization(readOption(args, "--organization"), config);
   const client = createBackendClientFromConfig(config);
 
   if (cmd === "switch" && taskId === "-") {
-    const rows = await client.listTasks(workspaceId);
+    const rows = await listDetailedTasks(client, organizationId);
     const active = rows.filter((r) => {
       const group = groupTaskStatus(r.status);
       return group === "running" || group === "idle" || group === "queued";
@@ -611,19 +702,19 @@ async function handleSwitchLike(cmd: string, args: string[]): Promise<void> {
   }
 
   if (cmd === "switch") {
-    const result = await client.switchTask(workspaceId, taskId);
+    const result = await client.switchTask(organizationId, taskId);
     writeStdout(`cd ${result.switchTarget}`);
     return;
   }
 
   if (cmd === "attach") {
-    const result = await client.attachTask(workspaceId, taskId);
+    const result = await client.attachTask(organizationId, taskId);
     writeStdout(`target=${result.target} session=${result.sessionId ?? "none"}`);
     return;
   }
 
   if (cmd === "merge" || cmd === "archive") {
-    await client.runAction(workspaceId, taskId, cmd);
+    await client.runAction(organizationId, taskId, cmd);
     writeStdout("ok");
     return;
   }
@@ -656,8 +747,8 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (cmd === "workspace") {
-    await handleWorkspace(rest);
+  if (cmd === "organization") {
+    await handleOrganization(rest);
     return;
   }
 

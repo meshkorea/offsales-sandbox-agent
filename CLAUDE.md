@@ -1,40 +1,5 @@
 # Instructions
 
-## ACP v1 Baseline
-
-- v1 is ACP-native.
-- `/v1/*` is removed and returns `410 Gone` (`application/problem+json`).
-- `/opencode/*` is disabled during ACP core phases and returns `503`.
-- Prompt/session traffic is ACP JSON-RPC over streamable HTTP on `/v1/rpc`:
-  - `POST /v1/rpc`
-  - `GET /v1/rpc` (SSE)
-  - `DELETE /v1/rpc`
-- Control-plane endpoints:
-  - `GET /v1/health`
-  - `GET /v1/agents`
-  - `POST /v1/agents/{agent}/install`
-- Binary filesystem transfer endpoints (intentionally HTTP, not ACP extension methods):
-  - `GET /v1/fs/file`
-  - `PUT /v1/fs/file`
-  - `POST /v1/fs/upload-batch`
-- Sandbox Agent ACP extension method naming:
-  - Custom ACP methods use `_sandboxagent/...` (not `_sandboxagent/v1/...`).
-  - Session detach method is `_sandboxagent/session/detach`.
-
-## API Scope
-
-- ACP is the primary protocol for agent/session behavior and all functionality that talks directly to the agent.
-- ACP extensions may be used for gaps (for example `skills`, `models`, and related metadata), but the default is that agent-facing behavior is implemented by the agent through ACP.
-- Custom HTTP APIs are for non-agent/session platform services (for example filesystem, terminals, and other host/runtime capabilities).
-- Filesystem and terminal APIs remain Sandbox Agent-specific HTTP contracts and are not ACP.
-  - Do not make Sandbox Agent core flows depend on ACP client implementations of `fs/*` or `terminal/*`; in practice those client-side capabilities are often incomplete or inconsistent.
-  - ACP-native filesystem and terminal methods are also too limited for Sandbox Agent host/runtime needs, so prefer the native HTTP APIs for richer behavior.
-- Keep `GET /v1/fs/file`, `PUT /v1/fs/file`, and `POST /v1/fs/upload-batch` on HTTP:
-  - These are Sandbox Agent host/runtime operations with cross-agent-consistent behavior.
-  - They may involve very large binary transfers that ACP JSON-RPC envelopes are not suited to stream.
-  - This is intentionally separate from ACP native `fs/read_text_file` and `fs/write_text_file`.
-  - ACP extension variants may exist in parallel, but SDK defaults should prefer HTTP for these binary transfer operations.
-
 ## Naming and Ownership
 
 - This repository/product is **Sandbox Agent**.
@@ -49,65 +14,12 @@
 - Never expose underlying protocol method names (e.g. `session/request_permission`, `session/create`, `_sandboxagent/session/detach`) in non-ACP docs. Describe the behavior in user-facing terms instead.
 - Do not describe the underlying protocol implementation in docs. Only document the SDK surface (methods, types, options). ACP protocol details belong exclusively in ACP-specific pages.
 
-## Architecture (Brief)
+### Docs Source Of Truth (HTTP/CLI)
 
-- HTTP contract and problem/error mapping: `server/packages/sandbox-agent/src/router.rs`
-- ACP client runtime and agent process bridge: `server/packages/sandbox-agent/src/acp_runtime/mod.rs`
-- Agent/native + ACP agent process install and lazy install: `server/packages/agent-management/`
-- Inspector UI served at `/ui/` and bound to ACP over HTTP from `frontend/packages/inspector/`
-
-## TypeScript SDK Architecture
-
-- TypeScript clients are split into:
-  - `acp-http-client`: protocol-pure ACP-over-HTTP (`/v1/acp`) with no Sandbox-specific HTTP helpers.
-  - `sandbox-agent`: `SandboxAgent` SDK wrapper that combines ACP session operations with Sandbox control-plane and filesystem helpers.
-- `SandboxAgent` entry points are `SandboxAgent.connect(...)` and `SandboxAgent.start(...)`.
-- Stable Sandbox session methods are `createSession`, `resumeSession`, `resumeOrCreateSession`, `destroySession`, `rawSendSessionMethod`, `onSessionEvent`, `setSessionMode`, `setSessionModel`, `setSessionThoughtLevel`, `setSessionConfigOption`, `getSessionConfigOptions`, `getSessionModes`, `respondPermission`, `rawRespondPermission`, and `onPermissionRequest`.
-- `Session` helpers are `prompt(...)`, `rawSend(...)`, `onEvent(...)`, `setMode(...)`, `setModel(...)`, `setThoughtLevel(...)`, `setConfigOption(...)`, `getConfigOptions()`, `getModes()`, `respondPermission(...)`, `rawRespondPermission(...)`, and `onPermissionRequest(...)`.
-- Cleanup is `sdk.dispose()`.
-
-### React Component Methodology
-
-- Shared React UI belongs in `sdks/react` only when it is reusable outside the Inspector.
-- If the same UI pattern is shared between the Sandbox Agent Inspector and Foundry, prefer extracting it into `sdks/react` instead of maintaining parallel implementations.
-- Keep shared components unstyled by default: behavior in the package, styling in the consumer via `className`, slot-level `classNames`, render overrides, and `data-*` hooks.
-- Prefer extracting reusable pieces such as transcript, composer, and conversation surfaces. Keep Inspector-specific shells such as session selection, session headers, and control-plane actions in `frontend/packages/inspector/`.
-- Document all shared React components in `docs/react-components.mdx`, and keep that page aligned with the exported surface in `sdks/react/src/index.ts`.
-
-### TypeScript SDK Naming Conventions
-
-- Use `respond<Thing>(id, reply)` for SDK methods that reply to an agent-initiated request (e.g. `respondPermission`). This is the standard pattern for answering any inbound JSON-RPC request from the agent.
-- Prefix raw/low-level escape hatches with `raw` (e.g. `rawRespondPermission`, `rawSend`). These accept protocol-level types directly and bypass SDK abstractions.
-
-### Docs Source Of Truth
-
-- For TypeScript docs/examples, source of truth is implementation in:
-  - `sdks/typescript/src/client.ts`
-  - `sdks/typescript/src/index.ts`
-  - `sdks/acp-http-client/src/index.ts`
-- Do not document TypeScript APIs unless they are exported and implemented in those files.
 - For HTTP/CLI docs/examples, source of truth is:
   - `server/packages/sandbox-agent/src/router.rs`
   - `server/packages/sandbox-agent/src/cli.rs`
 - Keep docs aligned to implemented endpoints/commands only (for example ACP under `/v1/acp`, not legacy `/v1/sessions` APIs).
-
-## ACP Protocol Compliance
-
-- Before adding any new ACP method, property, or config option category to the SDK, verify it exists in the ACP spec at `https://agentclientprotocol.com/llms-full.txt`.
-- Valid `SessionConfigOptionCategory` values are: `mode`, `model`, `thought_level`, `other`, or custom categories prefixed with `_` (e.g. `_permission_mode`).
-- Do not invent ACP properties or categories (e.g. `permission_mode` is not a valid ACP category — use `_permission_mode` if it's a custom extension, or use existing ACP mechanisms like `session/set_mode`).
-- `NewSessionRequest` only has `_meta`, `cwd`, and `mcpServers`. Do not add non-ACP fields to it.
-- Sandbox Agent SDK abstractions (like `SessionCreateRequest`) may add convenience properties, but must clearly map to real ACP methods internally and not send fabricated fields over the wire.
-
-## Source Documents
-
-- ACP protocol specification (full LLM-readable reference): `https://agentclientprotocol.com/llms-full.txt`
-- `~/misc/acp-docs/schema/schema.json`
-- `~/misc/acp-docs/schema/meta.json`
-- `research/acp/spec.md`
-- `research/acp/v1-schema-to-acp-mapping.md`
-- `research/acp/friction.md`
-- `research/acp/todo.md`
 
 ## Change Tracking
 
@@ -119,14 +31,6 @@
 - Append blockers/decisions to `research/acp/friction.md` during ACP work.
 - `docs/agent-capabilities.mdx` lists models/modes/thought levels per agent. Update it when adding a new agent or changing `fallback_config_options`. If its "Last updated" date is >2 weeks old, re-run `cd scripts/agent-configs && npx tsx dump.ts` and update the doc to match. Source data: `scripts/agent-configs/resources/*.json` and hardcoded entries in `server/packages/sandbox-agent/src/router/support.rs` (`fallback_config_options`).
 - Some agent models are gated by subscription (e.g. Claude `opus`). The live report only shows models available to the current credentials. The static doc and JSON resource files should list all known models regardless of subscription tier.
-- TypeScript SDK tests should run against a real running server/runtime over real `/v1` HTTP APIs, typically using the real `mock` agent for deterministic behavior.
-- Do not use Vitest fetch/transport mocks to simulate server functionality in TypeScript SDK tests.
-
-## Docker Examples (Dev Testing)
-
-- When manually testing bleeding-edge (unreleased) versions of sandbox-agent in `examples/`, use `SANDBOX_AGENT_DEV=1` with the Docker-based examples.
-- This triggers a local build of `docker/runtime/Dockerfile.full` which builds the server binary from local source and packages it into the Docker image.
-- Example: `SANDBOX_AGENT_DEV=1 pnpm --filter @sandbox-agent/example-mcp start`
 
 ## Install Version References
 

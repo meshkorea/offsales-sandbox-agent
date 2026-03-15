@@ -93,7 +93,7 @@ export async function getCurrentRecord(ctx: any): Promise<TaskRecord> {
       branchName: taskTable.branchName,
       title: taskTable.title,
       task: taskTable.task,
-      providerId: taskTable.providerId,
+      sandboxProviderId: taskTable.sandboxProviderId,
       status: taskTable.status,
       statusMessage: taskRuntime.statusMessage,
       activeSandboxId: taskRuntime.activeSandboxId,
@@ -115,7 +115,7 @@ export async function getCurrentRecord(ctx: any): Promise<TaskRecord> {
   const sandboxes = await db
     .select({
       sandboxId: taskSandboxes.sandboxId,
-      providerId: taskSandboxes.providerId,
+      sandboxProviderId: taskSandboxes.sandboxProviderId,
       sandboxActorId: taskSandboxes.sandboxActorId,
       switchTarget: taskSandboxes.switchTarget,
       cwd: taskSandboxes.cwd,
@@ -126,21 +126,21 @@ export async function getCurrentRecord(ctx: any): Promise<TaskRecord> {
     .all();
 
   return {
-    workspaceId: ctx.state.workspaceId,
+    organizationId: ctx.state.organizationId,
     repoId: ctx.state.repoId,
     repoRemote: ctx.state.repoRemote,
     taskId: ctx.state.taskId,
     branchName: row.branchName,
     title: row.title,
     task: row.task,
-    providerId: row.providerId,
+    sandboxProviderId: row.sandboxProviderId,
     status: row.status,
     statusMessage: row.statusMessage ?? null,
     activeSandboxId: row.activeSandboxId ?? null,
     activeSessionId: row.activeSessionId ?? null,
     sandboxes: sandboxes.map((sb) => ({
       sandboxId: sb.sandboxId,
-      providerId: sb.providerId,
+      sandboxProviderId: sb.sandboxProviderId,
       sandboxActorId: sb.sandboxActorId ?? null,
       switchTarget: sb.switchTarget,
       cwd: sb.cwd ?? null,
@@ -165,8 +165,8 @@ export async function getCurrentRecord(ctx: any): Promise<TaskRecord> {
 
 export async function appendHistory(ctx: any, kind: string, payload: Record<string, unknown>): Promise<void> {
   const client = ctx.client();
-  const history = await client.history.getOrCreate(historyKey(ctx.state.workspaceId, ctx.state.repoId), {
-    createWithInput: { workspaceId: ctx.state.workspaceId, repoId: ctx.state.repoId },
+  const history = await client.history.getOrCreate(historyKey(ctx.state.organizationId, ctx.state.repoId), {
+    createWithInput: { organizationId: ctx.state.organizationId, repoId: ctx.state.repoId },
   });
   await history.append({
     kind,

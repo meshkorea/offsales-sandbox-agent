@@ -82,3 +82,30 @@ export function repoLabelFromRemote(remoteUrl: string): string {
 
   return basename(trimmed.replace(/\.git$/i, ""));
 }
+
+export function githubRepoFullNameFromRemote(remoteUrl: string): string | null {
+  const normalized = normalizeRemoteUrl(remoteUrl);
+  if (!normalized) {
+    return null;
+  }
+
+  try {
+    const url = new URL(normalized);
+    const hostname = url.hostname.replace(/^www\./i, "").toLowerCase();
+    if (hostname !== "github.com") {
+      return null;
+    }
+    const parts = url.pathname.replace(/\/+$/, "").split("/").filter(Boolean);
+    if (parts.length < 2) {
+      return null;
+    }
+    const owner = parts[0]?.trim();
+    const repo = (parts[1] ?? "").replace(/\.git$/i, "").trim();
+    if (!owner || !repo) {
+      return null;
+    }
+    return `${owner}/${repo}`;
+  } catch {
+    return null;
+  }
+}

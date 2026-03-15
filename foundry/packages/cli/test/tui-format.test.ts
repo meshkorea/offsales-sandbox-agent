@@ -4,14 +4,14 @@ import { filterTasks, fuzzyMatch } from "@sandbox-agent/foundry-client";
 import { formatRows } from "../src/tui.js";
 
 const sample: TaskRecord = {
-  workspaceId: "default",
+  organizationId: "default",
   repoId: "repo-a",
   repoRemote: "https://example.com/repo-a.git",
   taskId: "task-1",
   branchName: "feature/test",
   title: "Test Title",
   task: "Do test",
-  providerId: "local",
+  sandboxProviderId: "local",
   status: "running",
   statusMessage: null,
   activeSandboxId: "sandbox-1",
@@ -19,7 +19,7 @@ const sample: TaskRecord = {
   sandboxes: [
     {
       sandboxId: "sandbox-1",
-      providerId: "local",
+      sandboxProviderId: "local",
       switchTarget: "sandbox://local/sandbox-1",
       cwd: null,
       createdAt: 1,

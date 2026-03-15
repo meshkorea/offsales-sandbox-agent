@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shouldMarkSessionUnreadForStatus, shouldRecreateSessionForModelChange } from "../src/actors/task/workbench.js";
+import { requireSendableSessionMeta, shouldMarkSessionUnreadForStatus, shouldRecreateSessionForModelChange } from "../src/actors/task/workbench.js";
 
 describe("workbench unread status transitions", () => {
   it("marks unread when a running session first becomes idle", () => {
@@ -55,5 +55,32 @@ describe("workbench model changes", () => {
         transcript: [],
       }),
     ).toBe(false);
+  });
+});
+
+describe("workbench send readiness", () => {
+  it("rejects unknown sessions", () => {
+    expect(() => requireSendableSessionMeta(null, "session-1")).toThrow("Unknown workbench session: session-1");
+  });
+
+  it("rejects pending sessions", () => {
+    expect(() =>
+      requireSendableSessionMeta(
+        {
+          status: "pending_session_create",
+          sandboxSessionId: null,
+        },
+        "session-2",
+      ),
+    ).toThrow("Session is not ready (status: pending_session_create). Wait for session provisioning to complete.");
+  });
+
+  it("accepts ready sessions with a sandbox session id", () => {
+    const meta = {
+      status: "ready",
+      sandboxSessionId: "session-1",
+    };
+
+    expect(requireSendableSessionMeta(meta, "session-3")).toBe(meta);
   });
 });

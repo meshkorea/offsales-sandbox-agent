@@ -4,7 +4,7 @@
 
 Replace the per-repo polling PR sync actor (`ProjectPrSyncActor`) and per-repo PR cache (`prCache` table) with a single organization-scoped `github-state` actor that owns all GitHub data (repos, PRs, members). All GitHub state updates flow exclusively through webhooks, with a one-shot full sync on initial connection. Manual reload actions are exposed per-entity (org, repo, PR) for recovery from missed webhooks.
 
-Open PRs are surfaced in the left sidebar alongside tasks via a unified workspace interest topic, with lazy task/sandbox creation when a user clicks on a PR.
+Open PRs are surfaced in the left sidebar alongside tasks via a unified organization subscription topic, with lazy task/sandbox creation when a user clicks on a PR.
 
 ## Reference Implementation
 
@@ -18,7 +18,7 @@ Use `git show 0aca2c7:<path>` to read the reference files. Adapt (don't copy bli
 
 ## Constraints
 
-1. **No polling.** Delete `ProjectPrSyncActor` (`actors/project-pr-sync/`), all references to it in handles/keys/index, and the `prCache` table in `ProjectActor`'s DB schema. Remove `prSyncStatus`/`prSyncAt` from `getRepoOverview`.
+1. **No polling.** Delete `ProjectPrSyncActor` (`actors/repository-pr-sync/`), all references to it in handles/keys/index, and the `prCache` table in `RepositoryActor`'s DB schema. Remove `prSyncStatus`/`prSyncAt` from `getRepoOverview`.
 2. **Keep `ProjectBranchSyncActor`.** This polls the local git clone (not GitHub API) and is the sandbox git status mechanism. It stays.
 3. **Webhooks are the sole live update path.** The only GitHub API calls happen during:
    - Initial full sync on org connection/installation
@@ -72,16 +72,16 @@ Replace the current TODO at `app-shell.ts:1521` with dispatch logic adapted from
 When `github-state` receives a PR update (webhook or manual reload), it should:
 
 1. Update its own `github_pull_requests` table
-2. Call `notifyOrganizationUpdated()` → which broadcasts `workspaceUpdated` to connected clients
-3. If the PR branch matches an existing task's branch, update that task's `pullRequest` summary in the workspace actor
+2. Call `notifyOrganizationUpdated()` → which broadcasts `organizationUpdated` to connected clients
+3. If the PR branch matches an existing task's branch, update that task's `pullRequest` summary in the organization actor
 
-### Workspace Summary Changes
+### Organization Summary Changes
 
-Extend `WorkspaceSummarySnapshot` to include open PRs:
+Extend `OrganizationSummarySnapshot` to include open PRs:
 
 ```typescript
-export interface WorkspaceSummarySnapshot {
-  workspaceId: string;
+export interface OrganizationSummarySnapshot {
+  organizationId: string;
   repos: WorkbenchRepoSummary[];
   taskSummaries: WorkbenchTaskSummary[];
   openPullRequests: WorkbenchOpenPrSummary[];  // NEW
@@ -103,13 +103,13 @@ export interface WorkbenchOpenPrSummary {
 }
 ```
 
-The workspace actor fetches open PRs from the `github-state` actor when building the summary snapshot. PRs that already have an associated task (matched by branch name) should be excluded from `openPullRequests` (they already appear in `taskSummaries` with their `pullRequest` field populated).
+The organization actor fetches open PRs from the `github-state` actor when building the summary snapshot. PRs that already have an associated task (matched by branch name) should be excluded from `openPullRequests` (they already appear in `taskSummaries` with their `pullRequest` field populated).
 
 ### Interest Manager
 
-The `workspace` interest topic already returns `WorkspaceSummarySnapshot`. Adding `openPullRequests` to that type means the sidebar automatically gets PR data without a new topic.
+The `organization` subscription topic already returns `OrganizationSummarySnapshot`. Adding `openPullRequests` to that type means the sidebar automatically gets PR data without a new topic.
 
-`workspaceUpdated` events should include a new variant for PR changes:
+`organizationUpdated` events should include a new variant for PR changes:
 ```typescript
 { type: "pullRequestUpdated", pullRequest: WorkbenchOpenPrSummary }
 { type: "pullRequestRemoved", prId: string }
@@ -117,7 +117,7 @@ The `workspace` interest topic already returns `WorkspaceSummarySnapshot`. Addin
 
 ### Sidebar Changes
 
-The left sidebar currently renders `projects: ProjectSection[]` where each project has `tasks: Task[]`. Extend this to include open PRs as lightweight entries within each project section:
+The left sidebar currently renders `repositories: RepositorySection[]` where each repository has `tasks: Task[]`. Extend this to include open PRs as lightweight entries within each repository section:
 
 - Open PRs appear in the same list as tasks, sorted by `updatedAtMs`
 - PRs should be visually distinct: show PR icon instead of task indicator, display `#number` and author
@@ -134,7 +134,7 @@ Add a "three dots" menu button in the top-right of the sidebar header. Dropdown 
 - **Reload all PRs** — calls `githubState.fullSync({ force: true })` (convenience shortcut)
 
 For per-repo and per-PR reload, add context menu options:
-- Right-click a project header → "Reload repository"
+- Right-click a repository header → "Reload repository"
 - Right-click a PR entry → "Reload pull request"
 
 These call the corresponding `reloadRepository`/`reloadPullRequest` actions on the `github-state` actor.
@@ -143,27 +143,27 @@ These call the corresponding `reloadRepository`/`reloadPullRequest` actions on t
 
 Files/code to remove:
 
-1. `foundry/packages/backend/src/actors/project-pr-sync/` — entire directory
-2. `foundry/packages/backend/src/actors/project/db/schema.ts` — `prCache` table
-3. `foundry/packages/backend/src/actors/project/actions.ts` — `applyPrSyncResultMutation`, `getPullRequestForBranch` (moves to github-state), `prSyncStatus`/`prSyncAt` from `getRepoOverview`
+1. `foundry/packages/backend/src/actors/repository-pr-sync/` — entire directory
+2. `foundry/packages/backend/src/actors/repository/db/schema.ts` — `prCache` table
+3. `foundry/packages/backend/src/actors/repository/actions.ts` — `applyPrSyncResultMutation`, `getPullRequestForBranch` (moves to github-state), `prSyncStatus`/`prSyncAt` from `getRepoOverview`
 4. `foundry/packages/backend/src/actors/handles.ts` — `getOrCreateProjectPrSync`, `selfProjectPrSync`
 5. `foundry/packages/backend/src/actors/keys.ts` — any PR sync key helper
-6. `foundry/packages/backend/src/actors/index.ts` — `projectPrSync` import and registration
-7. All call sites in `ProjectActor` that spawn or call the PR sync actor (`initProject`, `refreshProject`)
+6. `foundry/packages/backend/src/actors/index.ts` — `repositoryPrSync` import and registration
+7. All call sites in `RepositoryActor` that spawn or call the PR sync actor (`initProject`, `refreshProject`)
 
 ## Migration Path
 
-The `prCache` table in `ProjectActor`'s DB can simply be dropped — no data migration needed since the `github-state` actor will re-fetch everything on its first `fullSync`. Existing task `pullRequest` fields are populated from the github-state actor going forward.
+The `prCache` table in `RepositoryActor`'s DB can simply be dropped — no data migration needed since the `github-state` actor will re-fetch everything on its first `fullSync`. Existing task `pullRequest` fields are populated from the github-state actor going forward.
 
 ## Implementation Order
 
 1. Create `github-state` actor (adapt from checkpoint `0aca2c7`)
 2. Wire up actor in registry, handles, keys
 3. Implement webhook dispatch in app-shell (replace TODO)
-4. Delete `ProjectPrSyncActor` and `prCache` from project actor
+4. Delete `ProjectPrSyncActor` and `prCache` from repository actor
 5. Add manual reload actions to github-state
-6. Extend `WorkspaceSummarySnapshot` with `openPullRequests`
-7. Wire through interest manager + workspace events
+6. Extend `OrganizationSummarySnapshot` with `openPullRequests`
+7. Wire through subscription manager + organization events
 8. Update sidebar to render open PRs
 9. Add three-dots menu with reload options
 10. Update task creation flow for lazy PR→task conversion

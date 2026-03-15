@@ -16,6 +16,15 @@ export const githubRepositories = sqliteTable("github_repositories", {
   fullName: text("full_name").notNull(),
   cloneUrl: text("clone_url").notNull(),
   private: integer("private").notNull(),
+  defaultBranch: text("default_branch").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+export const githubBranches = sqliteTable("github_branches", {
+  branchId: text("branch_id").notNull().primaryKey(),
+  repoId: text("repo_id").notNull(),
+  branchName: text("branch_name").notNull(),
+  commitSha: text("commit_sha").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });
 
