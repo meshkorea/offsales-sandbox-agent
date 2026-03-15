@@ -38,6 +38,14 @@
     "./cloudflare": {
       "types": "./dist/providers/cloudflare.d.ts",
       "import": "./dist/providers/cloudflare.js"
+    },
+    "./modal": {
+      "types": "./dist/providers/modal.d.ts",
+      "import": "./dist/providers/modal.js"
+    },
+    "./computesdk": {
+      "types": "./dist/providers/computesdk.d.ts",
+      "import": "./dist/providers/computesdk.js"
     }
   },
   "peerDependencies": {
@@ -46,7 +54,9 @@
     "@e2b/code-interpreter": ">=1.0.0",
     "@vercel/sandbox": ">=0.1.0",
     "dockerode": ">=4.0.0",
-    "get-port": ">=7.0.0"
+    "get-port": ">=7.0.0",
+    "modal": ">=0.1.0",
+    "computesdk": ">=0.1.0"
   },
   "peerDependenciesMeta": {
     "@cloudflare/sandbox": {
@@ -65,6 +75,12 @@
       "optional": true
     },
     "get-port": {
+      "optional": true
+    },
+    "modal": {
+      "optional": true
+    },
+    "computesdk": {
       "optional": true
     }
   },
@@ -94,6 +110,8 @@
     "@vercel/sandbox": ">=0.1.0",
     "dockerode": ">=4.0.0",
     "get-port": ">=7.0.0",
+    "modal": ">=0.1.0",
+    "computesdk": ">=0.1.0",
     "openapi-typescript": "^6.7.0",
     "tsup": "^8.0.0",
     "typescript": "^5.7.0",

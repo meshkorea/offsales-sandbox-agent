@@ -13,6 +13,8 @@ import { docker } from "../src/providers/docker.ts";
 import { e2b } from "../src/providers/e2b.ts";
 import { daytona } from "../src/providers/daytona.ts";
 import { vercel } from "../src/providers/vercel.ts";
+import { modal } from "../src/providers/modal.ts";
+import { computesdk } from "../src/providers/computesdk.ts";
 import { prepareMockAgentDataHome } from "./helpers/mock-agent.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -211,6 +213,42 @@ function buildProviders(): ProviderEntry[] {
       createProvider() {
         return vercel({
           create: { env: collectApiKeys() },
+        });
+      },
+    });
+  }
+
+  // --- modal ---
+  // Session tests disabled: see docker comment above (ACP protocol mismatch).
+  {
+    entries.push({
+      name: "modal",
+      skipReasons: [...missingEnvVars("MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET"), ...missingModules("modal")],
+      agent: "claude",
+      startTimeoutMs: 300_000,
+      canVerifyDestroyedSandbox: false,
+      sessionTestsEnabled: false,
+      createProvider() {
+        return modal({
+          create: { secrets: collectApiKeys() },
+        });
+      },
+    });
+  }
+
+  // --- computesdk ---
+  // Session tests disabled: see docker comment above (ACP protocol mismatch).
+  {
+    entries.push({
+      name: "computesdk",
+      skipReasons: [...missingEnvVars("COMPUTESDK_API_KEY"), ...missingModules("computesdk")],
+      agent: "claude",
+      startTimeoutMs: 300_000,
+      canVerifyDestroyedSandbox: false,
+      sessionTestsEnabled: false,
+      createProvider() {
+        return computesdk({
+          create: { envs: collectApiKeys() },
         });
       },
     });

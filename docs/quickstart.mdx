@@ -86,6 +86,23 @@ icon: "rocket"
       });
       ```
 
+      ```typescript Modal
+      import { SandboxAgent } from "sandbox-agent";
+      import { modal } from "sandbox-agent/modal";
+
+      const sdk = await SandboxAgent.start({
+        sandbox: modal({
+          create: {
+            // Pass whichever keys your agent needs
+            secrets: {
+              ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+              OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+            },
+          },
+        }),
+      });
+      ```
+
       ```typescript Cloudflare
       import { SandboxAgent } from "sandbox-agent";
       import { cloudflare } from "sandbox-agent/cloudflare";

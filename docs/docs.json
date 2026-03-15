@@ -63,6 +63,7 @@
                   "deploy/vercel",
                   "deploy/cloudflare",
                   "deploy/docker",
+                  "deploy/modal",
                   "deploy/boxlite",
                   "deploy/computesdk"
                 ]
