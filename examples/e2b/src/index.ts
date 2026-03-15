@@ -7,12 +7,9 @@ if (process.env.ANTHROPIC_API_KEY) envs.ANTHROPIC_API_KEY = process.env.ANTHROPI
 if (process.env.OPENAI_API_KEY) envs.OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 const client = await SandboxAgent.start({
-  sandbox: e2b({
-    create: { envs },
-  }),
+  // ✨ NEW ✨
+  sandbox: e2b({ create: { envs } }),
 });
-
-console.log(`UI: ${client.inspectorUrl}`);
 
 const session = await client.createSession({
   agent: detectAgent(),
