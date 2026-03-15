@@ -31,11 +31,11 @@ export class IndexedDbSessionPersistDriver implements SessionPersistDriver {
     this.dbPromise = this.openDatabase();
   }
 
-  async getSession(id: string): Promise<SessionRecord | null> {
+  async getSession(id: string): Promise<SessionRecord | undefined> {
     const db = await this.dbPromise;
     const row = await requestToPromise<IDBValidKey | SessionRow | undefined>(db.transaction(SESSIONS_STORE, "readonly").objectStore(SESSIONS_STORE).get(id));
     if (!row || typeof row !== "object") {
-      return null;
+      return undefined;
     }
     return decodeSessionRow(row as SessionRow);
   }
@@ -84,7 +84,7 @@ export class IndexedDbSessionPersistDriver implements SessionPersistDriver {
     };
   }
 
-  async insertEvent(event: SessionEvent): Promise<void> {
+  async insertEvent(_sessionId: string, event: SessionEvent): Promise<void> {
     const db = await this.dbPromise;
     await transactionPromise(db, [EVENTS_STORE], "readwrite", (tx) => {
       tx.objectStore(EVENTS_STORE).put(encodeEventRow(event));
@@ -139,6 +139,7 @@ type SessionRow = {
   lastConnectionId: string;
   createdAt: number;
   destroyedAt?: number;
+  sandboxId?: string;
   sessionInit?: SessionRecord["sessionInit"];
 };
 
@@ -160,6 +161,7 @@ function encodeSessionRow(session: SessionRecord): SessionRow {
     lastConnectionId: session.lastConnectionId,
     createdAt: session.createdAt,
     destroyedAt: session.destroyedAt,
+    sandboxId: session.sandboxId,
     sessionInit: session.sessionInit,
   };
 }
@@ -172,6 +174,7 @@ function decodeSessionRow(row: SessionRow): SessionRecord {
     lastConnectionId: row.lastConnectionId,
     createdAt: row.createdAt,
     destroyedAt: row.destroyedAt,
+    sandboxId: row.sandboxId,
     sessionInit: row.sessionInit,
   };
 }

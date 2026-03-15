@@ -37,7 +37,7 @@ await writeFile(
 const sdk = await SandboxAgent.connect({ baseUrl: "http://127.0.0.1:2468" });
 await sdk.createSession({
   agent: "claude",
-  sessionInit: { cwd, mcpServers: [] },
+  cwd,
 });
 ```
 

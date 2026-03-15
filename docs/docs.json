@@ -58,13 +58,13 @@
                 "icon": "server",
                 "pages": [
                   "deploy/local",
-                  "deploy/computesdk",
                   "deploy/e2b",
                   "deploy/daytona",
                   "deploy/vercel",
                   "deploy/cloudflare",
                   "deploy/docker",
-                  "deploy/boxlite"
+                  "deploy/boxlite",
+                  "deploy/computesdk"
                 ]
               }
             ]
@@ -79,11 +79,12 @@
           },
           {
             "group": "Orchestration",
-            "pages": ["architecture", "session-persistence", "observability", "multiplayer", "security"]
+            "pages": ["orchestration-architecture", "session-persistence", "observability", "multiplayer", "security"]
           },
           {
             "group": "Reference",
             "pages": [
+              "architecture",
               "agent-capabilities",
               "cli",
               "inspector",

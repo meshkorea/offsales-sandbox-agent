@@ -74,6 +74,7 @@
   - `examples/docker/src/index.ts`
   - `examples/e2b/src/index.ts`
   - `examples/vercel/src/index.ts`
+  - `sdks/typescript/src/providers/shared.ts`
   - `scripts/release/main.ts`
   - `scripts/release/promote-artifacts.ts`
   - `scripts/release/sdk.ts`

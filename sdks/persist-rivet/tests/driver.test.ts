@@ -59,7 +59,7 @@ describe("RivetSessionPersistDriver", () => {
     expect(loaded?.destroyedAt).toBe(300);
 
     const missing = await driver.getSession("s-nonexistent");
-    expect(missing).toBeNull();
+    expect(missing).toBeUndefined();
   });
 
   it("pages sessions sorted by createdAt", async () => {
@@ -103,7 +103,7 @@ describe("RivetSessionPersistDriver", () => {
       createdAt: 1,
     });
 
-    await driver.insertEvent({
+    await driver.insertEvent("s-1", {
       id: "evt-1",
       eventIndex: 1,
       sessionId: "s-1",
@@ -113,7 +113,7 @@ describe("RivetSessionPersistDriver", () => {
       payload: { jsonrpc: "2.0", method: "session/prompt", params: { sessionId: "a-1" } },
     });
 
-    await driver.insertEvent({
+    await driver.insertEvent("s-1", {
       id: "evt-2",
       eventIndex: 2,
       sessionId: "s-1",
@@ -159,9 +159,9 @@ describe("RivetSessionPersistDriver", () => {
       createdAt: 300,
     });
 
-    expect(await driver.getSession("s-1")).toBeNull();
-    expect(await driver.getSession("s-2")).not.toBeNull();
-    expect(await driver.getSession("s-3")).not.toBeNull();
+    expect(await driver.getSession("s-1")).toBeUndefined();
+    expect(await driver.getSession("s-2")).toBeDefined();
+    expect(await driver.getSession("s-3")).toBeDefined();
   });
 
   it("trims oldest events when maxEventsPerSession exceeded", async () => {
@@ -176,7 +176,7 @@ describe("RivetSessionPersistDriver", () => {
     });
 
     for (let i = 1; i <= 3; i++) {
-      await driver.insertEvent({
+      await driver.insertEvent("s-1", {
         id: `evt-${i}`,
         eventIndex: i,
         sessionId: "s-1",

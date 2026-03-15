@@ -28,7 +28,7 @@ describe("IndexedDbSessionPersistDriver", () => {
       destroyedAt: 300,
     });
 
-    await driver.insertEvent({
+    await driver.insertEvent("s-1", {
       id: "evt-1",
       eventIndex: 1,
       sessionId: "s-1",
@@ -38,7 +38,7 @@ describe("IndexedDbSessionPersistDriver", () => {
       payload: { jsonrpc: "2.0", method: "session/prompt", params: { sessionId: "a-1" } },
     });
 
-    await driver.insertEvent({
+    await driver.insertEvent("s-1", {
       id: "evt-2",
       eventIndex: 2,
       sessionId: "s-1",

@@ -10,7 +10,7 @@ With persistence enabled, sessions can be restored after runtime/session loss. S
 
 Each driver stores:
 
-- `SessionRecord` (`id`, `agent`, `agentSessionId`, `lastConnectionId`, `createdAt`, optional `destroyedAt`, optional `sessionInit`)
+- `SessionRecord` (`id`, `agent`, `agentSessionId`, `lastConnectionId`, `createdAt`, optional `destroyedAt`, optional `sandboxId`, optional `sessionInit`)
 - `SessionEvent` (`id`, `eventIndex`, `sessionId`, `connectionId`, `sender`, `payload`, `createdAt`)
 
 ## Persistence drivers
@@ -160,11 +160,11 @@ Implement `SessionPersistDriver` for custom backends.
 import type { SessionPersistDriver } from "sandbox-agent";
 
 class MyDriver implements SessionPersistDriver {
-  async getSession(id) { return null; }
+  async getSession(id) { return undefined; }
   async listSessions(request) { return { items: [] }; }
   async updateSession(session) {}
   async listEvents(request) { return { items: [] }; }
-  async insertEvent(event) {}
+  async insertEvent(sessionId, event) {}
 }
 ```
 

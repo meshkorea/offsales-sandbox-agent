@@ -15,16 +15,16 @@ export class SQLiteSessionPersistDriver implements SessionPersistDriver {
     this.initialize();
   }
 
-  async getSession(id: string): Promise<SessionRecord | null> {
+  async getSession(id: string): Promise<SessionRecord | undefined> {
     const row = this.db
       .prepare(
-        `SELECT id, agent, agent_session_id, last_connection_id, created_at, destroyed_at, session_init_json
+        `SELECT id, agent, agent_session_id, last_connection_id, created_at, destroyed_at, sandbox_id, session_init_json
          FROM sessions WHERE id = ?`,
       )
       .get(id) as SessionRow | undefined;
 
     if (!row) {
-      return null;
+      return undefined;
     }
 
     return decodeSessionRow(row);
@@ -36,7 +36,7 @@ export class SQLiteSessionPersistDriver implements SessionPersistDriver {
 
     const rows = this.db
       .prepare(
-        `SELECT id, agent, agent_session_id, last_connection_id, created_at, destroyed_at, session_init_json
+        `SELECT id, agent, agent_session_id, last_connection_id, created_at, destroyed_at, sandbox_id, session_init_json
          FROM sessions
          ORDER BY created_at ASC, id ASC
          LIMIT ? OFFSET ?`,
@@ -56,14 +56,15 @@ export class SQLiteSessionPersistDriver implements SessionPersistDriver {
     this.db
       .prepare(
         `INSERT INTO sessions (
-          id, agent, agent_session_id, last_connection_id, created_at, destroyed_at, session_init_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          id, agent, agent_session_id, last_connection_id, created_at, destroyed_at, sandbox_id, session_init_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           agent = excluded.agent,
           agent_session_id = excluded.agent_session_id,
           last_connection_id = excluded.last_connection_id,
           created_at = excluded.created_at,
           destroyed_at = excluded.destroyed_at,
+          sandbox_id = excluded.sandbox_id,
           session_init_json = excluded.session_init_json`,
       )
       .run(
@@ -73,6 +74,7 @@ export class SQLiteSessionPersistDriver implements SessionPersistDriver {
         session.lastConnectionId,
         session.createdAt,
         session.destroyedAt ?? null,
+        session.sandboxId ?? null,
         session.sessionInit ? JSON.stringify(session.sessionInit) : null,
       );
   }
@@ -101,7 +103,7 @@ export class SQLiteSessionPersistDriver implements SessionPersistDriver {
     };
   }
 
-  async insertEvent(event: SessionEvent): Promise<void> {
+  async insertEvent(_sessionId: string, event: SessionEvent): Promise<void> {
     this.db
       .prepare(
         `INSERT INTO events (
@@ -131,9 +133,15 @@ export class SQLiteSessionPersistDriver implements SessionPersistDriver {
         last_connection_id TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         destroyed_at INTEGER,
+        sandbox_id TEXT,
         session_init_json TEXT
       )
     `);
+
+    const sessionColumns = this.db.prepare(`PRAGMA table_info(sessions)`).all() as TableInfoRow[];
+    if (!sessionColumns.some((column) => column.name === "sandbox_id")) {
+      this.db.exec(`ALTER TABLE sessions ADD COLUMN sandbox_id TEXT`);
+    }
 
     this.ensureEventsTable();
   }
@@ -223,6 +231,7 @@ type SessionRow = {
   last_connection_id: string;
   created_at: number;
   destroyed_at: number | null;
+  sandbox_id: string | null;
   session_init_json: string | null;
 };
 
@@ -249,6 +258,7 @@ function decodeSessionRow(row: SessionRow): SessionRecord {
     lastConnectionId: row.last_connection_id,
     createdAt: row.created_at,
     destroyedAt: row.destroyed_at ?? undefined,
+    sandboxId: row.sandbox_id ?? undefined,
     sessionInit: row.session_init_json ? (JSON.parse(row.session_init_json) as SessionRecord["sessionInit"]) : undefined,
   };
 }

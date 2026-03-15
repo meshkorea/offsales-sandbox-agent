@@ -50,9 +50,9 @@ export class RivetSessionPersistDriver implements SessionPersistDriver {
     return this.ctx.state[this.stateKey] as RivetPersistData;
   }
 
-  async getSession(id: string): Promise<SessionRecord | null> {
+  async getSession(id: string): Promise<SessionRecord | undefined> {
     const session = this.data.sessions[id];
-    return session ? cloneSessionRecord(session) : null;
+    return session ? cloneSessionRecord(session) : undefined;
   }
 
   async listSessions(request: ListPageRequest = {}): Promise<ListPage<SessionRecord>> {
@@ -112,15 +112,15 @@ export class RivetSessionPersistDriver implements SessionPersistDriver {
     };
   }
 
-  async insertEvent(event: SessionEvent): Promise<void> {
-    const events = this.data.events[event.sessionId] ?? [];
+  async insertEvent(sessionId: string, event: SessionEvent): Promise<void> {
+    const events = this.data.events[sessionId] ?? [];
     events.push(cloneSessionEvent(event));
 
     if (events.length > this.maxEventsPerSession) {
       events.splice(0, events.length - this.maxEventsPerSession);
     }
 
-    this.data.events[event.sessionId] = events;
+    this.data.events[sessionId] = events;
   }
 }
 

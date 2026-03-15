@@ -1,20 +1,22 @@
 ---
 title: "Quickstart"
-description: "Start the server and send your first message."
+description: "Get a coding agent running in a sandbox in under a minute."
 icon: "rocket"
 ---
 
 <Steps>
-  <Step title="Install skill (optional)">
+  <Step title="Install">
     <Tabs>
-      <Tab title="npx">
+      <Tab title="npm">
         ```bash
-        npx skills add rivet-dev/skills -s sandbox-agent
+        npm install sandbox-agent@0.3.x
         ```
       </Tab>
-      <Tab title="bunx">
+      <Tab title="bun">
         ```bash
-        bunx skills add rivet-dev/skills -s sandbox-agent
+        bun add sandbox-agent@0.3.x
+        # Allow Bun to run postinstall scripts for native binaries (required for SandboxAgent.start()).
+        bun pm trust @sandbox-agent/cli-linux-x64 @sandbox-agent/cli-linux-arm64 @sandbox-agent/cli-darwin-arm64 @sandbox-agent/cli-darwin-x64 @sandbox-agent/cli-win32-x64
         ```
       </Tab>
     </Tabs>
@@ -23,52 +25,10 @@ icon: "rocket"
   <Step title="Set environment variables">
     Each coding agent requires API keys to connect to their respective LLM providers.
 
-    <Tabs>
-      <Tab title="Local shell">
-        ```bash
-        export ANTHROPIC_API_KEY="sk-ant-..."
-        export OPENAI_API_KEY="sk-..."
-        ```
-      </Tab>
-
-      <Tab title="E2B">
-        ```typescript
-        import { Sandbox } from "@e2b/code-interpreter";
-
-        const envs: Record<string, string> = {};
-        if (process.env.ANTHROPIC_API_KEY) envs.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-        if (process.env.OPENAI_API_KEY) envs.OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-
-        const sandbox = await Sandbox.create({ envs });
-        ```
-      </Tab>
-
-      <Tab title="Daytona">
-        ```typescript
-        import { Daytona } from "@daytonaio/sdk";
-
-        const envVars: Record<string, string> = {};
-        if (process.env.ANTHROPIC_API_KEY) envVars.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-        if (process.env.OPENAI_API_KEY) envVars.OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-
-        const daytona = new Daytona();
-        const sandbox = await daytona.create({
-          snapshot: "sandbox-agent-ready",
-          envVars,
-        });
-        ```
-      </Tab>
-
-      <Tab title="Docker">
-        ```bash
-        docker run -p 2468:2468 \
-          -e ANTHROPIC_API_KEY="sk-ant-..." \
-          -e OPENAI_API_KEY="sk-..." \
-          rivetdev/sandbox-agent:0.3.1-full \
-          server --no-token --host 0.0.0.0 --port 2468
-        ```
-      </Tab>
-    </Tabs>
+    ```bash
+    export ANTHROPIC_API_KEY="sk-ant-..."
+    export OPENAI_API_KEY="sk-..."
+    ```
 
     <AccordionGroup>
       <Accordion title="Extracting API keys from current machine">
@@ -83,173 +43,146 @@ icon: "rocket"
     </AccordionGroup>
   </Step>
 
-  <Step title="Run the server">
-    <Tabs>
-      <Tab title="curl">
-        Install and run the binary directly.
+  <Step title="Start the sandbox">
+    `SandboxAgent.start()` provisions a sandbox, starts a lightweight [Sandbox Agent server](/architecture) inside it, and connects your SDK client.
 
-        ```bash
-        curl -fsSL https://releases.rivet.dev/sandbox-agent/0.3.x/install.sh | sh
-        sandbox-agent server --no-token --host 0.0.0.0 --port 2468
-        ```
-      </Tab>
+    <CodeGroup>
+      ```typescript Local
+      import { SandboxAgent } from "sandbox-agent";
+      import { local } from "sandbox-agent/local";
 
-      <Tab title="npx">
-        Run without installing globally.
+      // Runs on your machine. Best for local development and testing.
+      const sdk = await SandboxAgent.start({
+        sandbox: local(),
+      });
+      ```
 
-        ```bash
-        npx @sandbox-agent/cli@0.3.x server --no-token --host 0.0.0.0 --port 2468
-        ```
-      </Tab>
+      ```typescript E2B
+      import { SandboxAgent } from "sandbox-agent";
+      import { e2b } from "sandbox-agent/e2b";
 
-      <Tab title="bunx">
-        Run without installing globally.
+      const sdk = await SandboxAgent.start({
+        sandbox: e2b({ create: { envs } }),
+      });
+      ```
 
-        ```bash
-        bunx @sandbox-agent/cli@0.3.x server --no-token --host 0.0.0.0 --port 2468
-        ```
-      </Tab>
+      ```typescript Daytona
+      import { SandboxAgent } from "sandbox-agent";
+      import { daytona } from "sandbox-agent/daytona";
 
-      <Tab title="npm i -g">
-        Install globally, then run.
+      const sdk = await SandboxAgent.start({
+        sandbox: daytona({ create: { envVars } }),
+      });
+      ```
 
-        ```bash
-        npm install -g @sandbox-agent/cli@0.3.x
-        sandbox-agent server --no-token --host 0.0.0.0 --port 2468
-        ```
-      </Tab>
+      ```typescript Vercel
+      import { SandboxAgent } from "sandbox-agent";
+      import { vercel } from "sandbox-agent/vercel";
 
-      <Tab title="bun add -g">
-        Install globally, then run.
+      const sdk = await SandboxAgent.start({
+        sandbox: vercel({ create: { runtime: "node24", env } }),
+      });
+      ```
 
-        ```bash
-        bun add -g @sandbox-agent/cli@0.3.x
-        # Allow Bun to run postinstall scripts for native binaries (required for SandboxAgent.start()).
-        bun pm -g trust @sandbox-agent/cli-linux-x64 @sandbox-agent/cli-linux-arm64 @sandbox-agent/cli-darwin-arm64 @sandbox-agent/cli-darwin-x64 @sandbox-agent/cli-win32-x64
-        sandbox-agent server --no-token --host 0.0.0.0 --port 2468
-        ```
-      </Tab>
+      ```typescript Cloudflare
+      import { SandboxAgent } from "sandbox-agent";
+      import { cloudflare } from "sandbox-agent/cloudflare";
 
-      <Tab title="Node.js (local)">
-        For local development, use `SandboxAgent.start()` to spawn and manage the server as a subprocess.
+      const sdk = await SandboxAgent.start({
+        sandbox: cloudflare({ sdk: cfSandboxClient }),
+      });
+      ```
 
-        ```bash
-        npm install sandbox-agent@0.3.x
-        ```
+      ```typescript Docker
+      import { SandboxAgent } from "sandbox-agent";
+      import { docker } from "sandbox-agent/docker";
 
-        ```typescript
-        import { SandboxAgent } from "sandbox-agent";
+      // Good for testing. Not security-hardened like cloud sandboxes.
+      const sdk = await SandboxAgent.start({
+        sandbox: docker({
+          env: [`ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY}`],
+        }),
+      });
+      ```
+    </CodeGroup>
 
-        const sdk = await SandboxAgent.start();
-        ```
-      </Tab>
-
-      <Tab title="Bun (local)">
-        For local development, use `SandboxAgent.start()` to spawn and manage the server as a subprocess.
-
-        ```bash
-        bun add sandbox-agent@0.3.x
-        # Allow Bun to run postinstall scripts for native binaries (required for SandboxAgent.start()).
-        bun pm trust @sandbox-agent/cli-linux-x64 @sandbox-agent/cli-linux-arm64 @sandbox-agent/cli-darwin-arm64 @sandbox-agent/cli-darwin-x64 @sandbox-agent/cli-win32-x64
-        ```
-
-        ```typescript
-        import { SandboxAgent } from "sandbox-agent";
-
-        const sdk = await SandboxAgent.start();
-        ```
-      </Tab>
-
-      <Tab title="Build from source">
-        If you're running from source instead of the installed CLI.
-
-        ```bash
-        cargo run -p sandbox-agent -- server --no-token --host 0.0.0.0 --port 2468
-        ```
-      </Tab>
-    </Tabs>
-
-    Binding to `0.0.0.0` allows the server to accept connections from any network interface, which is required when running inside a sandbox where clients connect remotely.
+    Each provider handles provisioning, server installation, and networking. Install the provider's peer dependency (e.g. `@e2b/code-interpreter`, `dockerode`) in your project. See the [Deploy](/deploy/local) guides for full setup details.
 
     <AccordionGroup>
-      <Accordion title="Configuring token">
-        Tokens are usually not required. Most sandbox providers (E2B, Daytona, etc.) already secure networking at the infrastructure layer.
+      <Accordion title="Implementing a custom provider">
+        Implement the `SandboxProvider` interface to use any sandbox platform:
 
-        If you expose the server publicly, use `--token "$SANDBOX_TOKEN"` to require authentication:
+        ```typescript
+        import { SandboxAgent, type SandboxProvider } from "sandbox-agent";
 
-        ```bash
-        sandbox-agent server --token "$SANDBOX_TOKEN" --host 0.0.0.0 --port 2468
+        const myProvider: SandboxProvider = {
+          name: "my-provider",
+          async create() {
+            // Provision a sandbox, install & start the server, return an ID
+            return "sandbox-123";
+          },
+          async destroy(sandboxId) {
+            // Tear down the sandbox
+          },
+          async getUrl(sandboxId) {
+            // Return the Sandbox Agent server URL
+            return `https://${sandboxId}.my-platform.dev:3000`;
+          },
+        };
+
+        const sdk = await SandboxAgent.start({
+          sandbox: myProvider,
+        });
         ```
+      </Accordion>
 
-        Then pass the token when connecting:
+      <Accordion title="Connecting to an existing server">
+        If you already have a Sandbox Agent server running, connect directly:
 
+        ```typescript
+        const sdk = await SandboxAgent.connect({
+          baseUrl: "http://127.0.0.1:2468",
+        });
+        ```
+      </Accordion>
+
+      <Accordion title="Starting the server manually">
         <Tabs>
-          <Tab title="TypeScript">
-            ```typescript
-            import { SandboxAgent } from "sandbox-agent";
-
-            const sdk = await SandboxAgent.connect({
-              baseUrl: "http://your-server:2468",
-              token: process.env.SANDBOX_TOKEN,
-            });
-            ```
-          </Tab>
-
           <Tab title="curl">
             ```bash
-            curl "http://your-server:2468/v1/health" \
-              -H "Authorization: Bearer $SANDBOX_TOKEN"
+            curl -fsSL https://releases.rivet.dev/sandbox-agent/0.3.x/install.sh | sh
+            sandbox-agent server --no-token --host 0.0.0.0 --port 2468
             ```
           </Tab>
-
-          <Tab title="CLI">
+          <Tab title="npx">
             ```bash
-            sandbox-agent --token "$SANDBOX_TOKEN" api agents list \
-              --endpoint http://your-server:2468
+            npx @sandbox-agent/cli@0.3.x server --no-token --host 0.0.0.0 --port 2468
+            ```
+          </Tab>
+          <Tab title="Docker">
+            ```bash
+            docker run -p 2468:2468 \
+              -e ANTHROPIC_API_KEY="sk-ant-..." \
+              -e OPENAI_API_KEY="sk-..." \
+              rivetdev/sandbox-agent:0.3.2-full \
+              server --no-token --host 0.0.0.0 --port 2468
             ```
           </Tab>
         </Tabs>
       </Accordion>
-      <Accordion title="CORS">
-        If you're calling the server from a browser, see the [CORS configuration guide](/cors).
-      </Accordion>
     </AccordionGroup>
   </Step>
 
-  <Step title="Install agents (optional)">
-    Supported agent IDs: `claude`, `codex`, `opencode`, `amp`, `pi`, `cursor`, `mock`.
-
-    To preinstall agents:
-
-    ```bash
-    sandbox-agent install-agent --all
-    ```
-
-    If agents are not installed up front, they are lazily installed when creating a session.
-  </Step>
-
-  <Step title="Create a session">
+  <Step title="Create a session and send a prompt">
     ```typescript
-    import { SandboxAgent } from "sandbox-agent";
-
-    const sdk = await SandboxAgent.connect({
-      baseUrl: "http://127.0.0.1:2468",
-    });
-
     const session = await sdk.createSession({
       agent: "claude",
-      sessionInit: {
-        cwd: "/",
-        mcpServers: [],
-      },
     });
 
-    console.log(session.id);
-    ```
-  </Step>
+    session.onEvent((event) => {
+      console.log(event.sender, event.payload);
+    });
 
-  <Step title="Send a message">
-    ```typescript
     const result = await session.prompt([
       { type: "text", text: "Summarize the repository and suggest next steps." },
     ]);
@@ -258,24 +191,16 @@ icon: "rocket"
     ```
   </Step>
 
-  <Step title="Read events">
+  <Step title="Clean up">
     ```typescript
-    const off = session.onEvent((event) => {
-      console.log(event.sender, event.payload);
-    });
-
-    const page = await sdk.getEvents({
-      sessionId: session.id,
-      limit: 50,
-    });
-
-    console.log(page.items.length);
-    off();
+    await sdk.destroySandbox(); // tears down the sandbox and disconnects
     ```
+
+    Use `sdk.dispose()` instead to disconnect without destroying the sandbox (for reconnecting later).
   </Step>
 
-  <Step title="Test with Inspector">
-    Open the Inspector UI at `/ui/` on your server (for example, `http://localhost:2468/ui/`) to inspect sessions and events in a GUI.
+  <Step title="Inspect with the UI">
+    Open the Inspector at `/ui/` on your server (e.g. `http://localhost:2468/ui/`) to view sessions and events in a GUI.
 
     <Frame>
       <img src="/images/inspector.png" alt="Sandbox Agent Inspector" />
@@ -283,16 +208,40 @@ icon: "rocket"
   </Step>
 </Steps>
 
+## Full example
+
+```typescript
+import { SandboxAgent } from "sandbox-agent";
+import { local } from "sandbox-agent/local";
+
+const sdk = await SandboxAgent.start({
+  sandbox: local(),
+});
+
+try {
+  const session = await sdk.createSession({ agent: "claude" });
+
+  session.onEvent((event) => {
+    console.log(`[${event.sender}]`, JSON.stringify(event.payload));
+  });
+
+  const result = await session.prompt([
+    { type: "text", text: "Write a function that checks if a number is prime." },
+  ]);
+
+  console.log("Done:", result.stopReason);
+} finally {
+  await sdk.destroySandbox();
+}
+```
+
 ## Next steps
 
-<CardGroup cols={3}>
-  <Card title="Session Persistence" icon="database" href="/session-persistence">
-    Configure in-memory, Rivet Actor state, IndexedDB, SQLite, and Postgres persistence.
+<CardGroup cols={2}>
+  <Card title="SDK Overview" icon="compass" href="/sdk-overview">
+    Full TypeScript SDK API surface.
   </Card>
   <Card title="Deploy to a Sandbox" icon="box" href="/deploy/local">
-    Deploy your agent to E2B, Daytona, Docker, Vercel, or Cloudflare.
-  </Card>
-  <Card title="SDK Overview" icon="compass" href="/sdk-overview">
-    Use the latest TypeScript SDK API.
+    Deploy to E2B, Daytona, Docker, Vercel, or Cloudflare.
   </Card>
 </CardGroup>

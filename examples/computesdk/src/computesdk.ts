@@ -131,7 +131,7 @@ export async function runComputeSdkExample(): Promise<void> {
   process.once("SIGTERM", handleExit);
 
   const client = await SandboxAgent.connect({ baseUrl });
-  const session = await client.createSession({ agent: detectAgent(), sessionInit: { cwd: "/home", mcpServers: [] } });
+  const session = await client.createSession({ agent: detectAgent(), cwd: "/home" });
   const sessionId = session.id;
 
   console.log(`  UI: ${buildInspectorUrl({ baseUrl, sessionId })}`);
