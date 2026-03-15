@@ -9,7 +9,7 @@ import type {
   TaskWorkbenchSetSessionUnreadInput,
   TaskWorkbenchSendMessageInput,
   TaskWorkbenchUpdateDraftInput,
-  ProviderId,
+  SandboxProviderId,
 } from "@sandbox-agent/foundry-shared";
 import { expectQueueResponse } from "../../services/queue.js";
 import { selfTask } from "../handles.js";
@@ -37,15 +37,14 @@ import {
 import { TASK_QUEUE_NAMES, taskWorkflowQueueName, runTaskWorkflow } from "./workflow/index.js";
 
 export interface TaskInput {
-  workspaceId: string;
+  organizationId: string;
   repoId: string;
   taskId: string;
   repoRemote: string;
-  repoLocalPath?: string;
   branchName: string | null;
   title: string | null;
   task: string;
-  providerId: ProviderId;
+  sandboxProviderId: SandboxProviderId;
   agentType: AgentType | null;
   explicitTitle: string | null;
   explicitBranchName: string | null;
@@ -53,15 +52,15 @@ export interface TaskInput {
 }
 
 interface InitializeCommand {
-  providerId?: ProviderId;
+  sandboxProviderId?: SandboxProviderId;
 }
 
 interface TaskActionCommand {
   reason?: string;
 }
 
-interface TaskTabCommand {
-  tabId: string;
+interface TaskSessionCommand {
+  sessionId: string;
 }
 
 interface TaskStatusSyncCommand {
@@ -123,15 +122,14 @@ export const task = actor({
     actionTimeout: 5 * 60_000,
   },
   createState: (_c, input: TaskInput) => ({
-    workspaceId: input.workspaceId,
+    organizationId: input.organizationId,
     repoId: input.repoId,
     taskId: input.taskId,
     repoRemote: input.repoRemote,
-    repoLocalPath: input.repoLocalPath,
     branchName: input.branchName,
     title: input.title,
     task: input.task,
-    providerId: input.providerId,
+    sandboxProviderId: input.sandboxProviderId,
     agentType: input.agentType,
     explicitTitle: input.explicitTitle,
     explicitBranchName: input.explicitBranchName,
@@ -257,7 +255,7 @@ export const task = actor({
       });
     },
 
-    async createWorkbenchSession(c, input?: { model?: string }): Promise<{ tabId: string }> {
+    async createWorkbenchSession(c, input?: { model?: string }): Promise<{ sessionId: string }> {
       const self = selfTask(c);
       const result = await self.send(
         taskWorkflowQueueName("task.command.workbench.create_session"),
@@ -267,7 +265,7 @@ export const task = actor({
           timeout: 10_000,
         },
       );
-      return expectQueueResponse<{ tabId: string }>(result);
+      return expectQueueResponse<{ sessionId: string }>(result);
     },
 
     /**
@@ -287,7 +285,7 @@ export const task = actor({
       const self = selfTask(c);
       await self.send(
         taskWorkflowQueueName("task.command.workbench.rename_session"),
-        { sessionId: input.tabId, title: input.title } satisfies TaskWorkbenchSessionTitleCommand,
+        { sessionId: input.sessionId, title: input.title } satisfies TaskWorkbenchSessionTitleCommand,
         {
           wait: true,
           timeout: 10_000,
@@ -299,7 +297,7 @@ export const task = actor({
       const self = selfTask(c);
       await self.send(
         taskWorkflowQueueName("task.command.workbench.set_session_unread"),
-        { sessionId: input.tabId, unread: input.unread } satisfies TaskWorkbenchSessionUnreadCommand,
+        { sessionId: input.sessionId, unread: input.unread } satisfies TaskWorkbenchSessionUnreadCommand,
         {
           wait: true,
           timeout: 10_000,
@@ -312,13 +310,12 @@ export const task = actor({
       await self.send(
         taskWorkflowQueueName("task.command.workbench.update_draft"),
         {
-          sessionId: input.tabId,
+          sessionId: input.sessionId,
           text: input.text,
           attachments: input.attachments,
         } satisfies TaskWorkbenchUpdateDraftCommand,
         {
-          wait: true,
-          timeout: 10_000,
+          wait: false,
         },
       );
     },
@@ -327,7 +324,7 @@ export const task = actor({
       const self = selfTask(c);
       await self.send(
         taskWorkflowQueueName("task.command.workbench.change_model"),
-        { sessionId: input.tabId, model: input.model } satisfies TaskWorkbenchChangeModelCommand,
+        { sessionId: input.sessionId, model: input.model } satisfies TaskWorkbenchChangeModelCommand,
         {
           wait: true,
           timeout: 10_000,
@@ -340,7 +337,7 @@ export const task = actor({
       await self.send(
         taskWorkflowQueueName("task.command.workbench.send_message"),
         {
-          sessionId: input.tabId,
+          sessionId: input.sessionId,
           text: input.text,
           attachments: input.attachments,
         } satisfies TaskWorkbenchSendMessageCommand,
@@ -350,9 +347,9 @@ export const task = actor({
       );
     },
 
-    async stopWorkbenchSession(c, input: TaskTabCommand): Promise<void> {
+    async stopWorkbenchSession(c, input: TaskSessionCommand): Promise<void> {
       const self = selfTask(c);
-      await self.send(taskWorkflowQueueName("task.command.workbench.stop_session"), { sessionId: input.tabId } satisfies TaskWorkbenchSessionCommand, {
+      await self.send(taskWorkflowQueueName("task.command.workbench.stop_session"), { sessionId: input.sessionId } satisfies TaskWorkbenchSessionCommand, {
         wait: false,
       });
     },
@@ -365,9 +362,9 @@ export const task = actor({
       });
     },
 
-    async closeWorkbenchSession(c, input: TaskTabCommand): Promise<void> {
+    async closeWorkbenchSession(c, input: TaskSessionCommand): Promise<void> {
       const self = selfTask(c);
-      await self.send(taskWorkflowQueueName("task.command.workbench.close_session"), { sessionId: input.tabId } satisfies TaskWorkbenchSessionCommand, {
+      await self.send(taskWorkflowQueueName("task.command.workbench.close_session"), { sessionId: input.sessionId } satisfies TaskWorkbenchSessionCommand, {
         wait: false,
       });
     },

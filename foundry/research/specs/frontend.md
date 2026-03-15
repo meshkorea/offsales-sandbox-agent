@@ -24,8 +24,8 @@ be thorough and careful with your impelmentaiton. this is going to be the ground
 - left sidebar is similar to the hf switch ui:
     - list each repo
     - under each repo, show all of the tasks
-    - you should see all tasks for the entire workspace here grouped by repo
-- the main content area shows the current workspace
+    - you should see all tasks for the entire organization here grouped by repo
+- the main content area shows the current organization
     - there is a main agent session for the main agent thatn's making the change, so show this by default
     - build a ui for interacting with sessions
     - see ~/sandbox-agent/frontend/packages/inspector/ for reference ui

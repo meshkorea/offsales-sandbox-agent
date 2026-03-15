@@ -104,8 +104,8 @@ class RemoteFoundryAppStore implements FoundryAppClient {
     await this.backend.reconnectAppGithub(organizationId);
   }
 
-  async recordSeatUsage(workspaceId: string): Promise<void> {
-    this.snapshot = await this.backend.recordAppSeatUsage(workspaceId);
+  async recordSeatUsage(organizationId: string): Promise<void> {
+    this.snapshot = await this.backend.recordAppSeatUsage(organizationId);
     this.notify();
   }
 

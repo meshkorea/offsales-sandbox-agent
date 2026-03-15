@@ -1,5 +1,5 @@
 import type {
-  TaskWorkbenchAddTabResponse,
+  TaskWorkbenchAddSessionResponse,
   TaskWorkbenchChangeModelInput,
   TaskWorkbenchCreateTaskInput,
   TaskWorkbenchCreateTaskResponse,
@@ -10,21 +10,21 @@ import type {
   TaskWorkbenchSetSessionUnreadInput,
   TaskWorkbenchSendMessageInput,
   TaskWorkbenchSnapshot,
-  TaskWorkbenchTabInput,
+  TaskWorkbenchSessionInput,
   TaskWorkbenchUpdateDraftInput,
 } from "@sandbox-agent/foundry-shared";
 import type { BackendClient } from "../backend-client.js";
-import { groupWorkbenchProjects } from "../workbench-model.js";
+import { groupWorkbenchRepositories } from "../workbench-model.js";
 import type { TaskWorkbenchClient } from "../workbench-client.js";
 
 export interface RemoteWorkbenchClientOptions {
   backend: BackendClient;
-  workspaceId: string;
+  organizationId: string;
 }
 
 class RemoteWorkbenchStore implements TaskWorkbenchClient {
   private readonly backend: BackendClient;
-  private readonly workspaceId: string;
+  private readonly organizationId: string;
   private snapshot: TaskWorkbenchSnapshot;
   private readonly listeners = new Set<() => void>();
   private unsubscribeWorkbench: (() => void) | null = null;
@@ -33,11 +33,11 @@ class RemoteWorkbenchStore implements TaskWorkbenchClient {
 
   constructor(options: RemoteWorkbenchClientOptions) {
     this.backend = options.backend;
-    this.workspaceId = options.workspaceId;
+    this.organizationId = options.organizationId;
     this.snapshot = {
-      workspaceId: options.workspaceId,
+      organizationId: options.organizationId,
       repos: [],
-      projects: [],
+      repositories: [],
       tasks: [],
     };
   }
@@ -63,86 +63,86 @@ class RemoteWorkbenchStore implements TaskWorkbenchClient {
   }
 
   async createTask(input: TaskWorkbenchCreateTaskInput): Promise<TaskWorkbenchCreateTaskResponse> {
-    const created = await this.backend.createWorkbenchTask(this.workspaceId, input);
+    const created = await this.backend.createWorkbenchTask(this.organizationId, input);
     await this.refresh();
     return created;
   }
 
   async markTaskUnread(input: TaskWorkbenchSelectInput): Promise<void> {
-    await this.backend.markWorkbenchUnread(this.workspaceId, input);
+    await this.backend.markWorkbenchUnread(this.organizationId, input);
     await this.refresh();
   }
 
   async renameTask(input: TaskWorkbenchRenameInput): Promise<void> {
-    await this.backend.renameWorkbenchTask(this.workspaceId, input);
+    await this.backend.renameWorkbenchTask(this.organizationId, input);
     await this.refresh();
   }
 
   async renameBranch(input: TaskWorkbenchRenameInput): Promise<void> {
-    await this.backend.renameWorkbenchBranch(this.workspaceId, input);
+    await this.backend.renameWorkbenchBranch(this.organizationId, input);
     await this.refresh();
   }
 
   async archiveTask(input: TaskWorkbenchSelectInput): Promise<void> {
-    await this.backend.runAction(this.workspaceId, input.taskId, "archive");
+    await this.backend.runAction(this.organizationId, input.taskId, "archive");
     await this.refresh();
   }
 
   async publishPr(input: TaskWorkbenchSelectInput): Promise<void> {
-    await this.backend.publishWorkbenchPr(this.workspaceId, input);
+    await this.backend.publishWorkbenchPr(this.organizationId, input);
     await this.refresh();
   }
 
   async revertFile(input: TaskWorkbenchDiffInput): Promise<void> {
-    await this.backend.revertWorkbenchFile(this.workspaceId, input);
+    await this.backend.revertWorkbenchFile(this.organizationId, input);
     await this.refresh();
   }
 
   async updateDraft(input: TaskWorkbenchUpdateDraftInput): Promise<void> {
-    await this.backend.updateWorkbenchDraft(this.workspaceId, input);
+    await this.backend.updateWorkbenchDraft(this.organizationId, input);
     // Skip refresh — the server broadcast will trigger it, and the frontend
     // holds local draft state to avoid the round-trip overwriting user input.
   }
 
   async sendMessage(input: TaskWorkbenchSendMessageInput): Promise<void> {
-    await this.backend.sendWorkbenchMessage(this.workspaceId, input);
+    await this.backend.sendWorkbenchMessage(this.organizationId, input);
     await this.refresh();
   }
 
-  async stopAgent(input: TaskWorkbenchTabInput): Promise<void> {
-    await this.backend.stopWorkbenchSession(this.workspaceId, input);
+  async stopAgent(input: TaskWorkbenchSessionInput): Promise<void> {
+    await this.backend.stopWorkbenchSession(this.organizationId, input);
     await this.refresh();
   }
 
   async setSessionUnread(input: TaskWorkbenchSetSessionUnreadInput): Promise<void> {
-    await this.backend.setWorkbenchSessionUnread(this.workspaceId, input);
+    await this.backend.setWorkbenchSessionUnread(this.organizationId, input);
     await this.refresh();
   }
 
   async renameSession(input: TaskWorkbenchRenameSessionInput): Promise<void> {
-    await this.backend.renameWorkbenchSession(this.workspaceId, input);
+    await this.backend.renameWorkbenchSession(this.organizationId, input);
     await this.refresh();
   }
 
-  async closeTab(input: TaskWorkbenchTabInput): Promise<void> {
-    await this.backend.closeWorkbenchSession(this.workspaceId, input);
+  async closeSession(input: TaskWorkbenchSessionInput): Promise<void> {
+    await this.backend.closeWorkbenchSession(this.organizationId, input);
     await this.refresh();
   }
 
-  async addTab(input: TaskWorkbenchSelectInput): Promise<TaskWorkbenchAddTabResponse> {
-    const created = await this.backend.createWorkbenchSession(this.workspaceId, input);
+  async addSession(input: TaskWorkbenchSelectInput): Promise<TaskWorkbenchAddSessionResponse> {
+    const created = await this.backend.createWorkbenchSession(this.organizationId, input);
     await this.refresh();
     return created;
   }
 
   async changeModel(input: TaskWorkbenchChangeModelInput): Promise<void> {
-    await this.backend.changeWorkbenchModel(this.workspaceId, input);
+    await this.backend.changeWorkbenchModel(this.organizationId, input);
     await this.refresh();
   }
 
   private ensureStarted(): void {
     if (!this.unsubscribeWorkbench) {
-      this.unsubscribeWorkbench = this.backend.subscribeWorkbench(this.workspaceId, () => {
+      this.unsubscribeWorkbench = this.backend.subscribeWorkbench(this.organizationId, () => {
         void this.refresh().catch(() => {
           this.scheduleRefreshRetry();
         });
@@ -173,14 +173,14 @@ class RemoteWorkbenchStore implements TaskWorkbenchClient {
     }
 
     this.refreshPromise = (async () => {
-      const nextSnapshot = await this.backend.getWorkbench(this.workspaceId);
+      const nextSnapshot = await this.backend.getWorkbench(this.organizationId);
       if (this.refreshRetryTimeout) {
         clearTimeout(this.refreshRetryTimeout);
         this.refreshRetryTimeout = null;
       }
       this.snapshot = {
         ...nextSnapshot,
-        projects: nextSnapshot.projects ?? groupWorkbenchProjects(nextSnapshot.repos, nextSnapshot.tasks),
+        repositories: nextSnapshot.repositories ?? groupWorkbenchRepositories(nextSnapshot.repos, nextSnapshot.tasks),
       };
       for (const listener of [...this.listeners]) {
         listener();

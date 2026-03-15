@@ -1,4 +1,4 @@
-import { type SandboxProcessRecord, useInterest } from "@sandbox-agent/foundry-client";
+import { type SandboxProcessRecord, useSubscription } from "@sandbox-agent/foundry-client";
 import { ProcessTerminal } from "@sandbox-agent/react";
 import { useQuery } from "@tanstack/react-query";
 import { useStyletron } from "baseui";
@@ -7,10 +7,10 @@ import { ChevronDown, ChevronUp, Plus, SquareTerminal, Trash2 } from "lucide-rea
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SandboxAgent } from "sandbox-agent";
 import { backendClient } from "../../lib/backend";
-import { interestManager } from "../../lib/interest";
+import { subscriptionManager } from "../../lib/subscription";
 
 interface TerminalPaneProps {
-  workspaceId: string;
+  organizationId: string;
   taskId: string | null;
   isExpanded?: boolean;
   onExpand?: () => void;
@@ -95,10 +95,10 @@ function HeaderIconButton({
   );
 }
 
-export function TerminalPane({ workspaceId, taskId, isExpanded, onExpand, onCollapse, onStartResize }: TerminalPaneProps) {
+export function TerminalPane({ organizationId, taskId, isExpanded, onExpand, onCollapse, onStartResize }: TerminalPaneProps) {
   const [css] = useStyletron();
   const t = useFoundryTokens();
-  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [activeSessionId, setActiveTabId] = useState<string | null>(null);
   const [processTabs, setProcessTabs] = useState<ProcessTab[]>([]);
   const [creatingProcess, setCreatingProcess] = useState(false);
   const [hoveredTabId, setHoveredTabId] = useState<string | null>(null);
@@ -184,17 +184,17 @@ export function TerminalPane({ workspaceId, taskId, isExpanded, onExpand, onColl
     [listWidth],
   );
 
-  const workspaceState = useInterest(interestManager, "workspace", { workspaceId });
+  const organizationState = useSubscription(subscriptionManager, "organization", { organizationId });
   const taskSummary = useMemo(
-    () => (taskId ? (workspaceState.data?.taskSummaries.find((task) => task.id === taskId) ?? null) : null),
-    [taskId, workspaceState.data?.taskSummaries],
+    () => (taskId ? (organizationState.data?.taskSummaries.find((task) => task.id === taskId) ?? null) : null),
+    [taskId, organizationState.data?.taskSummaries],
   );
-  const taskState = useInterest(
-    interestManager,
+  const taskState = useSubscription(
+    subscriptionManager,
     "task",
     taskSummary
       ? {
-          workspaceId,
+          organizationId,
           repoId: taskSummary.repoId,
           taskId: taskSummary.id,
         }
@@ -211,7 +211,7 @@ export function TerminalPane({ workspaceId, taskId, isExpanded, onExpand, onColl
   }, [taskState.data]);
 
   const connectionQuery = useQuery({
-    queryKey: ["mock-layout", "sandbox-agent-connection", workspaceId, activeSandbox?.providerId ?? "", activeSandbox?.sandboxId ?? ""],
+    queryKey: ["mock-layout", "sandbox-agent-connection", organizationId, activeSandbox?.sandboxProviderId ?? "", activeSandbox?.sandboxId ?? ""],
     enabled: Boolean(activeSandbox?.sandboxId),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
@@ -220,17 +220,17 @@ export function TerminalPane({ workspaceId, taskId, isExpanded, onExpand, onColl
         throw new Error("Cannot load a sandbox connection without an active sandbox.");
       }
 
-      return await backendClient.getSandboxAgentConnection(workspaceId, activeSandbox.providerId, activeSandbox.sandboxId);
+      return await backendClient.getSandboxAgentConnection(organizationId, activeSandbox.sandboxProviderId, activeSandbox.sandboxId);
     },
   });
 
-  const processesState = useInterest(
-    interestManager,
+  const processesState = useSubscription(
+    subscriptionManager,
     "sandboxProcesses",
     activeSandbox
       ? {
-          workspaceId,
-          providerId: activeSandbox.providerId,
+          organizationId,
+          sandboxProviderId: activeSandbox.sandboxProviderId,
           sandboxId: activeSandbox.sandboxId,
         }
       : null,
@@ -325,11 +325,11 @@ export function TerminalPane({ workspaceId, taskId, isExpanded, onExpand, onColl
     });
   }, []);
 
-  const closeTerminalTab = useCallback((tabId: string) => {
+  const closeTerminalTab = useCallback((sessionId: string) => {
     setProcessTabs((current) => {
-      const next = current.filter((tab) => tab.id !== tabId);
+      const next = current.filter((tab) => tab.id !== sessionId);
       setActiveTabId((currentActive) => {
-        if (currentActive === tabId) {
+        if (currentActive === sessionId) {
           return next.length > 0 ? next[next.length - 1]!.id : null;
         }
         return currentActive;
@@ -346,8 +346,8 @@ export function TerminalPane({ workspaceId, taskId, isExpanded, onExpand, onColl
     setCreatingProcess(true);
     try {
       const created = await backendClient.createSandboxProcess({
-        workspaceId,
-        providerId: activeSandbox.providerId,
+        organizationId,
+        sandboxProviderId: activeSandbox.sandboxProviderId,
         sandboxId: activeSandbox.sandboxId,
         request: defaultShellRequest(activeSandbox.cwd),
       });
@@ -355,10 +355,10 @@ export function TerminalPane({ workspaceId, taskId, isExpanded, onExpand, onColl
     } finally {
       setCreatingProcess(false);
     }
-  }, [activeSandbox, openTerminalTab, workspaceId]);
+  }, [activeSandbox, openTerminalTab, organizationId]);
 
   const processTabsById = useMemo(() => new Map(processTabs.map((tab) => [tab.id, tab])), [processTabs]);
-  const activeProcessTab = activeTabId ? (processTabsById.get(activeTabId) ?? null) : null;
+  const activeProcessTab = activeSessionId ? (processTabsById.get(activeSessionId) ?? null) : null;
   const activeTerminalProcess = useMemo(
     () => (activeProcessTab ? (processes.find((process) => process.id === activeProcessTab.processId) ?? null) : null),
     [activeProcessTab, processes],
@@ -571,9 +571,9 @@ export function TerminalPane({ workspaceId, taskId, isExpanded, onExpand, onColl
             css={css}
             t={t}
             label="Kill terminal"
-            disabled={!activeTabId}
+            disabled={!activeSessionId}
             onClick={() => {
-              if (activeTabId) closeTerminalTab(activeTabId);
+              if (activeSessionId) closeTerminalTab(activeSessionId);
             }}
           >
             <Trash2 size={13} />
@@ -622,7 +622,7 @@ export function TerminalPane({ workspaceId, taskId, isExpanded, onExpand, onColl
             })}
           >
             {processTabs.map((tab, tabIndex) => {
-              const isActive = activeTabId === tab.id;
+              const isActive = activeSessionId === tab.id;
               const isHovered = hoveredTabId === tab.id;
               const isDropTarget = tabDrag !== null && tabDrag.overIdx === tabIndex && tabDrag.fromIdx !== tabIndex;
               const isBeingDragged = tabDrag !== null && tabDrag.fromIdx === tabIndex && didTabDrag.current;

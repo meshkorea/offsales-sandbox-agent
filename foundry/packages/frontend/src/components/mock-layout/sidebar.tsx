@@ -21,13 +21,13 @@ import {
   User,
 } from "lucide-react";
 
-import { formatRelativeAge, type Task, type ProjectSection } from "./view-model";
+import { formatRelativeAge, type Task, type RepositorySection } from "./view-model";
 import { ContextMenuOverlay, TaskIndicator, PanelHeaderBar, SPanel, ScrollBody, useContextMenu } from "./ui";
 import { activeMockOrganization, eligibleOrganizations, useMockAppClient, useMockAppSnapshot } from "../../lib/mock-app";
 import { useFoundryTokens } from "../../app/theme";
 import type { FoundryTokens } from "../../styles/tokens";
 
-const PROJECT_COLORS = ["#6366f1", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316"];
+const REPOSITORY_COLORS = ["#6366f1", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316"];
 
 /** Strip the org prefix (e.g. "rivet-dev/") when all repos share the same org. */
 function stripCommonOrgPrefix(label: string, repos: Array<{ label: string }>): string {
@@ -40,18 +40,18 @@ function stripCommonOrgPrefix(label: string, repos: Array<{ label: string }>): s
   return label;
 }
 
-function projectInitial(label: string): string {
+function repositoryInitial(label: string): string {
   const parts = label.split("/");
   const name = parts[parts.length - 1] ?? label;
   return name.charAt(0).toUpperCase();
 }
 
-function projectIconColor(label: string): string {
+function repositoryIconColor(label: string): string {
   let hash = 0;
   for (let i = 0; i < label.length; i++) {
     hash = (hash * 31 + label.charCodeAt(i)) | 0;
   }
-  return PROJECT_COLORS[Math.abs(hash) % PROJECT_COLORS.length]!;
+  return REPOSITORY_COLORS[Math.abs(hash) % REPOSITORY_COLORS.length]!;
 }
 
 function isPullRequestSidebarItem(task: Task): boolean {
@@ -59,7 +59,7 @@ function isPullRequestSidebarItem(task: Task): boolean {
 }
 
 export const Sidebar = memo(function Sidebar({
-  projects,
+  repositories,
   newTaskRepos,
   selectedNewTaskRepoId,
   activeId,
@@ -69,13 +69,16 @@ export const Sidebar = memo(function Sidebar({
   onMarkUnread,
   onRenameTask,
   onRenameBranch,
+  onReorderRepositories,
+  taskOrderByRepository,
+  onReorderTasks,
   onReloadOrganization,
   onReloadPullRequests,
   onReloadRepository,
   onReloadPullRequest,
   onToggleSidebar,
 }: {
-  projects: ProjectSection[];
+  repositories: RepositorySection[];
   newTaskRepos: Array<{ id: string; label: string }>;
   selectedNewTaskRepoId: string;
   activeId: string;
@@ -85,6 +88,9 @@ export const Sidebar = memo(function Sidebar({
   onMarkUnread: (id: string) => void;
   onRenameTask: (id: string) => void;
   onRenameBranch: (id: string) => void;
+  onReorderRepositories: (fromIndex: number, toIndex: number) => void;
+  taskOrderByRepository: Record<string, string[]>;
+  onReorderTasks: (repositoryId: string, fromIndex: number, toIndex: number) => void;
   onReloadOrganization: () => void;
   onReloadPullRequests: () => void;
   onReloadRepository: (repoId: string) => void;
@@ -94,11 +100,71 @@ export const Sidebar = memo(function Sidebar({
   const [css] = useStyletron();
   const t = useFoundryTokens();
   const contextMenu = useContextMenu();
-  const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
-  const [hoveredProjectId, setHoveredProjectId] = useState<string | null>(null);
+  const [collapsedRepositories, setCollapsedRepositories] = useState<Record<string, boolean>>({});
+  const [hoveredRepositoryId, setHoveredRepositoryId] = useState<string | null>(null);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const headerMenuRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Mouse-based drag and drop state
+  type DragState =
+    | { type: "repository"; fromIdx: number; overIdx: number | null }
+    | { type: "task"; repositoryId: string; fromIdx: number; overIdx: number | null }
+    | null;
+  const [drag, setDrag] = useState<DragState>(null);
+  const dragRef = useRef<DragState>(null);
+  const startYRef = useRef(0);
+  const didDragRef = useRef(false);
+
+  // Attach global mousemove/mouseup when dragging
+  useEffect(() => {
+    if (!drag) return;
+    const onMove = (e: MouseEvent) => {
+      // Detect which element is under the cursor using data attributes
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      if (!el) return;
+      const repositoryEl = (el as HTMLElement).closest?.("[data-repository-idx]") as HTMLElement | null;
+      const taskEl = (el as HTMLElement).closest?.("[data-task-idx]") as HTMLElement | null;
+
+      if (drag.type === "repository" && repositoryEl) {
+        const overIdx = Number(repositoryEl.dataset.repositoryIdx);
+        if (overIdx !== drag.overIdx) {
+          setDrag({ ...drag, overIdx });
+          dragRef.current = { ...drag, overIdx };
+        }
+      } else if (drag.type === "task" && taskEl) {
+        const overRepositoryId = taskEl.dataset.taskRepositoryId ?? "";
+        const overIdx = Number(taskEl.dataset.taskIdx);
+        if (overRepositoryId === drag.repositoryId && overIdx !== drag.overIdx) {
+          setDrag({ ...drag, overIdx });
+          dragRef.current = { ...drag, overIdx };
+        }
+      }
+      // Mark that we actually moved (to distinguish from clicks)
+      if (Math.abs(e.clientY - startYRef.current) > 4) {
+        didDragRef.current = true;
+      }
+    };
+    const onUp = () => {
+      const d = dragRef.current;
+      if (d && didDragRef.current && d.overIdx !== null && d.fromIdx !== d.overIdx) {
+        if (d.type === "repository") {
+          onReorderRepositories(d.fromIdx, d.overIdx);
+        } else {
+          onReorderTasks(d.repositoryId, d.fromIdx, d.overIdx);
+        }
+      }
+      dragRef.current = null;
+      didDragRef.current = false;
+      setDrag(null);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    return () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+  }, [drag, onReorderRepositories, onReorderTasks]);
 
   useEffect(() => {
     if (!headerMenuOpen) {
@@ -116,18 +182,36 @@ export const Sidebar = memo(function Sidebar({
 
   const [createSelectOpen, setCreateSelectOpen] = useState(false);
   const selectOptions = useMemo(() => newTaskRepos.map((repo) => ({ id: repo.id, label: stripCommonOrgPrefix(repo.label, newTaskRepos) })), [newTaskRepos]);
-  type FlatItem = { key: string; type: "project-header"; project: ProjectSection } | { key: string; type: "task"; project: ProjectSection; task: Task };
-  const flatItems = useMemo<FlatItem[]>(
-    () =>
-      projects.flatMap((project) => {
-        const items: FlatItem[] = [{ key: `project:${project.id}`, type: "project-header", project }];
-        if (!collapsedProjects[project.id]) {
-          items.push(...project.tasks.map((task) => ({ key: `task:${task.id}`, type: "task" as const, project, task })));
-        }
-        return items;
-      }),
-    [collapsedProjects, projects],
-  );
+  type FlatItem =
+    | { key: string; type: "repository-header"; repository: RepositorySection; repositoryIndex: number }
+    | { key: string; type: "task"; repository: RepositorySection; repositoryIndex: number; task: Task; taskIndex: number }
+    | { key: string; type: "task-drop-zone"; repository: RepositorySection; repositoryIndex: number; taskCount: number }
+    | { key: string; type: "repository-drop-zone"; repositoryCount: number };
+  const flatItems = useMemo<FlatItem[]>(() => {
+    const items: FlatItem[] = [];
+    repositories.forEach((repository, repositoryIndex) => {
+      items.push({ key: `repository:${repository.id}`, type: "repository-header", repository, repositoryIndex });
+      if (!collapsedRepositories[repository.id]) {
+        const orderedTaskIds = taskOrderByRepository[repository.id];
+        const orderedTasks = orderedTaskIds
+          ? (() => {
+              const byId = new Map(repository.tasks.map((t) => [t.id, t]));
+              const sorted = orderedTaskIds.map((id) => byId.get(id)).filter(Boolean) as typeof repository.tasks;
+              for (const t of repository.tasks) {
+                if (!orderedTaskIds.includes(t.id)) sorted.push(t);
+              }
+              return sorted;
+            })()
+          : repository.tasks;
+        orderedTasks.forEach((task, taskIndex) => {
+          items.push({ key: `task:${task.id}`, type: "task" as const, repository, repositoryIndex, task, taskIndex });
+        });
+        items.push({ key: `task-drop:${repository.id}`, type: "task-drop-zone", repository, repositoryIndex, taskCount: orderedTasks.length });
+      }
+    });
+    items.push({ key: "repository-drop-zone", type: "repository-drop-zone", repositoryCount: repositories.length });
+    return items;
+  }, [collapsedRepositories, repositories, taskOrderByRepository]);
   const virtualizer = useVirtualizer({
     count: flatItems.length,
     getItemKey: (index) => flatItems[index]?.key ?? index,
@@ -140,10 +224,10 @@ export const Sidebar = memo(function Sidebar({
   return (
     <SPanel>
       <style>{`
-        [data-project-header]:hover [data-chevron] {
+        [data-repository-header]:hover [data-chevron] {
           display: inline-flex !important;
         }
-        [data-project-header]:hover [data-project-icon] {
+        [data-repository-header]:hover [data-repository-icon] {
           display: none !important;
         }
       `}</style>
@@ -433,13 +517,16 @@ export const Sidebar = memo(function Sidebar({
                 return null;
               }
 
-              if (item.type === "project-header") {
-                const project = item.project;
-                const isCollapsed = collapsedProjects[project.id] === true;
+              if (item.type === "repository-header") {
+                const { repository, repositoryIndex } = item;
+                const isCollapsed = collapsedRepositories[repository.id] === true;
+                const isRepositoryDropTarget = drag?.type === "repository" && drag.overIdx === repositoryIndex && drag.fromIdx !== repositoryIndex;
+                const isBeingDragged = drag?.type === "repository" && drag.fromIdx === repositoryIndex && didDragRef.current;
 
                 return (
                   <div
                     key={item.key}
+                    data-repository-idx={repositoryIndex}
                     ref={(node) => {
                       if (node) {
                         virtualizer.measureElement(node);
@@ -451,32 +538,48 @@ export const Sidebar = memo(function Sidebar({
                       top: 0,
                       transform: `translateY(${virtualItem.start}px)`,
                       width: "100%",
+                      opacity: isBeingDragged ? 0.4 : 1,
+                      transition: "opacity 150ms ease",
                     }}
                   >
+                    {isRepositoryDropTarget ? (
+                      <div className={css({ height: "2px", backgroundColor: t.textPrimary, transition: "background-color 100ms ease" })} />
+                    ) : null}
                     <div className={css({ paddingBottom: "4px" })}>
                       <div
-                        onMouseEnter={() => setHoveredProjectId(project.id)}
-                        onMouseLeave={() => setHoveredProjectId((cur) => (cur === project.id ? null : cur))}
+                        onMouseEnter={() => setHoveredRepositoryId(repository.id)}
+                        onMouseLeave={() => setHoveredRepositoryId((cur) => (cur === repository.id ? null : cur))}
+                        onMouseDown={(event) => {
+                          if (event.button !== 0) return;
+                          startYRef.current = event.clientY;
+                          didDragRef.current = false;
+                          setHoveredRepositoryId(null);
+                          const state: DragState = { type: "repository", fromIdx: repositoryIndex, overIdx: null };
+                          dragRef.current = state;
+                          setDrag(state);
+                        }}
                         onClick={() => {
-                          setCollapsedProjects((current) => ({
-                            ...current,
-                            [project.id]: !current[project.id],
-                          }));
+                          if (!didDragRef.current) {
+                            setCollapsedRepositories((current) => ({
+                              ...current,
+                              [repository.id]: !current[repository.id],
+                            }));
+                          }
                         }}
                         onContextMenu={(event) =>
                           contextMenu.open(event, [
-                            { label: "Reload repository", onClick: () => onReloadRepository(project.id) },
-                            { label: "New task", onClick: () => onCreate(project.id) },
+                            { label: "Reload repository", onClick: () => onReloadRepository(repository.id) },
+                            { label: "New task", onClick: () => onCreate(repository.id) },
                           ])
                         }
-                        data-project-header
+                        data-repository-header
                         className={css({
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "space-between",
                           padding: "10px 8px 4px",
                           gap: "8px",
-                          cursor: "pointer",
+                          cursor: "grab",
                           userSelect: "none",
                         })}
                       >
@@ -494,11 +597,11 @@ export const Sidebar = memo(function Sidebar({
                                 fontWeight: 700,
                                 lineHeight: 1,
                                 color: t.textOnAccent,
-                                backgroundColor: projectIconColor(project.label),
+                                backgroundColor: repositoryIconColor(repository.label),
                               })}
-                              data-project-icon
+                              data-repository-icon
                             >
-                              {projectInitial(project.label)}
+                              {repositoryInitial(repository.label)}
                             </span>
                             <span
                               className={css({ position: "absolute", inset: 0, display: "none", alignItems: "center", justifyContent: "center" })}
@@ -519,18 +622,19 @@ export const Sidebar = memo(function Sidebar({
                               whiteSpace: "nowrap",
                             }}
                           >
-                            {stripCommonOrgPrefix(project.label, projects)}
+                            {stripCommonOrgPrefix(repository.label, repositories)}
                           </LabelSmall>
                         </div>
                         <div className={css({ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 })}>
-                          {isCollapsed ? <LabelXSmall color={t.textTertiary}>{formatRelativeAge(project.updatedAtMs)}</LabelXSmall> : null}
+                          {isCollapsed ? <LabelXSmall color={t.textTertiary}>{formatRelativeAge(repository.updatedAtMs)}</LabelXSmall> : null}
                           <button
                             onClick={(event) => {
                               event.stopPropagation();
-                              setHoveredProjectId(null);
-                              onSelectNewTaskRepo(project.id);
-                              onCreate(project.id);
+                              setHoveredRepositoryId(null);
+                              onSelectNewTaskRepo(repository.id);
+                              onCreate(repository.id);
                             }}
+                            onMouseDown={(e) => e.stopPropagation()}
                             className={css({
                               display: "inline-flex",
                               alignItems: "center",
@@ -544,12 +648,12 @@ export const Sidebar = memo(function Sidebar({
                               margin: 0,
                               cursor: "pointer",
                               color: t.textTertiary,
-                              opacity: hoveredProjectId === project.id ? 1 : 0,
+                              opacity: hoveredRepositoryId === repository.id ? 1 : 0,
                               transition: "opacity 150ms ease, background-color 200ms ease, color 200ms ease",
-                              pointerEvents: hoveredProjectId === project.id ? "auto" : "none",
+                              pointerEvents: hoveredRepositoryId === repository.id ? "auto" : "none",
                               ":hover": { backgroundColor: t.interactiveHover, color: t.textSecondary },
                             })}
-                            title={`New task in ${project.label}`}
+                            title={`New task in ${repository.label}`}
                           >
                             <Plus size={12} color={t.textTertiary} />
                           </button>
@@ -560,127 +664,230 @@ export const Sidebar = memo(function Sidebar({
                 );
               }
 
-              const { project, task } = item;
-              const isActive = task.id === activeId;
-              const isPullRequestItem = isPullRequestSidebarItem(task);
-              const isRunning = task.tabs.some((tab) => tab.status === "running");
-              const isProvisioning =
-                !isPullRequestItem &&
-                (String(task.status).startsWith("init_") ||
-                  task.status === "new" ||
-                  task.tabs.some((tab) => tab.status === "pending_provision" || tab.status === "pending_session_create"));
-              const hasUnread = task.tabs.some((tab) => tab.unread);
-              const isDraft = task.pullRequest == null || task.pullRequest.status === "draft";
-              const totalAdded = task.fileChanges.reduce((sum, file) => sum + file.added, 0);
-              const totalRemoved = task.fileChanges.reduce((sum, file) => sum + file.removed, 0);
-              const hasDiffs = totalAdded > 0 || totalRemoved > 0;
+              if (item.type === "task") {
+                const { repository, task, taskIndex } = item;
+                const isActive = task.id === activeId;
+                const isPullRequestItem = isPullRequestSidebarItem(task);
+                const isRunning = task.sessions.some((s) => s.status === "running");
+                const isProvisioning =
+                  !isPullRequestItem &&
+                  (String(task.status).startsWith("init_") ||
+                    task.status === "new" ||
+                    task.sessions.some((s) => s.status === "pending_provision" || s.status === "pending_session_create"));
+                const hasUnread = task.sessions.some((s) => s.unread);
+                const isDraft = task.pullRequest == null || task.pullRequest.status === "draft";
+                const totalAdded = task.fileChanges.reduce((sum, file) => sum + file.added, 0);
+                const totalRemoved = task.fileChanges.reduce((sum, file) => sum + file.removed, 0);
+                const hasDiffs = totalAdded > 0 || totalRemoved > 0;
+                const isTaskDropTarget =
+                  drag?.type === "task" && drag.repositoryId === repository.id && drag.overIdx === taskIndex && drag.fromIdx !== taskIndex;
+                const isTaskBeingDragged = drag?.type === "task" && drag.repositoryId === repository.id && drag.fromIdx === taskIndex && didDragRef.current;
 
-              return (
-                <div
-                  key={item.key}
-                  ref={(node) => {
-                    if (node) {
-                      virtualizer.measureElement(node);
-                    }
-                  }}
-                  style={{
-                    left: 0,
-                    position: "absolute",
-                    top: 0,
-                    transform: `translateY(${virtualItem.start}px)`,
-                    width: "100%",
-                  }}
-                >
-                  <div className={css({ paddingBottom: "4px" })}>
-                    <div
-                      onClick={() => onSelect(task.id)}
-                      onContextMenu={(event) => {
-                        if (isPullRequestItem && task.pullRequest) {
+                return (
+                  <div
+                    key={item.key}
+                    data-task-idx={taskIndex}
+                    data-task-repository-id={repository.id}
+                    ref={(node) => {
+                      if (node) {
+                        virtualizer.measureElement(node);
+                      }
+                    }}
+                    style={{
+                      left: 0,
+                      position: "absolute",
+                      top: 0,
+                      transform: `translateY(${virtualItem.start}px)`,
+                      width: "100%",
+                      opacity: isTaskBeingDragged ? 0.4 : 1,
+                      transition: "opacity 150ms ease",
+                    }}
+                    onMouseDown={(event) => {
+                      if (event.button !== 0) return;
+                      if (dragRef.current) return;
+                      event.stopPropagation();
+                      startYRef.current = event.clientY;
+                      didDragRef.current = false;
+                      const state: DragState = { type: "task", repositoryId: repository.id, fromIdx: taskIndex, overIdx: null };
+                      dragRef.current = state;
+                      setDrag(state);
+                    }}
+                  >
+                    {isTaskDropTarget ? (
+                      <div className={css({ height: "2px", backgroundColor: t.textPrimary, transition: "background-color 100ms ease" })} />
+                    ) : null}
+                    <div className={css({ paddingBottom: "4px" })}>
+                      <div
+                        onClick={() => onSelect(task.id)}
+                        onContextMenu={(event) => {
+                          if (isPullRequestItem && task.pullRequest) {
+                            contextMenu.open(event, [
+                              { label: "Reload pull request", onClick: () => onReloadPullRequest(task.repoId, task.pullRequest!.number) },
+                              { label: "Create task", onClick: () => onSelect(task.id) },
+                            ]);
+                            return;
+                          }
                           contextMenu.open(event, [
-                            { label: "Reload pull request", onClick: () => onReloadPullRequest(task.repoId, task.pullRequest!.number) },
-                            { label: "Create task", onClick: () => onSelect(task.id) },
+                            { label: "Rename task", onClick: () => onRenameTask(task.id) },
+                            { label: "Rename branch", onClick: () => onRenameBranch(task.id) },
+                            { label: "Mark as unread", onClick: () => onMarkUnread(task.id) },
                           ]);
-                          return;
-                        }
-                        contextMenu.open(event, [
-                          { label: "Rename task", onClick: () => onRenameTask(task.id) },
-                          { label: "Rename branch", onClick: () => onRenameBranch(task.id) },
-                          { label: "Mark as unread", onClick: () => onMarkUnread(task.id) },
-                        ]);
-                      }}
-                      className={css({
-                        padding: "8px 12px",
-                        borderRadius: "8px",
-                        backgroundColor: isActive ? t.interactiveHover : "transparent",
-                        cursor: "pointer",
-                        transition: "all 150ms ease",
-                        ":hover": {
-                          backgroundColor: t.interactiveHover,
-                        },
-                      })}
-                    >
-                      <div className={css({ display: "flex", alignItems: "center", gap: "8px" })}>
-                        <div
-                          className={css({
-                            width: "14px",
-                            minWidth: "14px",
-                            height: "14px",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            flexShrink: 0,
-                          })}
-                        >
-                          {isPullRequestItem ? (
-                            <GitPullRequestDraft size={13} color={isDraft ? t.accent : t.textSecondary} />
-                          ) : (
-                            <TaskIndicator isRunning={isRunning} isProvisioning={isProvisioning} hasUnread={hasUnread} isDraft={isDraft} />
-                          )}
-                        </div>
-                        <div className={css({ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: "1px" })}>
-                          <LabelSmall
-                            $style={{
-                              fontWeight: hasUnread ? 600 : 400,
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                              minWidth: 0,
-                              flexShrink: 1,
-                            }}
-                            color={hasUnread ? t.textPrimary : t.textSecondary}
+                        }}
+                        className={css({
+                          padding: "8px 12px",
+                          borderRadius: "8px",
+                          backgroundColor: isActive ? t.interactiveHover : "transparent",
+                          cursor: "pointer",
+                          transition: "all 150ms ease",
+                          ":hover": {
+                            backgroundColor: t.interactiveHover,
+                          },
+                        })}
+                      >
+                        <div className={css({ display: "flex", alignItems: "center", gap: "8px" })}>
+                          <div
+                            className={css({
+                              width: "14px",
+                              minWidth: "14px",
+                              height: "14px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              flexShrink: 0,
+                            })}
                           >
-                            {task.title}
-                          </LabelSmall>
-                          {isPullRequestItem && task.statusMessage ? (
-                            <LabelXSmall color={t.textTertiary} $style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {task.statusMessage}
-                            </LabelXSmall>
-                          ) : null}
-                        </div>
-                        {task.pullRequest != null ? (
-                          <span className={css({ display: "inline-flex", alignItems: "center", gap: "4px", flexShrink: 0 })}>
-                            <LabelXSmall color={t.textSecondary} $style={{ fontWeight: 600 }}>
-                              #{task.pullRequest.number}
-                            </LabelXSmall>
-                            {task.pullRequest.status === "draft" ? <CloudUpload size={11} color={t.accent} /> : null}
-                          </span>
-                        ) : (
-                          <GitPullRequestDraft size={11} color={t.textTertiary} />
-                        )}
-                        {hasDiffs ? (
-                          <div className={css({ display: "flex", gap: "4px", flexShrink: 0, marginLeft: "auto" })}>
-                            <span className={css({ fontSize: "11px", color: t.statusSuccess })}>+{totalAdded}</span>
-                            <span className={css({ fontSize: "11px", color: t.statusError })}>-{totalRemoved}</span>
+                            {isPullRequestItem ? (
+                              <GitPullRequestDraft size={13} color={isDraft ? t.accent : t.textSecondary} />
+                            ) : (
+                              <TaskIndicator isRunning={isRunning} isProvisioning={isProvisioning} hasUnread={hasUnread} isDraft={isDraft} />
+                            )}
                           </div>
-                        ) : null}
-                        <LabelXSmall color={t.textTertiary} $style={{ flexShrink: 0, marginLeft: hasDiffs ? undefined : "auto" }}>
-                          {formatRelativeAge(task.updatedAtMs)}
-                        </LabelXSmall>
+                          <div className={css({ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: "1px" })}>
+                            <LabelSmall
+                              $style={{
+                                fontWeight: hasUnread ? 600 : 400,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                                minWidth: 0,
+                                flexShrink: 1,
+                              }}
+                              color={hasUnread ? t.textPrimary : t.textSecondary}
+                            >
+                              {task.title}
+                            </LabelSmall>
+                            {isPullRequestItem && task.statusMessage ? (
+                              <LabelXSmall color={t.textTertiary} $style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {task.statusMessage}
+                              </LabelXSmall>
+                            ) : null}
+                          </div>
+                          {task.pullRequest != null ? (
+                            <span className={css({ display: "inline-flex", alignItems: "center", gap: "4px", flexShrink: 0 })}>
+                              <LabelXSmall color={t.textSecondary} $style={{ fontWeight: 600 }}>
+                                #{task.pullRequest.number}
+                              </LabelXSmall>
+                              {task.pullRequest.status === "draft" ? <CloudUpload size={11} color={t.accent} /> : null}
+                            </span>
+                          ) : (
+                            <GitPullRequestDraft size={11} color={t.textTertiary} />
+                          )}
+                          {hasDiffs ? (
+                            <div className={css({ display: "flex", gap: "4px", flexShrink: 0, marginLeft: "auto" })}>
+                              <span className={css({ fontSize: "11px", color: t.statusSuccess })}>+{totalAdded}</span>
+                              <span className={css({ fontSize: "11px", color: t.statusError })}>-{totalRemoved}</span>
+                            </div>
+                          ) : null}
+                          <LabelXSmall color={t.textTertiary} $style={{ flexShrink: 0, marginLeft: hasDiffs ? undefined : "auto" }}>
+                            {formatRelativeAge(task.updatedAtMs)}
+                          </LabelXSmall>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              );
+                );
+              }
+
+              if (item.type === "task-drop-zone") {
+                const { repository, taskCount } = item;
+                const isDropTarget =
+                  drag?.type === "task" &&
+                  drag.repositoryId === repository.id &&
+                  drag.overIdx === taskCount &&
+                  drag.fromIdx !== taskCount;
+                return (
+                  <div
+                    key={item.key}
+                    data-task-idx={taskCount}
+                    data-task-repository-id={repository.id}
+                    ref={(node) => {
+                      if (node) {
+                        virtualizer.measureElement(node);
+                      }
+                    }}
+                    style={{
+                      left: 0,
+                      position: "absolute",
+                      top: 0,
+                      transform: `translateY(${virtualItem.start}px)`,
+                      width: "100%",
+                    }}
+                    className={css({
+                      minHeight: "4px",
+                      position: "relative",
+                      "::before": {
+                        content: '""',
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: "2px",
+                        backgroundColor: isDropTarget ? t.textPrimary : "transparent",
+                        transition: "background-color 100ms ease",
+                      },
+                    })}
+                  />
+                );
+              }
+
+              if (item.type === "repository-drop-zone") {
+                const isDropTarget =
+                  drag?.type === "repository" && drag.overIdx === item.repositoryCount && drag.fromIdx !== item.repositoryCount;
+                return (
+                  <div
+                    key={item.key}
+                    data-repository-idx={item.repositoryCount}
+                    ref={(node) => {
+                      if (node) {
+                        virtualizer.measureElement(node);
+                      }
+                    }}
+                    style={{
+                      left: 0,
+                      position: "absolute",
+                      top: 0,
+                      transform: `translateY(${virtualItem.start}px)`,
+                      width: "100%",
+                    }}
+                    className={css({
+                      minHeight: "4px",
+                      position: "relative",
+                      "::before": {
+                        content: '""',
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: "2px",
+                        backgroundColor: isDropTarget ? t.textPrimary : "transparent",
+                        transition: "background-color 100ms ease",
+                      },
+                    })}
+                  />
+                );
+              }
+
+              return null;
             })}
           </div>
         </div>
@@ -717,19 +924,19 @@ function SidebarFooter() {
   const snapshot = useMockAppSnapshot();
   const organization = activeMockOrganization(snapshot);
   const [open, setOpen] = useState(false);
-  const [workspaceFlyoutOpen, setWorkspaceFlyoutOpen] = useState(false);
+  const [organizationFlyoutOpen, setOrganizationFlyoutOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const flyoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const workspaceTriggerRef = useRef<HTMLDivElement>(null);
+  const organizationTriggerRef = useRef<HTMLDivElement>(null);
   const flyoutRef = useRef<HTMLDivElement>(null);
   const [flyoutPos, setFlyoutPos] = useState<{ top: number; left: number } | null>(null);
 
   useLayoutEffect(() => {
-    if (workspaceFlyoutOpen && workspaceTriggerRef.current) {
-      const rect = workspaceTriggerRef.current.getBoundingClientRect();
+    if (organizationFlyoutOpen && organizationTriggerRef.current) {
+      const rect = organizationTriggerRef.current.getBoundingClientRect();
       setFlyoutPos({ top: rect.top, left: rect.right + 4 });
     }
-  }, [workspaceFlyoutOpen]);
+  }, [organizationFlyoutOpen]);
 
   useEffect(() => {
     if (!open) return;
@@ -739,7 +946,7 @@ function SidebarFooter() {
       const inFlyout = flyoutRef.current?.contains(target);
       if (!inContainer && !inFlyout) {
         setOpen(false);
-        setWorkspaceFlyoutOpen(false);
+        setOrganizationFlyoutOpen(false);
       }
     }
     document.addEventListener("mousedown", handleClick);
@@ -749,10 +956,10 @@ function SidebarFooter() {
   const switchToOrg = useCallback(
     (org: (typeof snapshot.organizations)[number]) => {
       setOpen(false);
-      setWorkspaceFlyoutOpen(false);
+      setOrganizationFlyoutOpen(false);
       void (async () => {
         await client.selectOrganization(org.id);
-        await navigate({ to: `/workspaces/${org.workspaceId}` as never });
+        await navigate({ to: `/organizations/${org.organizationId}` as never });
       })();
     },
     [client, navigate],
@@ -760,11 +967,11 @@ function SidebarFooter() {
 
   const openFlyout = useCallback(() => {
     if (flyoutTimerRef.current) clearTimeout(flyoutTimerRef.current);
-    setWorkspaceFlyoutOpen(true);
+    setOrganizationFlyoutOpen(true);
   }, []);
 
   const closeFlyout = useCallback(() => {
-    flyoutTimerRef.current = setTimeout(() => setWorkspaceFlyoutOpen(false), 150);
+    flyoutTimerRef.current = setTimeout(() => setOrganizationFlyoutOpen(false), 150);
   }, []);
 
   const menuItems: Array<{ icon: React.ReactNode; label: string; danger?: boolean; onClick: () => void }> = [];
@@ -838,14 +1045,14 @@ function SidebarFooter() {
           })}
         >
           <div className={popoverStyle}>
-            {/* Workspace flyout trigger */}
+            {/* Organization flyout trigger */}
             {organization ? (
-              <div ref={workspaceTriggerRef} onMouseEnter={openFlyout} onMouseLeave={closeFlyout}>
+              <div ref={organizationTriggerRef} onMouseEnter={openFlyout} onMouseLeave={closeFlyout}>
                 <button
                   type="button"
-                  onClick={() => setWorkspaceFlyoutOpen((prev) => !prev)}
+                  onClick={() => setOrganizationFlyoutOpen((prev) => !prev)}
                   className={css({
-                    ...menuButtonStyle(workspaceFlyoutOpen, t),
+                    ...menuButtonStyle(organizationFlyoutOpen, t),
                     fontWeight: 500,
                     ":hover": {
                       backgroundColor: t.interactiveHover,
@@ -858,7 +1065,7 @@ function SidebarFooter() {
                       width: "18px",
                       height: "18px",
                       borderRadius: "4px",
-                      background: `linear-gradient(135deg, ${projectIconColor(organization.settings.displayName)}, ${projectIconColor(organization.settings.displayName + "x")})`,
+                      background: `linear-gradient(135deg, ${repositoryIconColor(organization.settings.displayName)}, ${repositoryIconColor(organization.settings.displayName + "x")})`,
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -878,8 +1085,8 @@ function SidebarFooter() {
               </div>
             ) : null}
 
-            {/* Workspace flyout portal */}
-            {workspaceFlyoutOpen && organization && flyoutPos
+            {/* Organization flyout portal */}
+            {organizationFlyoutOpen && organization && flyoutPos
               ? createPortal(
                   <div
                     ref={flyoutRef}
@@ -908,7 +1115,7 @@ function SidebarFooter() {
                               if (!isActive) switchToOrg(org);
                               else {
                                 setOpen(false);
-                                setWorkspaceFlyoutOpen(false);
+                                setOrganizationFlyoutOpen(false);
                               }
                             }}
                             className={css({
@@ -926,7 +1133,7 @@ function SidebarFooter() {
                                 width: "18px",
                                 height: "18px",
                                 borderRadius: "4px",
-                                background: `linear-gradient(135deg, ${projectIconColor(org.settings.displayName)}, ${projectIconColor(org.settings.displayName + "x")})`,
+                                background: `linear-gradient(135deg, ${repositoryIconColor(org.settings.displayName)}, ${repositoryIconColor(org.settings.displayName + "x")})`,
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "center",
@@ -976,7 +1183,7 @@ function SidebarFooter() {
           type="button"
           onClick={() => {
             setOpen((prev) => {
-              if (prev) setWorkspaceFlyoutOpen(false);
+              if (prev) setOrganizationFlyoutOpen(false);
               return !prev;
             });
           }}

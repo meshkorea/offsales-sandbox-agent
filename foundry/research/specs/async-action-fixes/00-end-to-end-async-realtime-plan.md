@@ -28,7 +28,7 @@ The goal is not just to make individual endpoints faster. The goal is to move Fo
 
 ### Workbench
 
-- `getWorkbench` still represents a monolithic workspace read that aggregates repo, project, and task state.
+- `getWorkbench` still represents a monolithic organization read that aggregates repo, repository, and task state.
 - The remote workbench store still responds to every event by pulling a full fresh snapshot.
 - Some task/workbench detail is still too expensive to compute inline and too broad to refresh after every mutation.
 
@@ -57,7 +57,7 @@ Requests should not block on provider calls, repo sync, sandbox provisioning, tr
 ### View-model rule
 
 - App shell view connects to app/session state and only the org actors visible on screen.
-- Workspace/task-list view connects to a workspace-owned summary projection.
+- Organization/task-list view connects to a organization-owned summary projection.
 - Task detail view connects directly to the selected task actor.
 - Sandbox/session detail connects only when the user opens that detail.
 
@@ -99,7 +99,7 @@ The app shell should stop using `/app/snapshot` as the steady-state read model.
 
 #### Changes
 
-1. Introduce a small app-shell projection owned by the app workspace actor:
+1. Introduce a small app-shell projection owned by the app organization actor:
    - auth status
    - current user summary
    - active org id
@@ -121,7 +121,7 @@ The app shell should stop using `/app/snapshot` as the steady-state read model.
 
 #### Likely files
 
-- `foundry/packages/backend/src/actors/workspace/app-shell.ts`
+- `foundry/packages/backend/src/actors/organization/app-shell.ts`
 - `foundry/packages/client/src/backend-client.ts`
 - `foundry/packages/client/src/remote/app-client.ts`
 - `foundry/packages/shared/src/app-shell.ts`
@@ -133,42 +133,42 @@ The app shell should stop using `/app/snapshot` as the steady-state read model.
 - Selecting an org returns quickly and the UI updates from actor events.
 - App shell refresh cost is bounded by visible state, not every eligible organization on every poll.
 
-### 3. Workspace summary becomes a projection, not a full snapshot
+### 3. Organization summary becomes a projection, not a full snapshot
 
-The task list should read a workspace-owned summary projection instead of calling into every task actor on each refresh.
+The task list should read a organization-owned summary projection instead of calling into every task actor on each refresh.
 
 #### Changes
 
-1. Define a durable workspace summary model with only list-screen fields:
+1. Define a durable organization summary model with only list-screen fields:
    - repo summary
-   - project summary
+   - repository summary
    - task summary
    - selected/open task ids
    - unread/session status summary
    - coarse git/PR state summary
-2. Update workspace actor workflows so task/project changes incrementally update this projection.
+2. Update organization actor workflows so task/repository changes incrementally update this projection.
 3. Change `getWorkbench` to return the projection only.
 4. Change `workbenchUpdated` from "invalidate and refetch everything" to "here is the updated projection version or changed entity ids".
 5. Remove task-actor fan-out from the default list read path.
 
 #### Likely files
 
-- `foundry/packages/backend/src/actors/workspace/actions.ts`
-- `foundry/packages/backend/src/actors/project/actions.ts`
+- `foundry/packages/backend/src/actors/organization/actions.ts`
+- `foundry/packages/backend/src/actors/repository/actions.ts`
 - `foundry/packages/backend/src/actors/task/index.ts`
 - `foundry/packages/backend/src/actors/task/workbench.ts`
-- task/workspace DB schema and migrations
+- task/organization DB schema and migrations
 - `foundry/packages/client/src/remote/workbench-client.ts`
 
 #### Acceptance criteria
 
 - Workbench list refresh does not call every task actor.
 - A websocket event does not force a full cross-actor rebuild.
-- Initial task-list load time scales roughly with workspace summary size, not repo count times task count times detail reads.
+- Initial task-list load time scales roughly with organization summary size, not repo count times task count times detail reads.
 
 ### 4. Task detail moves to direct actor reads and events
 
-Heavy task detail should move out of the workspace summary and into the selected task actor.
+Heavy task detail should move out of the organization summary and into the selected task actor.
 
 #### Changes
 
@@ -258,7 +258,7 @@ Do not delete bootstrap endpoints first. Shrink them after the subscription mode
 4. `06-daytona-provisioning-staged-background-flow.md`
 5. App shell realtime subscription model
 6. `02-repo-overview-from-cached-projection.md`
-7. Workspace summary projection
+7. Organization summary projection
 8. `04-workbench-session-creation-without-inline-provisioning.md`
 9. `05-workbench-snapshot-from-derived-state.md`
 10. Task-detail direct actor reads/subscriptions
@@ -270,7 +270,7 @@ Do not delete bootstrap endpoints first. Shrink them after the subscription mode
 - Runtime hardening removes the most dangerous correctness bug before more UI load shifts onto actor connections.
 - The first async workflow items reduce the biggest user-visible stalls quickly.
 - App shell realtime is smaller and lower-risk than the workbench migration, and it removes the current polling loop.
-- Workspace summary and task-detail split should happen after the async workflow moves so the projection model does not encode old synchronous assumptions.
+- Organization summary and task-detail split should happen after the async workflow moves so the projection model does not encode old synchronous assumptions.
 - Auth simplification is valuable but not required to remove the current refresh/polling/runtime problems.
 
 ## Observability Requirements
@@ -291,7 +291,7 @@ Each log line should include a request id or actor/event correlation id where po
 
 1. Ship runtime hardening and observability first.
 2. Ship app-shell realtime behind a client flag while keeping snapshot bootstrap.
-3. Ship workspace summary projection behind a separate flag.
+3. Ship organization summary projection behind a separate flag.
 4. Migrate one heavy detail pane at a time off the monolithic workbench payload.
 5. Remove polling once the matching event path is proven stable.
 6. Only then remove or demote the old snapshot-heavy steady-state flows.

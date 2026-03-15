@@ -12,7 +12,7 @@ Resolving GitHub OAuth callback failures caused by stale actor state after squas
 
 2. **No programmatic way to list or destroy actors on Rivet Cloud without the service key.** The public runner token (`pk_*`) lacks permissions for actor management (list/destroy). The Cloud API token (`cloud_api_*`) in our `.env` was returning "token not found". The actual working token format is the service key (`sk_*`) from the namespace connection URL. This was not documented — the destroy docs reference "admin tokens" which are described as "currently not supported on Rivet Cloud" ([#3530](https://github.com/rivet-dev/rivet/issues/3530)), but the `sk_*` token works. The disconnect between the docs and reality cost significant debugging time.
 
-3. **Actor errors during `getOrCreate` are opaque.** When the `workspace.completeAppGithubAuth` action triggered `getOrCreate` for org workspace actors, the migration failure inside the newly-woken actor was surfaced as `"Internal error"` with no indication that it was a migration/schema issue. The actual error (`table already exists`) was only visible in actor-level logs, not in the action response or the calling backend's logs.
+3. **Actor errors during `getOrCreate` are opaque.** When the `organization.completeAppGithubAuth` action triggered `getOrCreate` for org organization actors, the migration failure inside the newly-woken actor was surfaced as `"Internal error"` with no indication that it was a migration/schema issue. The actual error (`table already exists`) was only visible in actor-level logs, not in the action response or the calling backend's logs.
 
 ### Attempted Fix / Workaround
 
@@ -22,7 +22,7 @@ Resolving GitHub OAuth callback failures caused by stale actor state after squas
 
 ### Outcome
 
-- All 4 stale workspace actors destroyed (3 org workspaces + 1 old v2-prefixed app workspace).
+- All 4 stale organization actors destroyed (3 org organizations + 1 old v2-prefixed app organization).
 - Reverted `IF NOT EXISTS` migration changes so Drizzle migrations remain standard.
 - After redeploy, new actors will be created fresh with the correct squashed migration journal.
 - **RivetKit improvement opportunities:**
@@ -112,17 +112,17 @@ Diagnosing stuck tasks (`init_create_sandbox`) after switching to a linked Rivet
 ### Friction / Issue
 
 1. File-system driver actor-state writes still attempted to serialize legacy `kvStorage`, which can exceed Bare's buffer limit and trigger `Failed to save actor state: BareError: (byte:0) too large buffer`.
-2. Project snapshots swallowed missing task actors and only logged warnings, so stale `task_index` rows persisted and appeared as stuck/ghost tasks in the UI.
+2. Repository snapshots swallowed missing task actors and only logged warnings, so stale `task_index` rows persisted and appeared as stuck/ghost tasks in the UI.
 
 ### Attempted Fix / Workaround
 
 1. In RivetKit file-system driver writes, force persisted `kvStorage` to `[]` (runtime KV is SQLite-only) so oversized legacy payloads are never re-serialized.
-2. In backend project actor flows (`hydrate`, `snapshot`, `repo overview`, branch registration, PR-close archive), detect `Actor not found` and prune stale `task_index` rows immediately.
+2. In backend repository actor flows (`hydrate`, `snapshot`, `repo overview`, branch registration, PR-close archive), detect `Actor not found` and prune stale `task_index` rows immediately.
 
 ### Outcome
 
 - Prevents repeated serialization crashes caused by legacy oversized state blobs.
-- Missing task actors are now self-healed from project indexes instead of repeatedly surfacing as silent warnings.
+- Missing task actors are now self-healed from repository indexes instead of repeatedly surfacing as silent warnings.
 
 ## 2026-02-12 - uncommitted
 
@@ -193,7 +193,7 @@ Adopt these concrete repo conventions:
 
 - Schema rule (critical):
 - SQLite is **per actor instance**, not a shared DB across all instances.
-- Do not “namespace” rows with `workspaceId`/`repoId`/`taskId` columns when those identifiers already live in the actor key/state.
+- Do not “namespace” rows with `organizationId`/`repoId`/`taskId` columns when those identifiers already live in the actor key/state.
 - Prefer single-row tables for single-instance storage (e.g. `id=1`) when appropriate.
 
 - Migration generation flow (Bun + DrizzleKit):
@@ -247,7 +247,7 @@ Verifying Daytona-backed task/session flows for the new frontend and sandbox-ins
 
 ### Friction / Issue
 
-Task workflow steps intermittently entered failed state with `StepExhaustedError` and `unknown error` during initialization replay (`init-start-sandbox-instance`, then `init-write-db`), which caused `task.get` to time out and cascaded into `project snapshot timed out` / `workspace list_tasks timed out`.
+Task workflow steps intermittently entered failed state with `StepExhaustedError` and `unknown error` during initialization replay (`init-start-sandbox-instance`, then `init-write-db`), which caused `task.get` to time out and cascaded into `repository snapshot timed out` / `organization list_tasks timed out`.
 
 ### Attempted Fix / Workaround
 
@@ -305,7 +305,7 @@ if (msg.type === "TickProjectRefresh") {
 
   // Coalesce duplicate ticks for a short window.
   while (Date.now() < deadline) {
-    const next = await c.queue.next("project", { timeout: deadline - Date.now() });
+    const next = await c.queue.next("repository", { timeout: deadline - Date.now() });
     if (!next) break; // timeout
 
     if (next.type === "TickProjectRefresh") {
@@ -348,7 +348,7 @@ Two mistakes in the prior proposal:
 
 2. **Coalesce by message names, not `msg.type`.**
 - Keep one message name per command/tick channel.
-- When a tick window opens, drain and coalesce multiple tick names (e.g. `tick.project.refresh`, `tick.pr.refresh`, `tick.sandbox.health`) into one execution per name.
+- When a tick window opens, drain and coalesce multiple tick names (e.g. `tick.repository.refresh`, `tick.pr.refresh`, `tick.sandbox.health`) into one execution per name.
 
 3. **Tick coalesce pattern with timeout (single loop):**
 
@@ -375,7 +375,7 @@ while (true) {
   // Timeout reached => one or more ticks are due.
   const due = new Set<string>();
   const at = Date.now();
-  if (at >= nextProjectRefreshAt) due.add("tick.project.refresh");
+  if (at >= nextProjectRefreshAt) due.add("tick.repository.refresh");
   if (at >= nextPrRefreshAt) due.add("tick.pr.refresh");
   if (at >= nextSandboxHealthAt) due.add("tick.sandbox.health");
 
@@ -388,7 +388,7 @@ while (true) {
   }
 
   // Execute each due tick once, in deterministic order.
-  if (due.has("tick.project.refresh")) {
+  if (due.has("tick.repository.refresh")) {
     await refreshProjectSnapshot();
     nextProjectRefreshAt = Date.now() + 5_000;
   }
@@ -424,7 +424,7 @@ Even with queue-timeout ticks, packing multiple independent timer cadences into 
 ### Final Pattern
 
 1. **Parent actors are command-only loops with no timeout.**
-- `WorkspaceActor`, `ProjectActor`, `TaskActor`, and `HistoryActor` wait on queue messages only.
+- `OrganizationActor`, `RepositoryActor`, `TaskActor`, and `HistoryActor` wait on queue messages only.
 
 2. **Periodic work moves to dedicated child sync actors.**
 - Each child actor has exactly one timeout cadence (e.g. PR sync, branch sync, task status sync).
@@ -439,7 +439,7 @@ Even with queue-timeout ticks, packing multiple independent timer cadences into 
 
 ### Example Structure
 
-- `ProjectActor` (no timeout): handles commands + applies `project.pr_sync.result` / `project.branch_sync.result` writes.
+- `RepositoryActor` (no timeout): handles commands + applies `repository.pr_sync.result` / `repository.branch_sync.result` writes.
 - `ProjectPrSyncActor` (timeout 30s): polls PR data, sends result message.
 - `ProjectBranchSyncActor` (timeout 5s): polls branch data, sends result message.
 - `TaskActor` (no timeout): handles lifecycle + applies `task.status_sync.result` writes.
@@ -502,7 +502,7 @@ Removing custom backend REST endpoints and migrating CLI/TUI calls to direct `ri
 
 ### Friction / Issue
 
-We had implemented a `/v1/*` HTTP shim (`/v1/tasks`, `/v1/workspaces/use`, etc.) between clients and actors, which duplicated actor APIs and introduced an unnecessary transport layer.
+We had implemented a `/v1/*` HTTP shim (`/v1/tasks`, `/v1/organizations/use`, etc.) between clients and actors, which duplicated actor APIs and introduced an unnecessary transport layer.
 
 ### Attempted Fix / Workaround
 
@@ -575,21 +575,21 @@ Removing `*Actor` suffix from all actor export names and registry keys.
 
 ### Friction / Issue
 
-RivetKit's `setup({ use: { ... } })` uses property names as actor identifiers in `client.<name>` calls. All 8 actors were exported as `workspaceActor`, `projectActor`, `taskActor`, etc., which meant client code used verbose `client.workspaceActor.getOrCreate(...)` instead of `client.workspace.getOrCreate(...)`.
+RivetKit's `setup({ use: { ... } })` uses property names as actor identifiers in `client.<name>` calls. All 8 actors were exported as `organization`, `repository`, `taskActor`, etc., which meant client code used verbose `client.organization.getOrCreate(...)` instead of `client.organization.getOrCreate(...)`.
 
 The `Actor` suffix is redundant — everything in the registry is an actor by definition. It also leaked into type names (`WorkspaceActorHandle`, `ProjectActorInput`, `HistoryActorInput`) and local function names (`workspaceActorKey`, `taskActorKey`).
 
 ### Attempted Fix / Workaround
 
-1. Renamed all 8 actor exports: `workspaceActor` → `workspace`, `projectActor` → `project`, `taskActor` → `task`, `sandboxInstanceActor` → `sandboxInstance`, `historyActor` → `history`, `projectPrSyncActor` → `projectPrSync`, `projectBranchSyncActor` → `projectBranchSync`, `taskStatusSyncActor` → `taskStatusSync`.
+1. Renamed all 8 actor exports: `organization` → `organization`, `repository` → `repository`, `taskActor` → `task`, `sandboxInstanceActor` → `sandboxInstance`, `historyActor` → `history`, `repositoryPrSync` → `repositoryPrSync`, `repositoryBranchSync` → `repositoryBranchSync`, `taskStatusSyncActor` → `taskStatusSync`.
 2. Updated registry keys in `actors/index.ts`.
 3. Renamed all `client.<name>Actor` references across 14 files (actor definitions, backend entry, CLI client, tests).
-4. Renamed associated types (`ProjectActorInput` → `ProjectInput`, `HistoryActorInput` → `HistoryInput`, `WorkspaceActorHandle` → `WorkspaceHandle`, `TaskActorHandle` → `TaskHandle`).
+4. Renamed associated types (`ProjectActorInput` → `RepositoryInput`, `HistoryActorInput` → `HistoryInput`, `WorkspaceActorHandle` → `OrganizationHandle`, `TaskActorHandle` → `TaskHandle`).
 
 ### Outcome
 
 - Actor names are now concise and match their semantic role.
-- Client code reads naturally: `client.workspace.getOrCreate(...)`, `client.task.get(...)`.
+- Client code reads naturally: `client.organization.getOrCreate(...)`, `client.task.get(...)`.
 - No runtime behavior change — registry property names drive actor routing.
 
 ## 2026-02-09 - uncommitted
@@ -609,8 +609,8 @@ Concrete examples from our codebase:
 
 | Actor | Pattern | Why |
 |-------|---------|-----|
-| `workspace` | Plain run | Every handler is a DB query or single actor delegation |
-| `project` | Plain run | Handlers are DB upserts or delegate to task actor |
+| `organization` | Plain run | Every handler is a DB query or single actor delegation |
+| `repository` | Plain run | Handlers are DB upserts or delegate to task actor |
 | `task` | **Needs workflow** | `initialize` is a 7-step pipeline (createSandbox → ensureAgent → createSession → DB writes → start child actors); post-idle is a 5-step pipeline (commit → push → PR → cache → notify) |
 | `history` | Plain run | Single DB insert per message |
 | `sandboxInstance` | Plain run | Single-table CRUD per message |
@@ -647,7 +647,7 @@ This matters when reasoning about workflow `listen()` behavior: you might assume
 RivetKit docs should clarify:
 
 1. Queue names are **per-actor-instance** — two different actor instances can use the same queue name without collision.
-2. The dotted naming convention (e.g. `project.command.ensure`) is a user convention for readability, not a routing hierarchy.
+2. The dotted naming convention (e.g. `repository.command.ensure`) is a user convention for readability, not a routing hierarchy.
 3. `c.queue.next(["a", "b"])` listens on queues named `"a"` and `"b"` *within this actor*, not across actors.
 
 ### Outcome
@@ -662,7 +662,7 @@ Migrating task actor to durable workflows. AI-generated queue names used dotted 
 
 ### Friction / Issue
 
-When generating actor queue names, the AI (and our own codebase) defaulted to dotted names like `task.command.initialize`, `project.pr_sync.result`, `task.status_sync.control.start`. These work fine in plain `run` loops, but create friction when interacting with the workflow system because `workflowQueueName()` prefixes them with `__workflow:`, producing names like `__workflow:task.command.initialize`.
+When generating actor queue names, the AI (and our own codebase) defaulted to dotted names like `task.command.initialize`, `repository.pr_sync.result`, `task.status_sync.control.start`. These work fine in plain `run` loops, but create friction when interacting with the workflow system because `workflowQueueName()` prefixes them with `__workflow:`, producing names like `__workflow:task.command.initialize`.
 
 Queue names should always be **camelCase** (e.g. `initializeTask`, `statusSyncResult`, `attachTask`). Dotted names are misleading — they imply hierarchy or routing semantics that don't exist (queues are flat, per-actor-instance strings). They also look like object property paths, which causes confusion when used as dynamic property keys on queue handles (`actor.queue["task.command.initialize"]`).
 
@@ -754,4 +754,4 @@ Using `better-sqlite3` and `node:sqlite` in backend DB bootstrap caused Bun runt
 
 - Backend starts successfully under Bun.
 - Shared Drizzle/SQLite actor DB path still works.
-- Workspace build + tests pass.
+- Organization build + tests pass.

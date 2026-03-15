@@ -1,51 +1,51 @@
-import type { TaskStatus, ProviderId } from "@sandbox-agent/foundry-shared";
+import type { TaskStatus, SandboxProviderId } from "@sandbox-agent/foundry-shared";
 
 export interface TaskCreatedEvent {
-  workspaceId: string;
+  organizationId: string;
   repoId: string;
   taskId: string;
-  providerId: ProviderId;
+  sandboxProviderId: SandboxProviderId;
   branchName: string;
   title: string;
 }
 
 export interface TaskStatusEvent {
-  workspaceId: string;
+  organizationId: string;
   repoId: string;
   taskId: string;
   status: TaskStatus;
   message: string;
 }
 
-export interface ProjectSnapshotEvent {
-  workspaceId: string;
+export interface RepositorySnapshotEvent {
+  organizationId: string;
   repoId: string;
   updatedAt: number;
 }
 
 export interface AgentStartedEvent {
-  workspaceId: string;
+  organizationId: string;
   repoId: string;
   taskId: string;
   sessionId: string;
 }
 
 export interface AgentIdleEvent {
-  workspaceId: string;
+  organizationId: string;
   repoId: string;
   taskId: string;
   sessionId: string;
 }
 
 export interface AgentErrorEvent {
-  workspaceId: string;
+  organizationId: string;
   repoId: string;
   taskId: string;
   message: string;
 }
 
 export interface PrCreatedEvent {
-  workspaceId: string;
+  organizationId: string;
   repoId: string;
   taskId: string;
   prNumber: number;
@@ -53,7 +53,7 @@ export interface PrCreatedEvent {
 }
 
 export interface PrClosedEvent {
-  workspaceId: string;
+  organizationId: string;
   repoId: string;
   taskId: string;
   prNumber: number;
@@ -61,7 +61,7 @@ export interface PrClosedEvent {
 }
 
 export interface PrReviewEvent {
-  workspaceId: string;
+  organizationId: string;
   repoId: string;
   taskId: string;
   prNumber: number;
@@ -70,7 +70,7 @@ export interface PrReviewEvent {
 }
 
 export interface CiStatusChangedEvent {
-  workspaceId: string;
+  organizationId: string;
   repoId: string;
   taskId: string;
   prNumber: number;
@@ -81,7 +81,7 @@ export type TaskStepName = "auto_commit" | "push" | "pr_submit";
 export type TaskStepStatus = "started" | "completed" | "skipped" | "failed";
 
 export interface TaskStepEvent {
-  workspaceId: string;
+  organizationId: string;
   repoId: string;
   taskId: string;
   step: TaskStepName;
@@ -90,23 +90,15 @@ export interface TaskStepEvent {
 }
 
 export interface BranchSwitchedEvent {
-  workspaceId: string;
+  organizationId: string;
   repoId: string;
   taskId: string;
   branchName: string;
 }
 
 export interface SessionAttachedEvent {
-  workspaceId: string;
+  organizationId: string;
   repoId: string;
   taskId: string;
   sessionId: string;
-}
-
-export interface BranchSyncedEvent {
-  workspaceId: string;
-  repoId: string;
-  taskId: string;
-  branchName: string;
-  strategy: string;
 }

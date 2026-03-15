@@ -28,7 +28,7 @@ export async function handleAttachActivity(loopCtx: any, msg: any): Promise<void
 
   if (record.activeSandboxId) {
     try {
-      const sandbox = getTaskSandbox(loopCtx, loopCtx.state.workspaceId, record.activeSandboxId);
+      const sandbox = getTaskSandbox(loopCtx, loopCtx.state.organizationId, record.activeSandboxId);
       const connection = await sandbox.sandboxAgentConnection();
       if (typeof connection?.endpoint === "string" && connection.endpoint.length > 0) {
         target = connection.endpoint;
@@ -78,9 +78,9 @@ export async function handleArchiveActivity(loopCtx: any, msg: any): Promise<voi
 
   if (record.activeSandboxId) {
     await setTaskState(loopCtx, "archive_release_sandbox", "releasing sandbox");
-    void withTimeout(getTaskSandbox(loopCtx, loopCtx.state.workspaceId, record.activeSandboxId).destroy(), 45_000, "sandbox destroy").catch((error) => {
+    void withTimeout(getTaskSandbox(loopCtx, loopCtx.state.organizationId, record.activeSandboxId).destroy(), 45_000, "sandbox destroy").catch((error) => {
       logActorWarning("task.commands", "failed to release sandbox during archive", {
-        workspaceId: loopCtx.state.workspaceId,
+        organizationId: loopCtx.state.organizationId,
         repoId: loopCtx.state.repoId,
         taskId: loopCtx.state.taskId,
         sandboxId: record.activeSandboxId,
@@ -106,7 +106,7 @@ export async function killDestroySandboxActivity(loopCtx: any): Promise<void> {
     return;
   }
 
-  await getTaskSandbox(loopCtx, loopCtx.state.workspaceId, record.activeSandboxId).destroy();
+  await getTaskSandbox(loopCtx, loopCtx.state.organizationId, record.activeSandboxId).destroy();
 }
 
 export async function killWriteDbActivity(loopCtx: any, msg: any): Promise<void> {

@@ -155,7 +155,7 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
       await loopCtx.step({
         name: "workbench-send-initial-message",
         timeout: 5 * 60_000,
-        run: async () => sendWorkbenchMessage(loopCtx, created.tabId, msg.body.text, []),
+        run: async () => sendWorkbenchMessage(loopCtx, created.sessionId, msg.body.text, []),
       });
     } catch (error) {
       logActorWarning("task.workflow", "create_session_and_send failed", {
@@ -169,7 +169,7 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
     await loopCtx.step({
       name: "workbench-ensure-session",
       timeout: 5 * 60_000,
-      run: async () => ensureWorkbenchSession(loopCtx, msg.body.tabId, msg.body?.model),
+      run: async () => ensureWorkbenchSession(loopCtx, msg.body.sessionId, msg.body?.model),
     });
     await msg.complete({ ok: true });
   },
@@ -278,7 +278,16 @@ export async function runTaskWorkflow(ctx: any): Promise<void> {
     }
     const handler = commandHandlers[msg.name as TaskQueueName];
     if (handler) {
-      await handler(loopCtx, msg);
+      try {
+        await handler(loopCtx, msg);
+      } catch (error) {
+        const message = resolveErrorMessage(error);
+        logActorWarning("task.workflow", "task workflow command failed", {
+          queueName: msg.name,
+          error: message,
+        });
+        await msg.complete({ error: message }).catch(() => {});
+      }
     }
     return Loop.continue(undefined);
   });

@@ -10,7 +10,7 @@ import {
   type WorkbenchTaskDetail,
   type WorkbenchTaskSummary,
 } from "@sandbox-agent/foundry-shared";
-import { useInterest } from "@sandbox-agent/foundry-client";
+import { useSubscription } from "@sandbox-agent/foundry-client";
 
 import { CircleAlert, PanelLeft, PanelRight } from "lucide-react";
 import { useFoundryTokens } from "../app/theme";
@@ -21,7 +21,7 @@ import { MessageList } from "./mock-layout/message-list";
 import { PromptComposer } from "./mock-layout/prompt-composer";
 import { RightSidebar } from "./mock-layout/right-sidebar";
 import { Sidebar } from "./mock-layout/sidebar";
-import { TabStrip } from "./mock-layout/tab-strip";
+import { SessionStrip } from "./mock-layout/session-strip";
 import { TerminalPane } from "./mock-layout/terminal-pane";
 import { TranscriptHeader } from "./mock-layout/transcript-header";
 import { PROMPT_TEXTAREA_MAX_HEIGHT, PROMPT_TEXTAREA_MIN_HEIGHT, SPanel, ScrollBody, Shell, SpinnerDot } from "./mock-layout/ui";
@@ -41,11 +41,11 @@ import {
 } from "./mock-layout/view-model";
 import { activeMockOrganization, useMockAppSnapshot } from "../lib/mock-app";
 import { backendClient } from "../lib/backend";
-import { interestManager } from "../lib/interest";
+import { subscriptionManager } from "../lib/subscription";
 import { describeTaskState, isProvisioningTaskStatus } from "../features/tasks/status";
 
-function firstAgentTabId(task: Task): string | null {
-  return task.tabs[0]?.id ?? null;
+function firstAgentSessionId(task: Task): string | null {
+  return task.sessions[0]?.id ?? null;
 }
 
 function sanitizeOpenDiffs(task: Task, paths: string[] | undefined): string[] {
@@ -56,25 +56,25 @@ function sanitizeOpenDiffs(task: Task, paths: string[] | undefined): string[] {
   return paths.filter((path) => task.diffs[path] != null);
 }
 
-function sanitizeLastAgentTabId(task: Task, tabId: string | null | undefined): string | null {
-  if (tabId && task.tabs.some((tab) => tab.id === tabId)) {
-    return tabId;
+function sanitizeLastAgentSessionId(task: Task, sessionId: string | null | undefined): string | null {
+  if (sessionId && task.sessions.some((tab) => tab.id === sessionId)) {
+    return sessionId;
   }
 
-  return firstAgentTabId(task);
+  return firstAgentSessionId(task);
 }
 
-function sanitizeActiveTabId(task: Task, tabId: string | null | undefined, openDiffs: string[], lastAgentTabId: string | null): string | null {
-  if (tabId) {
-    if (task.tabs.some((tab) => tab.id === tabId)) {
-      return tabId;
+function sanitizeActiveSessionId(task: Task, sessionId: string | null | undefined, openDiffs: string[], lastAgentSessionId: string | null): string | null {
+  if (sessionId) {
+    if (task.sessions.some((tab) => tab.id === sessionId)) {
+      return sessionId;
     }
-    if (isDiffTab(tabId) && openDiffs.includes(diffPath(tabId))) {
-      return tabId;
+    if (isDiffTab(sessionId) && openDiffs.includes(diffPath(sessionId))) {
+      return sessionId;
     }
   }
 
-  return openDiffs.length > 0 ? diffTabId(openDiffs[openDiffs.length - 1]!) : lastAgentTabId;
+  return openDiffs.length > 0 ? diffTabId(openDiffs[openDiffs.length - 1]!) : lastAgentSessionId;
 }
 
 function githubInstallationWarningTitle(organization: FoundryOrganization): string {
@@ -85,7 +85,7 @@ function githubInstallationWarningDetail(organization: FoundryOrganization): str
   const statusDetail = organization.github.lastSyncLabel.trim();
   const requirementDetail =
     organization.github.installationStatus === "install_required"
-      ? "Webhooks are required for Foundry to function. Repo sync and PR updates will not work until the GitHub App is installed for this workspace."
+      ? "Webhooks are required for Foundry to function. Repo sync and PR updates will not work until the GitHub App is installed for this organization."
       : "Webhook delivery is unavailable. Repo sync and PR updates will not work until the GitHub App is reconnected.";
   return statusDetail ? `${requirementDetail} ${statusDetail}.` : requirementDetail;
 }
@@ -130,10 +130,10 @@ function GithubInstallationWarning({
   );
 }
 
-function toLegacyTab(
+function toSessionModel(
   summary: WorkbenchSessionSummary,
-  sessionDetail?: { draft: Task["tabs"][number]["draft"]; transcript: Task["tabs"][number]["transcript"] },
-): Task["tabs"][number] {
+  sessionDetail?: { draft: Task["sessions"][number]["draft"]; transcript: Task["sessions"][number]["transcript"] },
+): Task["sessions"][number] {
   return {
     id: summary.id,
     sessionId: summary.sessionId,
@@ -154,10 +154,10 @@ function toLegacyTab(
   };
 }
 
-function toLegacyTask(
+function toTaskModel(
   summary: WorkbenchTaskSummary,
   detail?: WorkbenchTaskDetail,
-  sessionCache?: Map<string, { draft: Task["tabs"][number]["draft"]; transcript: Task["tabs"][number]["transcript"] }>,
+  sessionCache?: Map<string, { draft: Task["sessions"][number]["draft"]; transcript: Task["sessions"][number]["transcript"] }>,
 ): Task {
   const sessions = detail?.sessionsSummary ?? summary.sessionsSummary;
   return {
@@ -171,7 +171,7 @@ function toLegacyTask(
     updatedAtMs: detail?.updatedAtMs ?? summary.updatedAtMs,
     branch: detail?.branch ?? summary.branch,
     pullRequest: detail?.pullRequest ?? summary.pullRequest,
-    tabs: sessions.map((session) => toLegacyTab(session, sessionCache?.get(session.id))),
+    sessions: sessions.map((session) => toSessionModel(session, sessionCache?.get(session.id))),
     fileChanges: detail?.fileChanges ?? [],
     diffs: detail?.diffs ?? {},
     fileTree: detail?.fileTree ?? [],
@@ -190,7 +190,7 @@ function isOpenPrTaskId(taskId: string): boolean {
   return taskId.startsWith(OPEN_PR_TASK_PREFIX);
 }
 
-function toLegacyOpenPrTask(pullRequest: WorkbenchOpenPrSummary): Task {
+function toOpenPrTaskModel(pullRequest: WorkbenchOpenPrSummary): Task {
   return {
     id: openPrTaskId(pullRequest.prId),
     repoId: pullRequest.repoId,
@@ -205,7 +205,7 @@ function toLegacyOpenPrTask(pullRequest: WorkbenchOpenPrSummary): Task {
       number: pullRequest.number,
       status: pullRequest.isDraft ? "draft" : "ready",
     },
-    tabs: [],
+    sessions: [],
     fileChanges: [],
     diffs: {},
     fileTree: [],
@@ -214,7 +214,7 @@ function toLegacyOpenPrTask(pullRequest: WorkbenchOpenPrSummary): Task {
   };
 }
 
-function sessionStateMessage(tab: Task["tabs"][number] | null | undefined): string | null {
+function sessionStateMessage(tab: Task["sessions"][number] | null | undefined): string | null {
   if (!tab) {
     return null;
   }
@@ -230,7 +230,7 @@ function sessionStateMessage(tab: Task["tabs"][number] | null | undefined): stri
   return null;
 }
 
-function groupProjects(repos: Array<{ id: string; label: string }>, tasks: Task[]) {
+function groupRepositories(repos: Array<{ id: string; label: string }>, tasks: Task[]) {
   return repos
     .map((repo) => ({
       id: repo.id,
@@ -249,21 +249,21 @@ interface WorkbenchActions {
     branch?: string;
     onBranch?: string;
     model?: ModelId;
-  }): Promise<{ taskId: string; tabId?: string }>;
+  }): Promise<{ taskId: string; sessionId?: string }>;
   markTaskUnread(input: { taskId: string }): Promise<void>;
   renameTask(input: { taskId: string; value: string }): Promise<void>;
   renameBranch(input: { taskId: string; value: string }): Promise<void>;
   archiveTask(input: { taskId: string }): Promise<void>;
   publishPr(input: { taskId: string }): Promise<void>;
   revertFile(input: { taskId: string; path: string }): Promise<void>;
-  updateDraft(input: { taskId: string; tabId: string; text: string; attachments: LineAttachment[] }): Promise<void>;
-  sendMessage(input: { taskId: string; tabId: string; text: string; attachments: LineAttachment[] }): Promise<void>;
-  stopAgent(input: { taskId: string; tabId: string }): Promise<void>;
-  setSessionUnread(input: { taskId: string; tabId: string; unread: boolean }): Promise<void>;
-  renameSession(input: { taskId: string; tabId: string; title: string }): Promise<void>;
-  closeTab(input: { taskId: string; tabId: string }): Promise<void>;
-  addTab(input: { taskId: string; model?: string }): Promise<{ tabId: string }>;
-  changeModel(input: { taskId: string; tabId: string; model: ModelId }): Promise<void>;
+  updateDraft(input: { taskId: string; sessionId: string; text: string; attachments: LineAttachment[] }): Promise<void>;
+  sendMessage(input: { taskId: string; sessionId: string; text: string; attachments: LineAttachment[] }): Promise<void>;
+  stopAgent(input: { taskId: string; sessionId: string }): Promise<void>;
+  setSessionUnread(input: { taskId: string; sessionId: string; unread: boolean }): Promise<void>;
+  renameSession(input: { taskId: string; sessionId: string; title: string }): Promise<void>;
+  closeSession(input: { taskId: string; sessionId: string }): Promise<void>;
+  addSession(input: { taskId: string; model?: string }): Promise<{ sessionId: string }>;
+  changeModel(input: { taskId: string; sessionId: string; model: ModelId }): Promise<void>;
   reloadGithubOrganization(): Promise<void>;
   reloadGithubPullRequests(): Promise<void>;
   reloadGithubRepository(repoId: string): Promise<void>;
@@ -274,12 +274,12 @@ const TranscriptPanel = memo(function TranscriptPanel({
   taskWorkbenchClient,
   task,
   hasSandbox,
-  activeTabId,
-  lastAgentTabId,
+  activeSessionId,
+  lastAgentSessionId,
   openDiffs,
   onSyncRouteSession,
-  onSetActiveTabId,
-  onSetLastAgentTabId,
+  onSetActiveSessionId,
+  onSetLastAgentSessionId,
   onSetOpenDiffs,
   sidebarCollapsed,
   onToggleSidebar,
@@ -293,12 +293,12 @@ const TranscriptPanel = memo(function TranscriptPanel({
   taskWorkbenchClient: WorkbenchActions;
   task: Task;
   hasSandbox: boolean;
-  activeTabId: string | null;
-  lastAgentTabId: string | null;
+  activeSessionId: string | null;
+  lastAgentSessionId: string | null;
   openDiffs: string[];
   onSyncRouteSession: (taskId: string, sessionId: string | null, replace?: boolean) => void;
-  onSetActiveTabId: (tabId: string | null) => void;
-  onSetLastAgentTabId: (tabId: string | null) => void;
+  onSetActiveSessionId: (sessionId: string | null) => void;
+  onSetLastAgentSessionId: (sessionId: string | null) => void;
   onSetOpenDiffs: (paths: string[]) => void;
   sidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
@@ -313,37 +313,38 @@ const TranscriptPanel = memo(function TranscriptPanel({
   const [defaultModel, setDefaultModel] = useState<ModelId>("claude-sonnet-4");
   const [editingField, setEditingField] = useState<"title" | "branch" | null>(null);
   const [editValue, setEditValue] = useState("");
-  const [editingSessionTabId, setEditingSessionTabId] = useState<string | null>(null);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingSessionName, setEditingSessionName] = useState("");
-  const [pendingHistoryTarget, setPendingHistoryTarget] = useState<{ messageId: string; tabId: string } | null>(null);
+  const [pendingHistoryTarget, setPendingHistoryTarget] = useState<{ messageId: string; sessionId: string } | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [timerNowMs, setTimerNowMs] = useState(() => Date.now());
   const [localDraft, setLocalDraft] = useState("");
   const [localAttachments, setLocalAttachments] = useState<LineAttachment[]>([]);
+  const [pendingMessage, setPendingMessage] = useState<{ text: string; sessionId: string; sentAt: number } | null>(null);
   const lastEditTimeRef = useRef(0);
   const throttleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingDraftRef = useRef<{ text: string; attachments: LineAttachment[] } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messageRefs = useRef(new Map<string, HTMLDivElement>());
-  const activeDiff = activeTabId && isDiffTab(activeTabId) ? diffPath(activeTabId) : null;
-  const activeAgentTab = activeDiff ? null : (task.tabs.find((candidate) => candidate.id === activeTabId) ?? task.tabs[0] ?? null);
-  const promptTab = task.tabs.find((candidate) => candidate.id === lastAgentTabId) ?? task.tabs[0] ?? null;
+  const activeDiff = activeSessionId && isDiffTab(activeSessionId) ? diffPath(activeSessionId) : null;
+  const activeAgentSession = activeDiff ? null : (task.sessions.find((candidate) => candidate.id === activeSessionId) ?? task.sessions[0] ?? null);
+  const promptSession = task.sessions.find((candidate) => candidate.id === lastAgentSessionId) ?? task.sessions[0] ?? null;
   const isTerminal = task.status === "archived";
-  const historyEvents = useMemo(() => buildHistoryEvents(task.tabs), [task.tabs]);
-  const activeMessages = useMemo(() => buildDisplayMessages(activeAgentTab), [activeAgentTab]);
+  const historyEvents = useMemo(() => buildHistoryEvents(task.sessions), [task.sessions]);
+  const activeMessages = useMemo(() => buildDisplayMessages(activeAgentSession), [activeAgentSession]);
   const taskRuntimeStatus = task.runtimeStatus ?? task.status;
   const taskState = describeTaskState(taskRuntimeStatus, task.statusMessage ?? null);
   const taskProvisioning = isProvisioningTaskStatus(taskRuntimeStatus);
   const taskProvisioningMessage = taskState.detail;
-  const activeSessionMessage = sessionStateMessage(activeAgentTab);
+  const activeSessionMessage = sessionStateMessage(activeAgentSession);
   const showPendingSessionState =
     !activeDiff &&
-    !!activeAgentTab &&
-    (activeAgentTab.status === "pending_provision" || activeAgentTab.status === "pending_session_create" || activeAgentTab.status === "error") &&
+    !!activeAgentSession &&
+    (activeAgentSession.status === "pending_provision" || activeAgentSession.status === "pending_session_create" || activeAgentSession.status === "error") &&
     activeMessages.length === 0;
-  const serverDraft = promptTab?.draft.text ?? "";
-  const serverAttachments = promptTab?.draft.attachments ?? [];
+  const serverDraft = promptSession?.draft.text ?? "";
+  const serverAttachments = promptSession?.draft.attachments ?? [];
 
   // Sync server → local only when user hasn't typed recently (3s cooldown)
   const DRAFT_SYNC_COOLDOWN_MS = 3_000;
@@ -354,12 +355,26 @@ const TranscriptPanel = memo(function TranscriptPanel({
     }
   }, [serverDraft, serverAttachments]);
 
-  // Reset local draft immediately on tab/task switch
+  // Reset local draft immediately on session/task switch
   useEffect(() => {
     lastEditTimeRef.current = 0;
-    setLocalDraft(promptTab?.draft.text ?? "");
-    setLocalAttachments(promptTab?.draft.attachments ?? []);
-  }, [promptTab?.id, task.id]);
+    setLocalDraft(promptSession?.draft.text ?? "");
+    setLocalAttachments(promptSession?.draft.attachments ?? []);
+  }, [promptSession?.id, task.id]);
+
+  // Clear pending message once the real transcript contains a client message newer than when we sent
+  const pendingMessageClientCount = useRef(0);
+  useEffect(() => {
+    if (!pendingMessage) return;
+
+    const targetSession = task.sessions.find((s) => s.id === pendingMessage.sessionId);
+    if (!targetSession) return;
+
+    const clientEventCount = targetSession.transcript.filter((event) => event.sender === "client").length;
+    if (clientEventCount > pendingMessageClientCount.current) {
+      setPendingMessage(null);
+    }
+  }, [task.sessions, pendingMessage]);
 
   const draft = localDraft;
   const attachments = localAttachments;
@@ -372,10 +387,10 @@ const TranscriptPanel = memo(function TranscriptPanel({
 
   useEffect(() => {
     textareaRef.current?.focus();
-  }, [activeTabId, task.id]);
+  }, [activeSessionId, task.id]);
 
   useEffect(() => {
-    setEditingSessionTabId(null);
+    setEditingSessionId(null);
     setEditingSessionName("");
   }, [task.id]);
 
@@ -389,7 +404,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
     const nextHeight = Math.min(textarea.scrollHeight, PROMPT_TEXTAREA_MAX_HEIGHT);
     textarea.style.height = `${Math.max(PROMPT_TEXTAREA_MIN_HEIGHT, nextHeight)}px`;
     textarea.style.overflowY = textarea.scrollHeight > PROMPT_TEXTAREA_MAX_HEIGHT ? "auto" : "hidden";
-  }, [draft, activeTabId, task.id]);
+  }, [draft, activeSessionId, task.id]);
 
   useEffect(() => {
     if (!copiedMessageId) {
@@ -404,7 +419,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
   }, [copiedMessageId]);
 
   useEffect(() => {
-    if (!activeAgentTab || activeAgentTab.status !== "running" || activeAgentTab.thinkingSinceMs === null) {
+    if (!activeAgentSession || activeAgentSession.status !== "running" || activeAgentSession.thinkingSinceMs === null) {
       return;
     }
 
@@ -414,19 +429,19 @@ const TranscriptPanel = memo(function TranscriptPanel({
     }, 1_000);
 
     return () => window.clearInterval(timer);
-  }, [activeAgentTab?.id, activeAgentTab?.status, activeAgentTab?.thinkingSinceMs]);
+  }, [activeAgentSession?.id, activeAgentSession?.status, activeAgentSession?.thinkingSinceMs]);
 
   useEffect(() => {
-    if (!activeAgentTab?.unread) {
+    if (!activeAgentSession?.unread) {
       return;
     }
 
     void taskWorkbenchClient.setSessionUnread({
       taskId: task.id,
-      tabId: activeAgentTab.id,
+      sessionId: activeAgentSession.id,
       unread: false,
     });
-  }, [activeAgentTab?.id, activeAgentTab?.unread, task.id]);
+  }, [activeAgentSession?.id, activeAgentSession?.unread, task.id]);
 
   const startEditingField = useCallback((field: "title" | "branch", value: string) => {
     setEditingField(field);
@@ -458,10 +473,10 @@ const TranscriptPanel = memo(function TranscriptPanel({
   const DRAFT_THROTTLE_MS = 500;
 
   const flushDraft = useCallback(
-    (text: string, nextAttachments: LineAttachment[], tabId: string) => {
+    (text: string, nextAttachments: LineAttachment[], sessionId: string) => {
       void taskWorkbenchClient.updateDraft({
         taskId: task.id,
-        tabId,
+        sessionId,
         text,
         attachments: nextAttachments,
       });
@@ -480,7 +495,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
 
   const updateDraft = useCallback(
     (nextText: string, nextAttachments: LineAttachment[]) => {
-      if (!promptTab) {
+      if (!promptSession) {
         return;
       }
 
@@ -495,162 +510,172 @@ const TranscriptPanel = memo(function TranscriptPanel({
         throttleTimerRef.current = setTimeout(() => {
           throttleTimerRef.current = null;
           if (pendingDraftRef.current) {
-            flushDraft(pendingDraftRef.current.text, pendingDraftRef.current.attachments, promptTab.id);
+            flushDraft(pendingDraftRef.current.text, pendingDraftRef.current.attachments, promptSession.id);
             pendingDraftRef.current = null;
           }
         }, DRAFT_THROTTLE_MS);
       }
     },
-    [promptTab, flushDraft],
+    [promptSession, flushDraft],
   );
 
   const sendMessage = useCallback(() => {
     const text = draft.trim();
-    if (!text || !promptTab) {
+    if (!text || !promptSession) {
       return;
     }
 
-    onSetActiveTabId(promptTab.id);
-    onSetLastAgentTabId(promptTab.id);
+    // Clear draft and show optimistic message immediately (don't wait for server round-trip)
+    setLocalDraft("");
+    setLocalAttachments([]);
+    lastEditTimeRef.current = Date.now();
+    // Snapshot current client message count so we can detect when the server adds ours
+    pendingMessageClientCount.current = promptSession.transcript.filter((event) => event.sender === "client").length;
+    setPendingMessage({ text, sessionId: promptSession.id, sentAt: Date.now() });
+
+    onSetActiveSessionId(promptSession.id);
+    onSetLastAgentSessionId(promptSession.id);
     void taskWorkbenchClient.sendMessage({
       taskId: task.id,
-      tabId: promptTab.id,
+      sessionId: promptSession.id,
       text,
       attachments,
     });
-  }, [attachments, draft, task.id, onSetActiveTabId, onSetLastAgentTabId, promptTab]);
+  }, [attachments, draft, task.id, onSetActiveSessionId, onSetLastAgentSessionId, promptSession]);
 
   const stopAgent = useCallback(() => {
-    if (!promptTab) {
+    if (!promptSession) {
       return;
     }
 
     void taskWorkbenchClient.stopAgent({
       taskId: task.id,
-      tabId: promptTab.id,
+      sessionId: promptSession.id,
     });
-  }, [task.id, promptTab]);
+  }, [task.id, promptSession]);
 
-  const switchTab = useCallback(
-    (tabId: string) => {
-      onSetActiveTabId(tabId);
+  const switchSession = useCallback(
+    (sessionId: string) => {
+      onSetActiveSessionId(sessionId);
 
-      if (!isDiffTab(tabId)) {
-        onSetLastAgentTabId(tabId);
-        const tab = task.tabs.find((candidate) => candidate.id === tabId);
-        if (tab?.unread) {
+      if (!isDiffTab(sessionId)) {
+        onSetLastAgentSessionId(sessionId);
+        const session = task.sessions.find((candidate) => candidate.id === sessionId);
+        if (session?.unread) {
           void taskWorkbenchClient.setSessionUnread({
             taskId: task.id,
-            tabId,
+            sessionId,
             unread: false,
           });
         }
-        onSyncRouteSession(task.id, tabId);
+        onSyncRouteSession(task.id, sessionId);
       }
     },
-    [task.id, task.tabs, onSetActiveTabId, onSetLastAgentTabId, onSyncRouteSession],
+    [task.id, task.sessions, onSetActiveSessionId, onSetLastAgentSessionId, onSyncRouteSession],
   );
 
-  const setTabUnread = useCallback(
-    (tabId: string, unread: boolean) => {
-      void taskWorkbenchClient.setSessionUnread({ taskId: task.id, tabId, unread });
+  const setSessionUnread = useCallback(
+    (sessionId: string, unread: boolean) => {
+      void taskWorkbenchClient.setSessionUnread({ taskId: task.id, sessionId, unread });
     },
     [task.id],
   );
 
-  const startRenamingTab = useCallback(
-    (tabId: string) => {
-      const targetTab = task.tabs.find((candidate) => candidate.id === tabId);
-      if (!targetTab) {
-        throw new Error(`Unable to rename missing session tab ${tabId}`);
+  const startRenamingSession = useCallback(
+    (sessionId: string) => {
+      const targetSession = task.sessions.find((candidate) => candidate.id === sessionId);
+      if (!targetSession) {
+        throw new Error(`Unable to rename missing session ${sessionId}`);
       }
 
-      setEditingSessionTabId(tabId);
-      setEditingSessionName(targetTab.sessionName);
+      setEditingSessionId(sessionId);
+      setEditingSessionName(targetSession.sessionName);
     },
-    [task.tabs],
+    [task.sessions],
   );
 
-  const cancelTabRename = useCallback(() => {
-    setEditingSessionTabId(null);
+  const cancelSessionRename = useCallback(() => {
+    setEditingSessionId(null);
     setEditingSessionName("");
   }, []);
 
-  const commitTabRename = useCallback(() => {
-    if (!editingSessionTabId) {
+  const commitSessionRename = useCallback(() => {
+    if (!editingSessionId) {
       return;
     }
 
     const trimmedName = editingSessionName.trim();
     if (!trimmedName) {
-      cancelTabRename();
+      cancelSessionRename();
       return;
     }
 
     void taskWorkbenchClient.renameSession({
       taskId: task.id,
-      tabId: editingSessionTabId,
+      sessionId: editingSessionId,
       title: trimmedName,
     });
-    cancelTabRename();
-  }, [cancelTabRename, editingSessionName, editingSessionTabId, task.id]);
+    cancelSessionRename();
+  }, [cancelSessionRename, editingSessionName, editingSessionId, task.id]);
 
-  const closeTab = useCallback(
-    (tabId: string) => {
-      const remainingTabs = task.tabs.filter((candidate) => candidate.id !== tabId);
-      const nextTabId = remainingTabs[0]?.id ?? null;
+  const closeSession = useCallback(
+    (sessionId: string) => {
+      const remainingSessions = task.sessions.filter((candidate) => candidate.id !== sessionId);
+      const nextSessionId = remainingSessions[0]?.id ?? null;
 
-      if (activeTabId === tabId) {
-        onSetActiveTabId(nextTabId);
+      if (activeSessionId === sessionId) {
+        onSetActiveSessionId(nextSessionId);
       }
-      if (lastAgentTabId === tabId) {
-        onSetLastAgentTabId(nextTabId);
+      if (lastAgentSessionId === sessionId) {
+        onSetLastAgentSessionId(nextSessionId);
       }
 
-      onSyncRouteSession(task.id, nextTabId);
-      void taskWorkbenchClient.closeTab({ taskId: task.id, tabId });
+      onSyncRouteSession(task.id, nextSessionId);
+      void taskWorkbenchClient.closeSession({ taskId: task.id, sessionId });
     },
-    [activeTabId, task.id, task.tabs, lastAgentTabId, onSetActiveTabId, onSetLastAgentTabId, onSyncRouteSession],
+    [activeSessionId, task.id, task.sessions, lastAgentSessionId, onSetActiveSessionId, onSetLastAgentSessionId, onSyncRouteSession],
   );
 
   const closeDiffTab = useCallback(
     (path: string) => {
       const nextOpenDiffs = openDiffs.filter((candidate) => candidate !== path);
       onSetOpenDiffs(nextOpenDiffs);
-      if (activeTabId === diffTabId(path)) {
-        onSetActiveTabId(nextOpenDiffs.length > 0 ? diffTabId(nextOpenDiffs[nextOpenDiffs.length - 1]!) : (lastAgentTabId ?? firstAgentTabId(task)));
+      if (activeSessionId === diffTabId(path)) {
+        onSetActiveSessionId(
+          nextOpenDiffs.length > 0 ? diffTabId(nextOpenDiffs[nextOpenDiffs.length - 1]!) : (lastAgentSessionId ?? firstAgentSessionId(task)),
+        );
       }
     },
-    [activeTabId, task, lastAgentTabId, onSetActiveTabId, onSetOpenDiffs, openDiffs],
+    [activeSessionId, task, lastAgentSessionId, onSetActiveSessionId, onSetOpenDiffs, openDiffs],
   );
 
-  const addTab = useCallback(() => {
+  const addSession = useCallback(() => {
     void (async () => {
-      const { tabId } = await taskWorkbenchClient.addTab({ taskId: task.id });
-      onSetLastAgentTabId(tabId);
-      onSetActiveTabId(tabId);
-      onSyncRouteSession(task.id, tabId);
+      const { sessionId } = await taskWorkbenchClient.addSession({ taskId: task.id });
+      onSetLastAgentSessionId(sessionId);
+      onSetActiveSessionId(sessionId);
+      onSyncRouteSession(task.id, sessionId);
     })();
-  }, [task.id, onSetActiveTabId, onSetLastAgentTabId, onSyncRouteSession]);
+  }, [task.id, onSetActiveSessionId, onSetLastAgentSessionId, onSyncRouteSession]);
 
   const changeModel = useCallback(
     (model: ModelId) => {
-      if (!promptTab) {
-        throw new Error(`Unable to change model for task ${task.id} without an active prompt tab`);
+      if (!promptSession) {
+        throw new Error(`Unable to change model for task ${task.id} without an active prompt session`);
       }
 
       void taskWorkbenchClient.changeModel({
         taskId: task.id,
-        tabId: promptTab.id,
+        sessionId: promptSession.id,
         model,
       });
     },
-    [task.id, promptTab],
+    [task.id, promptSession],
   );
 
   const addAttachment = useCallback(
     (filePath: string, lineNumber: number, lineContent: string) => {
-      if (!promptTab) {
+      if (!promptSession) {
         return;
       }
 
@@ -661,7 +686,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
 
       updateDraft(draft, [...attachments, nextAttachment]);
     },
-    [attachments, draft, promptTab, updateDraft],
+    [attachments, draft, promptSession, updateDraft],
   );
 
   const removeAttachment = useCallback(
@@ -676,13 +701,13 @@ const TranscriptPanel = memo(function TranscriptPanel({
 
   const jumpToHistoryEvent = useCallback(
     (event: HistoryEvent) => {
-      setPendingHistoryTarget({ messageId: event.messageId, tabId: event.tabId });
+      setPendingHistoryTarget({ messageId: event.messageId, sessionId: event.sessionId });
 
-      if (activeTabId !== event.tabId) {
-        switchTab(event.tabId);
+      if (activeSessionId !== event.sessionId) {
+        switchSession(event.sessionId);
       }
     },
-    [activeTabId, switchTab],
+    [activeSessionId, switchSession],
   );
 
   const copyMessage = useCallback(async (message: Message) => {
@@ -704,26 +729,29 @@ const TranscriptPanel = memo(function TranscriptPanel({
     }
   }, []);
 
+  const isOptimisticThinking = pendingMessage !== null && activeAgentSession?.id === pendingMessage.sessionId;
   const thinkingTimerLabel =
-    activeAgentTab?.status === "running" && activeAgentTab.thinkingSinceMs !== null
-      ? formatThinkingDuration(timerNowMs - activeAgentTab.thinkingSinceMs)
-      : null;
+    activeAgentSession?.status === "running" && activeAgentSession.thinkingSinceMs !== null
+      ? formatThinkingDuration(timerNowMs - activeAgentSession.thinkingSinceMs)
+      : isOptimisticThinking
+        ? formatThinkingDuration(timerNowMs - pendingMessage.sentAt)
+        : null;
 
   return (
     <SPanel>
       <TranscriptHeader
         task={task}
         hasSandbox={hasSandbox}
-        activeTab={activeAgentTab}
+        activeSession={activeAgentSession}
         editingField={editingField}
         editValue={editValue}
         onEditValueChange={setEditValue}
         onStartEditingField={startEditingField}
         onCommitEditingField={commitEditingField}
         onCancelEditingField={cancelEditingField}
-        onSetActiveTabUnread={(unread) => {
-          if (activeAgentTab) {
-            setTabUnread(activeAgentTab.id, unread);
+        onSetActiveSessionUnread={(unread) => {
+          if (activeAgentSession) {
+            setSessionUnread(activeAgentSession.id, unread);
           }
         }}
         sidebarCollapsed={sidebarCollapsed}
@@ -749,21 +777,21 @@ const TranscriptPanel = memo(function TranscriptPanel({
           border: `1px solid ${t.borderDefault}`,
         }}
       >
-        <TabStrip
+        <SessionStrip
           task={task}
-          activeTabId={activeTabId}
+          activeSessionId={activeSessionId}
           openDiffs={openDiffs}
-          editingSessionTabId={editingSessionTabId}
+          editingSessionId={editingSessionId}
           editingSessionName={editingSessionName}
           onEditingSessionNameChange={setEditingSessionName}
-          onSwitchTab={switchTab}
-          onStartRenamingTab={startRenamingTab}
-          onCommitSessionRename={commitTabRename}
-          onCancelSessionRename={cancelTabRename}
-          onSetTabUnread={setTabUnread}
-          onCloseTab={closeTab}
+          onSwitchSession={switchSession}
+          onStartRenamingSession={startRenamingSession}
+          onCommitSessionRename={commitSessionRename}
+          onCancelSessionRename={cancelSessionRename}
+          onSetSessionUnread={setSessionUnread}
+          onCloseSession={closeSession}
           onCloseDiffTab={closeDiffTab}
-          onAddTab={addTab}
+          onAddSession={addSession}
           sidebarCollapsed={sidebarCollapsed}
         />
         {activeDiff ? (
@@ -773,7 +801,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
             diff={task.diffs[activeDiff]}
             onAddAttachment={addAttachment}
           />
-        ) : task.tabs.length === 0 ? (
+        ) : task.sessions.length === 0 ? (
           <ScrollBody>
             <div
               style={{
@@ -806,7 +834,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
                     <p style={{ margin: 0, opacity: 0.75 }}>Sessions are where you chat with the agent. Start one now to send the first prompt on this task.</p>
                     <button
                       type="button"
-                      onClick={addTab}
+                      onClick={addSession}
                       style={{
                         alignSelf: "center",
                         border: 0,
@@ -873,19 +901,19 @@ const TranscriptPanel = memo(function TranscriptPanel({
                   alignItems: "center",
                 }}
               >
-                {activeAgentTab?.status === "error" ? null : <SpinnerDot size={16} />}
+                {activeAgentSession?.status === "error" ? null : <SpinnerDot size={16} />}
                 <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 600 }}>
-                  {activeAgentTab?.status === "pending_provision"
+                  {activeAgentSession?.status === "pending_provision"
                     ? "Provisioning sandbox"
-                    : activeAgentTab?.status === "pending_session_create"
+                    : activeAgentSession?.status === "pending_session_create"
                       ? "Creating session"
                       : "Session unavailable"}
                 </h2>
                 <p style={{ margin: 0, opacity: 0.75 }}>{activeSessionMessage}</p>
-                {activeAgentTab?.status === "error" ? (
+                {activeAgentSession?.status === "error" ? (
                   <button
                     type="button"
-                    onClick={addTab}
+                    onClick={addSession}
                     style={{
                       alignSelf: "center",
                       border: 0,
@@ -906,7 +934,7 @@ const TranscriptPanel = memo(function TranscriptPanel({
         ) : (
           <ScrollBody>
             <MessageList
-              tab={activeAgentTab}
+              session={activeAgentSession}
               scrollRef={scrollRef}
               messageRefs={messageRefs}
               historyEvents={historyEvents}
@@ -918,18 +946,21 @@ const TranscriptPanel = memo(function TranscriptPanel({
                 void copyMessage(message);
               }}
               thinkingTimerLabel={thinkingTimerLabel}
+              pendingMessage={
+                pendingMessage && activeAgentSession?.id === pendingMessage.sessionId ? { text: pendingMessage.text, sentAt: pendingMessage.sentAt } : null
+              }
             />
           </ScrollBody>
         )}
-        {!isTerminal && promptTab && (promptTab.status === "ready" || promptTab.status === "running" || promptTab.status === "idle") ? (
+        {!isTerminal && promptSession && (promptSession.status === "ready" || promptSession.status === "running" || promptSession.status === "idle") ? (
           <PromptComposer
             draft={draft}
             textareaRef={textareaRef}
-            placeholder={!promptTab.created ? "Describe your task..." : "Send a message..."}
+            placeholder={!promptSession.created ? "Describe your task..." : "Send a message..."}
             attachments={attachments}
             defaultModel={defaultModel}
-            model={promptTab.model}
-            isRunning={promptTab.status === "running"}
+            model={promptSession.model}
+            isRunning={promptSession.status === "running"}
             onDraftChange={(value) => updateDraft(value, attachments)}
             onSend={sendMessage}
             onStop={stopAgent}
@@ -1017,18 +1048,18 @@ const DEFAULT_TERMINAL_HEIGHT = 320;
 const TERMINAL_HEIGHT_STORAGE_KEY = "foundry:terminal-height";
 
 const RightRail = memo(function RightRail({
-  workspaceId,
+  organizationId,
   task,
-  activeTabId,
+  activeSessionId,
   onOpenDiff,
   onArchive,
   onRevertFile,
   onPublishPr,
   onToggleSidebar,
 }: {
-  workspaceId: string;
+  organizationId: string;
   task: Task;
-  activeTabId: string | null;
+  activeSessionId: string | null;
   onOpenDiff: (path: string) => void;
   onArchive: () => void;
   onRevertFile: (path: string) => void;
@@ -1120,7 +1151,7 @@ const RightRail = memo(function RightRail({
       >
         <RightSidebar
           task={task}
-          activeTabId={activeTabId}
+          activeSessionId={activeSessionId}
           onOpenDiff={onOpenDiff}
           onArchive={onArchive}
           onRevertFile={onRevertFile}
@@ -1142,7 +1173,7 @@ const RightRail = memo(function RightRail({
         })}
       >
         <TerminalPane
-          workspaceId={workspaceId}
+          organizationId={organizationId}
           taskId={task.id}
           onStartResize={startResize}
           isExpanded={(() => {
@@ -1164,12 +1195,12 @@ const RightRail = memo(function RightRail({
 });
 
 interface MockLayoutProps {
-  workspaceId: string;
+  organizationId: string;
   selectedTaskId?: string | null;
   selectedSessionId?: string | null;
 }
 
-function MockWorkspaceOrgBar() {
+function MockOrganizationOrgBar() {
   const navigate = useNavigate();
   const snapshot = useMockAppSnapshot();
   const organization = activeMockOrganization(snapshot);
@@ -1245,38 +1276,38 @@ function MockWorkspaceOrgBar() {
   );
 }
 
-export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: MockLayoutProps) {
+export function MockLayout({ organizationId, selectedTaskId, selectedSessionId }: MockLayoutProps) {
   const [css] = useStyletron();
   const t = useFoundryTokens();
   const navigate = useNavigate();
   const taskWorkbenchClient = useMemo<WorkbenchActions>(
     () => ({
-      createTask: (input) => backendClient.createWorkbenchTask(workspaceId, input),
-      markTaskUnread: (input) => backendClient.markWorkbenchUnread(workspaceId, input),
-      renameTask: (input) => backendClient.renameWorkbenchTask(workspaceId, input),
-      renameBranch: (input) => backendClient.renameWorkbenchBranch(workspaceId, input),
-      archiveTask: async (input) => backendClient.runAction(workspaceId, input.taskId, "archive"),
-      publishPr: (input) => backendClient.publishWorkbenchPr(workspaceId, input),
-      revertFile: (input) => backendClient.revertWorkbenchFile(workspaceId, input),
-      updateDraft: (input) => backendClient.updateWorkbenchDraft(workspaceId, input),
-      sendMessage: (input) => backendClient.sendWorkbenchMessage(workspaceId, input),
-      stopAgent: (input) => backendClient.stopWorkbenchSession(workspaceId, input),
-      setSessionUnread: (input) => backendClient.setWorkbenchSessionUnread(workspaceId, input),
-      renameSession: (input) => backendClient.renameWorkbenchSession(workspaceId, input),
-      closeTab: (input) => backendClient.closeWorkbenchSession(workspaceId, input),
-      addTab: (input) => backendClient.createWorkbenchSession(workspaceId, input),
-      changeModel: (input) => backendClient.changeWorkbenchModel(workspaceId, input),
-      reloadGithubOrganization: () => backendClient.reloadGithubOrganization(workspaceId),
-      reloadGithubPullRequests: () => backendClient.reloadGithubPullRequests(workspaceId),
-      reloadGithubRepository: (repoId) => backendClient.reloadGithubRepository(workspaceId, repoId),
-      reloadGithubPullRequest: (repoId, prNumber) => backendClient.reloadGithubPullRequest(workspaceId, repoId, prNumber),
+      createTask: (input) => backendClient.createWorkbenchTask(organizationId, input),
+      markTaskUnread: (input) => backendClient.markWorkbenchUnread(organizationId, input),
+      renameTask: (input) => backendClient.renameWorkbenchTask(organizationId, input),
+      renameBranch: (input) => backendClient.renameWorkbenchBranch(organizationId, input),
+      archiveTask: async (input) => backendClient.runAction(organizationId, input.taskId, "archive"),
+      publishPr: (input) => backendClient.publishWorkbenchPr(organizationId, input),
+      revertFile: (input) => backendClient.revertWorkbenchFile(organizationId, input),
+      updateDraft: (input) => backendClient.updateWorkbenchDraft(organizationId, input),
+      sendMessage: (input) => backendClient.sendWorkbenchMessage(organizationId, input),
+      stopAgent: (input) => backendClient.stopWorkbenchSession(organizationId, input),
+      setSessionUnread: (input) => backendClient.setWorkbenchSessionUnread(organizationId, input),
+      renameSession: (input) => backendClient.renameWorkbenchSession(organizationId, input),
+      closeSession: (input) => backendClient.closeWorkbenchSession(organizationId, input),
+      addSession: (input) => backendClient.createWorkbenchSession(organizationId, input),
+      changeModel: (input) => backendClient.changeWorkbenchModel(organizationId, input),
+      reloadGithubOrganization: () => backendClient.reloadGithubOrganization(organizationId),
+      reloadGithubPullRequests: () => backendClient.reloadGithubPullRequests(organizationId),
+      reloadGithubRepository: (repoId) => backendClient.reloadGithubRepository(organizationId, repoId),
+      reloadGithubPullRequest: (repoId, prNumber) => backendClient.reloadGithubPullRequest(organizationId, repoId, prNumber),
     }),
-    [workspaceId],
+    [organizationId],
   );
-  const workspaceState = useInterest(interestManager, "workspace", { workspaceId });
-  const workspaceRepos = workspaceState.data?.repos ?? [];
-  const taskSummaries = workspaceState.data?.taskSummaries ?? [];
-  const openPullRequests = workspaceState.data?.openPullRequests ?? [];
+  const organizationState = useSubscription(subscriptionManager, "organization", { organizationId });
+  const organizationRepos = organizationState.data?.repos ?? [];
+  const taskSummaries = organizationState.data?.taskSummaries ?? [];
+  const openPullRequests = organizationState.data?.openPullRequests ?? [];
   const openPullRequestsByTaskId = useMemo(
     () => new Map(openPullRequests.map((pullRequest) => [openPrTaskId(pullRequest.prId), pullRequest])),
     [openPullRequests],
@@ -1289,23 +1320,23 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
     () => taskSummaries.find((task) => task.id === selectedTaskId) ?? taskSummaries[0] ?? null,
     [selectedTaskId, taskSummaries],
   );
-  const taskState = useInterest(
-    interestManager,
+  const taskState = useSubscription(
+    subscriptionManager,
     "task",
     selectedTaskSummary
       ? {
-          workspaceId,
+          organizationId,
           repoId: selectedTaskSummary.repoId,
           taskId: selectedTaskSummary.id,
         }
       : null,
   );
-  const sessionState = useInterest(
-    interestManager,
+  const sessionState = useSubscription(
+    subscriptionManager,
     "session",
     selectedTaskSummary && selectedSessionId
       ? {
-          workspaceId,
+          organizationId,
           repoId: selectedTaskSummary.repoId,
           taskId: selectedTaskSummary.id,
           sessionId: selectedSessionId,
@@ -1316,26 +1347,26 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
     if (!taskState.data?.activeSandboxId) return null;
     return taskState.data.sandboxes?.find((s) => s.sandboxId === taskState.data!.activeSandboxId) ?? null;
   }, [taskState.data?.activeSandboxId, taskState.data?.sandboxes]);
-  const sandboxState = useInterest(
-    interestManager,
+  const sandboxState = useSubscription(
+    subscriptionManager,
     "sandboxProcesses",
     activeSandbox
       ? {
-          workspaceId,
-          providerId: activeSandbox.providerId,
+          organizationId,
+          sandboxProviderId: activeSandbox.sandboxProviderId,
           sandboxId: activeSandbox.sandboxId,
         }
       : null,
   );
   const hasSandbox = Boolean(activeSandbox) && sandboxState.status !== "error";
   const tasks = useMemo(() => {
-    const sessionCache = new Map<string, { draft: Task["tabs"][number]["draft"]; transcript: Task["tabs"][number]["transcript"] }>();
+    const sessionCache = new Map<string, { draft: Task["sessions"][number]["draft"]; transcript: Task["sessions"][number]["transcript"] }>();
     if (selectedTaskSummary && taskState.data) {
       for (const session of taskState.data.sessionsSummary) {
         const cached =
           (selectedSessionId && session.id === selectedSessionId ? sessionState.data : undefined) ??
-          interestManager.getSnapshot("session", {
-            workspaceId,
+          subscriptionManager.getSnapshot("session", {
+            organizationId,
             repoId: selectedTaskSummary.repoId,
             taskId: selectedTaskSummary.id,
             sessionId: session.id,
@@ -1349,13 +1380,13 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
       }
     }
 
-    const legacyTasks = taskSummaries.map((summary) =>
-      summary.id === selectedTaskSummary?.id ? toLegacyTask(summary, taskState.data, sessionCache) : toLegacyTask(summary),
+    const hydratedTasks = taskSummaries.map((summary) =>
+      summary.id === selectedTaskSummary?.id ? toTaskModel(summary, taskState.data, sessionCache) : toTaskModel(summary),
     );
-    const legacyOpenPrs = openPullRequests.map((pullRequest) => toLegacyOpenPrTask(pullRequest));
-    return [...legacyTasks, ...legacyOpenPrs].sort((left, right) => right.updatedAtMs - left.updatedAtMs);
-  }, [openPullRequests, selectedTaskSummary, selectedSessionId, sessionState.data, taskState.data, taskSummaries, workspaceId]);
-  const rawProjects = useMemo(() => groupProjects(workspaceRepos, tasks), [tasks, workspaceRepos]);
+    const openPrTasks = openPullRequests.map((pullRequest) => toOpenPrTaskModel(pullRequest));
+    return [...hydratedTasks, ...openPrTasks].sort((left, right) => right.updatedAtMs - left.updatedAtMs);
+  }, [openPullRequests, selectedTaskSummary, selectedSessionId, sessionState.data, taskState.data, taskSummaries, organizationId]);
+  const rawRepositories = useMemo(() => groupRepositories(organizationRepos, tasks), [tasks, organizationRepos]);
   const appSnapshot = useMockAppSnapshot();
   const activeOrg = activeMockOrganization(appSnapshot);
   const navigateToUsage = useCallback(() => {
@@ -1363,9 +1394,18 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
       void navigate({ to: "/organizations/$organizationId/billing" as never, params: { organizationId: activeOrg.id } as never });
     }
   }, [activeOrg, navigate]);
-  const projects = rawProjects;
-  const [activeTabIdByTask, setActiveTabIdByTask] = useState<Record<string, string | null>>({});
-  const [lastAgentTabIdByTask, setLastAgentTabIdByTask] = useState<Record<string, string | null>>({});
+  const [repositoryOrder, setRepositoryOrder] = useState<string[] | null>(null);
+  const repositories = useMemo(() => {
+    if (!repositoryOrder) return rawRepositories;
+    const byId = new Map(rawRepositories.map((p) => [p.id, p]));
+    const ordered = repositoryOrder.map((id) => byId.get(id)).filter(Boolean) as typeof rawRepositories;
+    for (const p of rawRepositories) {
+      if (!repositoryOrder.includes(p.id)) ordered.push(p);
+    }
+    return ordered;
+  }, [rawRepositories, repositoryOrder]);
+  const [activeSessionIdByTask, setActiveSessionIdByTask] = useState<Record<string, string | null>>({});
+  const [lastAgentSessionIdByTask, setLastAgentSessionIdByTask] = useState<Record<string, string | null>>({});
   const [openDiffsByTask, setOpenDiffsByTask] = useState<Record<string, string[]>>({});
   const [selectedNewTaskRepoId, setSelectedNewTaskRepoId] = useState("");
   const [leftWidth, setLeftWidth] = useState(() => readStoredWidth(LEFT_WIDTH_STORAGE_KEY, LEFT_SIDEBAR_DEFAULT_WIDTH));
@@ -1389,6 +1429,30 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
   const endPeek = useCallback(() => {
     peekTimeoutRef.current = setTimeout(() => setLeftSidebarPeeking(false), 200);
   }, []);
+
+  const reorderRepositories = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      const ids = repositories.map((p) => p.id);
+      const [moved] = ids.splice(fromIndex, 1);
+      ids.splice(toIndex, 0, moved!);
+      setRepositoryOrder(ids);
+    },
+    [repositories],
+  );
+
+  const [taskOrderByRepository, setTaskOrderByRepository] = useState<Record<string, string[]>>({});
+  const reorderTasks = useCallback(
+    (repositoryId: string, fromIndex: number, toIndex: number) => {
+      const repository = repositories.find((p) => p.id === repositoryId);
+      if (!repository) return;
+      const currentOrder = taskOrderByRepository[repositoryId] ?? repository.tasks.map((t) => t.id);
+      const ids = [...currentOrder];
+      const [moved] = ids.splice(fromIndex, 1);
+      ids.splice(toIndex, 0, moved!);
+      setTaskOrderByRepository((prev) => ({ ...prev, [repositoryId]: ids }));
+    },
+    [repositories, taskOrderByRepository],
+  );
 
   useEffect(() => {
     leftWidthRef.current = leftWidth;
@@ -1440,7 +1504,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
       setMaterializingOpenPrId(pullRequest.prId);
 
       try {
-        const { taskId, tabId } = await taskWorkbenchClient.createTask({
+        const { taskId, sessionId } = await taskWorkbenchClient.createTask({
           repoId: pullRequest.repoId,
           task: `Continue work on GitHub PR #${pullRequest.number}: ${pullRequest.title}`,
           model: "gpt-5.3-codex",
@@ -1448,12 +1512,12 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
           onBranch: pullRequest.headRefName,
         });
         await navigate({
-          to: "/workspaces/$workspaceId/tasks/$taskId",
+          to: "/organizations/$organizationId/tasks/$taskId",
           params: {
-            workspaceId,
+            organizationId,
             taskId,
           },
-          search: { sessionId: tabId ?? undefined },
+          search: { sessionId: sessionId ?? undefined },
           replace: true,
         });
       } catch (error) {
@@ -1470,7 +1534,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
         );
       }
     },
-    [navigate, taskWorkbenchClient, workspaceId],
+    [navigate, taskWorkbenchClient, organizationId],
   );
 
   useEffect(() => {
@@ -1502,34 +1566,36 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
     const fallbackTask = tasks.find((task) => task.id === fallbackTaskId) ?? null;
 
     void navigate({
-      to: "/workspaces/$workspaceId/tasks/$taskId",
+      to: "/organizations/$organizationId/tasks/$taskId",
       params: {
-        workspaceId,
+        organizationId,
         taskId: fallbackTaskId,
       },
-      search: { sessionId: fallbackTask?.tabs[0]?.id ?? undefined },
+      search: { sessionId: fallbackTask?.sessions[0]?.id ?? undefined },
       replace: true,
     });
-  }, [activeTask, materializingOpenPrId, navigate, selectedOpenPullRequest, tasks, workspaceId]);
+  }, [activeTask, materializingOpenPrId, navigate, selectedOpenPullRequest, tasks, organizationId]);
 
   const openDiffs = activeTask ? sanitizeOpenDiffs(activeTask, openDiffsByTask[activeTask.id]) : [];
-  const lastAgentTabId = activeTask ? sanitizeLastAgentTabId(activeTask, lastAgentTabIdByTask[activeTask.id]) : null;
-  const activeTabId = activeTask ? sanitizeActiveTabId(activeTask, activeTabIdByTask[activeTask.id], openDiffs, lastAgentTabId) : null;
-  const selectedSessionHydrating = Boolean(selectedSessionId && activeTabId === selectedSessionId && sessionState.status === "loading" && !sessionState.data);
+  const lastAgentSessionId = activeTask ? sanitizeLastAgentSessionId(activeTask, lastAgentSessionIdByTask[activeTask.id]) : null;
+  const activeSessionId = activeTask ? sanitizeActiveSessionId(activeTask, activeSessionIdByTask[activeTask.id], openDiffs, lastAgentSessionId) : null;
+  const selectedSessionHydrating = Boolean(
+    selectedSessionId && activeSessionId === selectedSessionId && sessionState.status === "loading" && !sessionState.data,
+  );
 
   const syncRouteSession = useCallback(
     (taskId: string, sessionId: string | null, replace = false) => {
       void navigate({
-        to: "/workspaces/$workspaceId/tasks/$taskId",
+        to: "/organizations/$organizationId/tasks/$taskId",
         params: {
-          workspaceId,
+          organizationId,
           taskId,
         },
         search: { sessionId: sessionId ?? undefined },
         ...(replace ? { replace: true } : {}),
       });
     },
-    [navigate, workspaceId],
+    [navigate, organizationId],
   );
 
   useEffect(() => {
@@ -1537,7 +1603,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
       return;
     }
 
-    const resolvedRouteSessionId = sanitizeLastAgentTabId(activeTask, selectedSessionId);
+    const resolvedRouteSessionId = sanitizeLastAgentSessionId(activeTask, selectedSessionId);
     if (!resolvedRouteSessionId) {
       return;
     }
@@ -1547,15 +1613,15 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
       return;
     }
 
-    if (lastAgentTabIdByTask[activeTask.id] === resolvedRouteSessionId) {
+    if (lastAgentSessionIdByTask[activeTask.id] === resolvedRouteSessionId) {
       return;
     }
 
-    setLastAgentTabIdByTask((current) => ({
+    setLastAgentSessionIdByTask((current) => ({
       ...current,
       [activeTask.id]: resolvedRouteSessionId,
     }));
-    setActiveTabIdByTask((current) => {
+    setActiveSessionIdByTask((current) => {
       const currentActive = current[activeTask.id];
       if (currentActive && isDiffTab(currentActive)) {
         return current;
@@ -1566,25 +1632,25 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
         [activeTask.id]: resolvedRouteSessionId,
       };
     });
-  }, [activeTask, lastAgentTabIdByTask, selectedSessionId, syncRouteSession]);
+  }, [activeTask, lastAgentSessionIdByTask, selectedSessionId, syncRouteSession]);
 
   useEffect(() => {
-    if (selectedNewTaskRepoId && workspaceRepos.some((repo) => repo.id === selectedNewTaskRepoId)) {
+    if (selectedNewTaskRepoId && organizationRepos.some((repo) => repo.id === selectedNewTaskRepoId)) {
       return;
     }
 
     const fallbackRepoId =
-      activeTask?.repoId && workspaceRepos.some((repo) => repo.id === activeTask.repoId) ? activeTask.repoId : (workspaceRepos[0]?.id ?? "");
+      activeTask?.repoId && organizationRepos.some((repo) => repo.id === activeTask.repoId) ? activeTask.repoId : (organizationRepos[0]?.id ?? "");
     if (fallbackRepoId !== selectedNewTaskRepoId) {
       setSelectedNewTaskRepoId(fallbackRepoId);
     }
-  }, [activeTask?.repoId, selectedNewTaskRepoId, workspaceRepos]);
+  }, [activeTask?.repoId, selectedNewTaskRepoId, organizationRepos]);
 
   useEffect(() => {
     if (!activeTask) {
       return;
     }
-    if (activeTask.tabs.length > 0) {
+    if (activeTask.sessions.length > 0) {
       autoCreatingSessionForTaskRef.current.delete(activeTask.id);
       return;
     }
@@ -1598,8 +1664,8 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
     autoCreatingSessionForTaskRef.current.add(activeTask.id);
     void (async () => {
       try {
-        const { tabId } = await taskWorkbenchClient.addTab({ taskId: activeTask.id });
-        syncRouteSession(activeTask.id, tabId, true);
+        const { sessionId } = await taskWorkbenchClient.addSession({ taskId: activeTask.id });
+        syncRouteSession(activeTask.id, sessionId, true);
       } catch (error) {
         logger.error(
           {
@@ -1609,7 +1675,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
           "failed_to_auto_create_workbench_session",
         );
         // Keep the guard in the set on error to prevent retry storms.
-        // The guard is cleared when tabs appear (line above) or the task changes.
+        // The guard is cleared when sessions appear (line above) or the task changes.
       }
     })();
   }, [activeTask, selectedSessionId, syncRouteSession, taskWorkbenchClient]);
@@ -1622,7 +1688,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
           throw new Error("Cannot create a task without an available repo");
         }
 
-        const { taskId, tabId } = await taskWorkbenchClient.createTask({
+        const { taskId, sessionId } = await taskWorkbenchClient.createTask({
           repoId,
           task: options?.task ?? "New task",
           model: "gpt-5.3-codex",
@@ -1631,16 +1697,16 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
           ...(options?.onBranch ? { onBranch: options.onBranch } : {}),
         });
         await navigate({
-          to: "/workspaces/$workspaceId/tasks/$taskId",
+          to: "/organizations/$organizationId/tasks/$taskId",
           params: {
-            workspaceId,
+            organizationId,
             taskId,
           },
-          search: { sessionId: tabId ?? undefined },
+          search: { sessionId: sessionId ?? undefined },
         });
       })();
     },
-    [navigate, selectedNewTaskRepoId, taskWorkbenchClient, workspaceId],
+    [navigate, selectedNewTaskRepoId, taskWorkbenchClient, organizationId],
   );
 
   const openDiffTab = useCallback(
@@ -1659,7 +1725,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
           [activeTask.id]: [...existing, path],
         };
       });
-      setActiveTabIdByTask((current) => ({
+      setActiveSessionIdByTask((current) => ({
         ...current,
         [activeTask.id]: diffTabId(path),
       }));
@@ -1679,15 +1745,15 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
       }
       const task = tasks.find((candidate) => candidate.id === id) ?? null;
       void navigate({
-        to: "/workspaces/$workspaceId/tasks/$taskId",
+        to: "/organizations/$organizationId/tasks/$taskId",
         params: {
-          workspaceId,
+          organizationId,
           taskId: id,
         },
-        search: { sessionId: task?.tabs[0]?.id ?? undefined },
+        search: { sessionId: task?.sessions[0]?.id ?? undefined },
       });
     },
-    [materializeOpenPullRequest, navigate, openPullRequestsByTaskId, tasks, workspaceId],
+    [materializeOpenPullRequest, navigate, openPullRequestsByTaskId, tasks, organizationId],
   );
 
   const markTaskUnread = useCallback((id: string) => {
@@ -1761,11 +1827,11 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
         ...current,
         [activeTask.id]: sanitizeOpenDiffs(activeTask, current[activeTask.id]).filter((candidate) => candidate !== path),
       }));
-      setActiveTabIdByTask((current) => ({
+      setActiveSessionIdByTask((current) => ({
         ...current,
         [activeTask.id]:
           current[activeTask.id] === diffTabId(path)
-            ? sanitizeLastAgentTabId(activeTask, lastAgentTabIdByTask[activeTask.id])
+            ? sanitizeLastAgentSessionId(activeTask, lastAgentSessionIdByTask[activeTask.id])
             : (current[activeTask.id] ?? null),
       }));
 
@@ -1774,7 +1840,7 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
         path,
       });
     },
-    [activeTask, lastAgentTabIdByTask],
+    [activeTask, lastAgentSessionIdByTask],
   );
 
   const isDesktop = !!import.meta.env.VITE_DESKTOP;
@@ -1864,8 +1930,8 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
           >
             <div style={{ minWidth: `${leftWidth}px`, flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
               <Sidebar
-                projects={projects}
-                newTaskRepos={workspaceRepos}
+                repositories={repositories}
+                newTaskRepos={organizationRepos}
                 selectedNewTaskRepoId={selectedNewTaskRepoId}
                 activeId={selectedTaskId ?? ""}
                 onSelect={selectTask}
@@ -1874,6 +1940,9 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
                 onMarkUnread={markTaskUnread}
                 onRenameTask={renameTask}
                 onRenameBranch={renameBranch}
+                onReorderRepositories={reorderRepositories}
+                taskOrderByRepository={taskOrderByRepository}
+                onReorderTasks={reorderTasks}
                 onReloadOrganization={() => void taskWorkbenchClient.reloadGithubOrganization()}
                 onReloadPullRequests={() => void taskWorkbenchClient.reloadGithubPullRequests()}
                 onReloadRepository={(repoId) => void taskWorkbenchClient.reloadGithubRepository(repoId)}
@@ -1961,22 +2030,22 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
                       <>
                         <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 600 }}>Create your first task</h2>
                         <p style={{ margin: 0, opacity: 0.75 }}>
-                          {workspaceRepos.length > 0
+                          {organizationRepos.length > 0
                             ? "Start from the sidebar to create a task on the first available repo."
-                            : "No repos are available in this workspace yet."}
+                            : "No repos are available in this organization yet."}
                         </p>
                         <button
                           type="button"
                           onClick={() => createTask()}
-                          disabled={workspaceRepos.length === 0}
+                          disabled={organizationRepos.length === 0}
                           style={{
                             alignSelf: "center",
                             border: 0,
                             borderRadius: "999px",
                             padding: "10px 18px",
-                            background: workspaceRepos.length > 0 ? t.borderMedium : t.textTertiary,
+                            background: organizationRepos.length > 0 ? t.borderMedium : t.textTertiary,
                             color: t.textPrimary,
-                            cursor: workspaceRepos.length > 0 ? "pointer" : "not-allowed",
+                            cursor: organizationRepos.length > 0 ? "pointer" : "not-allowed",
                             fontWeight: 600,
                           }}
                         >
@@ -2009,8 +2078,8 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
         {activeOrg && <GithubInstallationWarning organization={activeOrg} css={css} t={t} />}
         {showDevPanel && (
           <DevPanel
-            workspaceId={workspaceId}
-            snapshot={{ workspaceId, repos: workspaceRepos, projects: rawProjects, tasks } as TaskWorkbenchSnapshot}
+            organizationId={organizationId}
+            snapshot={{ organizationId, repos: organizationRepos, repositories: rawRepositories, tasks } as TaskWorkbenchSnapshot}
             organization={activeOrg}
             focusedTask={null}
           />
@@ -2036,8 +2105,8 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
         >
           <div style={{ minWidth: `${leftWidth}px`, flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
             <Sidebar
-              projects={projects}
-              newTaskRepos={workspaceRepos}
+              repositories={repositories}
+              newTaskRepos={organizationRepos}
               selectedNewTaskRepoId={selectedNewTaskRepoId}
               activeId={selectedTaskId ?? activeTask.id}
               onSelect={selectTask}
@@ -2046,6 +2115,9 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
               onMarkUnread={markTaskUnread}
               onRenameTask={renameTask}
               onRenameBranch={renameBranch}
+              onReorderRepositories={reorderRepositories}
+              taskOrderByRepository={taskOrderByRepository}
+              onReorderTasks={reorderTasks}
               onReloadOrganization={() => void taskWorkbenchClient.reloadGithubOrganization()}
               onReloadPullRequests={() => void taskWorkbenchClient.reloadGithubPullRequests()}
               onReloadRepository={(repoId) => void taskWorkbenchClient.reloadGithubRepository(repoId)}
@@ -2085,8 +2157,8 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
               onMouseLeave={endPeek}
             >
               <Sidebar
-                projects={projects}
-                newTaskRepos={workspaceRepos}
+                repositories={repositories}
+                newTaskRepos={organizationRepos}
                 selectedNewTaskRepoId={selectedNewTaskRepoId}
                 activeId={selectedTaskId ?? activeTask.id}
                 onSelect={(id) => {
@@ -2098,6 +2170,9 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
                 onMarkUnread={markTaskUnread}
                 onRenameTask={renameTask}
                 onRenameBranch={renameBranch}
+                onReorderRepositories={reorderRepositories}
+                taskOrderByRepository={taskOrderByRepository}
+                onReorderTasks={reorderTasks}
                 onReloadOrganization={() => void taskWorkbenchClient.reloadGithubOrganization()}
                 onReloadPullRequests={() => void taskWorkbenchClient.reloadGithubPullRequests()}
                 onReloadRepository={(repoId) => void taskWorkbenchClient.reloadGithubRepository(repoId)}
@@ -2117,15 +2192,15 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
               taskWorkbenchClient={taskWorkbenchClient}
               task={activeTask}
               hasSandbox={hasSandbox}
-              activeTabId={activeTabId}
-              lastAgentTabId={lastAgentTabId}
+              activeSessionId={activeSessionId}
+              lastAgentSessionId={lastAgentSessionId}
               openDiffs={openDiffs}
               onSyncRouteSession={syncRouteSession}
-              onSetActiveTabId={(tabId) => {
-                setActiveTabIdByTask((current) => ({ ...current, [activeTask.id]: tabId }));
+              onSetActiveSessionId={(sessionId) => {
+                setActiveSessionIdByTask((current) => ({ ...current, [activeTask.id]: sessionId }));
               }}
-              onSetLastAgentTabId={(tabId) => {
-                setLastAgentTabIdByTask((current) => ({ ...current, [activeTask.id]: tabId }));
+              onSetLastAgentSessionId={(sessionId) => {
+                setLastAgentSessionIdByTask((current) => ({ ...current, [activeTask.id]: sessionId }));
               }}
               onSetOpenDiffs={(paths) => {
                 setOpenDiffsByTask((current) => ({ ...current, [activeTask.id]: paths }));
@@ -2157,9 +2232,9 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
           >
             <div style={{ minWidth: `${rightWidth}px`, flex: 1, display: "flex", flexDirection: "column" }}>
               <RightRail
-                workspaceId={workspaceId}
+                organizationId={organizationId}
                 task={activeTask}
-                activeTabId={activeTabId}
+                activeSessionId={activeSessionId}
                 onOpenDiff={openDiffTab}
                 onArchive={archiveTask}
                 onRevertFile={revertFile}
@@ -2172,8 +2247,8 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
         {activeOrg && <GithubInstallationWarning organization={activeOrg} css={css} t={t} />}
         {showDevPanel && (
           <DevPanel
-            workspaceId={workspaceId}
-            snapshot={{ workspaceId, repos: workspaceRepos, projects: rawProjects, tasks } as TaskWorkbenchSnapshot}
+            organizationId={organizationId}
+            snapshot={{ organizationId, repos: organizationRepos, repositories: rawRepositories, tasks } as TaskWorkbenchSnapshot}
             organization={activeOrg}
             focusedTask={{
               id: activeTask.id,
@@ -2184,10 +2259,10 @@ export function MockLayout({ workspaceId, selectedTaskId, selectedSessionId }: M
               statusMessage: activeTask.statusMessage ?? null,
               branch: activeTask.branch ?? null,
               activeSandboxId: activeTask.activeSandboxId ?? null,
-              activeSessionId: selectedSessionId ?? activeTask.tabs[0]?.id ?? null,
+              activeSessionId: selectedSessionId ?? activeTask.sessions[0]?.id ?? null,
               sandboxes: [],
               sessions:
-                activeTask.tabs?.map((tab) => ({
+                activeTask.sessions?.map((tab) => ({
                   id: tab.id,
                   sessionId: tab.sessionId ?? null,
                   sessionName: tab.sessionName ?? tab.id,

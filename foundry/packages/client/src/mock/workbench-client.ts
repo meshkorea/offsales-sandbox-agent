@@ -1,7 +1,7 @@
 import {
   MODEL_GROUPS,
   buildInitialMockLayoutViewModel,
-  groupWorkbenchProjects,
+  groupWorkbenchRepositories,
   nowMs,
   providerAgent,
   randomReply,
@@ -10,7 +10,7 @@ import {
   uid,
 } from "../workbench-model.js";
 import type {
-  TaskWorkbenchAddTabResponse,
+  TaskWorkbenchAddSessionResponse,
   TaskWorkbenchChangeModelInput,
   TaskWorkbenchCreateTaskInput,
   TaskWorkbenchCreateTaskResponse,
@@ -21,9 +21,9 @@ import type {
   TaskWorkbenchSetSessionUnreadInput,
   TaskWorkbenchSendMessageInput,
   TaskWorkbenchSnapshot,
-  TaskWorkbenchTabInput,
+  TaskWorkbenchSessionInput,
   TaskWorkbenchUpdateDraftInput,
-  WorkbenchAgentTab as AgentTab,
+  WorkbenchSession as AgentSession,
   WorkbenchTask as Task,
   WorkbenchTranscriptEvent as TranscriptEvent,
 } from "@sandbox-agent/foundry-shared";
@@ -65,7 +65,7 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
 
   async createTask(input: TaskWorkbenchCreateTaskInput): Promise<TaskWorkbenchCreateTaskResponse> {
     const id = uid();
-    const tabId = `session-${id}`;
+    const sessionId = `session-${id}`;
     const repo = this.snapshot.repos.find((candidate) => candidate.id === input.repoId);
     if (!repo) {
       throw new Error(`Cannot create mock task for unknown repo ${input.repoId}`);
@@ -79,10 +79,10 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
       updatedAtMs: nowMs(),
       branch: input.branch?.trim() || null,
       pullRequest: null,
-      tabs: [
+      sessions: [
         {
-          id: tabId,
-          sessionId: tabId,
+          id: sessionId,
+          sessionId: sessionId,
           sessionName: "Session 1",
           agent: providerAgent(
             MODEL_GROUPS.find((group) => group.models.some((model) => model.id === (input.model ?? "claude-sonnet-4")))?.provider ?? "Claude",
@@ -106,19 +106,19 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
       ...current,
       tasks: [nextTask, ...current.tasks],
     }));
-    return { taskId: id, tabId };
+    return { taskId: id, sessionId };
   }
 
   async markTaskUnread(input: TaskWorkbenchSelectInput): Promise<void> {
     this.updateTask(input.taskId, (task) => {
-      const targetTab = task.tabs[task.tabs.length - 1] ?? null;
-      if (!targetTab) {
+      const targetSession = task.sessions[task.sessions.length - 1] ?? null;
+      if (!targetSession) {
         return task;
       }
 
       return {
         ...task,
-        tabs: task.tabs.map((tab) => (tab.id === targetTab.id ? { ...tab, unread: true } : tab)),
+        sessions: task.sessions.map((session) => (session.id === targetSession.id ? { ...session, unread: true } : session)),
       };
     });
   }
@@ -168,12 +168,12 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
   }
 
   async updateDraft(input: TaskWorkbenchUpdateDraftInput): Promise<void> {
-    this.assertTab(input.taskId, input.tabId);
+    this.assertSession(input.taskId, input.sessionId);
     this.updateTask(input.taskId, (task) => ({
       ...task,
       updatedAtMs: nowMs(),
-      tabs: task.tabs.map((tab) =>
-        tab.id === input.tabId
+      sessions: task.sessions.map((tab) =>
+        tab.id === input.sessionId
           ? {
               ...tab,
               draft: {
@@ -193,7 +193,7 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
       throw new Error(`Cannot send an empty mock prompt for task ${input.taskId}`);
     }
 
-    this.assertTab(input.taskId, input.tabId);
+    this.assertSession(input.taskId, input.sessionId);
     const startedAtMs = nowMs();
 
     this.updateTask(input.taskId, (currentTask) => {
@@ -202,10 +202,10 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
       const newBranch = isFirstOnTask ? `feat/${slugify(newTitle)}` : currentTask.branch;
       const userMessageLines = [text, ...input.attachments.map((attachment) => `@ ${attachment.filePath}:${attachment.lineNumber}`)];
       const userEvent = buildTranscriptEvent({
-        sessionId: input.tabId,
+        sessionId: input.sessionId,
         sender: "client",
         createdAt: startedAtMs,
-        eventIndex: candidateEventIndex(currentTask, input.tabId),
+        eventIndex: candidateEventIndex(currentTask, input.sessionId),
         payload: {
           method: "session/prompt",
           params: {
@@ -220,8 +220,8 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
         branch: newBranch,
         status: "running",
         updatedAtMs: startedAtMs,
-        tabs: currentTask.tabs.map((candidate) =>
-          candidate.id === input.tabId
+        sessions: currentTask.sessions.map((candidate) =>
+          candidate.id === input.sessionId
             ? {
                 ...candidate,
                 created: true,
@@ -236,20 +236,20 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
       };
     });
 
-    const existingTimer = this.pendingTimers.get(input.tabId);
+    const existingTimer = this.pendingTimers.get(input.sessionId);
     if (existingTimer) {
       clearTimeout(existingTimer);
     }
 
     const timer = setTimeout(() => {
       const task = this.requireTask(input.taskId);
-      const replyTab = this.requireTab(task, input.tabId);
+      this.requireSession(task, input.sessionId);
       const completedAtMs = nowMs();
       const replyEvent = buildTranscriptEvent({
-        sessionId: input.tabId,
+        sessionId: input.sessionId,
         sender: "agent",
         createdAt: completedAtMs,
-        eventIndex: candidateEventIndex(task, input.tabId),
+        eventIndex: candidateEventIndex(task, input.sessionId),
         payload: {
           result: {
             text: randomReply(),
@@ -259,8 +259,8 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
       });
 
       this.updateTask(input.taskId, (currentTask) => {
-        const updatedTabs = currentTask.tabs.map((candidate) => {
-          if (candidate.id !== input.tabId) {
+        const updatedTabs = currentTask.sessions.map((candidate) => {
+          if (candidate.id !== input.sessionId) {
             return candidate;
           }
 
@@ -277,35 +277,35 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
         return {
           ...currentTask,
           updatedAtMs: completedAtMs,
-          tabs: updatedTabs,
+          sessions: updatedTabs,
           status: currentTask.status === "archived" ? "archived" : anyRunning ? "running" : "idle",
         };
       });
 
-      this.pendingTimers.delete(input.tabId);
+      this.pendingTimers.delete(input.sessionId);
     }, 2_500);
 
-    this.pendingTimers.set(input.tabId, timer);
+    this.pendingTimers.set(input.sessionId, timer);
   }
 
-  async stopAgent(input: TaskWorkbenchTabInput): Promise<void> {
-    this.assertTab(input.taskId, input.tabId);
-    const existing = this.pendingTimers.get(input.tabId);
+  async stopAgent(input: TaskWorkbenchSessionInput): Promise<void> {
+    this.assertSession(input.taskId, input.sessionId);
+    const existing = this.pendingTimers.get(input.sessionId);
     if (existing) {
       clearTimeout(existing);
-      this.pendingTimers.delete(input.tabId);
+      this.pendingTimers.delete(input.sessionId);
     }
 
     this.updateTask(input.taskId, (currentTask) => {
-      const updatedTabs = currentTask.tabs.map((candidate) =>
-        candidate.id === input.tabId ? { ...candidate, status: "idle" as const, thinkingSinceMs: null } : candidate,
+      const updatedTabs = currentTask.sessions.map((candidate) =>
+        candidate.id === input.sessionId ? { ...candidate, status: "idle" as const, thinkingSinceMs: null } : candidate,
       );
       const anyRunning = updatedTabs.some((candidate) => candidate.status === "running");
 
       return {
         ...currentTask,
         updatedAtMs: nowMs(),
-        tabs: updatedTabs,
+        sessions: updatedTabs,
         status: currentTask.status === "archived" ? "archived" : anyRunning ? "running" : "idle",
       };
     });
@@ -314,40 +314,42 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
   async setSessionUnread(input: TaskWorkbenchSetSessionUnreadInput): Promise<void> {
     this.updateTask(input.taskId, (currentTask) => ({
       ...currentTask,
-      tabs: currentTask.tabs.map((candidate) => (candidate.id === input.tabId ? { ...candidate, unread: input.unread } : candidate)),
+      sessions: currentTask.sessions.map((candidate) => (candidate.id === input.sessionId ? { ...candidate, unread: input.unread } : candidate)),
     }));
   }
 
   async renameSession(input: TaskWorkbenchRenameSessionInput): Promise<void> {
     const title = input.title.trim();
     if (!title) {
-      throw new Error(`Cannot rename session ${input.tabId} to an empty title`);
+      throw new Error(`Cannot rename session ${input.sessionId} to an empty title`);
     }
     this.updateTask(input.taskId, (currentTask) => ({
       ...currentTask,
-      tabs: currentTask.tabs.map((candidate) => (candidate.id === input.tabId ? { ...candidate, sessionName: title } : candidate)),
+      sessions: currentTask.sessions.map((candidate) => (candidate.id === input.sessionId ? { ...candidate, sessionName: title } : candidate)),
     }));
   }
 
-  async closeTab(input: TaskWorkbenchTabInput): Promise<void> {
+  async closeSession(input: TaskWorkbenchSessionInput): Promise<void> {
     this.updateTask(input.taskId, (currentTask) => {
-      if (currentTask.tabs.length <= 1) {
+      if (currentTask.sessions.length <= 1) {
         return currentTask;
       }
 
       return {
         ...currentTask,
-        tabs: currentTask.tabs.filter((candidate) => candidate.id !== input.tabId),
+        sessions: currentTask.sessions.filter((candidate) => candidate.id !== input.sessionId),
       };
     });
   }
 
-  async addTab(input: TaskWorkbenchSelectInput): Promise<TaskWorkbenchAddTabResponse> {
+  async addSession(input: TaskWorkbenchSelectInput): Promise<TaskWorkbenchAddSessionResponse> {
     this.assertTask(input.taskId);
-    const nextTab: AgentTab = {
-      id: uid(),
-      sessionId: null,
-      sessionName: `Session ${this.requireTask(input.taskId).tabs.length + 1}`,
+    const nextSessionId = uid();
+    const nextSession: AgentSession = {
+      id: nextSessionId,
+      sessionId: nextSessionId,
+      sandboxSessionId: null,
+      sessionName: `Session ${this.requireTask(input.taskId).sessions.length + 1}`,
       agent: "Claude",
       model: "claude-sonnet-4",
       status: "idle",
@@ -361,9 +363,9 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
     this.updateTask(input.taskId, (currentTask) => ({
       ...currentTask,
       updatedAtMs: nowMs(),
-      tabs: [...currentTask.tabs, nextTab],
+      sessions: [...currentTask.sessions, nextSession],
     }));
-    return { tabId: nextTab.id };
+    return { sessionId: nextSession.id };
   }
 
   async changeModel(input: TaskWorkbenchChangeModelInput): Promise<void> {
@@ -374,8 +376,8 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
 
     this.updateTask(input.taskId, (currentTask) => ({
       ...currentTask,
-      tabs: currentTask.tabs.map((candidate) =>
-        candidate.id === input.tabId ? { ...candidate, model: input.model, agent: providerAgent(group.provider) } : candidate,
+      sessions: currentTask.sessions.map((candidate) =>
+        candidate.id === input.sessionId ? { ...candidate, model: input.model, agent: providerAgent(group.provider) } : candidate,
       ),
     }));
   }
@@ -384,7 +386,7 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
     const nextSnapshot = updater(this.snapshot);
     this.snapshot = {
       ...nextSnapshot,
-      projects: groupWorkbenchProjects(nextSnapshot.repos, nextSnapshot.tasks),
+      repositories: groupWorkbenchRepositories(nextSnapshot.repos, nextSnapshot.tasks),
     };
     this.notify();
   }
@@ -407,9 +409,9 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
     this.requireTask(taskId);
   }
 
-  private assertTab(taskId: string, tabId: string): void {
+  private assertSession(taskId: string, sessionId: string): void {
     const task = this.requireTask(taskId);
-    this.requireTab(task, tabId);
+    this.requireSession(task, sessionId);
   }
 
   private requireTask(taskId: string): Task {
@@ -420,18 +422,18 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
     return task;
   }
 
-  private requireTab(task: Task, tabId: string): AgentTab {
-    const tab = task.tabs.find((candidate) => candidate.id === tabId);
-    if (!tab) {
-      throw new Error(`Unable to find mock tab ${tabId} in task ${task.id}`);
+  private requireSession(task: Task, sessionId: string): AgentSession {
+    const session = task.sessions.find((candidate) => candidate.id === sessionId);
+    if (!session) {
+      throw new Error(`Unable to find mock session ${sessionId} in task ${task.id}`);
     }
-    return tab;
+    return session;
   }
 }
 
-function candidateEventIndex(task: Task, tabId: string): number {
-  const tab = task.tabs.find((candidate) => candidate.id === tabId);
-  return (tab?.transcript.length ?? 0) + 1;
+function candidateEventIndex(task: Task, sessionId: string): number {
+  const session = task.sessions.find((candidate) => candidate.id === sessionId);
+  return (session?.transcript.length ?? 0) + 1;
 }
 
 let sharedMockWorkbenchClient: TaskWorkbenchClient | null = null;

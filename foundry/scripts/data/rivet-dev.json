@@ -1060,7 +1060,7 @@
     },
     {
       "number": 222,
-      "title": "Recover wellington workspace state",
+      "title": "Recover wellington organization state",
       "state": "open",
       "draft": false,
       "headRefName": "recovery/wellington-20260309",
@@ -1070,7 +1070,7 @@
     },
     {
       "number": 220,
-      "title": "Recover lisbon workspace state",
+      "title": "Recover lisbon organization state",
       "state": "open",
       "draft": false,
       "headRefName": "recovery/lisbon-20260309",
@@ -1080,7 +1080,7 @@
     },
     {
       "number": 219,
-      "title": "Recover karachi-v2 workspace state",
+      "title": "Recover karachi-v2 organization state",
       "state": "open",
       "draft": false,
       "headRefName": "recovery/karachi-v2-20260309",
@@ -1090,7 +1090,7 @@
     },
     {
       "number": 218,
-      "title": "Recover hamburg workspace state",
+      "title": "Recover hamburg organization state",
       "state": "open",
       "draft": false,
       "headRefName": "recovery/hamburg-20260309",
@@ -1100,7 +1100,7 @@
     },
     {
       "number": 217,
-      "title": "Recover geneva workspace state",
+      "title": "Recover geneva organization state",
       "state": "open",
       "draft": false,
       "headRefName": "recovery/geneva-20260309",
@@ -1110,7 +1110,7 @@
     },
     {
       "number": 216,
-      "title": "Recover edinburgh workspace state",
+      "title": "Recover edinburgh organization state",
       "state": "open",
       "draft": false,
       "headRefName": "recovery/edinburgh-20260309",

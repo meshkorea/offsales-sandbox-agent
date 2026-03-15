@@ -4,7 +4,7 @@ import { GitPullRequest, GitPullRequestDraft } from "lucide-react";
 
 import { useFoundryTokens } from "../../app/theme";
 import { getFoundryTokens } from "../../styles/tokens";
-import type { AgentKind, AgentTab } from "./view-model";
+import type { AgentKind, AgentSession } from "./view-model";
 
 export interface ContextMenuItem {
   label: string;
@@ -251,10 +251,10 @@ export const HeaderStatusPill = memo(function HeaderStatusPill({ status }: { sta
   );
 });
 
-export const TabAvatar = memo(function TabAvatar({ tab }: { tab: AgentTab }) {
-  if (tab.status === "running" || tab.status === "pending_provision" || tab.status === "pending_session_create") return <SpinnerDot size={8} />;
-  if (tab.unread) return <UnreadDot />;
-  return <AgentIcon agent={tab.agent} size={13} />;
+export const SessionAvatar = memo(function SessionAvatar({ session }: { session: AgentSession }) {
+  if (session.status === "running" || session.status === "pending_provision" || session.status === "pending_session_create") return <SpinnerDot size={8} />;
+  if (session.unread) return <UnreadDot />;
+  return <AgentIcon agent={session.agent} size={13} />;
 });
 
 export const Shell = styled("div", ({ $theme }) => {

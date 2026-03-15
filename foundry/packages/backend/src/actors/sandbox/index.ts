@@ -4,21 +4,21 @@ import { existsSync } from "node:fs";
 import Dockerode from "dockerode";
 import { SandboxAgent } from "sandbox-agent";
 import { getActorRuntimeContext } from "../context.js";
-import { workspaceKey } from "../keys.js";
+import { organizationKey } from "../keys.js";
 import { resolveSandboxProviderId } from "../../sandbox-config.js";
 
-const SANDBOX_REPO_CWD = "/home/sandbox/workspace/repo";
+const SANDBOX_REPO_CWD = "/home/sandbox/organization/repo";
 const DEFAULT_LOCAL_SANDBOX_IMAGE = "rivetdev/sandbox-agent:full";
 const DEFAULT_LOCAL_SANDBOX_PORT = 2468;
 const dockerClient = new Dockerode({ socketPath: "/var/run/docker.sock" });
 
-function parseTaskSandboxKey(key: readonly string[]): { workspaceId: string; taskId: string } {
-  if (key.length !== 4 || key[0] !== "ws" || key[2] !== "sandbox") {
+function parseTaskSandboxKey(key: readonly string[]): { organizationId: string; taskId: string } {
+  if (key.length !== 4 || key[0] !== "org" || key[2] !== "sandbox") {
     throw new Error(`Invalid task sandbox key: ${JSON.stringify(key)}`);
   }
 
   return {
-    workspaceId: key[1]!,
+    organizationId: key[1]!,
     taskId: key[3]!,
   };
 }
@@ -191,24 +191,24 @@ function sanitizeActorResult(value: unknown, seen = new WeakSet<object>()): unkn
 const baseTaskSandbox = sandboxActor({
   createProvider: async (c) => {
     const { config } = getActorRuntimeContext();
-    const { workspaceId, taskId } = parseTaskSandboxKey(c.key);
-    const workspace = await c.client().workspace.getOrCreate(workspaceKey(workspaceId), {
-      createWithInput: workspaceId,
+    const { organizationId, taskId } = parseTaskSandboxKey(c.key);
+    const organization = await c.client().organization.getOrCreate(organizationKey(organizationId), {
+      createWithInput: organizationId,
     });
-    const task = await workspace.getTask({ workspaceId, taskId });
-    const providerId = resolveSandboxProviderId(config, task.providerId);
+    const task = await organization.getTask({ organizationId, taskId });
+    const sandboxProviderId = resolveSandboxProviderId(config, task.sandboxProviderId);
 
-    if (providerId === "e2b") {
+    if (sandboxProviderId === "e2b") {
       return e2b({
         create: () => ({
-          template: config.providers.e2b.template ?? "sandbox-agent-full-0.3.x",
+          template: config.sandboxProviders.e2b.template ?? "sandbox-agent-full-0.3.x",
           envs: sandboxEnvObject(),
         }),
         installAgents: ["claude", "codex"],
       });
     }
 
-    return createLocalSandboxProvider(config.providers.local.image ?? process.env.HF_LOCAL_SANDBOX_IMAGE ?? DEFAULT_LOCAL_SANDBOX_IMAGE);
+    return createLocalSandboxProvider(config.sandboxProviders.local.image ?? process.env.HF_LOCAL_SANDBOX_IMAGE ?? DEFAULT_LOCAL_SANDBOX_IMAGE);
   },
 });
 
@@ -236,23 +236,23 @@ async function providerForConnection(c: any): Promise<any | null> {
   const providerFactory = baseTaskSandbox.config.actions as Record<string, unknown>;
   void providerFactory;
   const { config } = getActorRuntimeContext();
-  const { workspaceId, taskId } = parseTaskSandboxKey(c.key);
-  const workspace = await c.client().workspace.getOrCreate(workspaceKey(workspaceId), {
-    createWithInput: workspaceId,
+  const { organizationId, taskId } = parseTaskSandboxKey(c.key);
+  const organization = await c.client().organization.getOrCreate(organizationKey(organizationId), {
+    createWithInput: organizationId,
   });
-  const task = await workspace.getTask({ workspaceId, taskId });
-  const providerId = resolveSandboxProviderId(config, task.providerId);
+  const task = await organization.getTask({ organizationId, taskId });
+  const sandboxProviderId = resolveSandboxProviderId(config, task.sandboxProviderId);
 
   const provider =
-    providerId === "e2b"
+    sandboxProviderId === "e2b"
       ? e2b({
           create: () => ({
-            template: config.providers.e2b.template ?? "sandbox-agent-full-0.3.x",
+            template: config.sandboxProviders.e2b.template ?? "sandbox-agent-full-0.3.x",
             envs: sandboxEnvObject(),
           }),
           installAgents: ["claude", "codex"],
         })
-      : createLocalSandboxProvider(config.providers.local.image ?? process.env.HF_LOCAL_SANDBOX_IMAGE ?? DEFAULT_LOCAL_SANDBOX_IMAGE);
+      : createLocalSandboxProvider(config.sandboxProviders.local.image ?? process.env.HF_LOCAL_SANDBOX_IMAGE ?? DEFAULT_LOCAL_SANDBOX_IMAGE);
 
   c.vars.provider = provider;
   return provider;
@@ -360,31 +360,31 @@ export const taskSandbox = actor({
       }
     },
 
-    async providerState(c: any): Promise<{ providerId: "e2b" | "local"; sandboxId: string; state: string; at: number }> {
+    async providerState(c: any): Promise<{ sandboxProviderId: "e2b" | "local"; sandboxId: string; state: string; at: number }> {
       const { config } = getActorRuntimeContext();
       const { taskId } = parseTaskSandboxKey(c.key);
       const at = Date.now();
-      const providerId = resolveSandboxProviderId(config, c.state.providerName === "e2b" ? "e2b" : c.state.providerName === "docker" ? "local" : null);
+      const sandboxProviderId = resolveSandboxProviderId(config, c.state.providerName === "e2b" ? "e2b" : c.state.providerName === "docker" ? "local" : null);
 
       if (c.state.sandboxDestroyed) {
-        return { providerId, sandboxId: taskId, state: "destroyed", at };
+        return { sandboxProviderId, sandboxId: taskId, state: "destroyed", at };
       }
 
       if (!c.state.sandboxId) {
-        return { providerId, sandboxId: taskId, state: "pending", at };
+        return { sandboxProviderId, sandboxId: taskId, state: "pending", at };
       }
 
       try {
         const health = await baseActions.getHealth(c);
         return {
-          providerId,
+          sandboxProviderId,
           sandboxId: taskId,
           state: health.status === "ok" ? "running" : "degraded",
           at,
         };
       } catch {
         return {
-          providerId,
+          sandboxProviderId,
           sandboxId: taskId,
           state: "error",
           at,

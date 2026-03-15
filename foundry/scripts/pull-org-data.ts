@@ -2,8 +2,8 @@
 /**
  * Pull public GitHub organization data into a JSON fixture file.
  *
- * This script mirrors the sync logic in the backend workspace actor
- * (see: packages/backend/src/actors/workspace/app-shell.ts — syncGithubOrganizations
+ * This script mirrors the sync logic in the backend organization actor
+ * (see: packages/backend/src/actors/organization/app-shell.ts — syncGithubOrganizations
  * and syncGithubOrganizationRepos). Keep the two in sync: when the backend
  * sync workflow changes what data it fetches or how it structures organizations,
  * update this script to match.
@@ -205,8 +205,8 @@ async function pullOrgData(orgLogin: string): Promise<OrgFixture> {
   console.log(`  ${members.length} public members`);
 
   // 4. Fetch open PRs across all public repos
-  // Backend equivalent: ProjectPrSyncActor polls GitHub for open PRs per repo
-  // and stores them in the pr_cache table on the project actor
+  // Backend equivalent: open PR metadata is pulled from GitHub and merged into
+  // the organization/repository projections used by the UI.
   const openPullRequests: OrgFixturePullRequest[] = [];
   for (const repo of repos) {
     const rawPrs = await githubPaginate<{

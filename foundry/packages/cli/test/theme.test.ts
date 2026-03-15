@@ -21,7 +21,7 @@ describe("resolveTuiTheme", () => {
   const baseConfig: AppConfig = ConfigSchema.parse({
     auto_submit: true,
     notify: ["terminal"],
-    workspace: { default: "default" },
+    organization: { default: "default" },
     backend: {
       host: "127.0.0.1",
       port: 7741,
@@ -31,7 +31,7 @@ describe("resolveTuiTheme", () => {
       backup_interval_secs: 3600,
       backup_retention_days: 7,
     },
-    providers: {
+    sandboxProviders: {
       local: {},
       e2b: {},
     },

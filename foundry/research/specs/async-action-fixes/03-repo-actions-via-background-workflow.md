@@ -10,20 +10,20 @@ These flows depend on repo/network state and can take minutes. They should not h
 
 ## Current Code Context
 
-- Workspace repo action entry point: `foundry/packages/backend/src/actors/workspace/actions.ts`
-- Project repo action implementation: `foundry/packages/backend/src/actors/project/actions.ts`
-- Branch/task index state lives in the project actor SQLite DB.
+- Organization repo action entry point: `foundry/packages/backend/src/actors/organization/actions.ts`
+- Repository repo action implementation: `foundry/packages/backend/src/actors/repository/actions.ts`
+- Branch/task index state lives in the repository actor SQLite DB.
 - Current forced sync uses the PR and branch polling actors before and after the action.
 
 ## Target Contract
 
 - Repo-affecting actions are accepted quickly and run in the background.
-- The project actor owns a durable action record with progress and final result.
-- Clients observe status via project/task state instead of waiting for a single response.
+- The repository actor owns a durable action record with progress and final result.
+- Clients observe status via repository/task state instead of waiting for a single response.
 
 ## Proposed Fix
 
-1. Introduce a project-level workflow/job model for repo actions, for example:
+1. Introduce a repository-level workflow/job model for repo actions, for example:
    - `sync_repo`
    - `restack_repo`
    - `restack_subtree`
@@ -49,11 +49,11 @@ These flows depend on repo/network state and can take minutes. They should not h
 
 ## Files Likely To Change
 
-- `foundry/packages/backend/src/actors/workspace/actions.ts`
-- `foundry/packages/backend/src/actors/project/actions.ts`
-- `foundry/packages/backend/src/actors/project/db/schema.ts`
-- `foundry/packages/backend/src/actors/project/db/migrations.ts`
-- `foundry/packages/frontend/src/components/workspace-dashboard.tsx`
+- `foundry/packages/backend/src/actors/organization/actions.ts`
+- `foundry/packages/backend/src/actors/repository/actions.ts`
+- `foundry/packages/backend/src/actors/repository/db/schema.ts`
+- `foundry/packages/backend/src/actors/repository/db/migrations.ts`
+- `foundry/packages/frontend/src/components/organization-dashboard.tsx`
 - Any shared types in `foundry/packages/shared/src`
 
 ## Client Impact
@@ -70,5 +70,5 @@ These flows depend on repo/network state and can take minutes. They should not h
 ## Implementation Notes
 
 - Keep validation cheap in the request path; expensive repo inspection belongs in the workflow.
-- If job rows are added, decide whether they are project-owned only or also mirrored into history events for UI consumption.
+- If job rows are added, decide whether they are repository-owned only or also mirrored into history events for UI consumption.
 - Fresh-agent check: branch-backed task creation and explicit repo stack actions should use the same background job/status vocabulary where possible.

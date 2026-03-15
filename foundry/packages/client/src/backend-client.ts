@@ -1,7 +1,6 @@
 import { createClient } from "rivetkit/client";
 import type {
   AgentType,
-  AddRepoInput,
   AppConfig,
   FoundryAppSnapshot,
   FoundryBillingPlanId,
@@ -21,20 +20,18 @@ import type {
   TaskWorkbenchSetSessionUnreadInput,
   TaskWorkbenchSendMessageInput,
   TaskWorkbenchSnapshot,
-  TaskWorkbenchTabInput,
+  TaskWorkbenchSessionInput,
   TaskWorkbenchUpdateDraftInput,
   TaskEvent,
   WorkbenchTaskDetail,
   WorkbenchTaskSummary,
   WorkbenchSessionDetail,
-  WorkspaceEvent,
-  WorkspaceSummarySnapshot,
+  OrganizationEvent,
+  OrganizationSummarySnapshot,
   HistoryEvent,
   HistoryQueryInput,
-  ProviderId,
+  SandboxProviderId,
   RepoOverview,
-  RepoStackActionInput,
-  RepoStackActionResult,
   RepoRecord,
   StarSandboxAgentRepoInput,
   StarSandboxAgentRepoResult,
@@ -43,7 +40,7 @@ import type {
 } from "@sandbox-agent/foundry-shared";
 import type { ProcessCreateRequest, ProcessInfo, ProcessLogFollowQuery, ProcessLogsResponse, ProcessSignalQuery } from "sandbox-agent";
 import { createMockBackendClient } from "./mock/backend-client.js";
-import { taskKey, taskSandboxKey, workspaceKey } from "./keys.js";
+import { taskKey, taskSandboxKey, organizationKey } from "./keys.js";
 
 export type TaskAction = "push" | "sync" | "merge" | "archive" | "kill";
 
@@ -75,41 +72,39 @@ export interface ActorConn {
   dispose(): Promise<void>;
 }
 
-interface WorkspaceHandle {
+interface OrganizationHandle {
   connect(): ActorConn;
-  addRepo(input: AddRepoInput): Promise<RepoRecord>;
-  listRepos(input: { workspaceId: string }): Promise<RepoRecord[]>;
+  listRepos(input: { organizationId: string }): Promise<RepoRecord[]>;
   createTask(input: CreateTaskInput): Promise<TaskRecord>;
-  listTasks(input: { workspaceId: string; repoId?: string }): Promise<TaskSummary[]>;
-  getRepoOverview(input: { workspaceId: string; repoId: string }): Promise<RepoOverview>;
-  runRepoStackAction(input: RepoStackActionInput): Promise<RepoStackActionResult>;
+  listTasks(input: { organizationId: string; repoId?: string }): Promise<TaskSummary[]>;
+  getRepoOverview(input: { organizationId: string; repoId: string }): Promise<RepoOverview>;
   history(input: HistoryQueryInput): Promise<HistoryEvent[]>;
   switchTask(taskId: string): Promise<SwitchResult>;
-  getTask(input: { workspaceId: string; taskId: string }): Promise<TaskRecord>;
-  attachTask(input: { workspaceId: string; taskId: string; reason?: string }): Promise<{ target: string; sessionId: string | null }>;
-  pushTask(input: { workspaceId: string; taskId: string; reason?: string }): Promise<void>;
-  syncTask(input: { workspaceId: string; taskId: string; reason?: string }): Promise<void>;
-  mergeTask(input: { workspaceId: string; taskId: string; reason?: string }): Promise<void>;
-  archiveTask(input: { workspaceId: string; taskId: string; reason?: string }): Promise<void>;
-  killTask(input: { workspaceId: string; taskId: string; reason?: string }): Promise<void>;
-  useWorkspace(input: { workspaceId: string }): Promise<{ workspaceId: string }>;
+  getTask(input: { organizationId: string; taskId: string }): Promise<TaskRecord>;
+  attachTask(input: { organizationId: string; taskId: string; reason?: string }): Promise<{ target: string; sessionId: string | null }>;
+  pushTask(input: { organizationId: string; taskId: string; reason?: string }): Promise<void>;
+  syncTask(input: { organizationId: string; taskId: string; reason?: string }): Promise<void>;
+  mergeTask(input: { organizationId: string; taskId: string; reason?: string }): Promise<void>;
+  archiveTask(input: { organizationId: string; taskId: string; reason?: string }): Promise<void>;
+  killTask(input: { organizationId: string; taskId: string; reason?: string }): Promise<void>;
+  useOrganization(input: { organizationId: string }): Promise<{ organizationId: string }>;
   starSandboxAgentRepo(input: StarSandboxAgentRepoInput): Promise<StarSandboxAgentRepoResult>;
-  getWorkspaceSummary(input: { workspaceId: string }): Promise<WorkspaceSummarySnapshot>;
+  getOrganizationSummary(input: { organizationId: string }): Promise<OrganizationSummarySnapshot>;
   applyTaskSummaryUpdate(input: { taskSummary: WorkbenchTaskSummary }): Promise<void>;
   removeTaskSummary(input: { taskId: string }): Promise<void>;
-  reconcileWorkbenchState(input: { workspaceId: string }): Promise<WorkspaceSummarySnapshot>;
+  reconcileWorkbenchState(input: { organizationId: string }): Promise<OrganizationSummarySnapshot>;
   createWorkbenchTask(input: TaskWorkbenchCreateTaskInput): Promise<TaskWorkbenchCreateTaskResponse>;
   markWorkbenchUnread(input: TaskWorkbenchSelectInput): Promise<void>;
   renameWorkbenchTask(input: TaskWorkbenchRenameInput): Promise<void>;
   renameWorkbenchBranch(input: TaskWorkbenchRenameInput): Promise<void>;
-  createWorkbenchSession(input: TaskWorkbenchSelectInput & { model?: string }): Promise<{ tabId: string }>;
+  createWorkbenchSession(input: TaskWorkbenchSelectInput & { model?: string }): Promise<{ sessionId: string }>;
   renameWorkbenchSession(input: TaskWorkbenchRenameSessionInput): Promise<void>;
   setWorkbenchSessionUnread(input: TaskWorkbenchSetSessionUnreadInput): Promise<void>;
   updateWorkbenchDraft(input: TaskWorkbenchUpdateDraftInput): Promise<void>;
   changeWorkbenchModel(input: TaskWorkbenchChangeModelInput): Promise<void>;
   sendWorkbenchMessage(input: TaskWorkbenchSendMessageInput): Promise<void>;
-  stopWorkbenchSession(input: TaskWorkbenchTabInput): Promise<void>;
-  closeWorkbenchSession(input: TaskWorkbenchTabInput): Promise<void>;
+  stopWorkbenchSession(input: TaskWorkbenchSessionInput): Promise<void>;
+  closeWorkbenchSession(input: TaskWorkbenchSessionInput): Promise<void>;
   publishWorkbenchPr(input: TaskWorkbenchSelectInput): Promise<void>;
   revertWorkbenchFile(input: TaskWorkbenchDiffInput): Promise<void>;
   reloadGithubOrganization(): Promise<void>;
@@ -118,7 +113,7 @@ interface WorkspaceHandle {
   reloadGithubPullRequest(input: { repoId: string; prNumber: number }): Promise<void>;
 }
 
-interface AppWorkspaceHandle {
+interface AppOrganizationHandle {
   connect(): ActorConn;
   getAppSnapshot(input: { sessionId: string }): Promise<FoundryAppSnapshot>;
   skipAppStarterRepo(input: { sessionId: string }): Promise<FoundryAppSnapshot>;
@@ -131,7 +126,7 @@ interface AppWorkspaceHandle {
   createAppBillingPortalSession(input: { sessionId: string; organizationId: string }): Promise<{ url: string }>;
   cancelAppScheduledRenewal(input: { sessionId: string; organizationId: string }): Promise<FoundryAppSnapshot>;
   resumeAppSubscription(input: { sessionId: string; organizationId: string }): Promise<FoundryAppSnapshot>;
-  recordAppSeatUsage(input: { sessionId: string; workspaceId: string }): Promise<FoundryAppSnapshot>;
+  recordAppSeatUsage(input: { sessionId: string; organizationId: string }): Promise<FoundryAppSnapshot>;
 }
 
 interface TaskHandle {
@@ -162,12 +157,12 @@ interface TaskSandboxHandle {
   rawSendSessionMethod(sessionId: string, method: string, params: Record<string, unknown>): Promise<unknown>;
   destroySession(sessionId: string): Promise<void>;
   sandboxAgentConnection(): Promise<{ endpoint: string; token?: string }>;
-  providerState(): Promise<{ providerId: ProviderId; sandboxId: string; state: string; at: number }>;
+  providerState(): Promise<{ sandboxProviderId: SandboxProviderId; sandboxId: string; state: string; at: number }>;
 }
 
 interface RivetClient {
-  workspace: {
-    getOrCreate(key?: string | string[], opts?: { createWithInput?: unknown }): WorkspaceHandle;
+  organization: {
+    getOrCreate(key?: string | string[], opts?: { createWithInput?: unknown }): OrganizationHandle;
   };
   task: {
     get(key?: string | string[]): TaskHandle;
@@ -182,15 +177,15 @@ interface RivetClient {
 
 export interface BackendClientOptions {
   endpoint: string;
-  defaultWorkspaceId?: string;
+  defaultOrganizationId?: string;
   mode?: "remote" | "mock";
 }
 
 export interface BackendClient {
   getAppSnapshot(): Promise<FoundryAppSnapshot>;
-  connectWorkspace(workspaceId: string): Promise<ActorConn>;
-  connectTask(workspaceId: string, repoId: string, taskId: string): Promise<ActorConn>;
-  connectSandbox(workspaceId: string, providerId: ProviderId, sandboxId: string): Promise<ActorConn>;
+  connectOrganization(organizationId: string): Promise<ActorConn>;
+  connectTask(organizationId: string, repoId: string, taskId: string): Promise<ActorConn>;
+  connectSandbox(organizationId: string, sandboxProviderId: SandboxProviderId, sandboxId: string): Promise<ActorConn>;
   subscribeApp(listener: () => void): () => void;
   signInWithGithub(): Promise<void>;
   signOutApp(): Promise<FoundryAppSnapshot>;
@@ -204,109 +199,112 @@ export interface BackendClient {
   openAppBillingPortal(organizationId: string): Promise<void>;
   cancelAppScheduledRenewal(organizationId: string): Promise<FoundryAppSnapshot>;
   resumeAppSubscription(organizationId: string): Promise<FoundryAppSnapshot>;
-  recordAppSeatUsage(workspaceId: string): Promise<FoundryAppSnapshot>;
-  addRepo(workspaceId: string, remoteUrl: string): Promise<RepoRecord>;
-  listRepos(workspaceId: string): Promise<RepoRecord[]>;
+  recordAppSeatUsage(organizationId: string): Promise<FoundryAppSnapshot>;
+  listRepos(organizationId: string): Promise<RepoRecord[]>;
   createTask(input: CreateTaskInput): Promise<TaskRecord>;
-  listTasks(workspaceId: string, repoId?: string): Promise<TaskSummary[]>;
-  getRepoOverview(workspaceId: string, repoId: string): Promise<RepoOverview>;
-  runRepoStackAction(input: RepoStackActionInput): Promise<RepoStackActionResult>;
-  getTask(workspaceId: string, taskId: string): Promise<TaskRecord>;
+  listTasks(organizationId: string, repoId?: string): Promise<TaskSummary[]>;
+  getRepoOverview(organizationId: string, repoId: string): Promise<RepoOverview>;
+  getTask(organizationId: string, taskId: string): Promise<TaskRecord>;
   listHistory(input: HistoryQueryInput): Promise<HistoryEvent[]>;
-  switchTask(workspaceId: string, taskId: string): Promise<SwitchResult>;
-  attachTask(workspaceId: string, taskId: string): Promise<{ target: string; sessionId: string | null }>;
-  runAction(workspaceId: string, taskId: string, action: TaskAction): Promise<void>;
+  switchTask(organizationId: string, taskId: string): Promise<SwitchResult>;
+  attachTask(organizationId: string, taskId: string): Promise<{ target: string; sessionId: string | null }>;
+  runAction(organizationId: string, taskId: string, action: TaskAction): Promise<void>;
   createSandboxSession(input: {
-    workspaceId: string;
-    providerId: ProviderId;
+    organizationId: string;
+    sandboxProviderId: SandboxProviderId;
     sandboxId: string;
     prompt: string;
     cwd?: string;
     agent?: AgentType | "opencode";
   }): Promise<{ id: string; status: "running" | "idle" | "error" }>;
   listSandboxSessions(
-    workspaceId: string,
-    providerId: ProviderId,
+    organizationId: string,
+    sandboxProviderId: SandboxProviderId,
     sandboxId: string,
     input?: { cursor?: string; limit?: number },
   ): Promise<{ items: SandboxSessionRecord[]; nextCursor?: string }>;
   listSandboxSessionEvents(
-    workspaceId: string,
-    providerId: ProviderId,
+    organizationId: string,
+    sandboxProviderId: SandboxProviderId,
     sandboxId: string,
     input: { sessionId: string; cursor?: string; limit?: number },
   ): Promise<{ items: SandboxSessionEventRecord[]; nextCursor?: string }>;
-  createSandboxProcess(input: { workspaceId: string; providerId: ProviderId; sandboxId: string; request: ProcessCreateRequest }): Promise<SandboxProcessRecord>;
-  listSandboxProcesses(workspaceId: string, providerId: ProviderId, sandboxId: string): Promise<{ processes: SandboxProcessRecord[] }>;
+  createSandboxProcess(input: {
+    organizationId: string;
+    sandboxProviderId: SandboxProviderId;
+    sandboxId: string;
+    request: ProcessCreateRequest;
+  }): Promise<SandboxProcessRecord>;
+  listSandboxProcesses(organizationId: string, sandboxProviderId: SandboxProviderId, sandboxId: string): Promise<{ processes: SandboxProcessRecord[] }>;
   getSandboxProcessLogs(
-    workspaceId: string,
-    providerId: ProviderId,
+    organizationId: string,
+    sandboxProviderId: SandboxProviderId,
     sandboxId: string,
     processId: string,
     query?: ProcessLogFollowQuery,
   ): Promise<ProcessLogsResponse>;
   stopSandboxProcess(
-    workspaceId: string,
-    providerId: ProviderId,
+    organizationId: string,
+    sandboxProviderId: SandboxProviderId,
     sandboxId: string,
     processId: string,
     query?: ProcessSignalQuery,
   ): Promise<SandboxProcessRecord>;
   killSandboxProcess(
-    workspaceId: string,
-    providerId: ProviderId,
+    organizationId: string,
+    sandboxProviderId: SandboxProviderId,
     sandboxId: string,
     processId: string,
     query?: ProcessSignalQuery,
   ): Promise<SandboxProcessRecord>;
-  deleteSandboxProcess(workspaceId: string, providerId: ProviderId, sandboxId: string, processId: string): Promise<void>;
-  subscribeSandboxProcesses(workspaceId: string, providerId: ProviderId, sandboxId: string, listener: () => void): () => void;
+  deleteSandboxProcess(organizationId: string, sandboxProviderId: SandboxProviderId, sandboxId: string, processId: string): Promise<void>;
+  subscribeSandboxProcesses(organizationId: string, sandboxProviderId: SandboxProviderId, sandboxId: string, listener: () => void): () => void;
   sendSandboxPrompt(input: {
-    workspaceId: string;
-    providerId: ProviderId;
+    organizationId: string;
+    sandboxProviderId: SandboxProviderId;
     sandboxId: string;
     sessionId: string;
     prompt: string;
     notification?: boolean;
   }): Promise<void>;
   sandboxSessionStatus(
-    workspaceId: string,
-    providerId: ProviderId,
+    organizationId: string,
+    sandboxProviderId: SandboxProviderId,
     sandboxId: string,
     sessionId: string,
   ): Promise<{ id: string; status: "running" | "idle" | "error" }>;
   sandboxProviderState(
-    workspaceId: string,
-    providerId: ProviderId,
+    organizationId: string,
+    sandboxProviderId: SandboxProviderId,
     sandboxId: string,
-  ): Promise<{ providerId: ProviderId; sandboxId: string; state: string; at: number }>;
-  getSandboxAgentConnection(workspaceId: string, providerId: ProviderId, sandboxId: string): Promise<{ endpoint: string; token?: string }>;
-  getWorkspaceSummary(workspaceId: string): Promise<WorkspaceSummarySnapshot>;
-  getTaskDetail(workspaceId: string, repoId: string, taskId: string): Promise<WorkbenchTaskDetail>;
-  getSessionDetail(workspaceId: string, repoId: string, taskId: string, sessionId: string): Promise<WorkbenchSessionDetail>;
-  getWorkbench(workspaceId: string): Promise<TaskWorkbenchSnapshot>;
-  subscribeWorkbench(workspaceId: string, listener: () => void): () => void;
-  createWorkbenchTask(workspaceId: string, input: TaskWorkbenchCreateTaskInput): Promise<TaskWorkbenchCreateTaskResponse>;
-  markWorkbenchUnread(workspaceId: string, input: TaskWorkbenchSelectInput): Promise<void>;
-  renameWorkbenchTask(workspaceId: string, input: TaskWorkbenchRenameInput): Promise<void>;
-  renameWorkbenchBranch(workspaceId: string, input: TaskWorkbenchRenameInput): Promise<void>;
-  createWorkbenchSession(workspaceId: string, input: TaskWorkbenchSelectInput & { model?: string }): Promise<{ tabId: string }>;
-  renameWorkbenchSession(workspaceId: string, input: TaskWorkbenchRenameSessionInput): Promise<void>;
-  setWorkbenchSessionUnread(workspaceId: string, input: TaskWorkbenchSetSessionUnreadInput): Promise<void>;
-  updateWorkbenchDraft(workspaceId: string, input: TaskWorkbenchUpdateDraftInput): Promise<void>;
-  changeWorkbenchModel(workspaceId: string, input: TaskWorkbenchChangeModelInput): Promise<void>;
-  sendWorkbenchMessage(workspaceId: string, input: TaskWorkbenchSendMessageInput): Promise<void>;
-  stopWorkbenchSession(workspaceId: string, input: TaskWorkbenchTabInput): Promise<void>;
-  closeWorkbenchSession(workspaceId: string, input: TaskWorkbenchTabInput): Promise<void>;
-  publishWorkbenchPr(workspaceId: string, input: TaskWorkbenchSelectInput): Promise<void>;
-  revertWorkbenchFile(workspaceId: string, input: TaskWorkbenchDiffInput): Promise<void>;
-  reloadGithubOrganization(workspaceId: string): Promise<void>;
-  reloadGithubPullRequests(workspaceId: string): Promise<void>;
-  reloadGithubRepository(workspaceId: string, repoId: string): Promise<void>;
-  reloadGithubPullRequest(workspaceId: string, repoId: string, prNumber: number): Promise<void>;
+  ): Promise<{ sandboxProviderId: SandboxProviderId; sandboxId: string; state: string; at: number }>;
+  getSandboxAgentConnection(organizationId: string, sandboxProviderId: SandboxProviderId, sandboxId: string): Promise<{ endpoint: string; token?: string }>;
+  getOrganizationSummary(organizationId: string): Promise<OrganizationSummarySnapshot>;
+  getTaskDetail(organizationId: string, repoId: string, taskId: string): Promise<WorkbenchTaskDetail>;
+  getSessionDetail(organizationId: string, repoId: string, taskId: string, sessionId: string): Promise<WorkbenchSessionDetail>;
+  getWorkbench(organizationId: string): Promise<TaskWorkbenchSnapshot>;
+  subscribeWorkbench(organizationId: string, listener: () => void): () => void;
+  createWorkbenchTask(organizationId: string, input: TaskWorkbenchCreateTaskInput): Promise<TaskWorkbenchCreateTaskResponse>;
+  markWorkbenchUnread(organizationId: string, input: TaskWorkbenchSelectInput): Promise<void>;
+  renameWorkbenchTask(organizationId: string, input: TaskWorkbenchRenameInput): Promise<void>;
+  renameWorkbenchBranch(organizationId: string, input: TaskWorkbenchRenameInput): Promise<void>;
+  createWorkbenchSession(organizationId: string, input: TaskWorkbenchSelectInput & { model?: string }): Promise<{ sessionId: string }>;
+  renameWorkbenchSession(organizationId: string, input: TaskWorkbenchRenameSessionInput): Promise<void>;
+  setWorkbenchSessionUnread(organizationId: string, input: TaskWorkbenchSetSessionUnreadInput): Promise<void>;
+  updateWorkbenchDraft(organizationId: string, input: TaskWorkbenchUpdateDraftInput): Promise<void>;
+  changeWorkbenchModel(organizationId: string, input: TaskWorkbenchChangeModelInput): Promise<void>;
+  sendWorkbenchMessage(organizationId: string, input: TaskWorkbenchSendMessageInput): Promise<void>;
+  stopWorkbenchSession(organizationId: string, input: TaskWorkbenchSessionInput): Promise<void>;
+  closeWorkbenchSession(organizationId: string, input: TaskWorkbenchSessionInput): Promise<void>;
+  publishWorkbenchPr(organizationId: string, input: TaskWorkbenchSelectInput): Promise<void>;
+  revertWorkbenchFile(organizationId: string, input: TaskWorkbenchDiffInput): Promise<void>;
+  reloadGithubOrganization(organizationId: string): Promise<void>;
+  reloadGithubPullRequests(organizationId: string): Promise<void>;
+  reloadGithubRepository(organizationId: string, repoId: string): Promise<void>;
+  reloadGithubPullRequest(organizationId: string, repoId: string, prNumber: number): Promise<void>;
   health(): Promise<{ ok: true }>;
-  useWorkspace(workspaceId: string): Promise<{ workspaceId: string }>;
-  starSandboxAgentRepo(workspaceId: string): Promise<StarSandboxAgentRepoResult>;
+  useOrganization(organizationId: string): Promise<{ organizationId: string }>;
+  starSandboxAgentRepo(organizationId: string): Promise<StarSandboxAgentRepoResult>;
 }
 
 export function rivetEndpoint(config: AppConfig): string {
@@ -316,8 +314,47 @@ export function rivetEndpoint(config: AppConfig): string {
 export function createBackendClientFromConfig(config: AppConfig): BackendClient {
   return createBackendClient({
     endpoint: rivetEndpoint(config),
-    defaultWorkspaceId: config.workspace.default,
+    defaultOrganizationId: config.organization.default,
   });
+}
+
+export interface BackendHealthCheckOptions {
+  endpoint: string;
+  timeoutMs?: number;
+}
+
+export interface BackendMetadata {
+  clientEndpoint: string;
+  appEndpoint: string;
+  rivetEndpoint: string;
+}
+
+export async function checkBackendHealth(options: BackendHealthCheckOptions): Promise<boolean> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 1_500);
+
+  try {
+    const response = await fetch(normalizeLegacyBackendEndpoint(options.endpoint), {
+      method: "GET",
+      signal: controller.signal,
+    });
+    return response.status < 500;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function readBackendMetadata(options: BackendHealthCheckOptions): Promise<BackendMetadata> {
+  const endpoints = deriveBackendEndpoints(options.endpoint);
+  const clientEndpoint = endpoints.rivetEndpoint.replace(/\/v1\/rivet\/?$/, "");
+
+  return {
+    clientEndpoint,
+    appEndpoint: endpoints.appEndpoint,
+    rivetEndpoint: endpoints.rivetEndpoint,
+  };
 }
 
 function stripTrailingSlash(value: string): string {
@@ -366,7 +403,7 @@ function signedOutAppSnapshot(): FoundryAppSnapshot {
 
 export function createBackendClient(options: BackendClientOptions): BackendClient {
   if (options.mode === "mock") {
-    return createMockBackendClient(options.defaultWorkspaceId);
+    return createMockBackendClient(options.defaultOrganizationId);
   }
 
   const endpoints = deriveBackendEndpoints(options.endpoint);
@@ -424,20 +461,20 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     return typeof sessionId === "string" && sessionId.length > 0 ? sessionId : null;
   };
 
-  const workspace = async (workspaceId: string): Promise<WorkspaceHandle> =>
-    client.workspace.getOrCreate(workspaceKey(workspaceId), {
-      createWithInput: workspaceId,
+  const organization = async (organizationId: string): Promise<OrganizationHandle> =>
+    client.organization.getOrCreate(organizationKey(organizationId), {
+      createWithInput: organizationId,
     });
 
-  const appWorkspace = async (): Promise<AppWorkspaceHandle> =>
-    client.workspace.getOrCreate(workspaceKey("app"), {
+  const appOrganization = async (): Promise<AppOrganizationHandle> =>
+    client.organization.getOrCreate(organizationKey("app"), {
       createWithInput: "app",
-    }) as unknown as AppWorkspaceHandle;
+    }) as unknown as AppOrganizationHandle;
 
-  const task = async (workspaceId: string, repoId: string, taskId: string): Promise<TaskHandle> => client.task.get(taskKey(workspaceId, repoId, taskId));
+  const task = async (organizationId: string, repoId: string, taskId: string): Promise<TaskHandle> => client.task.get(taskKey(organizationId, repoId, taskId));
 
-  const sandboxByKey = async (workspaceId: string, _providerId: ProviderId, sandboxId: string): Promise<TaskSandboxHandle> => {
-    return (client as any).taskSandbox.get(taskSandboxKey(workspaceId, sandboxId));
+  const sandboxByKey = async (organizationId: string, _providerId: SandboxProviderId, sandboxId: string): Promise<TaskSandboxHandle> => {
+    return (client as any).taskSandbox.get(taskSandboxKey(organizationId, sandboxId));
   };
 
   function isActorNotFoundError(error: unknown): boolean {
@@ -445,21 +482,25 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     return message.includes("Actor not found");
   }
 
-  const sandboxByActorIdFromTask = async (workspaceId: string, providerId: ProviderId, sandboxId: string): Promise<TaskSandboxHandle | null> => {
-    const ws = await workspace(workspaceId);
-    const rows = await ws.listTasks({ workspaceId });
+  const sandboxByActorIdFromTask = async (
+    organizationId: string,
+    sandboxProviderId: SandboxProviderId,
+    sandboxId: string,
+  ): Promise<TaskSandboxHandle | null> => {
+    const ws = await organization(organizationId);
+    const rows = await ws.listTasks({ organizationId });
     const candidates = [...rows].sort((a, b) => b.updatedAt - a.updatedAt);
 
     for (const row of candidates) {
       try {
-        const detail = await ws.getTask({ workspaceId, taskId: row.taskId });
-        if (detail.providerId !== providerId) {
+        const detail = await ws.getTask({ organizationId, taskId: row.taskId });
+        if (detail.sandboxProviderId !== sandboxProviderId) {
           continue;
         }
         const sandbox = detail.sandboxes.find(
           (sb) =>
             sb.sandboxId === sandboxId &&
-            sb.providerId === providerId &&
+            sb.sandboxProviderId === sandboxProviderId &&
             typeof (sb as any).sandboxActorId === "string" &&
             (sb as any).sandboxActorId.length > 0,
         ) as { sandboxActorId?: string } | undefined;
@@ -479,19 +520,19 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
   };
 
   const withSandboxHandle = async <T>(
-    workspaceId: string,
-    providerId: ProviderId,
+    organizationId: string,
+    sandboxProviderId: SandboxProviderId,
     sandboxId: string,
     run: (handle: TaskSandboxHandle) => Promise<T>,
   ): Promise<T> => {
-    const handle = await sandboxByKey(workspaceId, providerId, sandboxId);
+    const handle = await sandboxByKey(organizationId, sandboxProviderId, sandboxId);
     try {
       return await run(handle);
     } catch (error) {
       if (!isActorNotFoundError(error)) {
         throw error;
       }
-      const fallback = await sandboxByActorIdFromTask(workspaceId, providerId, sandboxId);
+      const fallback = await sandboxByActorIdFromTask(organizationId, sandboxProviderId, sandboxId);
       if (!fallback) {
         throw error;
       }
@@ -499,22 +540,22 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     }
   };
 
-  const connectWorkspace = async (workspaceId: string): Promise<ActorConn> => {
-    return (await workspace(workspaceId)).connect() as ActorConn;
+  const connectOrganization = async (organizationId: string): Promise<ActorConn> => {
+    return (await organization(organizationId)).connect() as ActorConn;
   };
 
-  const connectTask = async (workspaceId: string, repoId: string, taskIdValue: string): Promise<ActorConn> => {
-    return (await task(workspaceId, repoId, taskIdValue)).connect() as ActorConn;
+  const connectTask = async (organizationId: string, repoId: string, taskIdValue: string): Promise<ActorConn> => {
+    return (await task(organizationId, repoId, taskIdValue)).connect() as ActorConn;
   };
 
-  const connectSandbox = async (workspaceId: string, providerId: ProviderId, sandboxId: string): Promise<ActorConn> => {
+  const connectSandbox = async (organizationId: string, sandboxProviderId: SandboxProviderId, sandboxId: string): Promise<ActorConn> => {
     try {
-      return (await sandboxByKey(workspaceId, providerId, sandboxId)).connect() as ActorConn;
+      return (await sandboxByKey(organizationId, sandboxProviderId, sandboxId)).connect() as ActorConn;
     } catch (error) {
       if (!isActorNotFoundError(error)) {
         throw error;
       }
-      const fallback = await sandboxByActorIdFromTask(workspaceId, providerId, sandboxId);
+      const fallback = await sandboxByActorIdFromTask(organizationId, sandboxProviderId, sandboxId);
       if (!fallback) {
         throw error;
       }
@@ -522,14 +563,14 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     }
   };
 
-  const getWorkbenchCompat = async (workspaceId: string): Promise<TaskWorkbenchSnapshot> => {
-    const summary = await (await workspace(workspaceId)).getWorkspaceSummary({ workspaceId });
+  const getWorkbenchCompat = async (organizationId: string): Promise<TaskWorkbenchSnapshot> => {
+    const summary = await (await organization(organizationId)).getOrganizationSummary({ organizationId });
     const tasks = (
       await Promise.all(
         summary.taskSummaries.map(async (taskSummary) => {
           let detail;
           try {
-            detail = await (await task(workspaceId, taskSummary.repoId, taskSummary.id)).getTaskDetail();
+            detail = await (await task(organizationId, taskSummary.repoId, taskSummary.id)).getTaskDetail();
           } catch (error) {
             if (isActorNotFoundError(error)) {
               return null;
@@ -539,7 +580,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
           const sessionDetails = await Promise.all(
             detail.sessionsSummary.map(async (session) => {
               try {
-                const full = await (await task(workspaceId, detail.repoId, detail.id)).getSessionDetail({ sessionId: session.id });
+                const full = await (await task(organizationId, detail.repoId, detail.id)).getSessionDetail({ sessionId: session.id });
                 return [session.id, full] as const;
               } catch (error) {
                 if (isActorNotFoundError(error)) {
@@ -559,7 +600,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
             updatedAtMs: detail.updatedAtMs,
             branch: detail.branch,
             pullRequest: detail.pullRequest,
-            tabs: detail.sessionsSummary.map((session) => {
+            sessions: detail.sessionsSummary.map((session) => {
               const full = sessionDetailsById.get(session.id);
               return {
                 id: session.id,
@@ -584,7 +625,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       )
     ).filter((task): task is TaskWorkbenchSnapshot["tasks"][number] => task !== null);
 
-    const projects = summary.repos
+    const repositories = summary.repos
       .map((repo) => ({
         id: repo.id,
         label: repo.label,
@@ -594,31 +635,31 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       .filter((repo) => repo.tasks.length > 0);
 
     return {
-      workspaceId,
+      organizationId,
       repos: summary.repos.map((repo) => ({ id: repo.id, label: repo.label })),
-      projects,
+      repositories,
       tasks: tasks.sort((left, right) => right.updatedAtMs - left.updatedAtMs),
     };
   };
 
-  const subscribeWorkbench = (workspaceId: string, listener: () => void): (() => void) => {
-    let entry = workbenchSubscriptions.get(workspaceId);
+  const subscribeWorkbench = (organizationId: string, listener: () => void): (() => void) => {
+    let entry = workbenchSubscriptions.get(organizationId);
     if (!entry) {
       entry = {
         listeners: new Set(),
         disposeConnPromise: null,
       };
-      workbenchSubscriptions.set(workspaceId, entry);
+      workbenchSubscriptions.set(organizationId, entry);
     }
 
     entry.listeners.add(listener);
 
     if (!entry.disposeConnPromise) {
       entry.disposeConnPromise = (async () => {
-        const handle = await workspace(workspaceId);
+        const handle = await organization(organizationId);
         const conn = (handle as any).connect();
         const unsubscribeEvent = conn.on("workbenchUpdated", () => {
-          const current = workbenchSubscriptions.get(workspaceId);
+          const current = workbenchSubscriptions.get(organizationId);
           if (!current) {
             return;
           }
@@ -636,7 +677,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     }
 
     return () => {
-      const current = workbenchSubscriptions.get(workspaceId);
+      const current = workbenchSubscriptions.get(organizationId);
       if (!current) {
         return;
       }
@@ -645,17 +686,18 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
         return;
       }
 
-      workbenchSubscriptions.delete(workspaceId);
+      workbenchSubscriptions.delete(organizationId);
       void current.disposeConnPromise?.then(async (disposeConn) => {
         await disposeConn?.();
       });
     };
   };
 
-  const sandboxProcessSubscriptionKey = (workspaceId: string, providerId: ProviderId, sandboxId: string): string => `${workspaceId}:${providerId}:${sandboxId}`;
+  const sandboxProcessSubscriptionKey = (organizationId: string, sandboxProviderId: SandboxProviderId, sandboxId: string): string =>
+    `${organizationId}:${sandboxProviderId}:${sandboxId}`;
 
-  const subscribeSandboxProcesses = (workspaceId: string, providerId: ProviderId, sandboxId: string, listener: () => void): (() => void) => {
-    const key = sandboxProcessSubscriptionKey(workspaceId, providerId, sandboxId);
+  const subscribeSandboxProcesses = (organizationId: string, sandboxProviderId: SandboxProviderId, sandboxId: string, listener: () => void): (() => void) => {
+    const key = sandboxProcessSubscriptionKey(organizationId, sandboxProviderId, sandboxId);
     let entry = sandboxProcessSubscriptions.get(key);
     if (!entry) {
       entry = {
@@ -669,7 +711,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 
     if (!entry.disposeConnPromise) {
       entry.disposeConnPromise = (async () => {
-        const conn = await connectSandbox(workspaceId, providerId, sandboxId);
+        const conn = await connectSandbox(organizationId, sandboxProviderId, sandboxId);
         const unsubscribeEvent = conn.on("processesUpdated", () => {
           const current = sandboxProcessSubscriptions.get(key);
           if (!current) {
@@ -710,7 +752,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 
     if (!appSubscriptions.disposeConnPromise) {
       appSubscriptions.disposeConnPromise = (async () => {
-        const handle = await appWorkspace();
+        const handle = await appOrganization();
         const conn = (handle as any).connect();
         const unsubscribeEvent = conn.on("appUpdated", () => {
           for (const currentListener of [...appSubscriptions.listeners]) {
@@ -745,19 +787,19 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       if (!sessionId) {
         return signedOutAppSnapshot();
       }
-      return await (await appWorkspace()).getAppSnapshot({ sessionId });
+      return await (await appOrganization()).getAppSnapshot({ sessionId });
     },
 
-    async connectWorkspace(workspaceId: string): Promise<ActorConn> {
-      return await connectWorkspace(workspaceId);
+    async connectOrganization(organizationId: string): Promise<ActorConn> {
+      return await connectOrganization(organizationId);
     },
 
-    async connectTask(workspaceId: string, repoId: string, taskIdValue: string): Promise<ActorConn> {
-      return await connectTask(workspaceId, repoId, taskIdValue);
+    async connectTask(organizationId: string, repoId: string, taskIdValue: string): Promise<ActorConn> {
+      return await connectTask(organizationId, repoId, taskIdValue);
     },
 
-    async connectSandbox(workspaceId: string, providerId: ProviderId, sandboxId: string): Promise<ActorConn> {
-      return await connectSandbox(workspaceId, providerId, sandboxId);
+    async connectSandbox(organizationId: string, sandboxProviderId: SandboxProviderId, sandboxId: string): Promise<ActorConn> {
+      return await connectSandbox(organizationId, sandboxProviderId, sandboxId);
     },
 
     subscribeApp(listener: () => void): () => void {
@@ -788,7 +830,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       if (!sessionId) {
         throw new Error("No active auth session");
       }
-      return await (await appWorkspace()).skipAppStarterRepo({ sessionId });
+      return await (await appOrganization()).skipAppStarterRepo({ sessionId });
     },
 
     async starAppStarterRepo(organizationId: string): Promise<FoundryAppSnapshot> {
@@ -796,7 +838,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       if (!sessionId) {
         throw new Error("No active auth session");
       }
-      return await (await appWorkspace()).starAppStarterRepo({ sessionId, organizationId });
+      return await (await appOrganization()).starAppStarterRepo({ sessionId, organizationId });
     },
 
     async selectAppOrganization(organizationId: string): Promise<FoundryAppSnapshot> {
@@ -804,7 +846,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       if (!sessionId) {
         throw new Error("No active auth session");
       }
-      return await (await appWorkspace()).selectAppOrganization({ sessionId, organizationId });
+      return await (await appOrganization()).selectAppOrganization({ sessionId, organizationId });
     },
 
     async updateAppOrganizationProfile(input: UpdateFoundryOrganizationProfileInput): Promise<FoundryAppSnapshot> {
@@ -812,7 +854,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       if (!sessionId) {
         throw new Error("No active auth session");
       }
-      return await (await appWorkspace()).updateAppOrganizationProfile({
+      return await (await appOrganization()).updateAppOrganizationProfile({
         sessionId,
         organizationId: input.organizationId,
         displayName: input.displayName,
@@ -826,7 +868,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       if (!sessionId) {
         throw new Error("No active auth session");
       }
-      return await (await appWorkspace()).triggerAppRepoImport({ sessionId, organizationId });
+      return await (await appOrganization()).triggerAppRepoImport({ sessionId, organizationId });
     },
 
     async reconnectAppGithub(organizationId: string): Promise<void> {
@@ -834,7 +876,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       if (!sessionId) {
         throw new Error("No active auth session");
       }
-      const response = await (await appWorkspace()).beginAppGithubInstall({ sessionId, organizationId });
+      const response = await (await appOrganization()).beginAppGithubInstall({ sessionId, organizationId });
       if (typeof window !== "undefined") {
         window.location.assign(response.url);
       }
@@ -845,7 +887,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       if (!sessionId) {
         throw new Error("No active auth session");
       }
-      const response = await (await appWorkspace()).createAppCheckoutSession({ sessionId, organizationId, planId });
+      const response = await (await appOrganization()).createAppCheckoutSession({ sessionId, organizationId, planId });
       if (typeof window !== "undefined") {
         window.location.assign(response.url);
       }
@@ -856,7 +898,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       if (!sessionId) {
         throw new Error("No active auth session");
       }
-      const response = await (await appWorkspace()).createAppBillingPortalSession({ sessionId, organizationId });
+      const response = await (await appOrganization()).createAppBillingPortalSession({ sessionId, organizationId });
       if (typeof window !== "undefined") {
         window.location.assign(response.url);
       }
@@ -867,7 +909,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       if (!sessionId) {
         throw new Error("No active auth session");
       }
-      return await (await appWorkspace()).cancelAppScheduledRenewal({ sessionId, organizationId });
+      return await (await appOrganization()).cancelAppScheduledRenewal({ sessionId, organizationId });
     },
 
     async resumeAppSubscription(organizationId: string): Promise<FoundryAppSnapshot> {
@@ -875,117 +917,109 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       if (!sessionId) {
         throw new Error("No active auth session");
       }
-      return await (await appWorkspace()).resumeAppSubscription({ sessionId, organizationId });
+      return await (await appOrganization()).resumeAppSubscription({ sessionId, organizationId });
     },
 
-    async recordAppSeatUsage(workspaceId: string): Promise<FoundryAppSnapshot> {
+    async recordAppSeatUsage(organizationId: string): Promise<FoundryAppSnapshot> {
       const sessionId = await getSessionId();
       if (!sessionId) {
         throw new Error("No active auth session");
       }
-      return await (await appWorkspace()).recordAppSeatUsage({ sessionId, workspaceId });
+      return await (await appOrganization()).recordAppSeatUsage({ sessionId, organizationId });
     },
 
-    async addRepo(workspaceId: string, remoteUrl: string): Promise<RepoRecord> {
-      return (await workspace(workspaceId)).addRepo({ workspaceId, remoteUrl });
-    },
-
-    async listRepos(workspaceId: string): Promise<RepoRecord[]> {
-      return (await workspace(workspaceId)).listRepos({ workspaceId });
+    async listRepos(organizationId: string): Promise<RepoRecord[]> {
+      return (await organization(organizationId)).listRepos({ organizationId });
     },
 
     async createTask(input: CreateTaskInput): Promise<TaskRecord> {
-      return (await workspace(input.workspaceId)).createTask(input);
+      return (await organization(input.organizationId)).createTask(input);
     },
 
-    async starSandboxAgentRepo(workspaceId: string): Promise<StarSandboxAgentRepoResult> {
-      return (await workspace(workspaceId)).starSandboxAgentRepo({ workspaceId });
+    async starSandboxAgentRepo(organizationId: string): Promise<StarSandboxAgentRepoResult> {
+      return (await organization(organizationId)).starSandboxAgentRepo({ organizationId });
     },
 
-    async listTasks(workspaceId: string, repoId?: string): Promise<TaskSummary[]> {
-      return (await workspace(workspaceId)).listTasks({ workspaceId, repoId });
+    async listTasks(organizationId: string, repoId?: string): Promise<TaskSummary[]> {
+      return (await organization(organizationId)).listTasks({ organizationId, repoId });
     },
 
-    async getRepoOverview(workspaceId: string, repoId: string): Promise<RepoOverview> {
-      return (await workspace(workspaceId)).getRepoOverview({ workspaceId, repoId });
+    async getRepoOverview(organizationId: string, repoId: string): Promise<RepoOverview> {
+      return (await organization(organizationId)).getRepoOverview({ organizationId, repoId });
     },
 
-    async runRepoStackAction(input: RepoStackActionInput): Promise<RepoStackActionResult> {
-      return (await workspace(input.workspaceId)).runRepoStackAction(input);
-    },
-
-    async getTask(workspaceId: string, taskId: string): Promise<TaskRecord> {
-      return (await workspace(workspaceId)).getTask({
-        workspaceId,
+    async getTask(organizationId: string, taskId: string): Promise<TaskRecord> {
+      return (await organization(organizationId)).getTask({
+        organizationId,
         taskId,
       });
     },
 
     async listHistory(input: HistoryQueryInput): Promise<HistoryEvent[]> {
-      return (await workspace(input.workspaceId)).history(input);
+      return (await organization(input.organizationId)).history(input);
     },
 
-    async switchTask(workspaceId: string, taskId: string): Promise<SwitchResult> {
-      return (await workspace(workspaceId)).switchTask(taskId);
+    async switchTask(organizationId: string, taskId: string): Promise<SwitchResult> {
+      return (await organization(organizationId)).switchTask(taskId);
     },
 
-    async attachTask(workspaceId: string, taskId: string): Promise<{ target: string; sessionId: string | null }> {
-      return (await workspace(workspaceId)).attachTask({
-        workspaceId,
+    async attachTask(organizationId: string, taskId: string): Promise<{ target: string; sessionId: string | null }> {
+      return (await organization(organizationId)).attachTask({
+        organizationId,
         taskId,
         reason: "cli.attach",
       });
     },
 
-    async runAction(workspaceId: string, taskId: string, action: TaskAction): Promise<void> {
+    async runAction(organizationId: string, taskId: string, action: TaskAction): Promise<void> {
       if (action === "push") {
-        await (await workspace(workspaceId)).pushTask({
-          workspaceId,
+        await (await organization(organizationId)).pushTask({
+          organizationId,
           taskId,
           reason: "cli.push",
         });
         return;
       }
       if (action === "sync") {
-        await (await workspace(workspaceId)).syncTask({
-          workspaceId,
+        await (await organization(organizationId)).syncTask({
+          organizationId,
           taskId,
           reason: "cli.sync",
         });
         return;
       }
       if (action === "merge") {
-        await (await workspace(workspaceId)).mergeTask({
-          workspaceId,
+        await (await organization(organizationId)).mergeTask({
+          organizationId,
           taskId,
           reason: "cli.merge",
         });
         return;
       }
       if (action === "archive") {
-        await (await workspace(workspaceId)).archiveTask({
-          workspaceId,
+        await (await organization(organizationId)).archiveTask({
+          organizationId,
           taskId,
           reason: "cli.archive",
         });
         return;
       }
-      await (await workspace(workspaceId)).killTask({
-        workspaceId,
+      await (await organization(organizationId)).killTask({
+        organizationId,
         taskId,
         reason: "cli.kill",
       });
     },
 
     async createSandboxSession(input: {
-      workspaceId: string;
-      providerId: ProviderId;
+      organizationId: string;
+      sandboxProviderId: SandboxProviderId;
       sandboxId: string;
       prompt: string;
       cwd?: string;
       agent?: AgentType | "opencode";
     }): Promise<{ id: string; status: "running" | "idle" | "error" }> {
-      const created = await withSandboxHandle(input.workspaceId, input.providerId, input.sandboxId, async (handle) =>
+      const created = await withSandboxHandle(input.organizationId, input.sandboxProviderId, input.sandboxId, async (handle) =>
         handle.createSession({
           agent: input.agent ?? "claude",
           sessionInit: {
@@ -994,7 +1028,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
         }),
       );
       if (input.prompt.trim().length > 0) {
-        await withSandboxHandle(input.workspaceId, input.providerId, input.sandboxId, async (handle) =>
+        await withSandboxHandle(input.organizationId, input.sandboxProviderId, input.sandboxId, async (handle) =>
           handle.rawSendSessionMethod(created.id, "session/prompt", {
             prompt: [{ type: "text", text: input.prompt }],
           }),
@@ -1007,83 +1041,87 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     },
 
     async listSandboxSessions(
-      workspaceId: string,
-      providerId: ProviderId,
+      organizationId: string,
+      sandboxProviderId: SandboxProviderId,
       sandboxId: string,
       input?: { cursor?: string; limit?: number },
     ): Promise<{ items: SandboxSessionRecord[]; nextCursor?: string }> {
-      return await withSandboxHandle(workspaceId, providerId, sandboxId, async (handle) => handle.listSessions(input ?? {}));
+      return await withSandboxHandle(organizationId, sandboxProviderId, sandboxId, async (handle) => handle.listSessions(input ?? {}));
     },
 
     async listSandboxSessionEvents(
-      workspaceId: string,
-      providerId: ProviderId,
+      organizationId: string,
+      sandboxProviderId: SandboxProviderId,
       sandboxId: string,
       input: { sessionId: string; cursor?: string; limit?: number },
     ): Promise<{ items: SandboxSessionEventRecord[]; nextCursor?: string }> {
-      return await withSandboxHandle(workspaceId, providerId, sandboxId, async (handle) => handle.getEvents(input));
+      return await withSandboxHandle(organizationId, sandboxProviderId, sandboxId, async (handle) => handle.getEvents(input));
     },
 
     async createSandboxProcess(input: {
-      workspaceId: string;
-      providerId: ProviderId;
+      organizationId: string;
+      sandboxProviderId: SandboxProviderId;
       sandboxId: string;
       request: ProcessCreateRequest;
     }): Promise<SandboxProcessRecord> {
-      return await withSandboxHandle(input.workspaceId, input.providerId, input.sandboxId, async (handle) => handle.createProcess(input.request));
+      return await withSandboxHandle(input.organizationId, input.sandboxProviderId, input.sandboxId, async (handle) => handle.createProcess(input.request));
     },
 
-    async listSandboxProcesses(workspaceId: string, providerId: ProviderId, sandboxId: string): Promise<{ processes: SandboxProcessRecord[] }> {
-      return await withSandboxHandle(workspaceId, providerId, sandboxId, async (handle) => handle.listProcesses());
+    async listSandboxProcesses(
+      organizationId: string,
+      sandboxProviderId: SandboxProviderId,
+      sandboxId: string,
+    ): Promise<{ processes: SandboxProcessRecord[] }> {
+      return await withSandboxHandle(organizationId, sandboxProviderId, sandboxId, async (handle) => handle.listProcesses());
     },
 
     async getSandboxProcessLogs(
-      workspaceId: string,
-      providerId: ProviderId,
+      organizationId: string,
+      sandboxProviderId: SandboxProviderId,
       sandboxId: string,
       processId: string,
       query?: ProcessLogFollowQuery,
     ): Promise<ProcessLogsResponse> {
-      return await withSandboxHandle(workspaceId, providerId, sandboxId, async (handle) => handle.getProcessLogs(processId, query));
+      return await withSandboxHandle(organizationId, sandboxProviderId, sandboxId, async (handle) => handle.getProcessLogs(processId, query));
     },
 
     async stopSandboxProcess(
-      workspaceId: string,
-      providerId: ProviderId,
+      organizationId: string,
+      sandboxProviderId: SandboxProviderId,
       sandboxId: string,
       processId: string,
       query?: ProcessSignalQuery,
     ): Promise<SandboxProcessRecord> {
-      return await withSandboxHandle(workspaceId, providerId, sandboxId, async (handle) => handle.stopProcess(processId, query));
+      return await withSandboxHandle(organizationId, sandboxProviderId, sandboxId, async (handle) => handle.stopProcess(processId, query));
     },
 
     async killSandboxProcess(
-      workspaceId: string,
-      providerId: ProviderId,
+      organizationId: string,
+      sandboxProviderId: SandboxProviderId,
       sandboxId: string,
       processId: string,
       query?: ProcessSignalQuery,
     ): Promise<SandboxProcessRecord> {
-      return await withSandboxHandle(workspaceId, providerId, sandboxId, async (handle) => handle.killProcess(processId, query));
+      return await withSandboxHandle(organizationId, sandboxProviderId, sandboxId, async (handle) => handle.killProcess(processId, query));
     },
 
-    async deleteSandboxProcess(workspaceId: string, providerId: ProviderId, sandboxId: string, processId: string): Promise<void> {
-      await withSandboxHandle(workspaceId, providerId, sandboxId, async (handle) => handle.deleteProcess(processId));
+    async deleteSandboxProcess(organizationId: string, sandboxProviderId: SandboxProviderId, sandboxId: string, processId: string): Promise<void> {
+      await withSandboxHandle(organizationId, sandboxProviderId, sandboxId, async (handle) => handle.deleteProcess(processId));
     },
 
-    subscribeSandboxProcesses(workspaceId: string, providerId: ProviderId, sandboxId: string, listener: () => void): () => void {
-      return subscribeSandboxProcesses(workspaceId, providerId, sandboxId, listener);
+    subscribeSandboxProcesses(organizationId: string, sandboxProviderId: SandboxProviderId, sandboxId: string, listener: () => void): () => void {
+      return subscribeSandboxProcesses(organizationId, sandboxProviderId, sandboxId, listener);
     },
 
     async sendSandboxPrompt(input: {
-      workspaceId: string;
-      providerId: ProviderId;
+      organizationId: string;
+      sandboxProviderId: SandboxProviderId;
       sandboxId: string;
       sessionId: string;
       prompt: string;
       notification?: boolean;
     }): Promise<void> {
-      await withSandboxHandle(input.workspaceId, input.providerId, input.sandboxId, async (handle) =>
+      await withSandboxHandle(input.organizationId, input.sandboxProviderId, input.sandboxId, async (handle) =>
         handle.rawSendSessionMethod(input.sessionId, "session/prompt", {
           prompt: [{ type: "text", text: input.prompt }],
         }),
@@ -1091,8 +1129,8 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     },
 
     async sandboxSessionStatus(
-      workspaceId: string,
-      providerId: ProviderId,
+      organizationId: string,
+      sandboxProviderId: SandboxProviderId,
       sandboxId: string,
       sessionId: string,
     ): Promise<{ id: string; status: "running" | "idle" | "error" }> {
@@ -1103,123 +1141,127 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     },
 
     async sandboxProviderState(
-      workspaceId: string,
-      providerId: ProviderId,
+      organizationId: string,
+      sandboxProviderId: SandboxProviderId,
       sandboxId: string,
-    ): Promise<{ providerId: ProviderId; sandboxId: string; state: string; at: number }> {
-      return await withSandboxHandle(workspaceId, providerId, sandboxId, async (handle) => handle.providerState());
+    ): Promise<{ sandboxProviderId: SandboxProviderId; sandboxId: string; state: string; at: number }> {
+      return await withSandboxHandle(organizationId, sandboxProviderId, sandboxId, async (handle) => handle.providerState());
     },
 
-    async getSandboxAgentConnection(workspaceId: string, providerId: ProviderId, sandboxId: string): Promise<{ endpoint: string; token?: string }> {
-      return await withSandboxHandle(workspaceId, providerId, sandboxId, async (handle) => handle.sandboxAgentConnection());
+    async getSandboxAgentConnection(
+      organizationId: string,
+      sandboxProviderId: SandboxProviderId,
+      sandboxId: string,
+    ): Promise<{ endpoint: string; token?: string }> {
+      return await withSandboxHandle(organizationId, sandboxProviderId, sandboxId, async (handle) => handle.sandboxAgentConnection());
     },
 
-    async getWorkspaceSummary(workspaceId: string): Promise<WorkspaceSummarySnapshot> {
-      return (await workspace(workspaceId)).getWorkspaceSummary({ workspaceId });
+    async getOrganizationSummary(organizationId: string): Promise<OrganizationSummarySnapshot> {
+      return (await organization(organizationId)).getOrganizationSummary({ organizationId });
     },
 
-    async getTaskDetail(workspaceId: string, repoId: string, taskIdValue: string): Promise<WorkbenchTaskDetail> {
-      return (await task(workspaceId, repoId, taskIdValue)).getTaskDetail();
+    async getTaskDetail(organizationId: string, repoId: string, taskIdValue: string): Promise<WorkbenchTaskDetail> {
+      return (await task(organizationId, repoId, taskIdValue)).getTaskDetail();
     },
 
-    async getSessionDetail(workspaceId: string, repoId: string, taskIdValue: string, sessionId: string): Promise<WorkbenchSessionDetail> {
-      return (await task(workspaceId, repoId, taskIdValue)).getSessionDetail({ sessionId });
+    async getSessionDetail(organizationId: string, repoId: string, taskIdValue: string, sessionId: string): Promise<WorkbenchSessionDetail> {
+      return (await task(organizationId, repoId, taskIdValue)).getSessionDetail({ sessionId });
     },
 
-    async getWorkbench(workspaceId: string): Promise<TaskWorkbenchSnapshot> {
-      return await getWorkbenchCompat(workspaceId);
+    async getWorkbench(organizationId: string): Promise<TaskWorkbenchSnapshot> {
+      return await getWorkbenchCompat(organizationId);
     },
 
-    subscribeWorkbench(workspaceId: string, listener: () => void): () => void {
-      return subscribeWorkbench(workspaceId, listener);
+    subscribeWorkbench(organizationId: string, listener: () => void): () => void {
+      return subscribeWorkbench(organizationId, listener);
     },
 
-    async createWorkbenchTask(workspaceId: string, input: TaskWorkbenchCreateTaskInput): Promise<TaskWorkbenchCreateTaskResponse> {
-      return (await workspace(workspaceId)).createWorkbenchTask(input);
+    async createWorkbenchTask(organizationId: string, input: TaskWorkbenchCreateTaskInput): Promise<TaskWorkbenchCreateTaskResponse> {
+      return (await organization(organizationId)).createWorkbenchTask(input);
     },
 
-    async markWorkbenchUnread(workspaceId: string, input: TaskWorkbenchSelectInput): Promise<void> {
-      await (await workspace(workspaceId)).markWorkbenchUnread(input);
+    async markWorkbenchUnread(organizationId: string, input: TaskWorkbenchSelectInput): Promise<void> {
+      await (await organization(organizationId)).markWorkbenchUnread(input);
     },
 
-    async renameWorkbenchTask(workspaceId: string, input: TaskWorkbenchRenameInput): Promise<void> {
-      await (await workspace(workspaceId)).renameWorkbenchTask(input);
+    async renameWorkbenchTask(organizationId: string, input: TaskWorkbenchRenameInput): Promise<void> {
+      await (await organization(organizationId)).renameWorkbenchTask(input);
     },
 
-    async renameWorkbenchBranch(workspaceId: string, input: TaskWorkbenchRenameInput): Promise<void> {
-      await (await workspace(workspaceId)).renameWorkbenchBranch(input);
+    async renameWorkbenchBranch(organizationId: string, input: TaskWorkbenchRenameInput): Promise<void> {
+      await (await organization(organizationId)).renameWorkbenchBranch(input);
     },
 
-    async createWorkbenchSession(workspaceId: string, input: TaskWorkbenchSelectInput & { model?: string }): Promise<{ tabId: string }> {
-      return await (await workspace(workspaceId)).createWorkbenchSession(input);
+    async createWorkbenchSession(organizationId: string, input: TaskWorkbenchSelectInput & { model?: string }): Promise<{ sessionId: string }> {
+      return await (await organization(organizationId)).createWorkbenchSession(input);
     },
 
-    async renameWorkbenchSession(workspaceId: string, input: TaskWorkbenchRenameSessionInput): Promise<void> {
-      await (await workspace(workspaceId)).renameWorkbenchSession(input);
+    async renameWorkbenchSession(organizationId: string, input: TaskWorkbenchRenameSessionInput): Promise<void> {
+      await (await organization(organizationId)).renameWorkbenchSession(input);
     },
 
-    async setWorkbenchSessionUnread(workspaceId: string, input: TaskWorkbenchSetSessionUnreadInput): Promise<void> {
-      await (await workspace(workspaceId)).setWorkbenchSessionUnread(input);
+    async setWorkbenchSessionUnread(organizationId: string, input: TaskWorkbenchSetSessionUnreadInput): Promise<void> {
+      await (await organization(organizationId)).setWorkbenchSessionUnread(input);
     },
 
-    async updateWorkbenchDraft(workspaceId: string, input: TaskWorkbenchUpdateDraftInput): Promise<void> {
-      await (await workspace(workspaceId)).updateWorkbenchDraft(input);
+    async updateWorkbenchDraft(organizationId: string, input: TaskWorkbenchUpdateDraftInput): Promise<void> {
+      await (await organization(organizationId)).updateWorkbenchDraft(input);
     },
 
-    async changeWorkbenchModel(workspaceId: string, input: TaskWorkbenchChangeModelInput): Promise<void> {
-      await (await workspace(workspaceId)).changeWorkbenchModel(input);
+    async changeWorkbenchModel(organizationId: string, input: TaskWorkbenchChangeModelInput): Promise<void> {
+      await (await organization(organizationId)).changeWorkbenchModel(input);
     },
 
-    async sendWorkbenchMessage(workspaceId: string, input: TaskWorkbenchSendMessageInput): Promise<void> {
-      await (await workspace(workspaceId)).sendWorkbenchMessage(input);
+    async sendWorkbenchMessage(organizationId: string, input: TaskWorkbenchSendMessageInput): Promise<void> {
+      await (await organization(organizationId)).sendWorkbenchMessage(input);
     },
 
-    async stopWorkbenchSession(workspaceId: string, input: TaskWorkbenchTabInput): Promise<void> {
-      await (await workspace(workspaceId)).stopWorkbenchSession(input);
+    async stopWorkbenchSession(organizationId: string, input: TaskWorkbenchSessionInput): Promise<void> {
+      await (await organization(organizationId)).stopWorkbenchSession(input);
     },
 
-    async closeWorkbenchSession(workspaceId: string, input: TaskWorkbenchTabInput): Promise<void> {
-      await (await workspace(workspaceId)).closeWorkbenchSession(input);
+    async closeWorkbenchSession(organizationId: string, input: TaskWorkbenchSessionInput): Promise<void> {
+      await (await organization(organizationId)).closeWorkbenchSession(input);
     },
 
-    async publishWorkbenchPr(workspaceId: string, input: TaskWorkbenchSelectInput): Promise<void> {
-      await (await workspace(workspaceId)).publishWorkbenchPr(input);
+    async publishWorkbenchPr(organizationId: string, input: TaskWorkbenchSelectInput): Promise<void> {
+      await (await organization(organizationId)).publishWorkbenchPr(input);
     },
 
-    async revertWorkbenchFile(workspaceId: string, input: TaskWorkbenchDiffInput): Promise<void> {
-      await (await workspace(workspaceId)).revertWorkbenchFile(input);
+    async revertWorkbenchFile(organizationId: string, input: TaskWorkbenchDiffInput): Promise<void> {
+      await (await organization(organizationId)).revertWorkbenchFile(input);
     },
 
-    async reloadGithubOrganization(workspaceId: string): Promise<void> {
-      await (await workspace(workspaceId)).reloadGithubOrganization();
+    async reloadGithubOrganization(organizationId: string): Promise<void> {
+      await (await organization(organizationId)).reloadGithubOrganization();
     },
 
-    async reloadGithubPullRequests(workspaceId: string): Promise<void> {
-      await (await workspace(workspaceId)).reloadGithubPullRequests();
+    async reloadGithubPullRequests(organizationId: string): Promise<void> {
+      await (await organization(organizationId)).reloadGithubPullRequests();
     },
 
-    async reloadGithubRepository(workspaceId: string, repoId: string): Promise<void> {
-      await (await workspace(workspaceId)).reloadGithubRepository({ repoId });
+    async reloadGithubRepository(organizationId: string, repoId: string): Promise<void> {
+      await (await organization(organizationId)).reloadGithubRepository({ repoId });
     },
 
-    async reloadGithubPullRequest(workspaceId: string, repoId: string, prNumber: number): Promise<void> {
-      await (await workspace(workspaceId)).reloadGithubPullRequest({ repoId, prNumber });
+    async reloadGithubPullRequest(organizationId: string, repoId: string, prNumber: number): Promise<void> {
+      await (await organization(organizationId)).reloadGithubPullRequest({ repoId, prNumber });
     },
 
     async health(): Promise<{ ok: true }> {
-      const workspaceId = options.defaultWorkspaceId;
-      if (!workspaceId) {
-        throw new Error("Backend client default workspace is required for health checks");
+      const organizationId = options.defaultOrganizationId;
+      if (!organizationId) {
+        throw new Error("Backend client default organization is required for health checks");
       }
 
-      await (await workspace(workspaceId)).useWorkspace({
-        workspaceId,
+      await (await organization(organizationId)).useOrganization({
+        organizationId,
       });
       return { ok: true };
     },
 
-    async useWorkspace(workspaceId: string): Promise<{ workspaceId: string }> {
-      return (await workspace(workspaceId)).useWorkspace({ workspaceId });
+    async useOrganization(organizationId: string): Promise<{ organizationId: string }> {
+      return (await organization(organizationId)).useOrganization({ organizationId });
     },
   };
 }

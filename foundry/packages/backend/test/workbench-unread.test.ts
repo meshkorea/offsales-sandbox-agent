@@ -59,8 +59,8 @@ describe("workbench model changes", () => {
 });
 
 describe("workbench send readiness", () => {
-  it("rejects unknown tabs", () => {
-    expect(() => requireSendableSessionMeta(null, "tab-1")).toThrow("Unknown workbench tab: tab-1");
+  it("rejects unknown sessions", () => {
+    expect(() => requireSendableSessionMeta(null, "session-1")).toThrow("Unknown workbench session: session-1");
   });
 
   it("rejects pending sessions", () => {
@@ -70,7 +70,7 @@ describe("workbench send readiness", () => {
           status: "pending_session_create",
           sandboxSessionId: null,
         },
-        "tab-2",
+        "session-2",
       ),
     ).toThrow("Session is not ready (status: pending_session_create). Wait for session provisioning to complete.");
   });
@@ -81,6 +81,6 @@ describe("workbench send readiness", () => {
       sandboxSessionId: "session-1",
     };
 
-    expect(requireSendableSessionMeta(meta, "tab-3")).toBe(meta);
+    expect(requireSendableSessionMeta(meta, "session-3")).toBe(meta);
   });
 });

@@ -8,7 +8,7 @@ Creating a workbench tab currently provisions the whole task if no active sandbo
 
 ## Current Code Context
 
-- Workspace workbench action entry point: `foundry/packages/backend/src/actors/workspace/actions.ts`
+- Organization workbench action entry point: `foundry/packages/backend/src/actors/organization/actions.ts`
 - Task workbench behavior: `foundry/packages/backend/src/actors/task/workbench.ts`
 - Task provision action: `foundry/packages/backend/src/actors/task/index.ts`
 - Sandbox session creation path: `foundry/packages/backend/src/actors/sandbox-instance/index.ts`
@@ -36,7 +36,7 @@ Creating a workbench tab currently provisions the whole task if no active sandbo
 
 ## Files Likely To Change
 
-- `foundry/packages/backend/src/actors/workspace/actions.ts`
+- `foundry/packages/backend/src/actors/organization/actions.ts`
 - `foundry/packages/backend/src/actors/task/workbench.ts`
 - `foundry/packages/backend/src/actors/task/index.ts`
 - `foundry/packages/backend/src/actors/task/db/schema.ts`

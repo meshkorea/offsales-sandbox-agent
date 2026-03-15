@@ -17,7 +17,7 @@ async function ensureTaskRuntimeCacheColumns(db: any): Promise<void> {
 
 export async function initBootstrapDbActivity(loopCtx: any, body: any): Promise<void> {
   const { config } = getActorRuntimeContext();
-  const providerId = body?.providerId ?? loopCtx.state.providerId ?? defaultSandboxProviderId(config);
+  const sandboxProviderId = body?.sandboxProviderId ?? loopCtx.state.sandboxProviderId ?? defaultSandboxProviderId(config);
   const now = Date.now();
 
   await ensureTaskRuntimeCacheColumns(loopCtx.db);
@@ -29,7 +29,7 @@ export async function initBootstrapDbActivity(loopCtx: any, body: any): Promise<
       branchName: loopCtx.state.branchName,
       title: loopCtx.state.title,
       task: loopCtx.state.task,
-      providerId,
+      sandboxProviderId,
       status: "init_bootstrap_db",
       agentType: loopCtx.state.agentType ?? config.default_agent,
       createdAt: now,
@@ -41,7 +41,7 @@ export async function initBootstrapDbActivity(loopCtx: any, body: any): Promise<
         branchName: loopCtx.state.branchName,
         title: loopCtx.state.title,
         task: loopCtx.state.task,
-        providerId,
+        sandboxProviderId,
         status: "init_bootstrap_db",
         agentType: loopCtx.state.agentType ?? config.default_agent,
         updatedAt: now,
@@ -99,7 +99,7 @@ export async function initEnqueueProvisionActivity(loopCtx: any, body: any): Pro
     });
   } catch (error) {
     logActorWarning("task.init", "background provision command failed", {
-      workspaceId: loopCtx.state.workspaceId,
+      organizationId: loopCtx.state.organizationId,
       repoId: loopCtx.state.repoId,
       taskId: loopCtx.state.taskId,
       error: resolveErrorMessage(error),
@@ -111,7 +111,7 @@ export async function initEnqueueProvisionActivity(loopCtx: any, body: any): Pro
 export async function initCompleteActivity(loopCtx: any, body: any): Promise<void> {
   const now = Date.now();
   const { config } = getActorRuntimeContext();
-  const providerId = body?.providerId ?? loopCtx.state.providerId ?? defaultSandboxProviderId(config);
+  const sandboxProviderId = body?.sandboxProviderId ?? loopCtx.state.sandboxProviderId ?? defaultSandboxProviderId(config);
 
   await setTaskState(loopCtx, "init_complete", "task initialized");
   await loopCtx.db
@@ -125,12 +125,12 @@ export async function initCompleteActivity(loopCtx: any, body: any): Promise<voi
     .where(eq(taskRuntime.id, TASK_ROW_ID))
     .run();
 
-  const history = await getOrCreateHistory(loopCtx, loopCtx.state.workspaceId, loopCtx.state.repoId);
+  const history = await getOrCreateHistory(loopCtx, loopCtx.state.organizationId, loopCtx.state.repoId);
   await history.append({
     kind: "task.initialized",
     taskId: loopCtx.state.taskId,
     branchName: loopCtx.state.branchName,
-    payload: { providerId },
+    payload: { sandboxProviderId },
   });
 
   loopCtx.state.initialized = true;
@@ -141,7 +141,7 @@ export async function initFailedActivity(loopCtx: any, error: unknown): Promise<
   const detail = resolveErrorDetail(error);
   const messages = collectErrorMessages(error);
   const { config } = getActorRuntimeContext();
-  const providerId = loopCtx.state.providerId ?? defaultSandboxProviderId(config);
+  const sandboxProviderId = loopCtx.state.sandboxProviderId ?? defaultSandboxProviderId(config);
 
   await loopCtx.db
     .insert(taskTable)
@@ -150,7 +150,7 @@ export async function initFailedActivity(loopCtx: any, error: unknown): Promise<
       branchName: loopCtx.state.branchName ?? null,
       title: loopCtx.state.title ?? null,
       task: loopCtx.state.task,
-      providerId,
+      sandboxProviderId,
       status: "error",
       agentType: loopCtx.state.agentType ?? config.default_agent,
       createdAt: now,
@@ -162,7 +162,7 @@ export async function initFailedActivity(loopCtx: any, error: unknown): Promise<
         branchName: loopCtx.state.branchName ?? null,
         title: loopCtx.state.title ?? null,
         task: loopCtx.state.task,
-        providerId,
+        sandboxProviderId,
         status: "error",
         agentType: loopCtx.state.agentType ?? config.default_agent,
         updatedAt: now,

@@ -6,19 +6,19 @@ import { Clock, PanelLeft, PanelRight } from "lucide-react";
 import { useFoundryTokens } from "../../app/theme";
 import { deriveHeaderStatus } from "../../features/tasks/status";
 import { HeaderStatusPill, PanelHeaderBar } from "./ui";
-import { type AgentTab, type Task } from "./view-model";
+import { type AgentSession, type Task } from "./view-model";
 
 export const TranscriptHeader = memo(function TranscriptHeader({
   task,
   hasSandbox,
-  activeTab,
+  activeSession,
   editingField,
   editValue,
   onEditValueChange,
   onStartEditingField,
   onCommitEditingField,
   onCancelEditingField,
-  onSetActiveTabUnread,
+  onSetActiveSessionUnread,
   sidebarCollapsed,
   onToggleSidebar,
   onSidebarPeekStart,
@@ -29,14 +29,14 @@ export const TranscriptHeader = memo(function TranscriptHeader({
 }: {
   task: Task;
   hasSandbox: boolean;
-  activeTab: AgentTab | null | undefined;
+  activeSession: AgentSession | null | undefined;
   editingField: "title" | "branch" | null;
   editValue: string;
   onEditValueChange: (value: string) => void;
   onStartEditingField: (field: "title" | "branch", value: string) => void;
   onCommitEditingField: (field: "title" | "branch") => void;
   onCancelEditingField: () => void;
-  onSetActiveTabUnread: (unread: boolean) => void;
+  onSetActiveSessionUnread: (unread: boolean) => void;
   sidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
   onSidebarPeekStart?: () => void;
@@ -51,8 +51,8 @@ export const TranscriptHeader = memo(function TranscriptHeader({
   const needsTrafficLightInset = isDesktop && sidebarCollapsed;
   const taskStatus = task.runtimeStatus ?? task.status;
   const headerStatus = useMemo(
-    () => deriveHeaderStatus(taskStatus, task.statusMessage ?? null, activeTab?.status ?? null, activeTab?.errorMessage ?? null, hasSandbox),
-    [taskStatus, task.statusMessage, activeTab?.status, activeTab?.errorMessage, hasSandbox],
+    () => deriveHeaderStatus(taskStatus, task.statusMessage ?? null, activeSession?.status ?? null, activeSession?.errorMessage ?? null, hasSandbox),
+    [taskStatus, task.statusMessage, activeSession?.status, activeSession?.errorMessage, hasSandbox],
   );
 
   return (

@@ -56,6 +56,11 @@ interface RenderOptions {
   height?: number;
 }
 
+async function listDetailedTasks(client: ReturnType<typeof createBackendClientFromConfig>, organizationId: string): Promise<TaskRecord[]> {
+  const rows = await client.listTasks(organizationId);
+  return await Promise.all(rows.map(async (row) => await client.getTask(organizationId, row.taskId)));
+}
+
 function pad(input: string, width: number): string {
   if (width <= 0) {
     return "";
@@ -183,7 +188,7 @@ function helpLines(width: number): string[] {
 export function formatRows(
   rows: TaskRecord[],
   selected: number,
-  workspaceId: string,
+  organizationId: string,
   status: string,
   searchQuery = "",
   showHelp = false,
@@ -212,7 +217,7 @@ export function formatRows(
           return `${marker}${pad(display.name, branchWidth)} ${pad(display.diff, COLUMN_WIDTHS.diff)} ${pad(display.agent, COLUMN_WIDTHS.agent)} ${pad(display.pr, COLUMN_WIDTHS.pr)} ${pad(display.author, COLUMN_WIDTHS.author)} ${pad(display.ci, COLUMN_WIDTHS.ci)} ${pad(display.review, COLUMN_WIDTHS.review)} ${pad(display.age, COLUMN_WIDTHS.age)}`;
         });
 
-  const footer = fitLine(buildFooterLine(totalWidth, ["Ctrl-H:cheatsheet", `workspace:${workspaceId}`, status], `v${CLI_BUILD_ID}`), totalWidth);
+  const footer = fitLine(buildFooterLine(totalWidth, ["Ctrl-H:cheatsheet", `organization:${organizationId}`, status], `v${CLI_BUILD_ID}`), totalWidth);
 
   const contentHeight = totalHeight - 1;
   const lines = [...header, ...body].map((line) => fitLine(line, totalWidth));
@@ -309,7 +314,7 @@ function buildStyledContent(content: string, theme: TuiTheme, api: StyledTextApi
   return new api.StyledText(chunks);
 }
 
-export async function runTui(config: AppConfig, workspaceId: string): Promise<void> {
+export async function runTui(config: AppConfig, organizationId: string): Promise<void> {
   const core = (await import("@opentui/core")) as OpenTuiLike;
   const createCliRenderer = core.createCliRenderer;
   const TextRenderable = core.TextRenderable;
@@ -359,7 +364,7 @@ export async function runTui(config: AppConfig, workspaceId: string): Promise<vo
     if (closed) {
       return;
     }
-    const output = formatRows(filteredRows, selected, workspaceId, status, searchQuery, showHelp, {
+    const output = formatRows(filteredRows, selected, organizationId, status, searchQuery, showHelp, {
       width: renderer.width ?? process.stdout.columns,
       height: renderer.height ?? process.stdout.rows,
     });
@@ -372,7 +377,7 @@ export async function runTui(config: AppConfig, workspaceId: string): Promise<vo
       return;
     }
     try {
-      allRows = await client.listTasks(workspaceId);
+      allRows = await listDetailedTasks(client, organizationId);
       if (closed) {
         return;
       }
@@ -517,7 +522,7 @@ export async function runTui(config: AppConfig, workspaceId: string): Promise<vo
       render();
       void (async () => {
         try {
-          const result = await client.switchTask(workspaceId, row.taskId);
+          const result = await client.switchTask(organizationId, row.taskId);
           close(`cd ${result.switchTarget}`);
         } catch (err) {
           busy = false;
@@ -538,7 +543,7 @@ export async function runTui(config: AppConfig, workspaceId: string): Promise<vo
       render();
       void (async () => {
         try {
-          const result = await client.attachTask(workspaceId, row.taskId);
+          const result = await client.attachTask(organizationId, row.taskId);
           close(`target=${result.target} session=${result.sessionId ?? "none"}`);
         } catch (err) {
           busy = false;
@@ -554,7 +559,7 @@ export async function runTui(config: AppConfig, workspaceId: string): Promise<vo
       if (!row) {
         return;
       }
-      void runActionWithRefresh(`archiving ${row.taskId}`, async () => client.runAction(workspaceId, row.taskId, "archive"), `archived ${row.taskId}`);
+      void runActionWithRefresh(`archiving ${row.taskId}`, async () => client.runAction(organizationId, row.taskId, "archive"), `archived ${row.taskId}`);
       return;
     }
 
@@ -563,7 +568,7 @@ export async function runTui(config: AppConfig, workspaceId: string): Promise<vo
       if (!row) {
         return;
       }
-      void runActionWithRefresh(`syncing ${row.taskId}`, async () => client.runAction(workspaceId, row.taskId, "sync"), `synced ${row.taskId}`);
+      void runActionWithRefresh(`syncing ${row.taskId}`, async () => client.runAction(organizationId, row.taskId, "sync"), `synced ${row.taskId}`);
       return;
     }
 
@@ -575,8 +580,8 @@ export async function runTui(config: AppConfig, workspaceId: string): Promise<vo
       void runActionWithRefresh(
         `merging ${row.taskId}`,
         async () => {
-          await client.runAction(workspaceId, row.taskId, "merge");
-          await client.runAction(workspaceId, row.taskId, "archive");
+          await client.runAction(organizationId, row.taskId, "merge");
+          await client.runAction(organizationId, row.taskId, "archive");
         },
         `merged+archived ${row.taskId}`,
       );

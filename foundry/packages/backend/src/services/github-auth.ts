@@ -1,20 +1,20 @@
-import { getOrCreateWorkspace } from "../actors/handles.js";
-import { APP_SHELL_WORKSPACE_ID } from "../actors/workspace/app-shell.js";
+import { getOrCreateOrganization } from "../actors/handles.js";
+import { APP_SHELL_ORGANIZATION_ID } from "../actors/organization/app-shell.js";
 
 export interface ResolvedGithubAuth {
   githubToken: string;
   scopes: string[];
 }
 
-export async function resolveWorkspaceGithubAuth(c: any, workspaceId: string): Promise<ResolvedGithubAuth | null> {
-  if (!workspaceId || workspaceId === APP_SHELL_WORKSPACE_ID) {
+export async function resolveOrganizationGithubAuth(c: any, organizationId: string): Promise<ResolvedGithubAuth | null> {
+  if (!organizationId || organizationId === APP_SHELL_ORGANIZATION_ID) {
     return null;
   }
 
   try {
-    const appWorkspace = await getOrCreateWorkspace(c, APP_SHELL_WORKSPACE_ID);
-    const resolved = await appWorkspace.resolveAppGithubToken({
-      organizationId: workspaceId,
+    const appOrganization = await getOrCreateOrganization(c, APP_SHELL_ORGANIZATION_ID);
+    const resolved = await appOrganization.resolveAppGithubToken({
+      organizationId: organizationId,
       requireRepoScope: true,
     });
     if (!resolved?.accessToken) {

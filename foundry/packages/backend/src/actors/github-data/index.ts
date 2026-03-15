@@ -3,16 +3,16 @@ import { eq } from "drizzle-orm";
 import { actor } from "rivetkit";
 import type { FoundryOrganization } from "@sandbox-agent/foundry-shared";
 import { getActorRuntimeContext } from "../context.js";
-import { getOrCreateWorkspace, getTask } from "../handles.js";
+import { getOrCreateOrganization, getTask } from "../handles.js";
 import { repoIdFromRemote } from "../../services/repo.js";
-import { resolveWorkspaceGithubAuth } from "../../services/github-auth.js";
+import { resolveOrganizationGithubAuth } from "../../services/github-auth.js";
 import { githubDataDb } from "./db/db.js";
-import { githubMembers, githubMeta, githubPullRequests, githubRepositories } from "./db/schema.js";
+import { githubBranches, githubMembers, githubMeta, githubPullRequests, githubRepositories } from "./db/schema.js";
 
 const META_ROW_ID = 1;
 
 interface GithubDataInput {
-  workspaceId: string;
+  organizationId: string;
 }
 
 interface GithubMemberRecord {
@@ -28,6 +28,13 @@ interface GithubRepositoryRecord {
   fullName: string;
   cloneUrl: string;
   private: boolean;
+  defaultBranch: string;
+}
+
+interface GithubBranchRecord {
+  repoId: string;
+  branchName: string;
+  commitSha: string;
 }
 
 interface GithubPullRequestRecord {
@@ -156,21 +163,21 @@ async function writeMeta(c: any, patch: Partial<Awaited<ReturnType<typeof readMe
 }
 
 async function getOrganizationContext(c: any, overrides?: FullSyncInput) {
-  const workspace = await getOrCreateWorkspace(c, c.state.workspaceId);
-  const organization = await workspace.getOrganizationShellStateIfInitialized({});
-  if (!organization) {
-    throw new Error(`Workspace ${c.state.workspaceId} is not initialized`);
+  const organizationHandle = await getOrCreateOrganization(c, c.state.organizationId);
+  const organizationState = await organizationHandle.getOrganizationShellStateIfInitialized({});
+  if (!organizationState) {
+    throw new Error(`Organization ${c.state.organizationId} is not initialized`);
   }
-  const auth = await resolveWorkspaceGithubAuth(c, c.state.workspaceId);
+  const auth = await resolveOrganizationGithubAuth(c, c.state.organizationId);
   return {
-    kind: overrides?.kind ?? organization.snapshot.kind,
-    githubLogin: overrides?.githubLogin ?? organization.githubLogin,
-    connectedAccount: overrides?.connectedAccount ?? organization.snapshot.github.connectedAccount ?? organization.githubLogin,
-    installationId: overrides?.installationId ?? organization.githubInstallationId ?? null,
+    kind: overrides?.kind ?? organizationState.snapshot.kind,
+    githubLogin: overrides?.githubLogin ?? organizationState.githubLogin,
+    connectedAccount: overrides?.connectedAccount ?? organizationState.snapshot.github.connectedAccount ?? organizationState.githubLogin,
+    installationId: overrides?.installationId ?? organizationState.githubInstallationId ?? null,
     installationStatus:
       overrides?.installationStatus ??
-      organization.snapshot.github.installationStatus ??
-      (organization.snapshot.kind === "personal" ? "connected" : "reconnect_required"),
+      organizationState.snapshot.github.installationStatus ??
+      (organizationState.snapshot.kind === "personal" ? "connected" : "reconnect_required"),
     accessToken: overrides?.accessToken ?? auth?.githubToken ?? null,
   };
 }
@@ -185,6 +192,23 @@ async function replaceRepositories(c: any, repositories: GithubRepositoryRecord[
         fullName: repository.fullName,
         cloneUrl: repository.cloneUrl,
         private: repository.private ? 1 : 0,
+        defaultBranch: repository.defaultBranch,
+        updatedAt,
+      })
+      .run();
+  }
+}
+
+async function replaceBranches(c: any, branches: GithubBranchRecord[], updatedAt: number) {
+  await c.db.delete(githubBranches).run();
+  for (const branch of branches) {
+    await c.db
+      .insert(githubBranches)
+      .values({
+        branchId: `${branch.repoId}:${branch.branchName}`,
+        repoId: branch.repoId,
+        branchName: branch.branchName,
+        commitSha: branch.commitSha,
         updatedAt,
       })
       .run();
@@ -234,12 +258,12 @@ async function replacePullRequests(c: any, pullRequests: GithubPullRequestRecord
 }
 
 async function refreshTaskSummaryForBranch(c: any, repoId: string, branchName: string) {
-  const workspace = await getOrCreateWorkspace(c, c.state.workspaceId);
-  await workspace.refreshTaskSummaryForGithubBranch({ repoId, branchName });
+  const organization = await getOrCreateOrganization(c, c.state.organizationId);
+  await organization.refreshTaskSummaryForGithubBranch({ repoId, branchName });
 }
 
 async function emitPullRequestChangeEvents(c: any, beforeRows: any[], afterRows: any[]) {
-  const workspace = await getOrCreateWorkspace(c, c.state.workspaceId);
+  const organization = await getOrCreateOrganization(c, c.state.organizationId);
   const beforeById = new Map(beforeRows.map((row) => [row.prId, row]));
   const afterById = new Map(afterRows.map((row) => [row.prId, row]));
 
@@ -258,7 +282,7 @@ async function emitPullRequestChangeEvents(c: any, beforeRows: any[], afterRows:
     if (!changed) {
       continue;
     }
-    await workspace.applyOpenPullRequestUpdate({
+    await organization.applyOpenPullRequestUpdate({
       pullRequest: pullRequestSummaryFromRow(row),
     });
     await refreshTaskSummaryForBranch(c, row.repoId, row.headRefName);
@@ -268,14 +292,14 @@ async function emitPullRequestChangeEvents(c: any, beforeRows: any[], afterRows:
     if (afterById.has(prId)) {
       continue;
     }
-    await workspace.removeOpenPullRequest({ prId });
+    await organization.removeOpenPullRequest({ prId });
     await refreshTaskSummaryForBranch(c, row.repoId, row.headRefName);
   }
 }
 
 async function autoArchiveTaskForClosedPullRequest(c: any, row: any) {
-  const workspace = await getOrCreateWorkspace(c, c.state.workspaceId);
-  const match = await workspace.findTaskForGithubBranch({
+  const organization = await getOrCreateOrganization(c, c.state.organizationId);
+  const match = await organization.findTaskForGithubBranch({
     repoId: row.repoId,
     branchName: row.headRefName,
   });
@@ -283,7 +307,7 @@ async function autoArchiveTaskForClosedPullRequest(c: any, row: any) {
     return;
   }
   try {
-    const task = getTask(c, c.state.workspaceId, row.repoId, match.taskId);
+    const task = getTask(c, c.state.organizationId, row.repoId, match.taskId);
     await task.archive({ reason: `PR ${String(row.state).toLowerCase()}` });
   } catch {
     // Best-effort only. Task summary refresh will still clear the PR state.
@@ -391,6 +415,69 @@ async function resolvePullRequests(
   }));
 }
 
+async function listRepositoryBranchesForContext(
+  context: Awaited<ReturnType<typeof getOrganizationContext>>,
+  repository: GithubRepositoryRecord,
+): Promise<GithubBranchRecord[]> {
+  const { appShell } = getActorRuntimeContext();
+  let branches: Array<{ name: string; commitSha: string }> = [];
+
+  if (context.installationId != null) {
+    try {
+      branches = await appShell.github.listInstallationRepositoryBranches(context.installationId, repository.fullName);
+    } catch (error) {
+      if (!context.accessToken) {
+        throw error;
+      }
+    }
+  }
+
+  if (branches.length === 0 && context.accessToken) {
+    branches = await appShell.github.listUserRepositoryBranches(context.accessToken, repository.fullName);
+  }
+
+  const repoId = repoIdFromRemote(repository.cloneUrl);
+  return branches.map((branch) => ({
+    repoId,
+    branchName: branch.name,
+    commitSha: branch.commitSha,
+  }));
+}
+
+async function resolveBranches(
+  _c: any,
+  context: Awaited<ReturnType<typeof getOrganizationContext>>,
+  repositories: GithubRepositoryRecord[],
+): Promise<GithubBranchRecord[]> {
+  return (await Promise.all(repositories.map((repository) => listRepositoryBranchesForContext(context, repository)))).flat();
+}
+
+async function refreshRepositoryBranches(
+  c: any,
+  context: Awaited<ReturnType<typeof getOrganizationContext>>,
+  repository: GithubRepositoryRecord,
+  updatedAt: number,
+): Promise<void> {
+  const nextBranches = await listRepositoryBranchesForContext(context, repository);
+  await c.db
+    .delete(githubBranches)
+    .where(eq(githubBranches.repoId, repoIdFromRemote(repository.cloneUrl)))
+    .run();
+
+  for (const branch of nextBranches) {
+    await c.db
+      .insert(githubBranches)
+      .values({
+        branchId: `${branch.repoId}:${branch.branchName}`,
+        repoId: branch.repoId,
+        branchName: branch.branchName,
+        commitSha: branch.commitSha,
+        updatedAt,
+      })
+      .run();
+  }
+}
+
 async function readAllPullRequestRows(c: any) {
   return await c.db.select().from(githubPullRequests).all();
 }
@@ -409,15 +496,17 @@ async function runFullSync(c: any, input: FullSyncInput = {}) {
   });
 
   const repositories = await resolveRepositories(c, context);
+  const branches = await resolveBranches(c, context, repositories);
   const members = await resolveMembers(c, context);
   const pullRequests = await resolvePullRequests(c, context, repositories);
 
   await replaceRepositories(c, repositories, startedAt);
+  await replaceBranches(c, branches, startedAt);
   await replaceMembers(c, members, startedAt);
   await replacePullRequests(c, pullRequests);
 
-  const workspace = await getOrCreateWorkspace(c, c.state.workspaceId);
-  await workspace.applyGithubDataProjection({
+  const organization = await getOrCreateOrganization(c, c.state.organizationId);
+  await organization.applyGithubDataProjection({
     connectedAccount: context.connectedAccount,
     installationStatus: context.installationStatus,
     installationId: context.installationId,
@@ -455,16 +544,18 @@ export const githubData = actor({
     actionTimeout: 5 * 60_000,
   },
   createState: (_c, input: GithubDataInput) => ({
-    workspaceId: input.workspaceId,
+    organizationId: input.organizationId,
   }),
   actions: {
     async getSummary(c) {
       const repositories = await c.db.select().from(githubRepositories).all();
+      const branches = await c.db.select().from(githubBranches).all();
       const members = await c.db.select().from(githubMembers).all();
       const pullRequests = await c.db.select().from(githubPullRequests).all();
       return {
         ...(await readMeta(c)),
         repositoryCount: repositories.length,
+        branchCount: branches.length,
         memberCount: members.length,
         pullRequestCount: pullRequests.length,
       };
@@ -477,12 +568,37 @@ export const githubData = actor({
         fullName: row.fullName,
         cloneUrl: row.cloneUrl,
         private: Boolean(row.private),
+        defaultBranch: row.defaultBranch,
       }));
+    },
+
+    async getRepository(c, input: { repoId: string }) {
+      const row = await c.db.select().from(githubRepositories).where(eq(githubRepositories.repoId, input.repoId)).get();
+      if (!row) {
+        return null;
+      }
+      return {
+        repoId: row.repoId,
+        fullName: row.fullName,
+        cloneUrl: row.cloneUrl,
+        private: Boolean(row.private),
+        defaultBranch: row.defaultBranch,
+      };
     },
 
     async listPullRequestsForRepository(c, input: { repoId: string }) {
       const rows = await c.db.select().from(githubPullRequests).where(eq(githubPullRequests.repoId, input.repoId)).all();
       return rows.map(pullRequestSummaryFromRow);
+    },
+
+    async listBranchesForRepository(c, input: { repoId: string }) {
+      const rows = await c.db.select().from(githubBranches).where(eq(githubBranches.repoId, input.repoId)).all();
+      return rows
+        .map((row) => ({
+          branchName: row.branchName,
+          commitSha: row.commitSha,
+        }))
+        .sort((left, right) => left.branchName.localeCompare(right.branchName));
     },
 
     async listOpenPullRequests(c) {
@@ -539,6 +655,7 @@ export const githubData = actor({
           fullName: repository.fullName,
           cloneUrl: repository.cloneUrl,
           private: repository.private ? 1 : 0,
+          defaultBranch: repository.defaultBranch,
           updatedAt,
         })
         .onConflictDoUpdate({
@@ -547,13 +664,25 @@ export const githubData = actor({
             fullName: repository.fullName,
             cloneUrl: repository.cloneUrl,
             private: repository.private ? 1 : 0,
+            defaultBranch: repository.defaultBranch,
             updatedAt,
           },
         })
         .run();
+      await refreshRepositoryBranches(
+        c,
+        context,
+        {
+          fullName: repository.fullName,
+          cloneUrl: repository.cloneUrl,
+          private: repository.private,
+          defaultBranch: repository.defaultBranch,
+        },
+        updatedAt,
+      );
 
-      const workspace = await getOrCreateWorkspace(c, c.state.workspaceId);
-      await workspace.applyGithubRepositoryProjection({
+      const organization = await getOrCreateOrganization(c, c.state.organizationId);
+      await organization.applyGithubRepositoryProjection({
         repoId: input.repoId,
         remoteUrl: repository.cloneUrl,
       });
@@ -562,6 +691,7 @@ export const githubData = actor({
         fullName: repository.fullName,
         cloneUrl: repository.cloneUrl,
         private: repository.private,
+        defaultBranch: repository.defaultBranch,
       };
     },
 
@@ -656,6 +786,7 @@ export const githubData = actor({
     async clearState(c, input: ClearStateInput) {
       const beforeRows = await readAllPullRequestRows(c);
       await c.db.delete(githubPullRequests).run();
+      await c.db.delete(githubBranches).run();
       await c.db.delete(githubRepositories).run();
       await c.db.delete(githubMembers).run();
       await writeMeta(c, {
@@ -667,8 +798,8 @@ export const githubData = actor({
         lastSyncAt: null,
       });
 
-      const workspace = await getOrCreateWorkspace(c, c.state.workspaceId);
-      await workspace.applyGithubDataProjection({
+      const organization = await getOrCreateOrganization(c, c.state.organizationId);
+      await organization.applyGithubDataProjection({
         connectedAccount: input.connectedAccount,
         installationStatus: input.installationStatus,
         installationId: input.installationId,
@@ -683,6 +814,7 @@ export const githubData = actor({
     async handlePullRequestWebhook(c, input: PullRequestWebhookInput) {
       const beforeRows = await readAllPullRequestRows(c);
       const repoId = repoIdFromRemote(input.repository.cloneUrl);
+      const currentRepository = await c.db.select().from(githubRepositories).where(eq(githubRepositories.repoId, repoId)).get();
       const updatedAt = Date.now();
       const state = normalizePrStatus(input.pullRequest);
       const prId = `${repoId}#${input.pullRequest.number}`;
@@ -694,6 +826,7 @@ export const githubData = actor({
           fullName: input.repository.fullName,
           cloneUrl: input.repository.cloneUrl,
           private: input.repository.private ? 1 : 0,
+          defaultBranch: currentRepository?.defaultBranch ?? input.pullRequest.baseRefName ?? "main",
           updatedAt,
         })
         .onConflictDoUpdate({
@@ -702,6 +835,7 @@ export const githubData = actor({
             fullName: input.repository.fullName,
             cloneUrl: input.repository.cloneUrl,
             private: input.repository.private ? 1 : 0,
+            defaultBranch: currentRepository?.defaultBranch ?? input.pullRequest.baseRefName ?? "main",
             updatedAt,
           },
         })
@@ -753,8 +887,8 @@ export const githubData = actor({
         lastSyncAt: updatedAt,
       });
 
-      const workspace = await getOrCreateWorkspace(c, c.state.workspaceId);
-      await workspace.applyGithubRepositoryProjection({
+      const organization = await getOrCreateOrganization(c, c.state.organizationId);
+      await organization.applyGithubRepositoryProjection({
         repoId,
         remoteUrl: input.repository.cloneUrl,
       });

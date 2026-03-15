@@ -1,6 +1,6 @@
 type FoundryRuntimeConfig = {
   backendEndpoint?: string;
-  defaultWorkspaceId?: string;
+  defaultOrganizationId?: string;
   frontendClientMode?: string;
 };
 
@@ -26,7 +26,7 @@ const runtimeConfig = typeof window !== "undefined" ? window.__FOUNDRY_RUNTIME_C
 
 export const backendEndpoint = runtimeConfig?.backendEndpoint?.trim() || import.meta.env.VITE_HF_BACKEND_ENDPOINT?.trim() || resolveDefaultBackendEndpoint();
 
-export const defaultWorkspaceId = runtimeConfig?.defaultWorkspaceId?.trim() || import.meta.env.VITE_HF_WORKSPACE?.trim() || "default";
+export const defaultOrganizationId = runtimeConfig?.defaultOrganizationId?.trim() || import.meta.env.VITE_HF_WORKSPACE?.trim() || "default";
 
 function resolveFrontendClientMode(): "mock" | "remote" {
   const raw = runtimeConfig?.frontendClientMode?.trim().toLowerCase() || frontendEnv.FOUNDRY_FRONTEND_CLIENT_MODE?.trim().toLowerCase();

@@ -1,14 +1,14 @@
 import { z } from "zod";
 
-export const WorkspaceIdSchema = z
+export const OrganizationIdSchema = z
   .string()
   .min(1)
   .max(64)
   .regex(/^[a-zA-Z0-9._-]+$/);
-export type WorkspaceId = z.infer<typeof WorkspaceIdSchema>;
+export type OrganizationId = z.infer<typeof OrganizationIdSchema>;
 
-export const ProviderIdSchema = z.enum(["e2b", "local"]);
-export type ProviderId = z.infer<typeof ProviderIdSchema>;
+export const SandboxProviderIdSchema = z.enum(["e2b", "local"]);
+export type SandboxProviderId = z.infer<typeof SandboxProviderIdSchema>;
 
 export const AgentTypeSchema = z.enum(["claude", "codex"]);
 export type AgentType = z.infer<typeof AgentTypeSchema>;
@@ -39,7 +39,7 @@ export const TaskStatusSchema = z.enum([
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 
 export const RepoRecordSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
+  organizationId: OrganizationIdSchema,
   repoId: RepoIdSchema,
   remoteUrl: RepoRemoteSchema,
   createdAt: z.number().int(),
@@ -47,33 +47,27 @@ export const RepoRecordSchema = z.object({
 });
 export type RepoRecord = z.infer<typeof RepoRecordSchema>;
 
-export const AddRepoInputSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  remoteUrl: RepoRemoteSchema,
-});
-export type AddRepoInput = z.infer<typeof AddRepoInputSchema>;
-
 export const CreateTaskInputSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
+  organizationId: OrganizationIdSchema,
   repoId: RepoIdSchema,
   task: z.string().min(1),
   explicitTitle: z.string().trim().min(1).optional(),
   explicitBranchName: z.string().trim().min(1).optional(),
-  providerId: ProviderIdSchema.optional(),
+  sandboxProviderId: SandboxProviderIdSchema.optional(),
   agentType: AgentTypeSchema.optional(),
   onBranch: z.string().trim().min(1).optional(),
 });
 export type CreateTaskInput = z.infer<typeof CreateTaskInputSchema>;
 
 export const TaskRecordSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
+  organizationId: OrganizationIdSchema,
   repoId: z.string().min(1),
   repoRemote: RepoRemoteSchema,
   taskId: z.string().min(1),
   branchName: z.string().min(1).nullable(),
   title: z.string().min(1).nullable(),
   task: z.string().min(1),
-  providerId: ProviderIdSchema,
+  sandboxProviderId: SandboxProviderIdSchema,
   status: TaskStatusSchema,
   statusMessage: z.string().nullable(),
   activeSandboxId: z.string().nullable(),
@@ -81,7 +75,7 @@ export const TaskRecordSchema = z.object({
   sandboxes: z.array(
     z.object({
       sandboxId: z.string().min(1),
-      providerId: ProviderIdSchema,
+      sandboxProviderId: SandboxProviderIdSchema,
       sandboxActorId: z.string().nullable(),
       switchTarget: z.string().min(1),
       cwd: z.string().nullable(),
@@ -106,7 +100,7 @@ export const TaskRecordSchema = z.object({
 export type TaskRecord = z.infer<typeof TaskRecordSchema>;
 
 export const TaskSummarySchema = z.object({
-  workspaceId: WorkspaceIdSchema,
+  organizationId: OrganizationIdSchema,
   repoId: z.string().min(1),
   taskId: z.string().min(1),
   branchName: z.string().min(1).nullable(),
@@ -117,21 +111,21 @@ export const TaskSummarySchema = z.object({
 export type TaskSummary = z.infer<typeof TaskSummarySchema>;
 
 export const TaskActionInputSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
+  organizationId: OrganizationIdSchema,
   taskId: z.string().min(1),
 });
 export type TaskActionInput = z.infer<typeof TaskActionInputSchema>;
 
 export const SwitchResultSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
+  organizationId: OrganizationIdSchema,
   taskId: z.string().min(1),
-  providerId: ProviderIdSchema,
+  sandboxProviderId: SandboxProviderIdSchema,
   switchTarget: z.string().min(1),
 });
 export type SwitchResult = z.infer<typeof SwitchResultSchema>;
 
 export const ListTasksInputSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
+  organizationId: OrganizationIdSchema,
   repoId: RepoIdSchema.optional(),
 });
 export type ListTasksInput = z.infer<typeof ListTasksInputSchema>;
@@ -139,11 +133,6 @@ export type ListTasksInput = z.infer<typeof ListTasksInputSchema>;
 export const RepoBranchRecordSchema = z.object({
   branchName: z.string().min(1),
   commitSha: z.string().min(1),
-  parentBranch: z.string().nullable(),
-  trackedInStack: z.boolean(),
-  diffStat: z.string().nullable(),
-  hasUnpushed: z.boolean(),
-  conflictsWithMain: z.boolean(),
   taskId: z.string().nullable(),
   taskTitle: z.string().nullable(),
   taskStatus: TaskStatusSchema.nullable(),
@@ -153,69 +142,27 @@ export const RepoBranchRecordSchema = z.object({
   ciStatus: z.string().nullable(),
   reviewStatus: z.string().nullable(),
   reviewer: z.string().nullable(),
-  firstSeenAt: z.number().int().nullable(),
-  lastSeenAt: z.number().int().nullable(),
   updatedAt: z.number().int(),
 });
 export type RepoBranchRecord = z.infer<typeof RepoBranchRecordSchema>;
 
 export const RepoOverviewSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
+  organizationId: OrganizationIdSchema,
   repoId: RepoIdSchema,
   remoteUrl: RepoRemoteSchema,
   baseRef: z.string().nullable(),
-  stackAvailable: z.boolean(),
   fetchedAt: z.number().int(),
-  branchSyncAt: z.number().int().nullable(),
-  prSyncAt: z.number().int().nullable(),
-  branchSyncStatus: z.enum(["pending", "syncing", "synced", "error"]),
-  prSyncStatus: z.enum(["pending", "syncing", "synced", "error"]),
-  repoActionJobs: z.array(
-    z.object({
-      jobId: z.string().min(1),
-      action: z.enum(["sync_repo", "restack_repo", "restack_subtree", "rebase_branch", "reparent_branch"]),
-      branchName: z.string().nullable(),
-      parentBranch: z.string().nullable(),
-      status: z.enum(["queued", "running", "completed", "error"]),
-      message: z.string().min(1),
-      createdAt: z.number().int(),
-      updatedAt: z.number().int(),
-      completedAt: z.number().int().nullable(),
-    }),
-  ),
   branches: z.array(RepoBranchRecordSchema),
 });
 export type RepoOverview = z.infer<typeof RepoOverviewSchema>;
 
-export const RepoStackActionSchema = z.enum(["sync_repo", "restack_repo", "restack_subtree", "rebase_branch", "reparent_branch"]);
-export type RepoStackAction = z.infer<typeof RepoStackActionSchema>;
-
-export const RepoStackActionInputSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-  repoId: RepoIdSchema,
-  action: RepoStackActionSchema,
-  branchName: z.string().trim().min(1).optional(),
-  parentBranch: z.string().trim().min(1).optional(),
+export const OrganizationUseInputSchema = z.object({
+  organizationId: OrganizationIdSchema,
 });
-export type RepoStackActionInput = z.infer<typeof RepoStackActionInputSchema>;
-
-export const RepoStackActionResultSchema = z.object({
-  jobId: z.string().min(1).nullable().optional(),
-  action: RepoStackActionSchema,
-  executed: z.boolean(),
-  status: z.enum(["queued", "running", "completed", "error"]).optional(),
-  message: z.string().min(1),
-  at: z.number().int(),
-});
-export type RepoStackActionResult = z.infer<typeof RepoStackActionResultSchema>;
-
-export const WorkspaceUseInputSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
-});
-export type WorkspaceUseInput = z.infer<typeof WorkspaceUseInputSchema>;
+export type OrganizationUseInput = z.infer<typeof OrganizationUseInputSchema>;
 
 export const StarSandboxAgentRepoInputSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
+  organizationId: OrganizationIdSchema,
 });
 export type StarSandboxAgentRepoInput = z.infer<typeof StarSandboxAgentRepoInputSchema>;
 
@@ -226,7 +173,7 @@ export const StarSandboxAgentRepoResultSchema = z.object({
 export type StarSandboxAgentRepoResult = z.infer<typeof StarSandboxAgentRepoResultSchema>;
 
 export const HistoryQueryInputSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
+  organizationId: OrganizationIdSchema,
   limit: z.number().int().positive().max(500).optional(),
   branch: z.string().min(1).optional(),
   taskId: z.string().min(1).optional(),
@@ -235,7 +182,7 @@ export type HistoryQueryInput = z.infer<typeof HistoryQueryInputSchema>;
 
 export const HistoryEventSchema = z.object({
   id: z.number().int(),
-  workspaceId: WorkspaceIdSchema,
+  organizationId: OrganizationIdSchema,
   repoId: z.string().nullable(),
   taskId: z.string().nullable(),
   branchName: z.string().nullable(),
@@ -246,14 +193,14 @@ export const HistoryEventSchema = z.object({
 export type HistoryEvent = z.infer<typeof HistoryEventSchema>;
 
 export const PruneInputSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
+  organizationId: OrganizationIdSchema,
   dryRun: z.boolean(),
   yes: z.boolean(),
 });
 export type PruneInput = z.infer<typeof PruneInputSchema>;
 
 export const KillInputSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
+  organizationId: OrganizationIdSchema,
   taskId: z.string().min(1),
   deleteBranch: z.boolean(),
   abandon: z.boolean(),
@@ -261,13 +208,13 @@ export const KillInputSchema = z.object({
 export type KillInput = z.infer<typeof KillInputSchema>;
 
 export const StatuslineInputSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
+  organizationId: OrganizationIdSchema,
   format: z.enum(["table", "claude-code"]),
 });
 export type StatuslineInput = z.infer<typeof StatuslineInputSchema>;
 
 export const ListInputSchema = z.object({
-  workspaceId: WorkspaceIdSchema,
+  organizationId: OrganizationIdSchema,
   format: z.enum(["table", "json"]),
   full: z.boolean(),
 });

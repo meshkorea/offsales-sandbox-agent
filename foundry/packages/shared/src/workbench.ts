@@ -1,4 +1,4 @@
-import type { AgentType, ProviderId, TaskStatus } from "./contracts.js";
+import type { AgentType, SandboxProviderId, TaskStatus } from "./contracts.js";
 
 export type WorkbenchTaskStatus = TaskStatus | "new";
 export type WorkbenchAgentKind = "Claude" | "Codex" | "Cursor";
@@ -32,7 +32,10 @@ export interface WorkbenchComposerDraft {
 /** Session metadata without transcript content. */
 export interface WorkbenchSessionSummary {
   id: string;
-  sessionId: string | null;
+  /** Stable UI session id used for routing and task-local identity. */
+  sessionId: string;
+  /** Underlying sandbox session id when provisioning has completed. */
+  sandboxSessionId?: string | null;
   sessionName: string;
   agent: WorkbenchAgentKind;
   model: WorkbenchModelId;
@@ -43,11 +46,10 @@ export interface WorkbenchSessionSummary {
   errorMessage?: string | null;
 }
 
-/** Full session content — only fetched when viewing a specific session tab. */
+/** Full session content — only fetched when viewing a specific session. */
 export interface WorkbenchSessionDetail {
-  /** Stable UI tab id used for the session topic key and routing. */
+  /** Stable UI session id used for the session topic key and routing. */
   sessionId: string;
-  tabId: string;
   sandboxSessionId: string | null;
   sessionName: string;
   agent: WorkbenchAgentKind;
@@ -87,7 +89,7 @@ export interface WorkbenchHistoryEvent {
   messageId: string;
   preview: string;
   sessionName: string;
-  tabId: string;
+  sessionId: string;
   createdAtMs: number;
   detail: string;
 }
@@ -121,12 +123,12 @@ export interface WorkbenchOpenPrSummary {
 }
 
 export interface WorkbenchSandboxSummary {
-  providerId: ProviderId;
+  sandboxProviderId: SandboxProviderId;
   sandboxId: string;
   cwd: string | null;
 }
 
-/** Sidebar-level task data. Materialized in the workspace actor's SQLite. */
+/** Sidebar-level task data. Materialized in the organization actor's SQLite. */
 export interface WorkbenchTaskSummary {
   id: string;
   repoId: string;
@@ -162,8 +164,8 @@ export interface WorkbenchTaskDetail extends WorkbenchTaskSummary {
   activeSandboxId: string | null;
 }
 
-/** Repo-level summary for workspace sidebar. */
-export interface WorkbenchRepoSummary {
+/** Repo-level summary for organization sidebar. */
+export interface WorkbenchRepositorySummary {
   id: string;
   label: string;
   /** Aggregated branch/task overview state (replaces getRepoOverview polling). */
@@ -171,19 +173,15 @@ export interface WorkbenchRepoSummary {
   latestActivityMs: number;
 }
 
-/** Workspace-level snapshot — initial fetch for the workspace topic. */
-export interface WorkspaceSummarySnapshot {
-  workspaceId: string;
-  repos: WorkbenchRepoSummary[];
+/** Organization-level snapshot — initial fetch for the organization topic. */
+export interface OrganizationSummarySnapshot {
+  organizationId: string;
+  repos: WorkbenchRepositorySummary[];
   taskSummaries: WorkbenchTaskSummary[];
   openPullRequests: WorkbenchOpenPrSummary[];
 }
 
-/**
- * Deprecated compatibility aliases for older mock/view-model code.
- * New code should use the summary/detail/topic-specific types above.
- */
-export interface WorkbenchAgentTab extends WorkbenchSessionSummary {
+export interface WorkbenchSession extends WorkbenchSessionSummary {
   draft: WorkbenchComposerDraft;
   transcript: WorkbenchTranscriptEvent[];
 }
@@ -199,7 +197,7 @@ export interface WorkbenchTask {
   updatedAtMs: number;
   branch: string | null;
   pullRequest: WorkbenchPullRequestSummary | null;
-  tabs: WorkbenchAgentTab[];
+  sessions: WorkbenchSession[];
   fileChanges: WorkbenchFileChange[];
   diffs: Record<string, string>;
   fileTree: WorkbenchFileTreeNode[];
@@ -212,7 +210,7 @@ export interface WorkbenchRepo {
   label: string;
 }
 
-export interface WorkbenchProjectSection {
+export interface WorkbenchRepositorySection {
   id: string;
   label: string;
   updatedAtMs: number;
@@ -220,9 +218,9 @@ export interface WorkbenchProjectSection {
 }
 
 export interface TaskWorkbenchSnapshot {
-  workspaceId: string;
+  organizationId: string;
   repos: WorkbenchRepo[];
-  projects: WorkbenchProjectSection[];
+  repositories: WorkbenchRepositorySection[];
   tasks: WorkbenchTask[];
 }
 
@@ -256,30 +254,30 @@ export interface TaskWorkbenchRenameInput {
 
 export interface TaskWorkbenchSendMessageInput {
   taskId: string;
-  tabId: string;
+  sessionId: string;
   text: string;
   attachments: WorkbenchLineAttachment[];
 }
 
-export interface TaskWorkbenchTabInput {
+export interface TaskWorkbenchSessionInput {
   taskId: string;
-  tabId: string;
+  sessionId: string;
 }
 
-export interface TaskWorkbenchRenameSessionInput extends TaskWorkbenchTabInput {
+export interface TaskWorkbenchRenameSessionInput extends TaskWorkbenchSessionInput {
   title: string;
 }
 
-export interface TaskWorkbenchChangeModelInput extends TaskWorkbenchTabInput {
+export interface TaskWorkbenchChangeModelInput extends TaskWorkbenchSessionInput {
   model: WorkbenchModelId;
 }
 
-export interface TaskWorkbenchUpdateDraftInput extends TaskWorkbenchTabInput {
+export interface TaskWorkbenchUpdateDraftInput extends TaskWorkbenchSessionInput {
   text: string;
   attachments: WorkbenchLineAttachment[];
 }
 
-export interface TaskWorkbenchSetSessionUnreadInput extends TaskWorkbenchTabInput {
+export interface TaskWorkbenchSetSessionUnreadInput extends TaskWorkbenchSessionInput {
   unread: boolean;
 }
 
@@ -290,9 +288,9 @@ export interface TaskWorkbenchDiffInput {
 
 export interface TaskWorkbenchCreateTaskResponse {
   taskId: string;
-  tabId?: string;
+  sessionId?: string;
 }
 
-export interface TaskWorkbenchAddTabResponse {
-  tabId: string;
+export interface TaskWorkbenchAddSessionResponse {
+  sessionId: string;
 }

@@ -2,8 +2,9 @@ import { memo, useEffect, useMemo, useState } from "react";
 import { useStyletron } from "baseui";
 import { useFoundryTokens } from "../app/theme";
 import { isMockFrontendClient } from "../lib/env";
-import { interestManager } from "../lib/interest";
+import { subscriptionManager } from "../lib/subscription";
 import type {
+  FoundryAppSnapshot,
   FoundryOrganization,
   TaskStatus,
   TaskWorkbenchSnapshot,
@@ -11,11 +12,12 @@ import type {
   WorkbenchSessionSummary,
   WorkbenchTaskStatus,
 } from "@sandbox-agent/foundry-shared";
-import type { DebugInterestTopic } from "@sandbox-agent/foundry-client";
+import { useSubscription } from "@sandbox-agent/foundry-client";
+import type { DebugSubscriptionTopic } from "@sandbox-agent/foundry-client";
 import { describeTaskState } from "../features/tasks/status";
 
 interface DevPanelProps {
-  workspaceId: string;
+  organizationId: string;
   snapshot: TaskWorkbenchSnapshot;
   organization?: FoundryOrganization | null;
   focusedTask?: DevPanelFocusedTask | null;
@@ -46,12 +48,12 @@ interface TopicInfo {
   lastRefresh: number | null;
 }
 
-function topicLabel(topic: DebugInterestTopic): string {
+function topicLabel(topic: DebugSubscriptionTopic): string {
   switch (topic.topicKey) {
     case "app":
       return "App";
-    case "workspace":
-      return "Workspace";
+    case "organization":
+      return "Organization";
     case "task":
       return "Task";
     case "session":
@@ -62,7 +64,7 @@ function topicLabel(topic: DebugInterestTopic): string {
 }
 
 /** Extract the params portion of a cache key (everything after the first `:`) */
-function topicParams(topic: DebugInterestTopic): string {
+function topicParams(topic: DebugSubscriptionTopic): string {
   const idx = topic.cacheKey.indexOf(":");
   return idx >= 0 ? topic.cacheKey.slice(idx + 1) : "";
 }
@@ -133,7 +135,7 @@ function thinkingLabel(sinceMs: number | null, now: number): string | null {
   return `thinking ${elapsed}s`;
 }
 
-export const DevPanel = memo(function DevPanel({ workspaceId, snapshot, organization, focusedTask }: DevPanelProps) {
+export const DevPanel = memo(function DevPanel({ organizationId, snapshot, organization, focusedTask }: DevPanelProps) {
   const [css] = useStyletron();
   const t = useFoundryTokens();
   const [now, setNow] = useState(Date.now());
@@ -145,7 +147,7 @@ export const DevPanel = memo(function DevPanel({ workspaceId, snapshot, organiza
   }, []);
 
   const topics = useMemo((): TopicInfo[] => {
-    return interestManager.listDebugTopics().map((topic) => ({
+    return subscriptionManager.listDebugTopics().map((topic) => ({
       label: topicLabel(topic),
       key: topic.cacheKey,
       params: topicParams(topic),
@@ -156,12 +158,18 @@ export const DevPanel = memo(function DevPanel({ workspaceId, snapshot, organiza
     }));
   }, [now]);
 
+  const appState = useSubscription(subscriptionManager, "app", {});
+  const appSnapshot: FoundryAppSnapshot | null = appState.data ?? null;
+
   const repos = snapshot.repos ?? [];
-  const prCount = (snapshot.tasks ?? []).filter((task) => task.pullRequest != null).length;
+  const tasks = snapshot.tasks ?? [];
+  const prCount = tasks.filter((task) => task.pullRequest != null).length;
   const focusedTaskStatus = focusedTask?.runtimeStatus ?? focusedTask?.status ?? null;
   const focusedTaskState = describeTaskState(focusedTaskStatus, focusedTask?.statusMessage ?? null);
   const lastWebhookAt = organization?.github.lastWebhookAt ?? null;
   const hasRecentWebhook = lastWebhookAt != null && now - lastWebhookAt < 5 * 60_000;
+  const totalOrgs = appSnapshot?.organizations.length ?? 0;
+  const authStatus = appSnapshot?.auth.status ?? "unknown";
 
   const mono = css({
     fontFamily: "ui-monospace, SFMono-Regular, 'SF Mono', Consolas, monospace",
@@ -218,8 +226,8 @@ export const DevPanel = memo(function DevPanel({ workspaceId, snapshot, organiza
 
       {/* Body */}
       <div className={css({ overflowY: "auto", padding: "6px" })}>
-        {/* Interest Topics */}
-        <Section label="Interest Topics" t={t} css={css}>
+        {/* Subscription Topics */}
+        <Section label="Subscription Topics" t={t} css={css}>
           {topics.map((topic) => (
             <div
               key={topic.key}
@@ -256,11 +264,36 @@ export const DevPanel = memo(function DevPanel({ workspaceId, snapshot, organiza
           {topics.length === 0 && <span className={css({ fontSize: "10px", color: t.textMuted })}>No active subscriptions</span>}
         </Section>
 
+        {/* App State */}
+        <Section label="App" t={t} css={css}>
+          <div className={css({ display: "flex", flexDirection: "column", gap: "3px", fontSize: "10px" })}>
+            <div className={css({ display: "flex", alignItems: "center", gap: "6px" })}>
+              <span
+                className={css({
+                  width: "5px",
+                  height: "5px",
+                  borderRadius: "50%",
+                  backgroundColor: authStatus === "signed_in" ? t.statusSuccess : authStatus === "signed_out" ? t.statusError : t.textMuted,
+                  flexShrink: 0,
+                })}
+              />
+              <span className={css({ color: t.textPrimary, flex: 1 })}>Auth</span>
+              <span className={`${mono} ${css({ color: authStatus === "signed_in" ? t.statusSuccess : t.statusError })}`}>{authStatus.replace(/_/g, " ")}</span>
+            </div>
+            <div className={css({ display: "flex", gap: "10px", marginTop: "2px" })}>
+              <Stat label="orgs" value={totalOrgs} t={t} css={css} />
+              <Stat label="users" value={appSnapshot?.users.length ?? 0} t={t} css={css} />
+            </div>
+            <div className={`${mono} ${css({ color: t.textTertiary })}`}>app topic: {appState.status}</div>
+          </div>
+        </Section>
+
         {/* Snapshot Summary */}
-        <Section label="Snapshot" t={t} css={css}>
+        <Section label="Organization Snapshot" t={t} css={css}>
           <div className={css({ display: "flex", gap: "10px", fontSize: "10px" })}>
             <Stat label="repos" value={repos.length} t={t} css={css} />
-            <Stat label="tasks" value={(snapshot.tasks ?? []).length} t={t} css={css} />
+            <Stat label="tasks" value={tasks.length} t={t} css={css} />
+            <Stat label="PRs" value={prCount} t={t} css={css} />
           </div>
         </Section>
 
@@ -395,7 +428,7 @@ export const DevPanel = memo(function DevPanel({ workspaceId, snapshot, organiza
                         {sandbox.sandboxId.slice(0, 16)}
                         {isActive ? " *" : ""}
                       </span>
-                      <span className={`${mono} ${css({ color: t.textMuted })}`}>{sandbox.providerId}</span>
+                      <span className={`${mono} ${css({ color: t.textMuted })}`}>{sandbox.sandboxProviderId}</span>
                     </div>
                     {sandbox.cwd && <div className={`${mono} ${css({ color: t.textTertiary, paddingLeft: "11px" })}`}>cwd: {sandbox.cwd}</div>}
                   </div>
@@ -408,8 +441,8 @@ export const DevPanel = memo(function DevPanel({ workspaceId, snapshot, organiza
         )}
 
         {/* GitHub */}
-        {organization && (
-          <Section label="GitHub" t={t} css={css}>
+        <Section label="GitHub" t={t} css={css}>
+          {organization ? (
             <div className={css({ display: "flex", flexDirection: "column", gap: "3px", fontSize: "10px" })}>
               <div className={css({ display: "flex", alignItems: "center", gap: "6px" })}>
                 <span
@@ -421,7 +454,7 @@ export const DevPanel = memo(function DevPanel({ workspaceId, snapshot, organiza
                     flexShrink: 0,
                   })}
                 />
-                <span className={css({ color: t.textPrimary, flex: 1 })}>App</span>
+                <span className={css({ color: t.textPrimary, flex: 1 })}>App Install</span>
                 <span className={`${mono} ${css({ color: installStatusColor(organization.github.installationStatus, t) })}`}>
                   {organization.github.installationStatus.replace(/_/g, " ")}
                 </span>
@@ -438,6 +471,9 @@ export const DevPanel = memo(function DevPanel({ workspaceId, snapshot, organiza
                 />
                 <span className={css({ color: t.textPrimary, flex: 1 })}>Sync</span>
                 <span className={`${mono} ${css({ color: syncStatusColor(organization.github.syncStatus, t) })}`}>{organization.github.syncStatus}</span>
+                {organization.github.lastSyncAt != null && (
+                  <span className={`${mono} ${css({ color: t.textTertiary })}`}>{timeAgo(organization.github.lastSyncAt)}</span>
+                )}
               </div>
               <div className={css({ display: "flex", alignItems: "center", gap: "6px" })}>
                 <span
@@ -455,12 +491,12 @@ export const DevPanel = memo(function DevPanel({ workspaceId, snapshot, organiza
                     {organization.github.lastWebhookEvent} · {timeAgo(lastWebhookAt)}
                   </span>
                 ) : (
-                  <span className={`${mono} ${css({ color: t.textMuted })}`}>never received</span>
+                  <span className={`${mono} ${css({ color: t.statusWarning })}`}>never received</span>
                 )}
               </div>
               <div className={css({ display: "flex", gap: "10px", marginTop: "2px" })}>
-                <Stat label="repos" value={organization.github.importedRepoCount} t={t} css={css} />
-                <Stat label="PRs" value={prCount} t={t} css={css} />
+                <Stat label="imported" value={organization.github.importedRepoCount} t={t} css={css} />
+                <Stat label="catalog" value={organization.repoCatalog.length} t={t} css={css} />
               </div>
               {organization.github.connectedAccount && (
                 <div className={`${mono} ${css({ color: t.textMuted, marginTop: "1px" })}`}>@{organization.github.connectedAccount}</div>
@@ -469,12 +505,14 @@ export const DevPanel = memo(function DevPanel({ workspaceId, snapshot, organiza
                 <div className={`${mono} ${css({ color: t.textMuted })}`}>last sync: {organization.github.lastSyncLabel}</div>
               )}
             </div>
-          </Section>
-        )}
+          ) : (
+            <span className={css({ fontSize: "10px", color: t.textMuted })}>No organization data loaded</span>
+          )}
+        </Section>
 
-        {/* Workspace */}
-        <Section label="Workspace" t={t} css={css}>
-          <div className={`${mono} ${css({ color: t.textTertiary })}`}>{workspaceId}</div>
+        {/* Organization */}
+        <Section label="Organization" t={t} css={css}>
+          <div className={`${mono} ${css({ color: t.textTertiary })}`}>{organizationId}</div>
           {organization && (
             <div className={`${mono} ${css({ color: t.textMuted, marginTop: "2px" })}`}>
               org: {organization.settings.displayName} ({organization.kind})

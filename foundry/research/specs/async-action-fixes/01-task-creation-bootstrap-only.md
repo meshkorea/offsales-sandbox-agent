@@ -10,8 +10,8 @@ That makes a user-facing action depend on queue-backed and provider-backed work 
 
 ## Current Code Context
 
-- Workspace entry point: `foundry/packages/backend/src/actors/workspace/actions.ts`
-- Project task creation path: `foundry/packages/backend/src/actors/project/actions.ts`
+- Organization entry point: `foundry/packages/backend/src/actors/organization/actions.ts`
+- Repository task creation path: `foundry/packages/backend/src/actors/repository/actions.ts`
 - Task action surface: `foundry/packages/backend/src/actors/task/index.ts`
 - Task workflow: `foundry/packages/backend/src/actors/task/workflow/index.ts`
 - Task init/provision steps: `foundry/packages/backend/src/actors/task/workflow/init.ts`
@@ -33,8 +33,8 @@ That makes a user-facing action depend on queue-backed and provider-backed work 
    - persisting any immediately-known metadata
    - returning the current task record
 3. After initialize completes, enqueue `task.command.provision` with `wait: false`.
-4. Change `workspace.createTask` to:
-   - create or resolve the project
+4. Change `organization.createTask` to:
+   - create or resolve the repository
    - create the task actor
    - call `task.initialize(...)`
    - stop awaiting `task.provision(...)`
@@ -51,12 +51,12 @@ That makes a user-facing action depend on queue-backed and provider-backed work 
 
 ## Files Likely To Change
 
-- `foundry/packages/backend/src/actors/workspace/actions.ts`
-- `foundry/packages/backend/src/actors/project/actions.ts`
+- `foundry/packages/backend/src/actors/organization/actions.ts`
+- `foundry/packages/backend/src/actors/repository/actions.ts`
 - `foundry/packages/backend/src/actors/task/index.ts`
 - `foundry/packages/backend/src/actors/task/workflow/index.ts`
 - `foundry/packages/backend/src/actors/task/workflow/init.ts`
-- `foundry/packages/frontend/src/components/workspace-dashboard.tsx`
+- `foundry/packages/frontend/src/components/organization-dashboard.tsx`
 - `foundry/packages/client/src/remote/workbench-client.ts`
 
 ## Client Impact

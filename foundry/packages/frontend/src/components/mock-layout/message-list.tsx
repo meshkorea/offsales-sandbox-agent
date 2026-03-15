@@ -7,7 +7,7 @@ import { Copy } from "lucide-react";
 import { useFoundryTokens } from "../../app/theme";
 import { HistoryMinimap } from "./history-minimap";
 import { SpinnerDot } from "./ui";
-import { buildDisplayMessages, formatMessageDuration, formatMessageTimestamp, type AgentTab, type HistoryEvent, type Message } from "./view-model";
+import { buildDisplayMessages, formatMessageDuration, formatMessageTimestamp, type AgentSession, type HistoryEvent, type Message } from "./view-model";
 
 const TranscriptMessageBody = memo(function TranscriptMessageBody({
   message,
@@ -140,7 +140,7 @@ const TranscriptMessageBody = memo(function TranscriptMessageBody({
 });
 
 export const MessageList = memo(function MessageList({
-  tab,
+  session,
   scrollRef,
   messageRefs,
   historyEvents,
@@ -150,8 +150,9 @@ export const MessageList = memo(function MessageList({
   copiedMessageId,
   onCopyMessage,
   thinkingTimerLabel,
+  pendingMessage,
 }: {
-  tab: AgentTab | null | undefined;
+  session: AgentSession | null | undefined;
   scrollRef: RefObject<HTMLDivElement>;
   messageRefs: MutableRefObject<Map<string, HTMLDivElement>>;
   historyEvents: HistoryEvent[];
@@ -161,24 +162,35 @@ export const MessageList = memo(function MessageList({
   copiedMessageId: string | null;
   onCopyMessage: (message: Message) => void;
   thinkingTimerLabel: string | null;
+  pendingMessage: { text: string; sentAt: number } | null;
 }) {
   const [css] = useStyletron();
   const t = useFoundryTokens();
-  const messages = useMemo(() => buildDisplayMessages(tab), [tab]);
+  const PENDING_MESSAGE_ID = "__pending__";
+  const messages = useMemo(() => buildDisplayMessages(session), [session]);
   const messagesById = useMemo(() => new Map(messages.map((message) => [message.id, message])), [messages]);
   const messageIndexById = useMemo(() => new Map(messages.map((message, index) => [message.id, index])), [messages]);
-  const transcriptEntries = useMemo<TranscriptEntry[]>(
-    () =>
-      messages.map((message) => ({
-        id: message.id,
-        eventId: message.id,
+  const transcriptEntries = useMemo<TranscriptEntry[]>(() => {
+    const entries: TranscriptEntry[] = messages.map((message) => ({
+      id: message.id,
+      eventId: message.id,
+      kind: "message",
+      time: new Date(message.createdAtMs).toISOString(),
+      role: message.sender === "client" ? "user" : "assistant",
+      text: message.text,
+    }));
+    if (pendingMessage) {
+      entries.push({
+        id: PENDING_MESSAGE_ID,
+        eventId: PENDING_MESSAGE_ID,
         kind: "message",
-        time: new Date(message.createdAtMs).toISOString(),
-        role: message.sender === "client" ? "user" : "assistant",
-        text: message.text,
-      })),
-    [messages],
-  );
+        time: new Date(pendingMessage.sentAt).toISOString(),
+        role: "user",
+        text: pendingMessage.text,
+      });
+    }
+    return entries;
+  }, [messages, pendingMessage]);
 
   const messageContentClass = css({
     maxWidth: "100%",
@@ -256,7 +268,7 @@ export const MessageList = memo(function MessageList({
       `}</style>
       {historyEvents.length > 0 ? <HistoryMinimap events={historyEvents} onSelect={onSelectHistoryEvent} /> : null}
       <div ref={scrollRef} className={scrollContainerClass}>
-        {tab && transcriptEntries.length === 0 ? (
+        {session && transcriptEntries.length === 0 ? (
           <div
             className={css({
               display: "flex",
@@ -269,7 +281,7 @@ export const MessageList = memo(function MessageList({
             })}
           >
             <LabelSmall color={t.textTertiary}>
-              {!tab.created ? "Choose an agent and model, then send your first message" : "No messages yet in this session"}
+              {!session?.created ? "Choose an agent and model, then send your first message" : "No messages yet in this session"}
             </LabelSmall>
           </div>
         ) : (
@@ -280,6 +292,28 @@ export const MessageList = memo(function MessageList({
             scrollToEntryId={targetMessageId}
             virtualize
             renderMessageText={(entry) => {
+              if (entry.id === PENDING_MESSAGE_ID && pendingMessage) {
+                const pendingMsg: Message = {
+                  id: PENDING_MESSAGE_ID,
+                  sender: "client",
+                  text: pendingMessage.text,
+                  createdAtMs: pendingMessage.sentAt,
+                  event: {
+                    id: PENDING_MESSAGE_ID,
+                    eventIndex: -1,
+                    sessionId: "",
+                    connectionId: "",
+                    sender: "client",
+                    createdAt: pendingMessage.sentAt,
+                    payload: {},
+                  },
+                };
+                return (
+                  <div style={{ opacity: 0.5 }}>
+                    <TranscriptMessageBody message={pendingMsg} messageRefs={messageRefs} copiedMessageId={copiedMessageId} onCopyMessage={onCopyMessage} />
+                  </div>
+                );
+              }
               const message = messagesById.get(entry.id);
               if (!message) {
                 return null;
@@ -296,7 +330,7 @@ export const MessageList = memo(function MessageList({
                 />
               );
             }}
-            isThinking={Boolean(tab && tab.status === "running" && transcriptEntries.length > 0)}
+            isThinking={Boolean((session && session.status === "running" && transcriptEntries.length > 0) || pendingMessage)}
             renderThinkingState={() => (
               <div className={transcriptClassNames.thinkingRow}>
                 <SpinnerDot size={12} />

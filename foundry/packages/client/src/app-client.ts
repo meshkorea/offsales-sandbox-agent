@@ -24,7 +24,7 @@ export interface FoundryAppClient {
   cancelScheduledRenewal(organizationId: string): Promise<void>;
   resumeSubscription(organizationId: string): Promise<void>;
   reconnectGithub(organizationId: string): Promise<void>;
-  recordSeatUsage(workspaceId: string): Promise<void>;
+  recordSeatUsage(organizationId: string): Promise<void>;
 }
 
 export interface CreateFoundryAppClientOptions {

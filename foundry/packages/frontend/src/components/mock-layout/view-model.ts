@@ -1,6 +1,6 @@
 import type {
   WorkbenchAgentKind as AgentKind,
-  WorkbenchAgentTab as AgentTab,
+  WorkbenchSession as AgentSession,
   WorkbenchDiffLineKind as DiffLineKind,
   WorkbenchFileChange as FileChange,
   WorkbenchFileTreeNode as FileTreeNode,
@@ -10,12 +10,12 @@ import type {
   WorkbenchModelGroup as ModelGroup,
   WorkbenchModelId as ModelId,
   WorkbenchParsedDiffLine as ParsedDiffLine,
-  WorkbenchProjectSection as ProjectSection,
+  WorkbenchRepositorySection as RepositorySection,
   WorkbenchTranscriptEvent as TranscriptEvent,
 } from "@sandbox-agent/foundry-shared";
 import { extractEventText } from "../../features/sessions/model";
 
-export type { ProjectSection };
+export type { RepositorySection };
 
 export const MODEL_GROUPS: ModelGroup[] = [
   {
@@ -138,17 +138,17 @@ function historyDetail(event: TranscriptEvent): string {
   return content || "Untitled event";
 }
 
-export function buildHistoryEvents(tabs: AgentTab[]): HistoryEvent[] {
-  return tabs
-    .flatMap((tab) =>
-      tab.transcript
+export function buildHistoryEvents(sessions: AgentSession[]): HistoryEvent[] {
+  return sessions
+    .flatMap((session) =>
+      session.transcript
         .filter((event) => event.sender === "client")
         .map((event) => ({
-          id: `history-${tab.id}-${event.id}`,
+          id: `history-${session.id}-${event.id}`,
           messageId: event.id,
           preview: historyPreview(event),
-          sessionName: tab.sessionName,
-          tabId: tab.id,
+          sessionName: session.sessionName,
+          sessionId: session.id,
           createdAtMs: event.createdAt,
           detail: historyDetail(event),
         })),
@@ -255,8 +255,8 @@ function shouldDisplayEvent(event: TranscriptEvent): boolean {
   return Boolean(extractEventText(payload).trim());
 }
 
-export function buildDisplayMessages(tab: AgentTab | null | undefined): Message[] {
-  if (!tab) {
+export function buildDisplayMessages(session: AgentSession | null | undefined): Message[] {
+  if (!session) {
     return [];
   }
 
@@ -270,7 +270,7 @@ export function buildDisplayMessages(tab: AgentTab | null | undefined): Message[
     pendingAgentMessage = null;
   };
 
-  for (const event of tab.transcript) {
+  for (const event of session.transcript) {
     const chunkText = isAgentChunkEvent(event);
     if (chunkText !== null) {
       if (!pendingAgentMessage) {
@@ -329,7 +329,7 @@ export function parseDiffLines(diff: string): ParsedDiffLine[] {
 
 export type {
   AgentKind,
-  AgentTab,
+  AgentSession,
   DiffLineKind,
   FileChange,
   FileTreeNode,

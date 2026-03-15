@@ -8,7 +8,7 @@ Implementing provider adapters (`worktree`, `daytona`) under the backend package
 
 ### Friction / Issue
 
-Provider interface intentionally keeps `DestroySandboxRequest` minimal (`workspaceId`, `sandboxId`), but local git worktree cleanup may need repo context.
+Provider interface intentionally keeps `DestroySandboxRequest` minimal (`organizationId`, `sandboxId`), but local git worktree cleanup may need repo context.
 
 ### Attempted Fix / Workaround
 
@@ -54,8 +54,8 @@ The previous end-to-end flow implicitly depended on local filesystem paths (`rep
 
 ### Attempted Fix / Workaround
 
-1. Introduced explicit repo remote records (`WorkspaceActor.addRepo`) and validated remotes with `git ls-remote`.
-2. Made `ProjectActor` assert a backend-owned local clone exists on wake and fetch remote branch state from that clone.
+1. Introduced explicit imported repository records sourced from GitHub sync instead of local organization paths.
+2. Made `RepositoryActor` assert a backend-owned local clone exists on wake and fetch remote branch state from that clone.
 3. Updated PR creation to avoid requiring a checked-out branch by using `gh pr create --head <branch>`.
 4. Updated `DaytonaProvider.createSandbox` to clone the repo and checkout the branch into a deterministic workdir and return it as `cwd` for sandbox-agent sessions.
 

@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { eq } from "drizzle-orm";
 import { getTaskSandbox } from "../../handles.js";
-import { resolveWorkspaceGithubAuth } from "../../../services/github-auth.js";
+import { resolveOrganizationGithubAuth } from "../../../services/github-auth.js";
 import { taskRuntime, taskSandboxes } from "../db/schema.js";
 import { TASK_ROW_ID, appendHistory, getCurrentRecord } from "./common.js";
 
@@ -49,8 +49,8 @@ export async function pushActiveBranchActivity(loopCtx: any, options: PushActive
     `git push -u origin ${JSON.stringify(branchName)}`,
   ].join("; ");
 
-  const sandbox = getTaskSandbox(loopCtx, loopCtx.state.workspaceId, activeSandboxId);
-  const auth = await resolveWorkspaceGithubAuth(loopCtx, loopCtx.state.workspaceId);
+  const sandbox = getTaskSandbox(loopCtx, loopCtx.state.organizationId, activeSandboxId);
+  const auth = await resolveOrganizationGithubAuth(loopCtx, loopCtx.state.organizationId);
   const result = await sandbox.runProcess({
     command: "bash",
     args: ["-lc", script],

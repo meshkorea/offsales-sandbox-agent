@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { TaskWorkbenchSnapshot, WorkbenchAgentTab, WorkbenchTask, WorkbenchModelId, WorkbenchTranscriptEvent } from "@sandbox-agent/foundry-shared";
+import type { TaskWorkbenchSnapshot, WorkbenchSession, WorkbenchTask, WorkbenchModelId, WorkbenchTranscriptEvent } from "@sandbox-agent/foundry-shared";
 import { createBackendClient } from "../../src/backend-client.js";
+import { requireImportedRepo } from "./helpers.js";
 
 const RUN_WORKBENCH_E2E = process.env.HF_ENABLE_DAEMON_WORKBENCH_E2E === "1";
 
@@ -57,10 +58,10 @@ function findTask(snapshot: TaskWorkbenchSnapshot, taskId: string): WorkbenchTas
   return task;
 }
 
-function findTab(task: WorkbenchTask, tabId: string): WorkbenchAgentTab {
-  const tab = task.tabs.find((candidate) => candidate.id === tabId);
+function findTab(task: WorkbenchTask, sessionId: string): WorkbenchSession {
+  const tab = task.sessions.find((candidate) => candidate.id === sessionId);
   if (!tab) {
-    throw new Error(`tab ${tabId} missing from task ${task.id}`);
+    throw new Error(`tab ${sessionId} missing from task ${task.id}`);
   }
   return tab;
 }
@@ -135,171 +136,175 @@ function transcriptIncludesAgentText(transcript: WorkbenchTranscriptEvent[], exp
 }
 
 describe("e2e(client): workbench flows", () => {
-  it.skipIf(!RUN_WORKBENCH_E2E)("creates a task, adds sessions, exchanges messages, and manages workbench state", { timeout: 20 * 60_000 }, async () => {
-    const endpoint = process.env.HF_E2E_BACKEND_ENDPOINT?.trim() || "http://127.0.0.1:7741/v1/rivet";
-    const workspaceId = process.env.HF_E2E_WORKSPACE?.trim() || "default";
-    const repoRemote = requiredEnv("HF_E2E_GITHUB_REPO");
-    const model = workbenchModelEnv("HF_E2E_MODEL", "gpt-5.3-codex");
-    const runId = `wb-${Date.now().toString(36)}`;
-    const expectedFile = `${runId}.txt`;
-    const expectedInitialReply = `WORKBENCH_READY_${runId}`;
-    const expectedReply = `WORKBENCH_ACK_${runId}`;
+  it.skipIf(!RUN_WORKBENCH_E2E)(
+    "creates a task from an imported repo, adds sessions, exchanges messages, and manages workbench state",
+    { timeout: 20 * 60_000 },
+    async () => {
+      const endpoint = process.env.HF_E2E_BACKEND_ENDPOINT?.trim() || "http://127.0.0.1:7741/v1/rivet";
+      const organizationId = process.env.HF_E2E_WORKSPACE?.trim() || "default";
+      const repoRemote = requiredEnv("HF_E2E_GITHUB_REPO");
+      const model = workbenchModelEnv("HF_E2E_MODEL", "gpt-5.3-codex");
+      const runId = `wb-${Date.now().toString(36)}`;
+      const expectedFile = `${runId}.txt`;
+      const expectedInitialReply = `WORKBENCH_READY_${runId}`;
+      const expectedReply = `WORKBENCH_ACK_${runId}`;
 
-    const client = createBackendClient({
-      endpoint,
-      defaultWorkspaceId: workspaceId,
-    });
+      const client = createBackendClient({
+        endpoint,
+        defaultOrganizationId: organizationId,
+      });
 
-    const repo = await client.addRepo(workspaceId, repoRemote);
-    const created = await client.createWorkbenchTask(workspaceId, {
-      repoId: repo.repoId,
-      title: `Workbench E2E ${runId}`,
-      branch: `e2e/${runId}`,
-      model,
-      task: `Reply with exactly: ${expectedInitialReply}`,
-    });
+      const repo = await requireImportedRepo(client, organizationId, repoRemote);
+      const created = await client.createWorkbenchTask(organizationId, {
+        repoId: repo.repoId,
+        title: `Workbench E2E ${runId}`,
+        branch: `e2e/${runId}`,
+        model,
+        task: `Reply with exactly: ${expectedInitialReply}`,
+      });
 
-    const provisioned = await poll(
-      "task provisioning",
-      12 * 60_000,
-      2_000,
-      async () => findTask(await client.getWorkbench(workspaceId), created.taskId),
-      (task) => task.branch === `e2e/${runId}` && task.tabs.length > 0,
-    );
+      const provisioned = await poll(
+        "task provisioning",
+        12 * 60_000,
+        2_000,
+        async () => findTask(await client.getWorkbench(organizationId), created.taskId),
+        (task) => task.branch === `e2e/${runId}` && task.sessions.length > 0,
+      );
 
-    const primaryTab = provisioned.tabs[0]!;
+      const primaryTab = provisioned.sessions[0]!;
 
-    const initialCompleted = await poll(
-      "initial agent response",
-      12 * 60_000,
-      2_000,
-      async () => findTask(await client.getWorkbench(workspaceId), created.taskId),
-      (task) => {
-        const tab = findTab(task, primaryTab.id);
-        return task.status === "idle" && tab.status === "idle" && transcriptIncludesAgentText(tab.transcript, expectedInitialReply);
-      },
-    );
-
-    expect(findTab(initialCompleted, primaryTab.id).sessionId).toBeTruthy();
-    expect(transcriptIncludesAgentText(findTab(initialCompleted, primaryTab.id).transcript, expectedInitialReply)).toBe(true);
-
-    await client.renameWorkbenchTask(workspaceId, {
-      taskId: created.taskId,
-      value: `Workbench E2E ${runId} Renamed`,
-    });
-    await client.renameWorkbenchSession(workspaceId, {
-      taskId: created.taskId,
-      tabId: primaryTab.id,
-      title: "Primary Session",
-    });
-
-    const secondTab = await client.createWorkbenchSession(workspaceId, {
-      taskId: created.taskId,
-      model,
-    });
-
-    await client.renameWorkbenchSession(workspaceId, {
-      taskId: created.taskId,
-      tabId: secondTab.tabId,
-      title: "Follow-up Session",
-    });
-
-    await client.updateWorkbenchDraft(workspaceId, {
-      taskId: created.taskId,
-      tabId: secondTab.tabId,
-      text: [
-        `Create a file named ${expectedFile} in the repo root.`,
-        `Write exactly this single line into the file: ${runId}`,
-        `Then reply with exactly: ${expectedReply}`,
-      ].join("\n"),
-      attachments: [
-        {
-          id: `${expectedFile}:1`,
-          filePath: expectedFile,
-          lineNumber: 1,
-          lineContent: runId,
+      const initialCompleted = await poll(
+        "initial agent response",
+        12 * 60_000,
+        2_000,
+        async () => findTask(await client.getWorkbench(organizationId), created.taskId),
+        (task) => {
+          const tab = findTab(task, primaryTab.id);
+          return task.status === "idle" && tab.status === "idle" && transcriptIncludesAgentText(tab.transcript, expectedInitialReply);
         },
-      ],
-    });
+      );
 
-    const drafted = findTask(await client.getWorkbench(workspaceId), created.taskId);
-    expect(findTab(drafted, secondTab.tabId).draft.text).toContain(expectedReply);
-    expect(findTab(drafted, secondTab.tabId).draft.attachments).toHaveLength(1);
+      expect(findTab(initialCompleted, primaryTab.id).sessionId).toBeTruthy();
+      expect(transcriptIncludesAgentText(findTab(initialCompleted, primaryTab.id).transcript, expectedInitialReply)).toBe(true);
 
-    await client.sendWorkbenchMessage(workspaceId, {
-      taskId: created.taskId,
-      tabId: secondTab.tabId,
-      text: [
-        `Create a file named ${expectedFile} in the repo root.`,
-        `Write exactly this single line into the file: ${runId}`,
-        `Then reply with exactly: ${expectedReply}`,
-      ].join("\n"),
-      attachments: [
-        {
-          id: `${expectedFile}:1`,
-          filePath: expectedFile,
-          lineNumber: 1,
-          lineContent: runId,
+      await client.renameWorkbenchTask(organizationId, {
+        taskId: created.taskId,
+        value: `Workbench E2E ${runId} Renamed`,
+      });
+      await client.renameWorkbenchSession(organizationId, {
+        taskId: created.taskId,
+        sessionId: primaryTab.id,
+        title: "Primary Session",
+      });
+
+      const secondTab = await client.createWorkbenchSession(organizationId, {
+        taskId: created.taskId,
+        model,
+      });
+
+      await client.renameWorkbenchSession(organizationId, {
+        taskId: created.taskId,
+        sessionId: secondTab.sessionId,
+        title: "Follow-up Session",
+      });
+
+      await client.updateWorkbenchDraft(organizationId, {
+        taskId: created.taskId,
+        sessionId: secondTab.sessionId,
+        text: [
+          `Create a file named ${expectedFile} in the repo root.`,
+          `Write exactly this single line into the file: ${runId}`,
+          `Then reply with exactly: ${expectedReply}`,
+        ].join("\n"),
+        attachments: [
+          {
+            id: `${expectedFile}:1`,
+            filePath: expectedFile,
+            lineNumber: 1,
+            lineContent: runId,
+          },
+        ],
+      });
+
+      const drafted = findTask(await client.getWorkbench(organizationId), created.taskId);
+      expect(findTab(drafted, secondTab.sessionId).draft.text).toContain(expectedReply);
+      expect(findTab(drafted, secondTab.sessionId).draft.attachments).toHaveLength(1);
+
+      await client.sendWorkbenchMessage(organizationId, {
+        taskId: created.taskId,
+        sessionId: secondTab.sessionId,
+        text: [
+          `Create a file named ${expectedFile} in the repo root.`,
+          `Write exactly this single line into the file: ${runId}`,
+          `Then reply with exactly: ${expectedReply}`,
+        ].join("\n"),
+        attachments: [
+          {
+            id: `${expectedFile}:1`,
+            filePath: expectedFile,
+            lineNumber: 1,
+            lineContent: runId,
+          },
+        ],
+      });
+
+      const withSecondReply = await poll(
+        "follow-up session response",
+        10 * 60_000,
+        2_000,
+        async () => findTask(await client.getWorkbench(organizationId), created.taskId),
+        (task) => {
+          const tab = findTab(task, secondTab.sessionId);
+          return (
+            tab.status === "idle" && transcriptIncludesAgentText(tab.transcript, expectedReply) && task.fileChanges.some((file) => file.path === expectedFile)
+          );
         },
-      ],
-    });
+      );
 
-    const withSecondReply = await poll(
-      "follow-up session response",
-      10 * 60_000,
-      2_000,
-      async () => findTask(await client.getWorkbench(workspaceId), created.taskId),
-      (task) => {
-        const tab = findTab(task, secondTab.tabId);
-        return (
-          tab.status === "idle" && transcriptIncludesAgentText(tab.transcript, expectedReply) && task.fileChanges.some((file) => file.path === expectedFile)
-        );
-      },
-    );
+      const secondTranscript = findTab(withSecondReply, secondTab.sessionId).transcript;
+      expect(transcriptIncludesAgentText(secondTranscript, expectedReply)).toBe(true);
+      expect(withSecondReply.fileChanges.some((file) => file.path === expectedFile)).toBe(true);
 
-    const secondTranscript = findTab(withSecondReply, secondTab.tabId).transcript;
-    expect(transcriptIncludesAgentText(secondTranscript, expectedReply)).toBe(true);
-    expect(withSecondReply.fileChanges.some((file) => file.path === expectedFile)).toBe(true);
+      await client.setWorkbenchSessionUnread(organizationId, {
+        taskId: created.taskId,
+        sessionId: secondTab.sessionId,
+        unread: false,
+      });
+      await client.markWorkbenchUnread(organizationId, { taskId: created.taskId });
 
-    await client.setWorkbenchSessionUnread(workspaceId, {
-      taskId: created.taskId,
-      tabId: secondTab.tabId,
-      unread: false,
-    });
-    await client.markWorkbenchUnread(workspaceId, { taskId: created.taskId });
+      const unreadSnapshot = findTask(await client.getWorkbench(organizationId), created.taskId);
+      expect(unreadSnapshot.sessions.some((tab) => tab.unread)).toBe(true);
 
-    const unreadSnapshot = findTask(await client.getWorkbench(workspaceId), created.taskId);
-    expect(unreadSnapshot.tabs.some((tab) => tab.unread)).toBe(true);
+      await client.closeWorkbenchSession(organizationId, {
+        taskId: created.taskId,
+        sessionId: secondTab.sessionId,
+      });
 
-    await client.closeWorkbenchSession(workspaceId, {
-      taskId: created.taskId,
-      tabId: secondTab.tabId,
-    });
+      const closedSnapshot = await poll(
+        "secondary session closed",
+        30_000,
+        1_000,
+        async () => findTask(await client.getWorkbench(organizationId), created.taskId),
+        (task) => !task.sessions.some((tab) => tab.id === secondTab.sessionId),
+      );
+      expect(closedSnapshot.sessions).toHaveLength(1);
 
-    const closedSnapshot = await poll(
-      "secondary session closed",
-      30_000,
-      1_000,
-      async () => findTask(await client.getWorkbench(workspaceId), created.taskId),
-      (task) => !task.tabs.some((tab) => tab.id === secondTab.tabId),
-    );
-    expect(closedSnapshot.tabs).toHaveLength(1);
+      await client.revertWorkbenchFile(organizationId, {
+        taskId: created.taskId,
+        path: expectedFile,
+      });
 
-    await client.revertWorkbenchFile(workspaceId, {
-      taskId: created.taskId,
-      path: expectedFile,
-    });
+      const revertedSnapshot = await poll(
+        "file revert reflected in workbench",
+        30_000,
+        1_000,
+        async () => findTask(await client.getWorkbench(organizationId), created.taskId),
+        (task) => !task.fileChanges.some((file) => file.path === expectedFile),
+      );
 
-    const revertedSnapshot = await poll(
-      "file revert reflected in workbench",
-      30_000,
-      1_000,
-      async () => findTask(await client.getWorkbench(workspaceId), created.taskId),
-      (task) => !task.fileChanges.some((file) => file.path === expectedFile),
-    );
-
-    expect(revertedSnapshot.fileChanges.some((file) => file.path === expectedFile)).toBe(false);
-    expect(revertedSnapshot.title).toBe(`Workbench E2E ${runId} Renamed`);
-    expect(findTab(revertedSnapshot, primaryTab.id).sessionName).toBe("Primary Session");
-  });
+      expect(revertedSnapshot.fileChanges.some((file) => file.path === expectedFile)).toBe(false);
+      expect(revertedSnapshot.title).toBe(`Workbench E2E ${runId} Renamed`);
+      expect(findTab(revertedSnapshot, primaryTab.id).sessionName).toBe("Primary Session");
+    },
+  );
 });

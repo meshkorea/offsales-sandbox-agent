@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { WorkbenchAgentTab } from "@sandbox-agent/foundry-shared";
+import type { WorkbenchSession } from "@sandbox-agent/foundry-shared";
 import { buildDisplayMessages } from "./view-model";
 
-function makeTab(transcript: WorkbenchAgentTab["transcript"]): WorkbenchAgentTab {
+function makeSession(transcript: WorkbenchSession["transcript"]): WorkbenchSession {
   return {
-    id: "tab-1",
+    id: "session-1",
     sessionId: "session-1",
     sessionName: "Session 1",
     agent: "Codex",
@@ -25,7 +25,7 @@ function makeTab(transcript: WorkbenchAgentTab["transcript"]): WorkbenchAgentTab
 describe("buildDisplayMessages", () => {
   it("collapses chunked agent output into a single display message", () => {
     const messages = buildDisplayMessages(
-      makeTab([
+      makeSession([
         {
           id: "evt-setup",
           eventIndex: 0,
@@ -139,7 +139,7 @@ describe("buildDisplayMessages", () => {
 
   it("hides non-message session update envelopes", () => {
     const messages = buildDisplayMessages(
-      makeTab([
+      makeSession([
         {
           id: "evt-client",
           eventIndex: 1,

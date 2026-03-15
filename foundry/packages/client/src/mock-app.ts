@@ -67,7 +67,7 @@ export interface MockFoundryOrganizationSettings {
 
 export interface MockFoundryOrganization {
   id: string;
-  workspaceId: string;
+  organizationId: string;
   kind: MockOrganizationKind;
   settings: MockFoundryOrganizationSettings;
   github: MockFoundryGithubState;
@@ -118,7 +118,7 @@ export interface MockFoundryAppClient {
   cancelScheduledRenewal(organizationId: string): Promise<void>;
   resumeSubscription(organizationId: string): Promise<void>;
   reconnectGithub(organizationId: string): Promise<void>;
-  recordSeatUsage(workspaceId: string): void;
+  recordSeatUsage(organizationId: string): void;
 }
 
 const STORAGE_KEY = "sandbox-agent-foundry:mock-app:v1";
@@ -173,7 +173,7 @@ function buildRivetOrganization(): MockFoundryOrganization {
 
   return {
     id: "rivet",
-    workspaceId: "rivet",
+    organizationId: "rivet",
     kind: "organization",
     settings: {
       displayName: rivetDevFixture.name ?? rivetDevFixture.login,
@@ -254,7 +254,7 @@ function buildDefaultSnapshot(): MockFoundryAppSnapshot {
     organizations: [
       {
         id: "personal-nathan",
-        workspaceId: "personal-nathan",
+        organizationId: "personal-nathan",
         kind: "personal",
         settings: {
           displayName: "Nathan",
@@ -290,7 +290,7 @@ function buildDefaultSnapshot(): MockFoundryAppSnapshot {
       },
       {
         id: "acme",
-        workspaceId: "acme",
+        organizationId: "acme",
         kind: "organization",
         settings: {
           displayName: "Acme",
@@ -335,7 +335,7 @@ function buildDefaultSnapshot(): MockFoundryAppSnapshot {
       buildRivetOrganization(),
       {
         id: "personal-jamie",
-        workspaceId: "personal-jamie",
+        organizationId: "personal-jamie",
         kind: "personal",
         settings: {
           displayName: "Jamie",
@@ -659,8 +659,8 @@ class MockFoundryAppStore implements MockFoundryAppClient {
     }));
   }
 
-  recordSeatUsage(workspaceId: string): void {
-    const org = this.snapshot.organizations.find((candidate) => candidate.workspaceId === workspaceId);
+  recordSeatUsage(organizationId: string): void {
+    const org = this.snapshot.organizations.find((candidate) => candidate.organizationId === organizationId);
     const currentUser = currentMockUser(this.snapshot);
     if (!org || !currentUser) {
       return;
