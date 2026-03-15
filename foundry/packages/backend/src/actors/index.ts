@@ -32,7 +32,6 @@ export const registry = setup({
 });
 
 export * from "./context.js";
-export * from "./events.js";
 export * from "./audit-log/index.js";
 export * from "./user/index.js";
 export * from "./github-data/index.js";

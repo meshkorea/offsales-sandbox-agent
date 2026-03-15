@@ -1,8 +1,6 @@
 // @ts-nocheck
-import { eq } from "drizzle-orm";
 import { getTaskSandbox } from "../../handles.js";
 import { resolveOrganizationGithubAuth } from "../../../services/github-auth.js";
-import { taskSandboxes } from "../db/schema.js";
 import { appendAuditLog, getCurrentRecord } from "./common.js";
 
 export interface PushActiveBranchOptions {
@@ -13,7 +11,7 @@ export interface PushActiveBranchOptions {
 export async function pushActiveBranchActivity(loopCtx: any, options: PushActiveBranchOptions = {}): Promise<void> {
   const record = await getCurrentRecord(loopCtx);
   const activeSandboxId = record.activeSandboxId;
-  const branchName = loopCtx.state.branchName ?? record.branchName;
+  const branchName = record.branchName;
 
   if (!activeSandboxId) {
     throw new Error("cannot push: no active sandbox");
@@ -27,13 +25,6 @@ export async function pushActiveBranchActivity(loopCtx: any, options: PushActive
   if (!cwd) {
     throw new Error("cannot push: active sandbox cwd is not set");
   }
-
-  const now = Date.now();
-  await loopCtx.db
-    .update(taskSandboxes)
-    .set({ statusMessage: `pushing branch ${branchName}`, updatedAt: now })
-    .where(eq(taskSandboxes.sandboxId, activeSandboxId))
-    .run();
 
   const script = [
     "set -euo pipefail",
@@ -61,13 +52,6 @@ export async function pushActiveBranchActivity(loopCtx: any, options: PushActive
   if ((result.exitCode ?? 0) !== 0) {
     throw new Error(`git push failed (${result.exitCode ?? 1}): ${[result.stdout, result.stderr].filter(Boolean).join("")}`);
   }
-
-  const updatedAt = Date.now();
-  await loopCtx.db
-    .update(taskSandboxes)
-    .set({ statusMessage: `push complete for ${branchName}`, updatedAt })
-    .where(eq(taskSandboxes.sandboxId, activeSandboxId))
-    .run();
 
   await appendAuditLog(loopCtx, options.historyKind ?? "task.push", {
     reason: options.reason ?? null,

@@ -1,12 +1,12 @@
 import { actor, queue } from "rivetkit";
 import { workflow } from "rivetkit/workflow";
 import { repositoryDb } from "./db/db.js";
-import { REPOSITORY_QUEUE_NAMES, repositoryActions, runRepositoryWorkflow } from "./actions.js";
+import { repositoryActions } from "./actions.js";
+import { REPOSITORY_QUEUE_NAMES, runRepositoryWorkflow } from "./workflow.js";
 
 export interface RepositoryInput {
   organizationId: string;
   repoId: string;
-  remoteUrl: string;
 }
 
 export const repository = actor({
@@ -20,7 +20,6 @@ export const repository = actor({
   createState: (_c, input: RepositoryInput) => ({
     organizationId: input.organizationId,
     repoId: input.repoId,
-    remoteUrl: input.remoteUrl,
   }),
   actions: repositoryActions,
   run: workflow(runRepositoryWorkflow),

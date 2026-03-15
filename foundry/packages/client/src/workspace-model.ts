@@ -1,3 +1,9 @@
+import {
+  DEFAULT_WORKSPACE_MODEL_ID,
+  DEFAULT_WORKSPACE_MODEL_GROUPS as SharedModelGroups,
+  workspaceModelLabel as sharedWorkspaceModelLabel,
+  workspaceProviderAgent as sharedWorkspaceProviderAgent,
+} from "@sandbox-agent/foundry-shared";
 import type {
   WorkspaceAgentKind as AgentKind,
   WorkspaceSession as AgentSession,
@@ -15,26 +21,8 @@ import type {
 } from "@sandbox-agent/foundry-shared";
 import rivetDevFixture from "../../../scripts/data/rivet-dev.json" with { type: "json" };
 
-export const MODEL_GROUPS: ModelGroup[] = [
-  {
-    provider: "Claude",
-    models: [
-      { id: "claude-sonnet-4", label: "Sonnet 4" },
-      { id: "claude-opus-4", label: "Opus 4" },
-    ],
-  },
-  {
-    provider: "OpenAI",
-    models: [
-      { id: "gpt-5.3-codex", label: "GPT-5.3 Codex" },
-      { id: "gpt-5.4", label: "GPT-5.4" },
-      { id: "gpt-5.2-codex", label: "GPT-5.2 Codex" },
-      { id: "gpt-5.1-codex-max", label: "GPT-5.1 Codex Max" },
-      { id: "gpt-5.2", label: "GPT-5.2" },
-      { id: "gpt-5.1-codex-mini", label: "GPT-5.1 Codex Mini" },
-    ],
-  },
-];
+export const MODEL_GROUPS: ModelGroup[] = SharedModelGroups;
+export const DEFAULT_MODEL_ID: ModelId = DEFAULT_WORKSPACE_MODEL_ID;
 
 const MOCK_REPLIES = [
   "Got it. I'll work on that now. Let me start by examining the relevant files...",
@@ -73,15 +61,11 @@ export function formatMessageDuration(durationMs: number): string {
 }
 
 export function modelLabel(id: ModelId): string {
-  const group = MODEL_GROUPS.find((candidate) => candidate.models.some((model) => model.id === id));
-  const model = group?.models.find((candidate) => candidate.id === id);
-  return model && group ? `${group.provider} ${model.label}` : id;
+  return sharedWorkspaceModelLabel(id, MODEL_GROUPS);
 }
 
 export function providerAgent(provider: string): AgentKind {
-  if (provider === "Claude") return "Claude";
-  if (provider === "OpenAI") return "Codex";
-  return "Cursor";
+  return sharedWorkspaceProviderAgent(provider);
 }
 
 export function slugify(text: string): string {
@@ -204,6 +188,28 @@ export function buildHistoryEvents(sessions: AgentSession[]): HistoryEvent[] {
     .sort((left, right) => messageOrder(left.messageId) - messageOrder(right.messageId));
 }
 
+function buildPullRequestSummary(params: {
+  number: number;
+  title: string;
+  branch: string;
+  repoName: string;
+  updatedAtMs: number;
+  status: "ready" | "draft";
+}) {
+  return {
+    number: params.number,
+    title: params.title,
+    state: "open",
+    url: `https://github.com/${params.repoName}/pull/${params.number}`,
+    headRefName: params.branch,
+    baseRefName: "main",
+    repoFullName: params.repoName,
+    authorLogin: "mock",
+    isDraft: params.status === "draft",
+    updatedAtMs: params.updatedAtMs,
+  };
+}
+
 function transcriptFromLegacyMessages(sessionId: string, messages: LegacyMessage[]): TranscriptEvent[] {
   return messages.map((message, index) => ({
     id: message.id,
@@ -315,14 +321,21 @@ export function buildInitialTasks(): Task[] {
       repoName: "rivet-dev/sandbox-agent",
       updatedAtMs: minutesAgo(8),
       branch: "NathanFlurry/pi-bootstrap-fix",
-      pullRequest: { number: 227, status: "ready" },
+      pullRequest: buildPullRequestSummary({
+        number: 227,
+        title: "Normalize Pi ACP bootstrap payloads",
+        branch: "NathanFlurry/pi-bootstrap-fix",
+        repoName: "rivet-dev/sandbox-agent",
+        updatedAtMs: minutesAgo(8),
+        status: "ready",
+      }),
       sessions: [
         {
           id: "t1",
           sessionId: "t1",
           sessionName: "Pi payload fix",
           agent: "Claude",
-          model: "claude-sonnet-4",
+          model: "sonnet",
           status: "idle",
           thinkingSinceMs: null,
           unread: false,
@@ -484,14 +497,21 @@ export function buildInitialTasks(): Task[] {
       repoName: "rivet-dev/sandbox-agent",
       updatedAtMs: minutesAgo(3),
       branch: "feat/builtin-agent-skills",
-      pullRequest: { number: 223, status: "draft" },
+      pullRequest: buildPullRequestSummary({
+        number: 223,
+        title: "Auto-inject builtin agent skills at startup",
+        branch: "feat/builtin-agent-skills",
+        repoName: "rivet-dev/sandbox-agent",
+        updatedAtMs: minutesAgo(3),
+        status: "draft",
+      }),
       sessions: [
         {
           id: "t3",
           sessionId: "t3",
           sessionName: "Skills injection",
           agent: "Claude",
-          model: "claude-opus-4",
+          model: "opus",
           status: "running",
           thinkingSinceMs: NOW_MS - 45_000,
           unread: false,
@@ -584,14 +604,21 @@ export function buildInitialTasks(): Task[] {
       repoName: "rivet-dev/sandbox-agent",
       updatedAtMs: minutesAgo(45),
       branch: "hooks-example",
-      pullRequest: { number: 225, status: "ready" },
+      pullRequest: buildPullRequestSummary({
+        number: 225,
+        title: "Add hooks example for Claude, Codex, and OpenCode",
+        branch: "hooks-example",
+        repoName: "rivet-dev/sandbox-agent",
+        updatedAtMs: minutesAgo(45),
+        status: "ready",
+      }),
       sessions: [
         {
           id: "t4",
           sessionId: "t4",
           sessionName: "Example docs",
           agent: "Claude",
-          model: "claude-sonnet-4",
+          model: "sonnet",
           status: "idle",
           thinkingSinceMs: null,
           unread: false,
@@ -659,14 +686,21 @@ export function buildInitialTasks(): Task[] {
       repoName: "rivet-dev/rivet",
       updatedAtMs: minutesAgo(15),
       branch: "actor-reschedule-endpoint",
-      pullRequest: { number: 4400, status: "ready" },
+      pullRequest: buildPullRequestSummary({
+        number: 4400,
+        title: "Add actor reschedule endpoint",
+        branch: "actor-reschedule-endpoint",
+        repoName: "rivet-dev/rivet",
+        updatedAtMs: minutesAgo(15),
+        status: "ready",
+      }),
       sessions: [
         {
           id: "t5",
           sessionId: "t5",
           sessionName: "Reschedule API",
           agent: "Claude",
-          model: "claude-sonnet-4",
+          model: "sonnet",
           status: "idle",
           thinkingSinceMs: null,
           unread: false,
@@ -793,14 +827,21 @@ export function buildInitialTasks(): Task[] {
       repoName: "rivet-dev/rivet",
       updatedAtMs: minutesAgo(35),
       branch: "feat/dynamic-actors",
-      pullRequest: { number: 4395, status: "draft" },
+      pullRequest: buildPullRequestSummary({
+        number: 4395,
+        title: "Dynamic actors",
+        branch: "feat/dynamic-actors",
+        repoName: "rivet-dev/rivet",
+        updatedAtMs: minutesAgo(35),
+        status: "draft",
+      }),
       sessions: [
         {
           id: "t6",
           sessionId: "t6",
           sessionName: "Dynamic actors impl",
           agent: "Claude",
-          model: "claude-opus-4",
+          model: "opus",
           status: "idle",
           thinkingSinceMs: null,
           unread: true,
@@ -850,14 +891,21 @@ export function buildInitialTasks(): Task[] {
       repoName: "rivet-dev/vbare",
       updatedAtMs: minutesAgo(25),
       branch: "fix-use-full-cloud-run-pool-name",
-      pullRequest: { number: 235, status: "ready" },
+      pullRequest: buildPullRequestSummary({
+        number: 235,
+        title: "Use full cloud run pool name for routing",
+        branch: "fix-use-full-cloud-run-pool-name",
+        repoName: "rivet-dev/vbare",
+        updatedAtMs: minutesAgo(25),
+        status: "ready",
+      }),
       sessions: [
         {
           id: "t7",
           sessionId: "t7",
           sessionName: "Pool routing fix",
           agent: "Claude",
-          model: "claude-sonnet-4",
+          model: "sonnet",
           status: "idle",
           thinkingSinceMs: null,
           unread: false,
@@ -959,14 +1007,21 @@ export function buildInitialTasks(): Task[] {
       repoName: "rivet-dev/skills",
       updatedAtMs: minutesAgo(50),
       branch: "fix-guard-support-https-targets",
-      pullRequest: { number: 125, status: "ready" },
+      pullRequest: buildPullRequestSummary({
+        number: 125,
+        title: "Route compute gateway path correctly",
+        branch: "fix-guard-support-https-targets",
+        repoName: "rivet-dev/skills",
+        updatedAtMs: minutesAgo(50),
+        status: "ready",
+      }),
       sessions: [
         {
           id: "t8",
           sessionId: "t8",
           sessionName: "Guard routing",
           agent: "Claude",
-          model: "claude-sonnet-4",
+          model: "sonnet",
           status: "idle",
           thinkingSinceMs: null,
           unread: false,
@@ -1073,14 +1128,21 @@ export function buildInitialTasks(): Task[] {
       repoName: "rivet-dev/skills",
       updatedAtMs: minutesAgo(2 * 24 * 60),
       branch: "chore-move-compute-gateway-to",
-      pullRequest: { number: 123, status: "ready" },
+      pullRequest: buildPullRequestSummary({
+        number: 123,
+        title: "Move compute gateway to guard",
+        branch: "chore-move-compute-gateway-to",
+        repoName: "rivet-dev/skills",
+        updatedAtMs: minutesAgo(2 * 24 * 60),
+        status: "ready",
+      }),
       sessions: [
         {
           id: "t9",
           sessionId: "t9",
           sessionName: "Gateway migration",
           agent: "Claude",
-          model: "claude-sonnet-4",
+          model: "sonnet",
           status: "idle",
           thinkingSinceMs: null,
           unread: false,
@@ -1166,8 +1228,6 @@ export function buildInitialTasks(): Task[] {
       repoId: "sandbox-agent",
       title: "Fix broken auth middleware (error demo)",
       status: "error",
-      runtimeStatus: "error",
-      statusMessage: "session:error",
       repoName: "rivet-dev/sandbox-agent",
       updatedAtMs: minutesAgo(2),
       branch: "fix/auth-middleware",
@@ -1178,7 +1238,7 @@ export function buildInitialTasks(): Task[] {
           sessionId: "status-error-session",
           sessionName: "Auth fix",
           agent: "Claude",
-          model: "claude-sonnet-4",
+          model: "sonnet",
           status: "error",
           thinkingSinceMs: null,
           unread: false,
@@ -1197,9 +1257,7 @@ export function buildInitialTasks(): Task[] {
       id: "status-provisioning",
       repoId: "sandbox-agent",
       title: "Add rate limiting to API gateway (provisioning demo)",
-      status: "new",
-      runtimeStatus: "init_enqueue_provision",
-      statusMessage: "Queueing sandbox provisioning.",
+      status: "init_enqueue_provision",
       repoName: "rivet-dev/sandbox-agent",
       updatedAtMs: minutesAgo(0),
       branch: null,
@@ -1211,7 +1269,7 @@ export function buildInitialTasks(): Task[] {
           sandboxSessionId: null,
           sessionName: "Session 1",
           agent: "Claude",
-          model: "claude-sonnet-4",
+          model: "sonnet",
           status: "pending_provision",
           thinkingSinceMs: null,
           unread: false,
@@ -1259,7 +1317,6 @@ export function buildInitialTasks(): Task[] {
       repoId: "sandbox-agent",
       title: "Refactor WebSocket handler (running demo)",
       status: "running",
-      runtimeStatus: "running",
       repoName: "rivet-dev/sandbox-agent",
       updatedAtMs: minutesAgo(1),
       branch: "refactor/ws-handler",
@@ -1313,45 +1370,9 @@ function repoIdFromFullName(fullName: string): string {
   return parts[parts.length - 1] ?? fullName;
 }
 
-/**
- * Build task entries from open PR fixture data.
- * Maps to the backend's PR sync behavior (RepositoryPrSyncActor) where PRs
- * appear as first-class sidebar items even without an associated task.
- * Each open PR gets a lightweight task entry so it shows in the sidebar.
- */
-function buildPrTasks(): Task[] {
-  // Collect branch names already claimed by hand-written tasks so we don't duplicate
-  const existingBranches = new Set(
-    buildInitialTasks()
-      .map((t) => t.branch)
-      .filter(Boolean),
-  );
-
-  return rivetDevFixture.openPullRequests
-    .filter((pr) => !existingBranches.has(pr.headRefName))
-    .map((pr) => {
-      const repoId = repoIdFromFullName(pr.repoFullName);
-      return {
-        id: `pr-${repoId}-${pr.number}`,
-        repoId,
-        title: pr.title,
-        status: "idle" as const,
-        repoName: pr.repoFullName,
-        updatedAtMs: new Date(pr.updatedAt).getTime(),
-        branch: pr.headRefName,
-        pullRequest: { number: pr.number, status: pr.draft ? ("draft" as const) : ("ready" as const) },
-        sessions: [],
-        fileChanges: [],
-        diffs: {},
-        fileTree: [],
-        minutesUsed: 0,
-      };
-    });
-}
-
 export function buildInitialMockLayoutViewModel(): TaskWorkspaceSnapshot {
   const repos = buildMockRepos();
-  const tasks = [...buildInitialTasks(), ...buildPrTasks()];
+  const tasks = buildInitialTasks();
   return {
     organizationId: "default",
     repos,

@@ -20,6 +20,7 @@ import type {
   TaskWorkspaceUpdateDraftInput,
   TaskEvent,
   WorkspaceSessionDetail,
+  WorkspaceModelGroup,
   WorkspaceTaskDetail,
   WorkspaceTaskSummary,
   OrganizationEvent,
@@ -32,6 +33,7 @@ import type {
   StarSandboxAgentRepoResult,
   SwitchResult,
 } from "@sandbox-agent/foundry-shared";
+import { DEFAULT_WORKSPACE_MODEL_GROUPS } from "@sandbox-agent/foundry-shared";
 import type { ProcessCreateRequest, ProcessLogFollowQuery, ProcessLogsResponse, ProcessSignalQuery } from "sandbox-agent";
 import type { ActorConn, BackendClient, SandboxProcessRecord, SandboxSessionEventRecord, SandboxSessionRecord } from "../backend-client.js";
 import { getSharedMockWorkspaceClient } from "./workspace-client.js";
@@ -173,6 +175,7 @@ export function createMockBackendClient(defaultOrganizationId = "default"): Back
     updatedAtMs: task.updatedAtMs,
     branch: task.branch,
     pullRequest: task.pullRequest,
+    activeSessionId: task.activeSessionId ?? task.sessions[0]?.id ?? null,
     sessionsSummary: task.sessions.map((tab) => ({
       id: tab.id,
       sessionId: tab.sessionId,
@@ -190,13 +193,6 @@ export function createMockBackendClient(defaultOrganizationId = "default"): Back
   const buildTaskDetail = (task: TaskWorkspaceSnapshot["tasks"][number]): WorkspaceTaskDetail => ({
     ...buildTaskSummary(task),
     task: task.title,
-    agentType: task.sessions[0]?.agent === "Codex" ? "codex" : "claude",
-    runtimeStatus: toTaskStatus(task.status === "archived" ? "archived" : "running", task.status === "archived"),
-    statusMessage: task.status === "archived" ? "archived" : "mock sandbox ready",
-    activeSessionId: task.sessions[0]?.sessionId ?? null,
-    diffStat: task.fileChanges.length > 0 ? `+${task.fileChanges.length}/-${task.fileChanges.length}` : "+0/-0",
-    prUrl: task.pullRequest ? `https://example.test/pr/${task.pullRequest.number}` : null,
-    reviewStatus: null,
     fileChanges: task.fileChanges,
     diffs: task.diffs,
     fileTree: task.fileTree,
@@ -236,6 +232,20 @@ export function createMockBackendClient(defaultOrganizationId = "default"): Back
     const taskSummaries = snapshot.tasks.map(buildTaskSummary);
     return {
       organizationId: defaultOrganizationId,
+      github: {
+        connectedAccount: "mock",
+        installationStatus: "connected",
+        syncStatus: "synced",
+        importedRepoCount: snapshot.repos.length,
+        lastSyncLabel: "Synced just now",
+        lastSyncAt: nowMs(),
+        lastWebhookAt: null,
+        lastWebhookEvent: "",
+        syncGeneration: 1,
+        syncPhase: null,
+        processedRepositoryCount: snapshot.repos.length,
+        totalRepositoryCount: snapshot.repos.length,
+      },
       repos: snapshot.repos.map((repo) => {
         const repoTasks = taskSummaries.filter((task) => task.repoId === repo.id);
         return {
@@ -298,9 +308,7 @@ export function createMockBackendClient(defaultOrganizationId = "default"): Back
       task: task.title,
       sandboxProviderId: "local",
       status: toTaskStatus(archived ? "archived" : "running", archived),
-      statusMessage: archived ? "archived" : "mock sandbox ready",
       activeSandboxId: task.id,
-      activeSessionId: task.sessions[0]?.sessionId ?? null,
       sandboxes: [
         {
           sandboxId: task.id,
@@ -312,17 +320,6 @@ export function createMockBackendClient(defaultOrganizationId = "default"): Back
           updatedAt: task.updatedAtMs,
         },
       ],
-      agentType: task.sessions[0]?.agent === "Codex" ? "codex" : "claude",
-      prSubmitted: Boolean(task.pullRequest),
-      diffStat: task.fileChanges.length > 0 ? `+${task.fileChanges.length}/-${task.fileChanges.length}` : "+0/-0",
-      prUrl: task.pullRequest ? `https://example.test/pr/${task.pullRequest.number}` : null,
-      prAuthor: task.pullRequest ? "mock" : null,
-      ciStatus: null,
-      reviewStatus: null,
-      reviewer: null,
-      conflictsWithMain: "0",
-      hasUnpushed: task.fileChanges.length > 0 ? "1" : "0",
-      parentBranch: null,
       createdAt: task.updatedAtMs,
       updatedAt: task.updatedAtMs,
     };
@@ -636,6 +633,14 @@ export function createMockBackendClient(defaultOrganizationId = "default"): Back
       return { endpoint: "mock://terminal-unavailable" };
     },
 
+    async getSandboxWorkspaceModelGroups(
+      _organizationId: string,
+      _sandboxProviderId: SandboxProviderId,
+      _sandboxId: string,
+    ): Promise<WorkspaceModelGroup[]> {
+      return DEFAULT_WORKSPACE_MODEL_GROUPS;
+    },
+
     async getOrganizationSummary(): Promise<OrganizationSummarySnapshot> {
       return buildOrganizationSummary();
     },
@@ -688,6 +693,13 @@ export function createMockBackendClient(defaultOrganizationId = "default"): Back
 
     async renameWorkspaceSession(_organizationId: string, input: TaskWorkspaceRenameSessionInput): Promise<void> {
       await workspace.renameSession(input);
+      emitOrganizationSnapshot();
+      emitTaskUpdate(input.taskId);
+      emitSessionUpdate(input.taskId, input.sessionId);
+    },
+
+    async selectWorkspaceSession(_organizationId: string, input: TaskWorkspaceSessionInput): Promise<void> {
+      await workspace.selectSession(input);
       emitOrganizationSnapshot();
       emitTaskUpdate(input.taskId);
       emitSessionUpdate(input.taskId, input.sessionId);
@@ -747,12 +759,7 @@ export function createMockBackendClient(defaultOrganizationId = "default"): Back
     },
 
     async adminReloadGithubOrganization(): Promise<void> {},
-
-    async adminReloadGithubPullRequests(): Promise<void> {},
-
     async adminReloadGithubRepository(): Promise<void> {},
-
-    async adminReloadGithubPullRequest(): Promise<void> {},
 
     async health(): Promise<{ ok: true }> {
       return { ok: true };

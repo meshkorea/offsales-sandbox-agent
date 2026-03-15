@@ -37,6 +37,7 @@ import type {
   StarSandboxAgentRepoResult,
   SwitchResult,
   UpdateFoundryOrganizationProfileInput,
+  WorkspaceModelGroup,
   WorkspaceModelId,
 } from "@sandbox-agent/foundry-shared";
 import type { ProcessCreateRequest, ProcessInfo, ProcessLogFollowQuery, ProcessLogsResponse, ProcessSignalQuery } from "sandbox-agent";
@@ -73,6 +74,10 @@ export interface ActorConn {
   dispose(): Promise<void>;
 }
 
+interface AuthSessionScopedInput {
+  authSessionId?: string;
+}
+
 interface OrganizationHandle {
   connect(): ActorConn;
   listRepos(input: { organizationId: string }): Promise<RepoRecord[]>;
@@ -91,24 +96,22 @@ interface OrganizationHandle {
   useOrganization(input: { organizationId: string }): Promise<{ organizationId: string }>;
   starSandboxAgentRepo(input: StarSandboxAgentRepoInput): Promise<StarSandboxAgentRepoResult>;
   getOrganizationSummary(input: { organizationId: string }): Promise<OrganizationSummarySnapshot>;
-  adminReconcileWorkspaceState(input: { organizationId: string }): Promise<OrganizationSummarySnapshot>;
-  createWorkspaceTask(input: TaskWorkspaceCreateTaskInput): Promise<TaskWorkspaceCreateTaskResponse>;
-  markWorkspaceUnread(input: TaskWorkspaceSelectInput): Promise<void>;
-  renameWorkspaceTask(input: TaskWorkspaceRenameInput): Promise<void>;
-  createWorkspaceSession(input: TaskWorkspaceSelectInput & { model?: string }): Promise<{ sessionId: string }>;
-  renameWorkspaceSession(input: TaskWorkspaceRenameSessionInput): Promise<void>;
-  setWorkspaceSessionUnread(input: TaskWorkspaceSetSessionUnreadInput): Promise<void>;
-  updateWorkspaceDraft(input: TaskWorkspaceUpdateDraftInput): Promise<void>;
-  changeWorkspaceModel(input: TaskWorkspaceChangeModelInput): Promise<void>;
-  sendWorkspaceMessage(input: TaskWorkspaceSendMessageInput): Promise<void>;
-  stopWorkspaceSession(input: TaskWorkspaceSessionInput): Promise<void>;
-  closeWorkspaceSession(input: TaskWorkspaceSessionInput): Promise<void>;
-  publishWorkspacePr(input: TaskWorkspaceSelectInput): Promise<void>;
-  revertWorkspaceFile(input: TaskWorkspaceDiffInput): Promise<void>;
+  createWorkspaceTask(input: TaskWorkspaceCreateTaskInput & AuthSessionScopedInput): Promise<TaskWorkspaceCreateTaskResponse>;
+  markWorkspaceUnread(input: TaskWorkspaceSelectInput & AuthSessionScopedInput): Promise<void>;
+  renameWorkspaceTask(input: TaskWorkspaceRenameInput & AuthSessionScopedInput): Promise<void>;
+  createWorkspaceSession(input: TaskWorkspaceSelectInput & { model?: string } & AuthSessionScopedInput): Promise<{ sessionId: string }>;
+  renameWorkspaceSession(input: TaskWorkspaceRenameSessionInput & AuthSessionScopedInput): Promise<void>;
+  selectWorkspaceSession(input: TaskWorkspaceSessionInput & AuthSessionScopedInput): Promise<void>;
+  setWorkspaceSessionUnread(input: TaskWorkspaceSetSessionUnreadInput & AuthSessionScopedInput): Promise<void>;
+  updateWorkspaceDraft(input: TaskWorkspaceUpdateDraftInput & AuthSessionScopedInput): Promise<void>;
+  changeWorkspaceModel(input: TaskWorkspaceChangeModelInput & AuthSessionScopedInput): Promise<void>;
+  sendWorkspaceMessage(input: TaskWorkspaceSendMessageInput & AuthSessionScopedInput): Promise<void>;
+  stopWorkspaceSession(input: TaskWorkspaceSessionInput & AuthSessionScopedInput): Promise<void>;
+  closeWorkspaceSession(input: TaskWorkspaceSessionInput & AuthSessionScopedInput): Promise<void>;
+  publishWorkspacePr(input: TaskWorkspaceSelectInput & AuthSessionScopedInput): Promise<void>;
+  revertWorkspaceFile(input: TaskWorkspaceDiffInput & AuthSessionScopedInput): Promise<void>;
   adminReloadGithubOrganization(): Promise<void>;
-  adminReloadGithubPullRequests(): Promise<void>;
   adminReloadGithubRepository(input: { repoId: string }): Promise<void>;
-  adminReloadGithubPullRequest(input: { repoId: string; prNumber: number }): Promise<void>;
 }
 
 interface AppOrganizationHandle {
@@ -130,8 +133,8 @@ interface AppOrganizationHandle {
 
 interface TaskHandle {
   getTaskSummary(): Promise<WorkspaceTaskSummary>;
-  getTaskDetail(): Promise<WorkspaceTaskDetail>;
-  getSessionDetail(input: { sessionId: string }): Promise<WorkspaceSessionDetail>;
+  getTaskDetail(input?: AuthSessionScopedInput): Promise<WorkspaceTaskDetail>;
+  getSessionDetail(input: { sessionId: string } & AuthSessionScopedInput): Promise<WorkspaceSessionDetail>;
   connect(): ActorConn;
 }
 
@@ -156,6 +159,7 @@ interface TaskSandboxHandle {
   rawSendSessionMethod(sessionId: string, method: string, params: Record<string, unknown>): Promise<unknown>;
   destroySession(sessionId: string): Promise<void>;
   sandboxAgentConnection(): Promise<{ endpoint: string; token?: string }>;
+  listWorkspaceModelGroups(): Promise<WorkspaceModelGroup[]>;
   providerState(): Promise<{ sandboxProviderId: SandboxProviderId; sandboxId: string; state: string; at: number }>;
 }
 
@@ -279,6 +283,7 @@ export interface BackendClient {
     sandboxId: string,
   ): Promise<{ sandboxProviderId: SandboxProviderId; sandboxId: string; state: string; at: number }>;
   getSandboxAgentConnection(organizationId: string, sandboxProviderId: SandboxProviderId, sandboxId: string): Promise<{ endpoint: string; token?: string }>;
+  getSandboxWorkspaceModelGroups(organizationId: string, sandboxProviderId: SandboxProviderId, sandboxId: string): Promise<WorkspaceModelGroup[]>;
   getOrganizationSummary(organizationId: string): Promise<OrganizationSummarySnapshot>;
   getTaskDetail(organizationId: string, repoId: string, taskId: string): Promise<WorkspaceTaskDetail>;
   getSessionDetail(organizationId: string, repoId: string, taskId: string, sessionId: string): Promise<WorkspaceSessionDetail>;
@@ -289,6 +294,7 @@ export interface BackendClient {
   renameWorkspaceTask(organizationId: string, input: TaskWorkspaceRenameInput): Promise<void>;
   createWorkspaceSession(organizationId: string, input: TaskWorkspaceSelectInput & { model?: string }): Promise<{ sessionId: string }>;
   renameWorkspaceSession(organizationId: string, input: TaskWorkspaceRenameSessionInput): Promise<void>;
+  selectWorkspaceSession(organizationId: string, input: TaskWorkspaceSessionInput): Promise<void>;
   setWorkspaceSessionUnread(organizationId: string, input: TaskWorkspaceSetSessionUnreadInput): Promise<void>;
   updateWorkspaceDraft(organizationId: string, input: TaskWorkspaceUpdateDraftInput): Promise<void>;
   changeWorkspaceModel(organizationId: string, input: TaskWorkspaceChangeModelInput): Promise<void>;
@@ -298,9 +304,7 @@ export interface BackendClient {
   publishWorkspacePr(organizationId: string, input: TaskWorkspaceSelectInput): Promise<void>;
   revertWorkspaceFile(organizationId: string, input: TaskWorkspaceDiffInput): Promise<void>;
   adminReloadGithubOrganization(organizationId: string): Promise<void>;
-  adminReloadGithubPullRequests(organizationId: string): Promise<void>;
   adminReloadGithubRepository(organizationId: string, repoId: string): Promise<void>;
-  adminReloadGithubPullRequest(organizationId: string, repoId: string, prNumber: number): Promise<void>;
   health(): Promise<{ ok: true }>;
   useOrganization(organizationId: string): Promise<{ organizationId: string }>;
   starSandboxAgentRepo(organizationId: string): Promise<StarSandboxAgentRepoResult>;
@@ -460,6 +464,16 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     return typeof sessionId === "string" && sessionId.length > 0 ? sessionId : null;
   };
 
+  const getAuthSessionInput = async (): Promise<AuthSessionScopedInput | undefined> => {
+    const authSessionId = await getSessionId();
+    return authSessionId ? { authSessionId } : undefined;
+  };
+
+  const withAuthSessionInput = async <TInput extends object>(input: TInput): Promise<TInput & AuthSessionScopedInput> => {
+    const authSessionInput = await getAuthSessionInput();
+    return authSessionInput ? { ...input, ...authSessionInput } : input;
+  };
+
   const organization = async (organizationId: string): Promise<OrganizationHandle> =>
     client.organization.getOrCreate(organizationKey(organizationId), {
       createWithInput: organizationId,
@@ -492,17 +506,18 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
 
     for (const row of candidates) {
       try {
-        const detail = await ws.getTask({ organizationId, taskId: row.taskId });
+        const detail = await ws.getTask({ organizationId, repoId: row.repoId, taskId: row.taskId });
         if (detail.sandboxProviderId !== sandboxProviderId) {
           continue;
         }
-        const sandbox = detail.sandboxes.find(
+        const sandboxes = detail.sandboxes as Array<(typeof detail.sandboxes)[number] & { sandboxActorId?: string }>;
+        const sandbox = sandboxes.find(
           (sb) =>
             sb.sandboxId === sandboxId &&
             sb.sandboxProviderId === sandboxProviderId &&
-            typeof (sb as any).sandboxActorId === "string" &&
-            (sb as any).sandboxActorId.length > 0,
-        ) as { sandboxActorId?: string } | undefined;
+            typeof sb.sandboxActorId === "string" &&
+            sb.sandboxActorId.length > 0,
+        );
         if (sandbox?.sandboxActorId) {
           return (client as any).taskSandbox.getForId(sandbox.sandboxActorId);
         }
@@ -562,14 +577,28 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     }
   };
 
+  const getTaskDetailWithAuth = async (organizationId: string, repoId: string, taskIdValue: string): Promise<WorkspaceTaskDetail> => {
+    return (await task(organizationId, repoId, taskIdValue)).getTaskDetail(await getAuthSessionInput());
+  };
+
+  const getSessionDetailWithAuth = async (
+    organizationId: string,
+    repoId: string,
+    taskIdValue: string,
+    sessionId: string,
+  ): Promise<WorkspaceSessionDetail> => {
+    return (await task(organizationId, repoId, taskIdValue)).getSessionDetail(await withAuthSessionInput({ sessionId }));
+  };
+
   const getWorkspaceCompat = async (organizationId: string): Promise<TaskWorkspaceSnapshot> => {
+    const authSessionInput = await getAuthSessionInput();
     const summary = await (await organization(organizationId)).getOrganizationSummary({ organizationId });
-    const tasks = (
-      await Promise.all(
-        summary.taskSummaries.map(async (taskSummary) => {
+    const resolvedTasks = await Promise.all(
+      summary.taskSummaries.map(async (taskSummary) => {
           let detail;
           try {
-            detail = await (await task(organizationId, taskSummary.repoId, taskSummary.id)).getTaskDetail();
+            const taskHandle = await task(organizationId, taskSummary.repoId, taskSummary.id);
+            detail = await taskHandle.getTaskDetail(authSessionInput);
           } catch (error) {
             if (isActorNotFoundError(error)) {
               return null;
@@ -579,7 +608,10 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
           const sessionDetails = await Promise.all(
             detail.sessionsSummary.map(async (session) => {
               try {
-                const full = await (await task(organizationId, detail.repoId, detail.id)).getSessionDetail({ sessionId: session.id });
+                const full = await (await task(organizationId, detail.repoId, detail.id)).getSessionDetail({
+                  sessionId: session.id,
+                  ...(authSessionInput ?? {}),
+                });
                 return [session.id, full] as const;
               } catch (error) {
                 if (isActorNotFoundError(error)) {
@@ -599,6 +631,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
             updatedAtMs: detail.updatedAtMs,
             branch: detail.branch,
             pullRequest: detail.pullRequest,
+            activeSessionId: detail.activeSessionId ?? null,
             sessions: detail.sessionsSummary.map((session) => {
               const full = sessionDetailsById.get(session.id);
               return {
@@ -619,10 +652,11 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
             diffs: detail.diffs,
             fileTree: detail.fileTree,
             minutesUsed: detail.minutesUsed,
+            activeSandboxId: detail.activeSandboxId ?? null,
           };
         }),
-      )
-    ).filter((task): task is TaskWorkspaceSnapshot["tasks"][number] => task !== null);
+      );
+    const tasks = resolvedTasks.filter((task): task is Exclude<(typeof resolvedTasks)[number], null> => task !== null);
 
     const repositories = summary.repos
       .map((repo) => ({
@@ -1170,16 +1204,24 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       return await withSandboxHandle(organizationId, sandboxProviderId, sandboxId, async (handle) => handle.sandboxAgentConnection());
     },
 
+    async getSandboxWorkspaceModelGroups(
+      organizationId: string,
+      sandboxProviderId: SandboxProviderId,
+      sandboxId: string,
+    ): Promise<WorkspaceModelGroup[]> {
+      return await withSandboxHandle(organizationId, sandboxProviderId, sandboxId, async (handle) => handle.listWorkspaceModelGroups());
+    },
+
     async getOrganizationSummary(organizationId: string): Promise<OrganizationSummarySnapshot> {
       return (await organization(organizationId)).getOrganizationSummary({ organizationId });
     },
 
     async getTaskDetail(organizationId: string, repoId: string, taskIdValue: string): Promise<WorkspaceTaskDetail> {
-      return (await task(organizationId, repoId, taskIdValue)).getTaskDetail();
+      return await getTaskDetailWithAuth(organizationId, repoId, taskIdValue);
     },
 
     async getSessionDetail(organizationId: string, repoId: string, taskIdValue: string, sessionId: string): Promise<WorkspaceSessionDetail> {
-      return (await task(organizationId, repoId, taskIdValue)).getSessionDetail({ sessionId });
+      return await getSessionDetailWithAuth(organizationId, repoId, taskIdValue, sessionId);
     },
 
     async getWorkspace(organizationId: string): Promise<TaskWorkspaceSnapshot> {
@@ -1191,71 +1233,67 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     },
 
     async createWorkspaceTask(organizationId: string, input: TaskWorkspaceCreateTaskInput): Promise<TaskWorkspaceCreateTaskResponse> {
-      return (await organization(organizationId)).createWorkspaceTask(input);
+      return (await organization(organizationId)).createWorkspaceTask(await withAuthSessionInput(input));
     },
 
     async markWorkspaceUnread(organizationId: string, input: TaskWorkspaceSelectInput): Promise<void> {
-      await (await organization(organizationId)).markWorkspaceUnread(input);
+      await (await organization(organizationId)).markWorkspaceUnread(await withAuthSessionInput(input));
     },
 
     async renameWorkspaceTask(organizationId: string, input: TaskWorkspaceRenameInput): Promise<void> {
-      await (await organization(organizationId)).renameWorkspaceTask(input);
+      await (await organization(organizationId)).renameWorkspaceTask(await withAuthSessionInput(input));
     },
 
     async createWorkspaceSession(organizationId: string, input: TaskWorkspaceSelectInput & { model?: string }): Promise<{ sessionId: string }> {
-      return await (await organization(organizationId)).createWorkspaceSession(input);
+      return await (await organization(organizationId)).createWorkspaceSession(await withAuthSessionInput(input));
     },
 
     async renameWorkspaceSession(organizationId: string, input: TaskWorkspaceRenameSessionInput): Promise<void> {
-      await (await organization(organizationId)).renameWorkspaceSession(input);
+      await (await organization(organizationId)).renameWorkspaceSession(await withAuthSessionInput(input));
+    },
+
+    async selectWorkspaceSession(organizationId: string, input: TaskWorkspaceSessionInput): Promise<void> {
+      await (await organization(organizationId)).selectWorkspaceSession(await withAuthSessionInput(input));
     },
 
     async setWorkspaceSessionUnread(organizationId: string, input: TaskWorkspaceSetSessionUnreadInput): Promise<void> {
-      await (await organization(organizationId)).setWorkspaceSessionUnread(input);
+      await (await organization(organizationId)).setWorkspaceSessionUnread(await withAuthSessionInput(input));
     },
 
     async updateWorkspaceDraft(organizationId: string, input: TaskWorkspaceUpdateDraftInput): Promise<void> {
-      await (await organization(organizationId)).updateWorkspaceDraft(input);
+      await (await organization(organizationId)).updateWorkspaceDraft(await withAuthSessionInput(input));
     },
 
     async changeWorkspaceModel(organizationId: string, input: TaskWorkspaceChangeModelInput): Promise<void> {
-      await (await organization(organizationId)).changeWorkspaceModel(input);
+      await (await organization(organizationId)).changeWorkspaceModel(await withAuthSessionInput(input));
     },
 
     async sendWorkspaceMessage(organizationId: string, input: TaskWorkspaceSendMessageInput): Promise<void> {
-      await (await organization(organizationId)).sendWorkspaceMessage(input);
+      await (await organization(organizationId)).sendWorkspaceMessage(await withAuthSessionInput(input));
     },
 
     async stopWorkspaceSession(organizationId: string, input: TaskWorkspaceSessionInput): Promise<void> {
-      await (await organization(organizationId)).stopWorkspaceSession(input);
+      await (await organization(organizationId)).stopWorkspaceSession(await withAuthSessionInput(input));
     },
 
     async closeWorkspaceSession(organizationId: string, input: TaskWorkspaceSessionInput): Promise<void> {
-      await (await organization(organizationId)).closeWorkspaceSession(input);
+      await (await organization(organizationId)).closeWorkspaceSession(await withAuthSessionInput(input));
     },
 
     async publishWorkspacePr(organizationId: string, input: TaskWorkspaceSelectInput): Promise<void> {
-      await (await organization(organizationId)).publishWorkspacePr(input);
+      await (await organization(organizationId)).publishWorkspacePr(await withAuthSessionInput(input));
     },
 
     async revertWorkspaceFile(organizationId: string, input: TaskWorkspaceDiffInput): Promise<void> {
-      await (await organization(organizationId)).revertWorkspaceFile(input);
+      await (await organization(organizationId)).revertWorkspaceFile(await withAuthSessionInput(input));
     },
 
     async adminReloadGithubOrganization(organizationId: string): Promise<void> {
       await (await organization(organizationId)).adminReloadGithubOrganization();
     },
 
-    async adminReloadGithubPullRequests(organizationId: string): Promise<void> {
-      await (await organization(organizationId)).adminReloadGithubPullRequests();
-    },
-
     async adminReloadGithubRepository(organizationId: string, repoId: string): Promise<void> {
       await (await organization(organizationId)).adminReloadGithubRepository({ repoId });
-    },
-
-    async adminReloadGithubPullRequest(organizationId: string, repoId: string, prNumber: number): Promise<void> {
-      await (await organization(organizationId)).adminReloadGithubPullRequest({ repoId, prNumber });
     },
 
     async health(): Promise<{ ok: true }> {

@@ -10,7 +10,7 @@ import { createDefaultDriver } from "./driver.js";
 import { createClient } from "rivetkit/client";
 import { initBetterAuthService } from "./services/better-auth.js";
 import { createDefaultAppShellServices } from "./services/app-shell-runtime.js";
-import { APP_SHELL_ORGANIZATION_ID } from "./actors/organization/app-shell.js";
+import { APP_SHELL_ORGANIZATION_ID } from "./actors/organization/constants.js";
 import { logger } from "./logging.js";
 
 export interface BackendStartOptions {

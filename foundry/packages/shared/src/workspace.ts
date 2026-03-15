@@ -1,17 +1,10 @@
 import type { SandboxProviderId, TaskStatus } from "./contracts.js";
+import type { WorkspaceAgentKind, WorkspaceModelGroup, WorkspaceModelId, WorkspaceModelOption } from "./models.js";
 
-export type WorkspaceTaskStatus = TaskStatus | "new";
-export type WorkspaceAgentKind = "Claude" | "Codex" | "Cursor";
-export type WorkspaceModelId =
-  | "claude-sonnet-4"
-  | "claude-opus-4"
-  | "gpt-5.3-codex"
-  | "gpt-5.4"
-  | "gpt-5.2-codex"
-  | "gpt-5.1-codex-max"
-  | "gpt-5.2"
-  | "gpt-5.1-codex-mini";
+export type WorkspaceTaskStatus = TaskStatus;
 export type WorkspaceSessionStatus = "pending_provision" | "pending_session_create" | "ready" | "running" | "idle" | "error";
+
+export type { WorkspaceAgentKind, WorkspaceModelGroup, WorkspaceModelId, WorkspaceModelOption } from "./models.js";
 
 export interface WorkspaceTranscriptEvent {
   id: string;
@@ -132,6 +125,7 @@ export interface WorkspaceTaskSummary {
   updatedAtMs: number;
   branch: string | null;
   pullRequest: WorkspacePullRequestSummary | null;
+  activeSessionId: string | null;
   /** Summary of sessions — no transcript content. */
   sessionsSummary: WorkspaceSessionSummary[];
 }
@@ -140,11 +134,6 @@ export interface WorkspaceTaskSummary {
 export interface WorkspaceTaskDetail extends WorkspaceTaskSummary {
   /** Original task prompt/instructions shown in the detail view. */
   task: string;
-  /** Underlying task runtime status preserved for detail views and error handling. */
-  runtimeStatus: TaskStatus;
-  diffStat: string | null;
-  prUrl: string | null;
-  reviewStatus: string | null;
   fileChanges: WorkspaceFileChange[];
   diffs: Record<string, string>;
   fileTree: WorkspaceFileTreeNode[];
@@ -163,9 +152,32 @@ export interface WorkspaceRepositorySummary {
   latestActivityMs: number;
 }
 
+export type OrganizationGithubSyncPhase =
+  | "discovering_repositories"
+  | "syncing_repositories"
+  | "syncing_branches"
+  | "syncing_members"
+  | "syncing_pull_requests";
+
+export interface OrganizationGithubSummary {
+  connectedAccount: string;
+  installationStatus: "connected" | "install_required" | "reconnect_required";
+  syncStatus: "pending" | "syncing" | "synced" | "error";
+  importedRepoCount: number;
+  lastSyncLabel: string;
+  lastSyncAt: number | null;
+  lastWebhookAt: number | null;
+  lastWebhookEvent: string;
+  syncGeneration: number;
+  syncPhase: OrganizationGithubSyncPhase | null;
+  processedRepositoryCount: number;
+  totalRepositoryCount: number;
+}
+
 /** Organization-level snapshot — initial fetch for the organization topic. */
 export interface OrganizationSummarySnapshot {
   organizationId: string;
+  github: OrganizationGithubSummary;
   repos: WorkspaceRepositorySummary[];
   taskSummaries: WorkspaceTaskSummary[];
 }
@@ -180,11 +192,11 @@ export interface WorkspaceTask {
   repoId: string;
   title: string;
   status: WorkspaceTaskStatus;
-  runtimeStatus?: TaskStatus;
   repoName: string;
   updatedAtMs: number;
   branch: string | null;
   pullRequest: WorkspacePullRequestSummary | null;
+  activeSessionId?: string | null;
   sessions: WorkspaceSession[];
   fileChanges: WorkspaceFileChange[];
   diffs: Record<string, string>;
@@ -210,16 +222,6 @@ export interface TaskWorkspaceSnapshot {
   repos: WorkspaceRepo[];
   repositories: WorkspaceRepositorySection[];
   tasks: WorkspaceTask[];
-}
-
-export interface WorkspaceModelOption {
-  id: WorkspaceModelId;
-  label: string;
-}
-
-export interface WorkspaceModelGroup {
-  provider: string;
-  models: WorkspaceModelOption[];
 }
 
 export interface TaskWorkspaceSelectInput {

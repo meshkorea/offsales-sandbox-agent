@@ -5,8 +5,7 @@ CREATE TABLE `task` (
 	`task` text NOT NULL,
 	`sandbox_provider_id` text NOT NULL,
 	`status` text NOT NULL,
-	`agent_type` text DEFAULT 'claude',
-	`pr_submitted` integer DEFAULT 0,
+	`pull_request_json` text,
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL,
 	CONSTRAINT "task_singleton_id_check" CHECK("task"."id" = 1)
@@ -15,14 +14,10 @@ CREATE TABLE `task` (
 CREATE TABLE `task_runtime` (
 	`id` integer PRIMARY KEY NOT NULL,
 	`active_sandbox_id` text,
-	`active_session_id` text,
 	`active_switch_target` text,
 	`active_cwd` text,
-	`status_message` text,
 	`git_state_json` text,
 	`git_state_updated_at` integer,
-	`provision_stage` text,
-	`provision_stage_updated_at` integer,
 	`updated_at` integer NOT NULL,
 	CONSTRAINT "task_runtime_singleton_id_check" CHECK("task_runtime"."id" = 1)
 );
@@ -33,7 +28,6 @@ CREATE TABLE `task_sandboxes` (
 	`sandbox_actor_id` text,
 	`switch_target` text NOT NULL,
 	`cwd` text,
-	`status_message` text,
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL
 );
@@ -47,10 +41,6 @@ CREATE TABLE `task_workspace_sessions` (
 	`error_message` text,
 	`transcript_json` text DEFAULT '[]' NOT NULL,
 	`transcript_updated_at` integer,
-	`unread` integer DEFAULT 0 NOT NULL,
-	`draft_text` text DEFAULT '' NOT NULL,
-	`draft_attachments_json` text DEFAULT '[]' NOT NULL,
-	`draft_updated_at` integer,
 	`created` integer DEFAULT 1 NOT NULL,
 	`closed` integer DEFAULT 0 NOT NULL,
 	`thinking_since_ms` integer,

@@ -11,28 +11,34 @@ import { taskWorkflowQueueName } from "./queue.js";
 export async function initBootstrapDbActivity(loopCtx: any, body: any): Promise<void> {
   const { config } = getActorRuntimeContext();
   const sandboxProviderId = body?.sandboxProviderId ?? defaultSandboxProviderId(config);
+  const task = body?.task;
+  if (typeof task !== "string" || task.trim().length === 0) {
+    throw new Error("task initialize requires the task prompt");
+  }
   const now = Date.now();
 
   await loopCtx.db
     .insert(taskTable)
     .values({
       id: TASK_ROW_ID,
-      branchName: loopCtx.state.branchName,
-      title: loopCtx.state.title,
-      task: loopCtx.state.task,
+      branchName: body?.branchName ?? null,
+      title: body?.title ?? null,
+      task,
       sandboxProviderId,
       status: "init_bootstrap_db",
+      pullRequestJson: null,
       createdAt: now,
       updatedAt: now,
     })
     .onConflictDoUpdate({
       target: taskTable.id,
       set: {
-        branchName: loopCtx.state.branchName,
-        title: loopCtx.state.title,
-        task: loopCtx.state.task,
+        branchName: body?.branchName ?? null,
+        title: body?.title ?? null,
+        task,
         sandboxProviderId,
         status: "init_bootstrap_db",
+        pullRequestJson: null,
         updatedAt: now,
       },
     })
@@ -99,33 +105,36 @@ export async function initCompleteActivity(loopCtx: any, body: any): Promise<voi
   });
 }
 
-export async function initFailedActivity(loopCtx: any, error: unknown): Promise<void> {
+export async function initFailedActivity(loopCtx: any, error: unknown, body?: any): Promise<void> {
   const now = Date.now();
   const detail = resolveErrorDetail(error);
   const messages = collectErrorMessages(error);
   const { config } = getActorRuntimeContext();
   const sandboxProviderId = defaultSandboxProviderId(config);
+  const task = typeof body?.task === "string" ? body.task : null;
 
   await loopCtx.db
     .insert(taskTable)
     .values({
       id: TASK_ROW_ID,
-      branchName: loopCtx.state.branchName ?? null,
-      title: loopCtx.state.title ?? null,
-      task: loopCtx.state.task,
+      branchName: body?.branchName ?? null,
+      title: body?.title ?? null,
+      task: task ?? detail,
       sandboxProviderId,
       status: "error",
+      pullRequestJson: null,
       createdAt: now,
       updatedAt: now,
     })
     .onConflictDoUpdate({
       target: taskTable.id,
       set: {
-        branchName: loopCtx.state.branchName ?? null,
-        title: loopCtx.state.title ?? null,
-        task: loopCtx.state.task,
+        branchName: body?.branchName ?? null,
+        title: body?.title ?? null,
+        task: task ?? detail,
         sandboxProviderId,
         status: "error",
+        pullRequestJson: null,
         updatedAt: now,
       },
     })

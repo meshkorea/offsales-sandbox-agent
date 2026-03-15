@@ -2,7 +2,7 @@
 import { eq } from "drizzle-orm";
 import type { TaskRecord, TaskStatus } from "@sandbox-agent/foundry-shared";
 import { task as taskTable, taskRuntime, taskSandboxes } from "../db/schema.js";
-import { getOrCreateAuditLog } from "../../handles.js";
+import { getOrCreateAuditLog, getOrCreateRepository } from "../../handles.js";
 import { broadcastTaskUpdate } from "../workspace.js";
 
 export const TASK_ROW_ID = 1;
@@ -66,6 +66,7 @@ export async function setTaskState(ctx: any, status: TaskStatus): Promise<void> 
 
 export async function getCurrentRecord(ctx: any): Promise<TaskRecord> {
   const db = ctx.db;
+  const repository = await getOrCreateRepository(ctx, ctx.state.organizationId, ctx.state.repoId);
   const row = await db
     .select({
       branchName: taskTable.branchName,
@@ -73,6 +74,7 @@ export async function getCurrentRecord(ctx: any): Promise<TaskRecord> {
       task: taskTable.task,
       sandboxProviderId: taskTable.sandboxProviderId,
       status: taskTable.status,
+      pullRequestJson: taskTable.pullRequestJson,
       activeSandboxId: taskRuntime.activeSandboxId,
       createdAt: taskTable.createdAt,
       updatedAt: taskTable.updatedAt,
@@ -84,6 +86,16 @@ export async function getCurrentRecord(ctx: any): Promise<TaskRecord> {
 
   if (!row) {
     throw new Error(`Task not found: ${ctx.state.taskId}`);
+  }
+
+  const repositoryMetadata = await repository.getRepositoryMetadata({});
+  let pullRequest = null;
+  if (row.pullRequestJson) {
+    try {
+      pullRequest = JSON.parse(row.pullRequestJson);
+    } catch {
+      pullRequest = null;
+    }
   }
 
   const sandboxes = await db
@@ -102,7 +114,7 @@ export async function getCurrentRecord(ctx: any): Promise<TaskRecord> {
   return {
     organizationId: ctx.state.organizationId,
     repoId: ctx.state.repoId,
-    repoRemote: ctx.state.repoRemote,
+    repoRemote: repositoryMetadata.remoteUrl,
     taskId: ctx.state.taskId,
     branchName: row.branchName,
     title: row.title,
@@ -110,6 +122,7 @@ export async function getCurrentRecord(ctx: any): Promise<TaskRecord> {
     sandboxProviderId: row.sandboxProviderId,
     status: row.status,
     activeSandboxId: row.activeSandboxId ?? null,
+    pullRequest,
     sandboxes: sandboxes.map((sb) => ({
       sandboxId: sb.sandboxId,
       sandboxProviderId: sb.sandboxProviderId,
@@ -119,25 +132,20 @@ export async function getCurrentRecord(ctx: any): Promise<TaskRecord> {
       createdAt: sb.createdAt,
       updatedAt: sb.updatedAt,
     })),
-    diffStat: null,
-    prUrl: null,
-    prAuthor: null,
-    ciStatus: null,
-    reviewStatus: null,
-    reviewer: null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   } as TaskRecord;
 }
 
 export async function appendAuditLog(ctx: any, kind: string, payload: Record<string, unknown>): Promise<void> {
+  const row = await ctx.db.select({ branchName: taskTable.branchName }).from(taskTable).where(eq(taskTable.id, TASK_ROW_ID)).get();
   const auditLog = await getOrCreateAuditLog(ctx, ctx.state.organizationId, ctx.state.repoId);
   await auditLog.send(
     "auditLog.command.append",
     {
       kind,
       taskId: ctx.state.taskId,
-      branchName: ctx.state.branchName,
+      branchName: row?.branchName ?? null,
       payload,
     },
     {

@@ -28,19 +28,7 @@ function requiredEnv(name: string): string {
 
 function workspaceModelEnv(name: string, fallback: WorkspaceModelId): WorkspaceModelId {
   const value = process.env[name]?.trim();
-  switch (value) {
-    case "claude-sonnet-4":
-    case "claude-opus-4":
-    case "gpt-5.3-codex":
-    case "gpt-5.4":
-    case "gpt-5.2-codex":
-    case "gpt-5.1-codex-max":
-    case "gpt-5.2":
-    case "gpt-5.1-codex-mini":
-      return value;
-    default:
-      return fallback;
-  }
+  return value && value.length > 0 ? value : fallback;
 }
 
 function intEnv(name: string, fallback: number): number {

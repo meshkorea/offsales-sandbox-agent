@@ -37,6 +37,7 @@ export interface TaskWorkspaceClient {
   updateDraft(input: TaskWorkspaceUpdateDraftInput): Promise<void>;
   sendMessage(input: TaskWorkspaceSendMessageInput): Promise<void>;
   stopAgent(input: TaskWorkspaceSessionInput): Promise<void>;
+  selectSession(input: TaskWorkspaceSessionInput): Promise<void>;
   setSessionUnread(input: TaskWorkspaceSetSessionUnreadInput): Promise<void>;
   renameSession(input: TaskWorkspaceRenameSessionInput): Promise<void>;
   closeSession(input: TaskWorkspaceSessionInput): Promise<void>;

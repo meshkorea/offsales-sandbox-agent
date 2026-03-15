@@ -54,10 +54,6 @@ function repositoryIconColor(label: string): string {
   return REPOSITORY_COLORS[Math.abs(hash) % REPOSITORY_COLORS.length]!;
 }
 
-function isPullRequestSidebarItem(task: Task): boolean {
-  return task.id.startsWith("pr:");
-}
-
 export const Sidebar = memo(function Sidebar({
   repositories,
   newTaskRepos,
@@ -72,9 +68,7 @@ export const Sidebar = memo(function Sidebar({
   taskOrderByRepository,
   onReorderTasks,
   onReloadOrganization,
-  onReloadPullRequests,
   onReloadRepository,
-  onReloadPullRequest,
   onToggleSidebar,
 }: {
   repositories: RepositorySection[];
@@ -90,9 +84,7 @@ export const Sidebar = memo(function Sidebar({
   taskOrderByRepository: Record<string, string[]>;
   onReorderTasks: (repositoryId: string, fromIndex: number, toIndex: number) => void;
   onReloadOrganization: () => void;
-  onReloadPullRequests: () => void;
   onReloadRepository: (repoId: string) => void;
-  onReloadPullRequest: (repoId: string, prNumber: number) => void;
   onToggleSidebar?: () => void;
 }) {
   const [css] = useStyletron();
@@ -444,16 +436,6 @@ export const Sidebar = memo(function Sidebar({
                 >
                   Reload organization
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setHeaderMenuOpen(false);
-                    onReloadPullRequests();
-                  }}
-                  className={css(menuButtonStyle(false, t))}
-                >
-                  Reload all PRs
-                </button>
               </div>
             ) : null}
             <div
@@ -665,15 +647,12 @@ export const Sidebar = memo(function Sidebar({
               if (item.type === "task") {
                 const { repository, task, taskIndex } = item;
                 const isActive = task.id === activeId;
-                const isPullRequestItem = isPullRequestSidebarItem(task);
                 const isRunning = task.sessions.some((s) => s.status === "running");
                 const isProvisioning =
-                  !isPullRequestItem &&
-                  ((String(task.status).startsWith("init_") && task.status !== "init_complete") ||
-                    task.status === "new" ||
-                    task.sessions.some((s) => s.status === "pending_provision" || s.status === "pending_session_create"));
+                  (String(task.status).startsWith("init_") && task.status !== "init_complete") ||
+                  task.sessions.some((s) => s.status === "pending_provision" || s.status === "pending_session_create");
                 const hasUnread = task.sessions.some((s) => s.unread);
-                const isDraft = task.pullRequest == null || task.pullRequest.status === "draft";
+                const isDraft = task.pullRequest?.isDraft ?? true;
                 const totalAdded = task.fileChanges.reduce((sum, file) => sum + file.added, 0);
                 const totalRemoved = task.fileChanges.reduce((sum, file) => sum + file.removed, 0);
                 const hasDiffs = totalAdded > 0 || totalRemoved > 0;
@@ -718,17 +697,11 @@ export const Sidebar = memo(function Sidebar({
                       <div
                         onClick={() => onSelect(task.id)}
                         onContextMenu={(event) => {
-                          if (isPullRequestItem && task.pullRequest) {
-                            contextMenu.open(event, [
-                              { label: "Reload pull request", onClick: () => onReloadPullRequest(task.repoId, task.pullRequest!.number) },
-                              { label: "Create task", onClick: () => onSelect(task.id) },
-                            ]);
-                            return;
-                          }
-                          contextMenu.open(event, [
+                          const items = [
                             { label: "Rename task", onClick: () => onRenameTask(task.id) },
                             { label: "Mark as unread", onClick: () => onMarkUnread(task.id) },
-                          ]);
+                          ];
+                          contextMenu.open(event, items);
                         }}
                         className={css({
                           padding: "8px 12px",
@@ -753,11 +726,7 @@ export const Sidebar = memo(function Sidebar({
                               flexShrink: 0,
                             })}
                           >
-                            {isPullRequestItem ? (
-                              <GitPullRequestDraft size={13} color={isDraft ? t.accent : t.textSecondary} />
-                            ) : (
-                              <TaskIndicator isRunning={isRunning} isProvisioning={isProvisioning} hasUnread={hasUnread} isDraft={isDraft} />
-                            )}
+                            <TaskIndicator isRunning={isRunning} isProvisioning={isProvisioning} hasUnread={hasUnread} isDraft={isDraft} />
                           </div>
                           <div className={css({ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: "1px" })}>
                             <LabelSmall
@@ -773,18 +742,13 @@ export const Sidebar = memo(function Sidebar({
                             >
                               {task.title}
                             </LabelSmall>
-                            {isPullRequestItem && task.statusMessage ? (
-                              <LabelXSmall color={t.textTertiary} $style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {task.statusMessage}
-                              </LabelXSmall>
-                            ) : null}
                           </div>
                           {task.pullRequest != null ? (
                             <span className={css({ display: "inline-flex", alignItems: "center", gap: "4px", flexShrink: 0 })}>
                               <LabelXSmall color={t.textSecondary} $style={{ fontWeight: 600 }}>
                                 #{task.pullRequest.number}
                               </LabelXSmall>
-                              {task.pullRequest.status === "draft" ? <CloudUpload size={11} color={t.accent} /> : null}
+                              {task.pullRequest.isDraft ? <CloudUpload size={11} color={t.accent} /> : null}
                             </span>
                           ) : (
                             <GitPullRequestDraft size={11} color={t.textTertiary} />

@@ -2,6 +2,7 @@ import { actor } from "rivetkit";
 import { e2b, sandboxActor } from "rivetkit/sandbox";
 import { existsSync } from "node:fs";
 import Dockerode from "dockerode";
+import { DEFAULT_WORKSPACE_MODEL_GROUPS, workspaceModelGroupsFromSandboxAgents, type WorkspaceModelGroup } from "@sandbox-agent/foundry-shared";
 import { SandboxAgent } from "sandbox-agent";
 import { getActorRuntimeContext } from "../context.js";
 import { organizationKey } from "../keys.js";
@@ -258,6 +259,26 @@ async function providerForConnection(c: any): Promise<any | null> {
   return provider;
 }
 
+async function listWorkspaceModelGroupsForSandbox(c: any): Promise<WorkspaceModelGroup[]> {
+  const provider = await providerForConnection(c);
+  if (!provider || !c.state.sandboxId || typeof provider.connectAgent !== "function") {
+    return DEFAULT_WORKSPACE_MODEL_GROUPS;
+  }
+
+  try {
+    const client = await provider.connectAgent(c.state.sandboxId, {
+      waitForHealth: {
+        timeoutMs: 15_000,
+      },
+    });
+    const listed = await client.listAgents({ config: true });
+    const groups = workspaceModelGroupsFromSandboxAgents(Array.isArray(listed?.agents) ? listed.agents : []);
+    return groups.length > 0 ? groups : DEFAULT_WORKSPACE_MODEL_GROUPS;
+  } catch {
+    return DEFAULT_WORKSPACE_MODEL_GROUPS;
+  }
+}
+
 const baseActions = baseTaskSandbox.config.actions as Record<string, (c: any, ...args: any[]) => Promise<any>>;
 
 export const taskSandbox = actor({
@@ -358,6 +379,10 @@ export const taskSandbox = actor({
       } catch {
         return { endpoint: "mock://terminal-unavailable" };
       }
+    },
+
+    async listWorkspaceModelGroups(c: any): Promise<WorkspaceModelGroup[]> {
+      return await listWorkspaceModelGroupsForSandbox(c);
     },
 
     async providerState(c: any): Promise<{ sandboxProviderId: "e2b" | "local"; sandboxId: string; state: string; at: number }> {

@@ -58,6 +58,19 @@ export const CreateTaskInputSchema = z.object({
 });
 export type CreateTaskInput = z.infer<typeof CreateTaskInputSchema>;
 
+export const WorkspacePullRequestSummarySchema = z.object({
+  number: z.number().int(),
+  title: z.string().min(1),
+  state: z.string().min(1),
+  url: z.string().min(1),
+  headRefName: z.string().min(1),
+  baseRefName: z.string().min(1),
+  repoFullName: z.string().min(1),
+  authorLogin: z.string().nullable(),
+  isDraft: z.boolean(),
+  updatedAtMs: z.number().int(),
+});
+
 export const TaskRecordSchema = z.object({
   organizationId: OrganizationIdSchema,
   repoId: z.string().min(1),
@@ -69,6 +82,7 @@ export const TaskRecordSchema = z.object({
   sandboxProviderId: SandboxProviderIdSchema,
   status: TaskStatusSchema,
   activeSandboxId: z.string().nullable(),
+  pullRequest: WorkspacePullRequestSummarySchema.nullable(),
   sandboxes: z.array(
     z.object({
       sandboxId: z.string().min(1),
@@ -80,12 +94,6 @@ export const TaskRecordSchema = z.object({
       updatedAt: z.number().int(),
     }),
   ),
-  diffStat: z.string().nullable(),
-  prUrl: z.string().nullable(),
-  prAuthor: z.string().nullable(),
-  ciStatus: z.string().nullable(),
-  reviewStatus: z.string().nullable(),
-  reviewer: z.string().nullable(),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
 });
@@ -99,6 +107,7 @@ export const TaskSummarySchema = z.object({
   title: z.string().min(1).nullable(),
   status: TaskStatusSchema,
   updatedAt: z.number().int(),
+  pullRequest: WorkspacePullRequestSummarySchema.nullable(),
 });
 export type TaskSummary = z.infer<typeof TaskSummarySchema>;
 
@@ -129,12 +138,8 @@ export const RepoBranchRecordSchema = z.object({
   taskId: z.string().nullable(),
   taskTitle: z.string().nullable(),
   taskStatus: TaskStatusSchema.nullable(),
-  prNumber: z.number().int().nullable(),
-  prState: z.string().nullable(),
-  prUrl: z.string().nullable(),
+  pullRequest: WorkspacePullRequestSummarySchema.nullable(),
   ciStatus: z.string().nullable(),
-  reviewStatus: z.string().nullable(),
-  reviewer: z.string().nullable(),
   updatedAt: z.number().int(),
 });
 export type RepoBranchRecord = z.infer<typeof RepoBranchRecordSchema>;

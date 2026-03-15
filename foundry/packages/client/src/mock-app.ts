@@ -1,4 +1,8 @@
-import type { WorkspaceModelId } from "@sandbox-agent/foundry-shared";
+import { DEFAULT_WORKSPACE_MODEL_GROUPS, DEFAULT_WORKSPACE_MODEL_ID, type WorkspaceModelId } from "@sandbox-agent/foundry-shared";
+
+const claudeModels = DEFAULT_WORKSPACE_MODEL_GROUPS.find((group) => group.agentKind === "Claude")?.models ?? [];
+const CLAUDE_SECONDARY_MODEL_ID = claudeModels[1]?.id ?? claudeModels[0]?.id ?? DEFAULT_WORKSPACE_MODEL_ID;
+const CLAUDE_TERTIARY_MODEL_ID = claudeModels[2]?.id ?? CLAUDE_SECONDARY_MODEL_ID;
 import { injectMockLatency } from "./mock/latency.js";
 import rivetDevFixture from "../../../scripts/data/rivet-dev.json" with { type: "json" };
 
@@ -233,7 +237,7 @@ function buildDefaultSnapshot(): MockFoundryAppSnapshot {
         githubLogin: "nathan",
         roleLabel: "Founder",
         eligibleOrganizationIds: ["personal-nathan", "acme", "rivet"],
-        defaultModel: "gpt-5.3-codex",
+        defaultModel: DEFAULT_WORKSPACE_MODEL_ID,
       },
       {
         id: "user-maya",
@@ -242,7 +246,7 @@ function buildDefaultSnapshot(): MockFoundryAppSnapshot {
         githubLogin: "maya",
         roleLabel: "Staff Engineer",
         eligibleOrganizationIds: ["acme"],
-        defaultModel: "claude-sonnet-4",
+        defaultModel: CLAUDE_SECONDARY_MODEL_ID,
       },
       {
         id: "user-jamie",
@@ -251,7 +255,7 @@ function buildDefaultSnapshot(): MockFoundryAppSnapshot {
         githubLogin: "jamie",
         roleLabel: "Platform Lead",
         eligibleOrganizationIds: ["personal-jamie", "rivet"],
-        defaultModel: "claude-opus-4",
+        defaultModel: CLAUDE_TERTIARY_MODEL_ID,
       },
     ],
     organizations: [

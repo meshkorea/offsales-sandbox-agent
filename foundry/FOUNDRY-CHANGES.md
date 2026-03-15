@@ -43,6 +43,116 @@ Work through items checking boxes as you go. Some items have dependencies — do
 - 2026-03-14 12: Confirmed blocker for later user-table singleton work.
   - Item `3` conflicts with the current Better Auth adapter contract for the `user` table: the adapter depends on the external string `user.id`, while the spec also asks for a literal singleton `CHECK (id = 1)` on that same table.
   - That cannot be applied mechanically without redesigning the Better Auth adapter contract or introducing a separate surrogate identity column. I have not forced that change yet.
+- 2026-03-15 13: Task/repository durable-state cleanup and auth-scoped workspace reads landed.
+  - Removed the remaining task/repository actor durable-state duplication: task `createState` now holds only `(organizationId, repoId, taskId)`, repository `createState` now holds only `(organizationId, repoId)`, task initialization seeds SQLite from the initialize queue payload, and task record reads fetch `repoRemote` through repository metadata instead of stale actor state.
+  - Removed the repository creation-time `remoteUrl` dependency from actor handles/callers and changed repository metadata to backfill/persist `remoteUrl` from GitHub data when needed.
+  - Wired Better Auth session ids through the remote client workspace/task-detail reads and through the task workflow queue handlers so user-scoped workspace state is no longer dropped on the floor by the organization/task proxy path.
+- 2026-03-15 14: Coordinator routing boundary tightened.
+  - Removed the organization actor's fallback `taskId -> repoId` scan across repositories; task proxy actions now require `repoId` and route directly to the repository/task coordinator path the client already uses.
+  - Updated backend architecture notes to reflect the live repo-owned task projection (`tasks`) and the removal of the old organization-owned `taskLookup` / `taskSummaries` indexes.
+- 2026-03-15 15: Workspace session-selection and dead task-status cleanup landed.
+  - Surfaced viewer-scoped `activeSessionId` through workspace task summary/detail DTOs, threaded it through the backend/client/mock surfaces, and added a dedicated workspace `select_session` mutation so session-tab selection now persists in `user_task_state` instead of living only in frontend local state.
+  - Removed dead task `diffStat` and sandbox `statusMessage` fields from the live workspace/task contracts and backend writes, and updated stale frontend/mock/e2e consumers to stop reading them.
+- 2026-03-15 16: GitHub sync progress is now live on the organization topic.
+  - Added persisted GitHub sync phase/generation/progress fields to the github-data actor meta row and the organization profile projection, and exposed them through `organizationUpdated` snapshots so workspace consumers no longer wait on stale app-topic state during repo imports.
+  - Chunked branch and pull-request fetches by repository batches, added generation markers to imported GitHub rows, switched sync refreshes to upsert+sweep instead of delete-then-replace, and updated the workspace shell/dev panel to show live sync phase progress from the organization subscription.
+- 2026-03-15 17: Foundry-local model lists now route through shared Sandbox Agent config resources.
+  - Removed the remaining duplicated hardcoded model tables from the frontend/client workspace view-model layer and switched backend default-model / agent-inference fallbacks to the shared catalog helpers in `shared/src/models.ts`.
+  - Updated mock/default app state to stop seeding deleted `claude-sonnet-4` / `claude-opus-4` ids, and aligned the user-profile default-model migration fallback with the shared catalog default.
+- 2026-03-15 17: Shared model catalog moved off the old fixed union.
+  - Replaced the shared `WorkspaceModelId` closed union with string ids, introduced a shared model catalog derived from the sandbox-agent agent-config resources, and switched the client/frontend picker label helpers to consume that catalog instead of maintaining separate hardcoded `MODEL_GROUPS` arrays.
+  - Updated backend default-model and model→agent fallback logic to use the shared catalog/default id, and relaxed e2e env parsing so new sandbox-agent model ids can flow through without patching Foundry first.
+- 2026-03-15 18: Workspace task status collapsed to a single live field.
+  - Removed the duplicate `runtimeStatus` field from workspace task/detail DTOs and all current backend/client/frontend consumers, so workspace task `status` is now the only task-state field on that surface.
+  - Removed the remaining synthetic `"new"` task status from the live workspace path; mock task creation now starts in the first concrete init state instead of exposing a frontend-only status.
+- 2026-03-15 19: GitHub sync now persists branch and PR batches as they are fetched.
+  - The branch and pull-request phases now upsert each fetched repository batch immediately and only sweep stale rows after the phase completes, instead of buffering the full dataset in memory until the end of the sync.
+  - This aligns chunked progress reporting with chunked persistence and tightens recovery behavior for large repository imports.
+- 2026-03-15 20: Repository-owned task projection artifacts are now aligned with runtime.
+  - Removed the last stale `task_lookup` Drizzle artifacts from the organization actor so the checked-in schema snapshots match the live repository-owned `tasks` projection.
+  - There are no remaining org/repo runtime references to the old org-side task lookup table.
+- 2026-03-15 21: Legacy task/runtime fields are fully gone from the live Foundry surface.
+  - Confirmed the old task-table/runtime fields from item `21` are removed across backend/shared/client/frontend, and renamed the last leftover `agentTypeForModel()` helper to the neutral `sandboxAgentIdForModel()`.
+  - Deleted the final dead frontend diff-stat formatter/test that only referenced already-removed task diff state.
+- 2026-03-15 22: Task status tracking is now fully collapsed to the canonical task status enum.
+  - With the earlier backend `statusMessage` removal plus this turn's workspace contract cleanup, the workspace/task surface now derives all task status UI from the canonical backend `status` enum.
+  - There are no remaining live workspace `runtimeStatus` or synthetic `"new"` task-state branches.
+- 2026-03-15 23: Per-user workspace UI state is fully sourced from the user actor overlay.
+  - Confirmed the shared task actor no longer stores per-user `activeSessionId`, unread, or draft columns; those values are persisted in `user_task_state` and only projected back into workspace DTOs for the current viewer.
+  - The remaining active-session/unread/draft references in client/frontend code are consumer fields of that user-scoped overlay, not shared task-actor storage.
+- 2026-03-15 24: Subscription topics are now fully normalized to single-snapshot events.
+  - Confirmed the shared realtime contracts now expose one full replacement event per topic (`appUpdated`, `organizationUpdated`, `taskUpdated`, `sessionUpdated`, `processesUpdated`) with matching wire event names and type fields.
+  - The client subscription manager already treats organization/task topics as full-snapshot refreshes, so there are no remaining multi-variant organization events or `taskDetailUpdated` name mismatches in live code.
+- 2026-03-15 25: Sidebar PR/task split dead branches trimmed further.
+  - Removed the remaining dead `pr:`-id sidebar branch and switched the workspace sidebar to the real `pullRequest.isDraft` field instead of stale `pullRequest.status` reads.
+  - This does not finish item `15`, but it reduces the remaining synthetic PR/task split surface in the frontend.
+- 2026-03-15 26: User-actor mutations now flow through a dedicated workflow queue.
+  - Added [user/workflow.ts](/home/nathan/sandbox-agent/foundry/packages/backend/src/actors/user/workflow.ts) plus shared query helpers, wired the user actor up with explicit queue names, and moved auth/profile/session/task-state mutations behind workflow handlers instead of direct action bodies.
+- 2026-03-15 27: Organization GitHub/shell/billing mutations now route through workflow queues.
+  - Added shared organization queue definitions in `organization/queues.ts`, taught the organization workflow to handle the remaining GitHub projection, org-profile, and billing mutation commands, and switched the app-shell, Better Auth, GitHub-data actor, and org-isolation test to send queue messages instead of calling direct org mutation actions.
+  - Deleted the dead organization shell mutation actions that no longer had callers (`applyOrganizationSyncCompleted`, `markOrganizationSyncFailed`, `applyGithubInstallationCreated`, `applyGithubInstallationRemoved`, `applyGithubRepositoryChanges`), which moves items `4`, `10`, and `12` forward even though the broader org action split is still open.
+- 2026-03-15 28: Organization action split trimmed more of the monolith and removed dead event types.
+  - Moved `starSandboxAgentRepo` into `organization/actions/onboarding.ts` and the admin GitHub reload actions into `organization/actions/github.ts`, so `organization/actions.ts` is carrying fewer unrelated app-shell responsibilities.
+  - Deleted the dead backend-only `actors/events.ts` type file after confirming nothing in Foundry still imports those old task/PR event interfaces.
+- 2026-03-15 29: Repo overview branch rows now carry a single PR object.
+  - Replaced the repo-overview branch DTO's scalar PR fields (`prNumber`, `prState`, `prUrl`, `reviewStatus`, `reviewer`) with `pullRequest: WorkspacePullRequestSummary | null`, and updated repository overview assembly plus the organization dashboard to consume that unified PR shape.
+  - This does not finish item `15`, but it removes another synthetic PR-only read surface and makes the repo overview align better with the task summary PR model.
+- 2026-03-15 30: Repo overview stopped falling back to raw GitHub PR rows.
+  - Changed repository overview assembly to read PR metadata only from the repo-owned task projection instead of rejoining live GitHub PR rows on read, so the dashboard is one step closer to treating PRs as task data rather than a separate UI entity.
+- 2026-03-15 31: GitHub organization-shell repair now uses the org workflow queue.
+  - Converted `syncOrganizationShellFromGithub` from a direct org action into a workflow-backed mutation command and updated the GitHub org sync path to send `organization.command.github.organization_shell.sync_from_github` instead of calling the action directly.
+  - Updated Better Auth adapter writes and task user-overlay writes to send directly to the user workflow queue, which partially lands item `4` and sets up item `11` for the user actor.
+- 2026-03-15 27: Workflow layout standardized and queue-only write paths expanded.
+  - Split the remaining inline actor workflows into dedicated files for `audit-log`, `repository`, `github-data`, and `organization`, and moved user read actions into `user/actions/*` with Better Auth-prefixed action names.
+  - Removed the task actor's public mutation action wrappers entirely, moved organization/repository/github-data/task coordination onto direct queue sends, and made repository metadata reads stop mutating `repo_meta` on cache misses.
+- 2026-03-15 28: PR-only admin/UI seams trimmed and PR branches now claim real tasks.
+  - Removed the remaining dedicated "reload pull requests" / "reload pull request" admin hooks from the backend/client/frontend surfaces and deleted the sidebar PR-only context action.
+  - Repository PR refresh now lazily creates a branch-owned task when a pull request arrives for an unclaimed branch, so PR-only branches stop living purely as a side table in GitHub sync flows.
+- 2026-03-15 29: Organization Better Auth writes now use workflow queues.
+  - Split the organization actor's Better Auth routing and verification reads into `organization/actions/better-auth.ts`, moved `APP_SHELL_ORGANIZATION_ID` to `organization/constants.ts`, and renamed the org Better Auth read surface to the `betterAuth*` form.
+  - Added dedicated organization workflow queue handlers for session/email/account index writes plus verification CRUD, and updated `services/better-auth.ts` to send those mutations directly to organization queues instead of calling mutation actions.
+- 2026-03-15 30: Shared model routing metadata is now centralized.
+  - Extended the shared model catalog with explicit `agentKind` and `sandboxAgentId` metadata, changed `WorkspaceAgentKind` to a dynamic string, and switched backend task session creation to resolve sandbox agent ids through the shared catalog instead of hardcoded `Codex` vs `Claude` branching.
+  - Updated the mock app/workspace and frontend model picker/new-task flows to consume the shared catalog/default model instead of forcing stale `Claude`/`Codex` fallbacks or a baked-in `gpt-5.3-codex` create-task default.
+- 2026-03-15 31: Dead GitHub-data PR reload surface removed and fixture PR shapes aligned.
+  - Deleted the unused GitHub-data `reloadPullRequest` workflow command plus the dead `listOpenPullRequests` / `getPullRequestForBranch` action surface that no longer has live Foundry callers.
+  - Fixed the stale client `workspace-model.ts` pull-request fixtures to use the live `WorkspacePullRequestSummary` shape, which removes the last targeted client type errors in the touched slice.
+- 2026-03-15 32: Organization action splitting continued past Better Auth.
+  - Moved the app snapshot/default-model/org-profile actions into `organization/actions/organization.ts`, onboarding actions into `organization/actions/onboarding.ts`, and app-level GitHub token/import actions into `organization/actions/github.ts`, then composed those files at the actor boundary.
+  - `organization/app-shell.ts` now exports shared helpers for those domains and no longer directly defines the moved action handlers, shrinking the remaining monolith and advancing item `10`.
+- 2026-03-15 33: Task PR detail now reads the repository-owned task projection.
+  - Removed duplicate scalar PR fields from `TaskRecord` and `WorkspaceTaskDetail`, switched the remaining frontend/client consumers to the canonical `pullRequest` object, and trimmed stale mock/test scaffolding that still populated those dead fields.
+  - Replaced the task actor's PR lookup path with a repository projection read (`getProjectedTaskSummary`) so task detail/summary no longer ask the repo actor to re-query GitHub PR rows by branch.
+- 2026-03-15 34: Workspace model catalogs now come from the live sandbox-agent API.
+  - Added a shared normalizer for `/v1/agents?config=true` payloads, exposed sandbox-scoped `listWorkspaceModelGroups()` from the task sandbox actor, and switched backend workspace session creation to resolve sandbox agent ids from the live sandbox catalog instead of only the checked-in default tables.
+  - Updated the frontend workspace model picker to query the active sandbox for model groups and use that live catalog for labels/options, while keeping the shared default catalog only as a fallback when no sandbox is available yet or the sandbox-agent connection is unavailable.
+- 2026-03-15 35: Backend-only organization snapshot refresh is now queue-backed.
+  - Added `organization.command.snapshot.broadcast` to the organization workflow, switched repository and app-import callers to send that queue message instead of calling the organization actor's `refreshOrganizationSnapshot` action directly, and removed the direct action wrapper.
+  - Deleted the dead `adminReconcileWorkspaceState` organization action/interface entry after confirming nothing in Foundry still calls it.
+- 2026-03-15 36: Dead backend actor export cleanup continued.
+  - Removed the stale `export * from "./events.js"` line from `backend/src/actors/index.ts`, which was left behind after deleting the dead backend event type file.
+  - This keeps the backend actor barrel aligned with the live file set and advances the final dead-code/event audit.
+- 2026-03-15 34: Item 17 removed from this checklist; do not leave started items half-finished.
+  - By request, item `17` (`Type all actor context parameters — remove c: any`) is deferred out of this Foundry task and should not block completion here.
+  - Process note for the remaining checklist work: once an item is started, finish that item to completion before opening a different partial seam. Item `15` is the current priority under that rule.
+- 2026-03-15 35: Task/PR unification now routes live PR changes through repository-owned task summaries only.
+  - GitHub PR sync and webhook handling now send concrete PR summaries directly to the repository coordinator, which lazily creates a real branch-owned task when needed and persists PR metadata on the task projection instead of re-querying raw `github_pull_requests` rows from repository reads.
+  - Cleared the last stale scalar PR test references (`prUrl`, `reviewStatus`, `reviewer`) so the remaining Foundry surfaces consistently use the canonical `pullRequest` object.
+- 2026-03-15 36: Organization action entrypoints are now fully organized under `actions/`, and the public mutation surface is queue-only.
+  - Moved organization task/workspace proxy actions plus `createTaskMutation` into `organization/actions/tasks.ts`, added `organization/actions/app.ts` so every composed org action bundle now lives under `organization/actions/*`, and removed dead `app-shell` exports that no longer had external callers.
+  - Audited the remaining public organization actor actions and confirmed the write paths go through organization/repository/task/github-data workflow queues instead of direct mutation actions, which closes item `4` and item `10`.
+- 2026-03-15 37: Organization dead-code audit completed.
+  - Removed the leftover exported-only Better Auth predicate helper from `organization/actions/better-auth.ts`; it is now module-private because nothing outside that file uses it.
+  - Audited the remaining organization actor surface and confirmed the live public reads/writes still in use are the composed `actions/*` bundles plus workflow mutation helpers. There are no remaining dead org action exports from the pre-refactor monolith.
+- 2026-03-15 38: Final dead-event and dead-surface audit completed for the in-scope Foundry refactor.
+  - Confirmed the live Foundry realtime topics each have a single event type (`appUpdated`, `organizationUpdated`, `taskUpdated`, `sessionUpdated`), and the deleted legacy event names (`workspaceUpdated`, `taskSummaryUpdated`, `taskDetailUpdated`, `pullRequestUpdated`, `pullRequestRemoved`) no longer exist in live Foundry code.
+  - Re-audited the major removed compatibility seams (`Workbench`, branch rename, PR-only sidebar ids, duplicate runtime task status, `getTaskEnriched`, organization-owned task lookup tables) and found no remaining live references beyond expected domain strings like GitHub webhook event names or CLI `pr` labels.
+- 2026-03-15 39: Item 15 was finished for real by moving PR ownership into the task actor.
+  - Added task-local `pull_request_json` storage, switched task detail/summary reads to the task DB, and added `task.command.pull_request.sync` so GitHub/repository flows update PR metadata through the task coordinator instead of overlaying it in the repository projection.
+  - The mock right sidebar now trusts the canonical `task.pullRequest.url` field instead of rebuilding a PR URL from repo name + PR number.
+- 2026-03-15 40: Better Auth user singleton constraint is now enforced without breaking the adapter contract.
+  - The user actor's `user` table now uses an integer singleton primary key with `CHECK (id = 1)` plus a separate `auth_user_id` column for Better Auth's external string identity.
+  - Updated the user actor query/join/mutation helpers so Better Auth still reads and writes logical `user.id` as the external string id while SQLite enforces the singleton row invariant locally.
 
 No backwards compatibility — delete old code, don't deprecate. If something is removed, remove it everywhere (backend, client, shared types, frontend, tests, mocks).
 
@@ -61,37 +171,40 @@ No backwards compatibility — delete old code, don't deprecate. If something is
 14 (after 15)
 
 **Final:**
-17 (deferred), 18 (after everything), final audit pass (after everything)
+18 (after everything), final audit pass (after everything)
 
 ### Index
 
 - [x] 1. Rename Auth User actor → User actor
 - [x] 2. Add Better Auth mapping comments to user/org actor tables
-- [ ] 3. Enforce `id = 1` CHECK constraint on single-row tables
-- [ ] 4. Move all mutation actions to queue messages
+- [x] 3. Enforce `id = 1` CHECK constraint on single-row tables
+- [x] 4. Move all mutation actions to queue messages
 - [x] 5. Migrate task actor raw SQL to Drizzle migrations
 - [x] 6. Rename History actor → Audit Log actor
 - [x] 7. Move starred/default model to user actor settings *(depends on: 1)*
-- [ ] 8. Replace hardcoded model/agent lists with sandbox-agent API data *(depends on: 7, 25)*
-- [ ] 9. Flatten `taskLookup` + `taskSummaries` into single `tasks` table *(depends on: 13)*
-- [ ] 10. Reorganize user and org actor actions into `actions/` folders *(depends on: 1, 6)*
-- [ ] 11. Standardize workflow file structure across all actors *(depends on: 4)*
-- [ ] 12. Audit and remove dead code in organization actor *(depends on: 10)*
-- [ ] 13. Enforce coordinator pattern and fix ownership violations
-- [ ] 14. Standardize one event per subscription topic *(depends on: 15)*
-- [ ] 15. Unify tasks and pull requests — PRs are just task data *(depends on: 9, 13)*
-- [ ] 16. Chunk GitHub data sync and publish progress
-- [ ] 17. Type all actor context parameters — remove `c: any` *(DEFERRED — do last)*
-- [ ] 18. Final pass: remove all dead code *(depends on: all other items)*
-- [ ] 19. Remove duplicate data between `c.state` and SQLite *(depends on: 21, 24)*
+- [x] 8. Replace hardcoded model/agent lists with sandbox-agent API data *(depends on: 7, 25)*
+- [x] 9. Flatten `taskLookup` + `taskSummaries` into single `tasks` table *(depends on: 13)*
+- [x] 10. Reorganize user and org actor actions into `actions/` folders *(depends on: 1, 6)*
+- [x] 11. Standardize workflow file structure across all actors *(depends on: 4)*
+- [x] 12. Audit and remove dead code in organization actor *(depends on: 10)*
+- [x] 13. Enforce coordinator pattern and fix ownership violations
+- [x] 14. Standardize one event per subscription topic *(depends on: 15)*
+- [x] 15. Unify tasks and pull requests — PRs are just task data *(depends on: 9, 13)*
+- [x] 16. Chunk GitHub data sync and publish progress
+- [x] 18. Final pass: remove all dead code *(depends on: all other items)*
+- [x] 19. Remove duplicate data between `c.state` and SQLite *(depends on: 21, 24)*
 - [x] 20. Prefix admin/recovery actions with `admin`
-- [ ] 21. Remove legacy/session-scoped fields from task table
-- [ ] 22. Move per-user UI state from task actor to user actor *(depends on: 1)*
+- [x] 21. Remove legacy/session-scoped fields from task table
+- [x] 22. Move per-user UI state from task actor to user actor *(depends on: 1)*
 - [x] 23. Delete `getTaskEnriched` and `enrichTaskRecord` (dead code)
-- [ ] 24. Clean up task status tracking *(depends on: 21)*
+- [x] 24. Clean up task status tracking *(depends on: 21)*
 - [x] 25. Remove "Workbench" prefix from all types, functions, files, tables
 - [x] 26. Delete branch rename (branches immutable after creation) *(depends on: 25)*
-- [ ] Final audit pass: dead events scan *(depends on: all other items)*
+- [x] Final audit pass: dead events scan *(depends on: all other items)*
+
+Deferred follow-up outside this checklist:
+
+- 17. Type all actor context parameters — remove `c: any` *(removed from this task's scope by request)*
 
 ---
 
@@ -166,7 +279,7 @@ No backwards compatibility — delete old code, don't deprecate. If something is
 
 ---
 
-## [ ] 3. Enforce `id = 1` CHECK constraint on all single-row actor tables
+## [x] 3. Enforce `id = 1` CHECK constraint on all single-row actor tables
 
 **Rationale:** When an actor instance represents a single entity, tables that hold exactly one row should enforce this at the DB level with a `CHECK (id = 1)` constraint. The task actor already does this correctly; other actors don't.
 
@@ -199,7 +312,7 @@ No backwards compatibility — delete old code, don't deprecate. If something is
 
 ---
 
-## [ ] 4. Move all mutation actions to queue messages
+## [x] 4. Move all mutation actions to queue messages
 
 **Rationale:** Actions should be read-only (queries). All mutations (INSERT/UPDATE/DELETE) should go through queue messages processed by workflow handlers. This ensures single-writer consistency and aligns with the actor model. No actor currently does this correctly — the history actor has the mutation in the workflow handler, but the `append` action wraps a `wait: true` queue send, which is the same anti-pattern (callers should send to the queue directly).
 
@@ -500,7 +613,7 @@ Per agent, the API returns:
 
 ---
 
-## [ ] 10. Reorganize user and organization actor actions into `actions/` folders
+## [x] 10. Reorganize user and organization actor actions into `actions/` folders
 
 **Dependencies:** items 1, 6
 
@@ -744,7 +857,7 @@ Wire event is `taskUpdated` but the type field says `taskDetailUpdated`. Rename 
 
 ---
 
-## [ ] 15. Unify tasks and pull requests — PRs are just task data
+## [x] 15. Unify tasks and pull requests — PRs are just task data
 
 **Dependencies:** items 9, 13
 
@@ -833,9 +946,9 @@ The `authSessionIndex`, `authEmailIndex`, `authAccountIndex`, and `authVerificat
 
 ---
 
-# Deferred — tackle later
+# Deferred follow-up outside this task
 
-## [ ] 17. Type all actor context parameters — remove `c: any` *(DEFERRED — do last)*
+## 17. Type all actor context parameters — remove `c: any`
 
 **Rationale:** 272+ instances of `c: any`, `ctx: any`, `loopCtx: any` across all actor code. This eliminates type safety for DB access, state access, broadcasts, and queue operations. All context parameters should use RivetKit's proper context types.
 

@@ -10,6 +10,12 @@ const journal = {
       tag: "0000_melted_viper",
       breakpoints: true,
     },
+    {
+      idx: 1,
+      when: 1773907201000,
+      tag: "0001_github_sync_progress",
+      breakpoints: true,
+    },
   ],
 } as const;
 
@@ -104,6 +110,14 @@ CREATE TABLE \`stripe_lookup\` (
 	\`organization_id\` text NOT NULL,
 	\`updated_at\` integer NOT NULL
 );
+`,
+    m0001: `ALTER TABLE \`organization_profile\` ADD \`github_sync_generation\` integer NOT NULL DEFAULT 0;
+--> statement-breakpoint
+ALTER TABLE \`organization_profile\` ADD \`github_sync_phase\` text;
+--> statement-breakpoint
+ALTER TABLE \`organization_profile\` ADD \`github_processed_repository_count\` integer NOT NULL DEFAULT 0;
+--> statement-breakpoint
+ALTER TABLE \`organization_profile\` ADD \`github_total_repository_count\` integer NOT NULL DEFAULT 0;
 `,
   } as const,
 };

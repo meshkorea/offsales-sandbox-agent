@@ -11,6 +11,7 @@ export const task = sqliteTable(
     task: text("task").notNull(),
     sandboxProviderId: text("sandbox_provider_id").notNull(),
     status: text("status").notNull(),
+    pullRequestJson: text("pull_request_json"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
@@ -42,7 +43,6 @@ export const taskSandboxes = sqliteTable("task_sandboxes", {
   sandboxActorId: text("sandbox_actor_id"),
   switchTarget: text("switch_target").notNull(),
   cwd: text("cwd"),
-  statusMessage: text("status_message"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });

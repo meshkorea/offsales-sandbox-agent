@@ -49,10 +49,9 @@ export const TranscriptHeader = memo(function TranscriptHeader({
   const t = useFoundryTokens();
   const isDesktop = !!import.meta.env.VITE_DESKTOP;
   const needsTrafficLightInset = isDesktop && sidebarCollapsed;
-  const taskStatus = task.runtimeStatus ?? task.status;
   const headerStatus = useMemo(
-    () => deriveHeaderStatus(taskStatus, task.statusMessage ?? null, activeSession?.status ?? null, activeSession?.errorMessage ?? null, hasSandbox),
-    [taskStatus, task.statusMessage, activeSession?.status, activeSession?.errorMessage, hasSandbox],
+    () => deriveHeaderStatus(task.status, activeSession?.status ?? null, activeSession?.errorMessage ?? null, hasSandbox),
+    [task.status, activeSession?.status, activeSession?.errorMessage, hasSandbox],
   );
 
   return (

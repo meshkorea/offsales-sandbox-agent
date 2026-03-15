@@ -10,9 +10,8 @@ OrganizationActor
 ├─ GithubDataActor
 ├─ RepositoryActor(repo)
 │  └─ TaskActor(task)
-│     ├─ TaskSessionActor(session) × N
-│     │  └─ SessionStatusSyncActor(session) × 0..1
-│     └─ Task-local workspace state
+│     ├─ taskSessions      → session metadata/transcripts
+│     └─ taskSandboxes     → sandbox instance index
 └─ SandboxInstanceActor(sandboxProviderId, sandboxId) × N
 ```
 
@@ -32,21 +31,20 @@ OrganizationActor (coordinator for repos + auth users)
 │
 │  Index tables:
 │  ├─ repos              → RepositoryActor index (repo catalog)
-│  ├─ taskLookup         → TaskActor index (taskId → repoId routing)
-│  ├─ taskSummaries      → TaskActor index (materialized sidebar projection)
-│  ├─ authSessionIndex   → AuthUserActor index (session token → userId)
-│  ├─ authEmailIndex     → AuthUserActor index (email → userId)
-│  └─ authAccountIndex   → AuthUserActor index (OAuth account → userId)
+│  ├─ authSessionIndex   → UserActor index (session token → userId)
+│  ├─ authEmailIndex     → UserActor index (email → userId)
+│  └─ authAccountIndex   → UserActor index (OAuth account → userId)
 │
 ├─ RepositoryActor (coordinator for tasks)
 │  │
 │  │  Index tables:
-│  │  └─ taskIndex       → TaskActor index (taskId → branchName)
+│  │  ├─ taskIndex       → TaskActor index (taskId → branchName)
+│  │  └─ tasks           → TaskActor materialized sidebar projection
 │  │
 │  └─ TaskActor (coordinator for sessions + sandboxes)
 │     │
 │     │  Index tables:
-│     │  ├─ taskWorkspaceSessions → Session index (session metadata, transcript, draft)
+│     │  ├─ taskWorkspaceSessions → Session index (session metadata + transcript)
 │     │  └─ taskSandboxes         → SandboxInstanceActor index (sandbox history)
 │     │
 │     └─ SandboxInstanceActor (leaf)

@@ -20,12 +20,11 @@ export function getUser(c: any, userId: string) {
   return actorClient(c).user.get(userKey(userId));
 }
 
-export async function getOrCreateRepository(c: any, organizationId: string, repoId: string, remoteUrl: string) {
+export async function getOrCreateRepository(c: any, organizationId: string, repoId: string) {
   return await actorClient(c).repository.getOrCreate(repositoryKey(organizationId, repoId), {
     createWithInput: {
       organizationId,
       repoId,
-      remoteUrl,
     },
   });
 }

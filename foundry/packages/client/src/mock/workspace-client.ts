@@ -9,6 +9,7 @@ import {
   slugify,
   uid,
 } from "../workspace-model.js";
+import { DEFAULT_WORKSPACE_MODEL_ID, workspaceAgentForModel } from "@sandbox-agent/foundry-shared";
 import type {
   TaskWorkspaceAddSessionResponse,
   TaskWorkspaceChangeModelInput,
@@ -74,20 +75,19 @@ class MockWorkspaceStore implements TaskWorkspaceClient {
       id,
       repoId: repo.id,
       title: input.title?.trim() || "New Task",
-      status: "new",
+      status: "init_enqueue_provision",
       repoName: repo.label,
       updatedAtMs: nowMs(),
       branch: input.branch?.trim() || null,
       pullRequest: null,
+      activeSessionId: sessionId,
       sessions: [
         {
           id: sessionId,
           sessionId: sessionId,
           sessionName: "Session 1",
-          agent: providerAgent(
-            MODEL_GROUPS.find((group) => group.models.some((model) => model.id === (input.model ?? "claude-sonnet-4")))?.provider ?? "Claude",
-          ),
-          model: input.model ?? "claude-sonnet-4",
+          agent: workspaceAgentForModel(input.model ?? DEFAULT_WORKSPACE_MODEL_ID, MODEL_GROUPS),
+          model: input.model ?? DEFAULT_WORKSPACE_MODEL_ID,
           status: "idle",
           thinkingSinceMs: null,
           unread: false,
@@ -140,7 +140,18 @@ class MockWorkspaceStore implements TaskWorkspaceClient {
     this.updateTask(input.taskId, (task) => ({
       ...task,
       updatedAtMs: nowMs(),
-      pullRequest: { number: nextPrNumber, status: "ready" },
+      pullRequest: {
+        number: nextPrNumber,
+        title: task.title,
+        state: "open",
+        url: `https://example.test/pr/${nextPrNumber}`,
+        headRefName: task.branch ?? `task/${task.id}`,
+        baseRefName: "main",
+        repoFullName: task.repoName,
+        authorLogin: "mock",
+        isDraft: false,
+        updatedAtMs: nowMs(),
+      },
     }));
   }
 
@@ -189,7 +200,7 @@ class MockWorkspaceStore implements TaskWorkspaceClient {
     const startedAtMs = nowMs();
 
     this.updateTask(input.taskId, (currentTask) => {
-      const isFirstOnTask = currentTask.status === "new";
+      const isFirstOnTask = String(currentTask.status).startsWith("init_");
       const newTitle = isFirstOnTask ? (text.length > 50 ? `${text.slice(0, 47)}...` : text) : currentTask.title;
       const newBranch = isFirstOnTask ? `feat/${slugify(newTitle)}` : currentTask.branch;
       const userMessageLines = [text, ...input.attachments.map((attachment) => `@ ${attachment.filePath}:${attachment.lineNumber}`)];
@@ -303,6 +314,14 @@ class MockWorkspaceStore implements TaskWorkspaceClient {
     });
   }
 
+  async selectSession(input: TaskWorkspaceSessionInput): Promise<void> {
+    this.assertSession(input.taskId, input.sessionId);
+    this.updateTask(input.taskId, (currentTask) => ({
+      ...currentTask,
+      activeSessionId: input.sessionId,
+    }));
+  }
+
   async setSessionUnread(input: TaskWorkspaceSetSessionUnreadInput): Promise<void> {
     this.updateTask(input.taskId, (currentTask) => ({
       ...currentTask,
@@ -329,6 +348,7 @@ class MockWorkspaceStore implements TaskWorkspaceClient {
 
       return {
         ...currentTask,
+        activeSessionId: currentTask.activeSessionId === input.sessionId ? (currentTask.sessions.find((candidate) => candidate.id !== input.sessionId)?.id ?? null) : currentTask.activeSessionId,
         sessions: currentTask.sessions.filter((candidate) => candidate.id !== input.sessionId),
       };
     });
@@ -342,8 +362,8 @@ class MockWorkspaceStore implements TaskWorkspaceClient {
       sessionId: nextSessionId,
       sandboxSessionId: null,
       sessionName: `Session ${this.requireTask(input.taskId).sessions.length + 1}`,
-      agent: "Claude",
-      model: "claude-sonnet-4",
+      agent: workspaceAgentForModel(DEFAULT_WORKSPACE_MODEL_ID, MODEL_GROUPS),
+      model: DEFAULT_WORKSPACE_MODEL_ID,
       status: "idle",
       thinkingSinceMs: null,
       unread: false,
@@ -355,6 +375,7 @@ class MockWorkspaceStore implements TaskWorkspaceClient {
     this.updateTask(input.taskId, (currentTask) => ({
       ...currentTask,
       updatedAtMs: nowMs(),
+      activeSessionId: nextSession.id,
       sessions: [...currentTask.sessions, nextSession],
     }));
     return { sessionId: nextSession.id };
@@ -369,7 +390,7 @@ class MockWorkspaceStore implements TaskWorkspaceClient {
     this.updateTask(input.taskId, (currentTask) => ({
       ...currentTask,
       sessions: currentTask.sessions.map((candidate) =>
-        candidate.id === input.sessionId ? { ...candidate, model: input.model, agent: providerAgent(group.provider) } : candidate,
+        candidate.id === input.sessionId ? { ...candidate, model: input.model, agent: workspaceAgentForModel(input.model, MODEL_GROUPS) } : candidate,
       ),
     }));
   }

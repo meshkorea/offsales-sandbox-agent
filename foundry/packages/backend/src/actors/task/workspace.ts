@@ -2,13 +2,17 @@
 import { randomUUID } from "node:crypto";
 import { basename, dirname } from "node:path";
 import { asc, eq } from "drizzle-orm";
+import { DEFAULT_WORKSPACE_MODEL_GROUPS, DEFAULT_WORKSPACE_MODEL_ID, workspaceAgentForModel, workspaceSandboxAgentIdForModel } from "@sandbox-agent/foundry-shared";
 import { getActorRuntimeContext } from "../context.js";
 import { getOrCreateRepository, getOrCreateTaskSandbox, getOrCreateUser, getTaskSandbox, selfTask } from "../handles.js";
 import { SANDBOX_REPO_CWD } from "../sandbox/index.js";
 import { resolveSandboxProviderId } from "../../sandbox-config.js";
 import { getBetterAuthService } from "../../services/better-auth.js";
+import { expectQueueResponse } from "../../services/queue.js";
 import { resolveOrganizationGithubAuth } from "../../services/github-auth.js";
 import { githubRepoFullNameFromRemote } from "../../services/repo.js";
+import { repositoryWorkflowQueueName } from "../repository/workflow.js";
+import { userWorkflowQueueName } from "../user/workflow.js";
 import { task as taskTable, taskRuntime, taskSandboxes, taskWorkspaceSessions } from "./db/schema.js";
 import { getCurrentRecord } from "./workflow/common.js";
 
@@ -21,24 +25,29 @@ function emptyGitState() {
   };
 }
 
-const FALLBACK_MODEL = "claude-sonnet-4";
-
-function isCodexModel(model: string) {
-  return model.startsWith("gpt-") || model.startsWith("o");
-}
+const FALLBACK_MODEL = DEFAULT_WORKSPACE_MODEL_ID;
 
 function agentKindForModel(model: string) {
-  if (isCodexModel(model)) {
-    return "Codex";
-  }
-  return "Claude";
+  return workspaceAgentForModel(model);
 }
 
-export function agentTypeForModel(model: string) {
-  if (isCodexModel(model)) {
-    return "codex";
+export function sandboxAgentIdForModel(model: string) {
+  return workspaceSandboxAgentIdForModel(model);
+}
+
+async function resolveWorkspaceModelGroups(c: any): Promise<any[]> {
+  try {
+    const sandbox = await getOrCreateTaskSandbox(c, c.state.organizationId, stableSandboxId(c));
+    const groups = await sandbox.listWorkspaceModelGroups();
+    return Array.isArray(groups) && groups.length > 0 ? groups : DEFAULT_WORKSPACE_MODEL_GROUPS;
+  } catch {
+    return DEFAULT_WORKSPACE_MODEL_GROUPS;
   }
-  return "claude";
+}
+
+async function resolveSandboxAgentForModel(c: any, model: string): Promise<string> {
+  const groups = await resolveWorkspaceModelGroups(c);
+  return workspaceSandboxAgentIdForModel(model, groups);
 }
 
 function repoLabelFromRemote(remoteUrl: string): string {
@@ -54,6 +63,11 @@ function repoLabelFromRemote(remoteUrl: string): string {
   }
 
   return basename(trimmed.replace(/\.git$/, ""));
+}
+
+async function getRepositoryMetadata(c: any): Promise<{ defaultBranch: string | null; fullName: string | null; remoteUrl: string }> {
+  const repository = await getOrCreateRepository(c, c.state.organizationId, c.state.repoId);
+  return await repository.getRepositoryMetadata({});
 }
 
 function parseDraftAttachments(value: string | null | undefined): Array<any> {
@@ -220,11 +234,17 @@ async function upsertUserTaskState(c: any, authSessionId: string | null | undefi
   }
 
   const user = await getOrCreateUser(c, userId);
-  await user.upsertTaskState({
-    taskId: c.state.taskId,
-    sessionId,
-    patch,
-  });
+  expectQueueResponse(
+    await user.send(
+      userWorkflowQueueName("user.command.task_state.upsert"),
+      {
+        taskId: c.state.taskId,
+        sessionId,
+        patch,
+      },
+      { wait: true, timeout: 60_000 },
+    ),
+  );
 }
 
 async function deleteUserTaskState(c: any, authSessionId: string | null | undefined, sessionId: string): Promise<void> {
@@ -239,10 +259,16 @@ async function deleteUserTaskState(c: any, authSessionId: string | null | undefi
   }
 
   const user = await getOrCreateUser(c, userId);
-  await user.deleteTaskState({
-    taskId: c.state.taskId,
-    sessionId,
-  });
+  expectQueueResponse(
+    await user.send(
+      userWorkflowQueueName("user.command.task_state.delete"),
+      {
+        taskId: c.state.taskId,
+        sessionId,
+      },
+      { wait: true, timeout: 60_000 },
+    ),
+  );
 }
 
 async function resolveDefaultModel(c: any, authSessionId?: string | null): Promise<string> {
@@ -367,7 +393,7 @@ async function getTaskSandboxRuntime(
 }> {
   const { config } = getActorRuntimeContext();
   const sandboxId = stableSandboxId(c);
-  const sandboxProviderId = resolveSandboxProviderId(config, record.sandboxProviderId ?? c.state.sandboxProviderId ?? null);
+  const sandboxProviderId = resolveSandboxProviderId(config, record.sandboxProviderId ?? null);
   const sandbox = await getOrCreateTaskSandbox(c, c.state.organizationId, sandboxId, {});
   const actorId = typeof sandbox.resolve === "function" ? await sandbox.resolve().catch(() => null) : null;
   const switchTarget = sandboxProviderId === "local" ? `sandbox://local/${sandboxId}` : `sandbox://e2b/${sandboxId}`;
@@ -381,7 +407,6 @@ async function getTaskSandboxRuntime(
       sandboxActorId: typeof actorId === "string" ? actorId : null,
       switchTarget,
       cwd: SANDBOX_REPO_CWD,
-      statusMessage: "sandbox ready",
       createdAt: now,
       updatedAt: now,
     })
@@ -436,8 +461,7 @@ async function ensureSandboxRepo(c: any, sandbox: any, record: any, opts?: { ski
   }
 
   const auth = await resolveOrganizationGithubAuth(c, c.state.organizationId);
-  const repository = await getOrCreateRepository(c, c.state.organizationId, c.state.repoId, c.state.repoRemote);
-  const metadata = await repository.getRepositoryMetadata({});
+  const metadata = await getRepositoryMetadata(c);
   const baseRef = metadata.defaultBranch ?? "main";
   const sandboxRepoRoot = dirname(SANDBOX_REPO_CWD);
   const script = [
@@ -445,7 +469,7 @@ async function ensureSandboxRepo(c: any, sandbox: any, record: any, opts?: { ski
     `mkdir -p ${JSON.stringify(sandboxRepoRoot)}`,
     "git config --global credential.helper '!f() { echo username=x-access-token; echo password=${GH_TOKEN:-$GITHUB_TOKEN}; }; f'",
     `if [ ! -d ${JSON.stringify(`${SANDBOX_REPO_CWD}/.git`)} ]; then rm -rf ${JSON.stringify(SANDBOX_REPO_CWD)} && git clone ${JSON.stringify(
-      c.state.repoRemote,
+      metadata.remoteUrl,
     )} ${JSON.stringify(SANDBOX_REPO_CWD)}; fi`,
     `cd ${JSON.stringify(SANDBOX_REPO_CWD)}`,
     "git fetch origin --prune",
@@ -774,21 +798,8 @@ function computeWorkspaceTaskStatus(record: any, sessions: Array<any>) {
   return "idle";
 }
 
-async function readPullRequestSummary(c: any, branchName: string | null) {
-  if (!branchName) {
-    return null;
-  }
-
-  try {
-    const repository = await getOrCreateRepository(c, c.state.organizationId, c.state.repoId, c.state.repoRemote);
-    return await repository.getPullRequestForBranch({ branchName });
-  } catch {
-    return null;
-  }
-}
-
 export async function ensureWorkspaceSeeded(c: any): Promise<any> {
-  return await getCurrentRecord({ db: c.db, state: c.state });
+  return await getCurrentRecord(c);
 }
 
 function buildSessionSummary(meta: any, userState?: any): any {
@@ -853,20 +864,24 @@ function buildSessionDetailFromMeta(meta: any, userState?: any): any {
  */
 export async function buildTaskSummary(c: any, authSessionId?: string | null): Promise<any> {
   const record = await ensureWorkspaceSeeded(c);
+  const repositoryMetadata = await getRepositoryMetadata(c);
   const sessions = await listSessionMetaRows(c);
   await maybeScheduleWorkspaceRefreshes(c, record, sessions);
   const userTaskState = await getUserTaskState(c, authSessionId);
   const taskStatus = computeWorkspaceTaskStatus(record, sessions);
+  const activeSessionId =
+    userTaskState.activeSessionId && sessions.some((meta) => meta.sessionId === userTaskState.activeSessionId) ? userTaskState.activeSessionId : null;
 
   return {
     id: c.state.taskId,
     repoId: c.state.repoId,
     title: record.title ?? "New Task",
-    status: taskStatus ?? "new",
-    repoName: repoLabelFromRemote(c.state.repoRemote),
+    status: taskStatus,
+    repoName: repoLabelFromRemote(repositoryMetadata.remoteUrl),
     updatedAtMs: record.updatedAt,
     branch: record.branchName,
-    pullRequest: await readPullRequestSummary(c, record.branchName),
+    pullRequest: record.pullRequest ?? null,
+    activeSessionId,
     sessionsSummary: sessions.map((meta) => buildSessionSummary(meta, userTaskState.bySessionId.get(meta.sessionId))),
   };
 }
@@ -885,10 +900,6 @@ export async function buildTaskDetail(c: any, authSessionId?: string | null): Pr
   return {
     ...summary,
     task: record.task,
-    runtimeStatus: summary.status,
-    diffStat: record.diffStat ?? null,
-    prUrl: record.prUrl ?? null,
-    reviewStatus: record.reviewStatus ?? null,
     fileChanges: gitState.fileChanges,
     diffs: gitState.diffs,
     fileTree: gitState.fileTree,
@@ -959,8 +970,14 @@ export async function getSessionDetail(c: any, sessionId: string, authSessionId?
  * - Broadcast full detail/session payloads down to direct task subscribers.
  */
 export async function broadcastTaskUpdate(c: any, options?: { sessionId?: string }): Promise<void> {
-  const repository = await getOrCreateRepository(c, c.state.organizationId, c.state.repoId, c.state.repoRemote);
-  await repository.applyTaskSummaryUpdate({ taskSummary: await buildTaskSummary(c) });
+  const repository = await getOrCreateRepository(c, c.state.organizationId, c.state.repoId);
+  await expectQueueResponse<{ ok: true }>(
+    await repository.send(
+      repositoryWorkflowQueueName("repository.command.applyTaskSummaryUpdate"),
+      { taskSummary: await buildTaskSummary(c) },
+      { wait: true, timeout: 10_000 },
+    ),
+  );
   c.broadcast("taskUpdated", {
     type: "taskUpdated",
     detail: await buildTaskDetail(c),
@@ -1004,6 +1021,19 @@ export async function renameWorkspaceTask(c: any, value: string): Promise<void> 
     .set({
       title: nextTitle,
       updatedAt: Date.now(),
+    })
+    .where(eq(taskTable.id, 1))
+    .run();
+  await broadcastTaskUpdate(c);
+}
+
+export async function syncTaskPullRequest(c: any, pullRequest: any): Promise<void> {
+  const now = pullRequest?.updatedAtMs ?? Date.now();
+  await c.db
+    .update(taskTable)
+    .set({
+      pullRequestJson: pullRequest ? JSON.stringify(pullRequest) : null,
+      updatedAt: now,
     })
     .where(eq(taskTable.id, 1))
     .run();
@@ -1055,9 +1085,10 @@ export async function ensureWorkspaceSession(c: any, sessionId: string, model?: 
     const runtime = await getTaskSandboxRuntime(c, record);
     await ensureSandboxRepo(c, runtime.sandbox, record);
     const resolvedModel = model ?? meta.model ?? (await resolveDefaultModel(c, authSessionId));
+    const resolvedAgent = await resolveSandboxAgentForModel(c, resolvedModel);
     await runtime.sandbox.createSession({
       id: meta.sandboxSessionId ?? sessionId,
-      agent: agentTypeForModel(resolvedModel),
+      agent: resolvedAgent,
       model: resolvedModel,
       sessionInit: {
         cwd: runtime.cwd,
@@ -1113,6 +1144,17 @@ export async function renameWorkspaceSession(c: any, sessionId: string, title: s
   await broadcastTaskUpdate(c, { sessionId });
 }
 
+export async function selectWorkspaceSession(c: any, sessionId: string, authSessionId?: string): Promise<void> {
+  const meta = await readSessionMeta(c, sessionId);
+  if (!meta || meta.closed) {
+    return;
+  }
+  await upsertUserTaskState(c, authSessionId, sessionId, {
+    activeSessionId: sessionId,
+  });
+  await broadcastTaskUpdate(c, { sessionId });
+}
+
 export async function setWorkspaceSessionUnread(c: any, sessionId: string, unread: boolean, authSessionId?: string): Promise<void> {
   await upsertUserTaskState(c, authSessionId, sessionId, {
     unread,
@@ -1129,7 +1171,7 @@ export async function updateWorkspaceDraft(c: any, sessionId: string, text: stri
   await broadcastTaskUpdate(c, { sessionId });
 }
 
-export async function changeWorkspaceModel(c: any, sessionId: string, model: string): Promise<void> {
+export async function changeWorkspaceModel(c: any, sessionId: string, model: string, _authSessionId?: string): Promise<void> {
   const meta = await readSessionMeta(c, sessionId);
   if (!meta || meta.closed) {
     return;
@@ -1295,6 +1337,13 @@ export async function closeWorkspaceSession(c: any, sessionId: string, authSessi
     closed: 1,
     thinkingSinceMs: null,
   });
+  const remainingSessions = sessions.filter((candidate) => candidate.sessionId !== sessionId && candidate.closed !== true);
+  const userTaskState = await getUserTaskState(c, authSessionId);
+  if (userTaskState.activeSessionId === sessionId && remainingSessions[0]) {
+    await upsertUserTaskState(c, authSessionId, remainingSessions[0].sessionId, {
+      activeSessionId: remainingSessions[0].sessionId,
+    });
+  }
   await deleteUserTaskState(c, authSessionId, sessionId);
   await broadcastTaskUpdate(c);
 }
@@ -1316,19 +1365,30 @@ export async function publishWorkspacePr(c: any): Promise<void> {
   if (!record.branchName) {
     throw new Error("cannot publish PR without a branch");
   }
-  const repository = await getOrCreateRepository(c, c.state.organizationId, c.state.repoId, c.state.repoRemote);
-  const metadata = await repository.getRepositoryMetadata({});
-  const repoFullName = metadata.fullName ?? githubRepoFullNameFromRemote(c.state.repoRemote);
+  const metadata = await getRepositoryMetadata(c);
+  const repoFullName = metadata.fullName ?? githubRepoFullNameFromRemote(metadata.remoteUrl);
   if (!repoFullName) {
-    throw new Error(`Unable to resolve GitHub repository for ${c.state.repoRemote}`);
+    throw new Error(`Unable to resolve GitHub repository for ${metadata.remoteUrl}`);
   }
   const { driver } = getActorRuntimeContext();
   const auth = await resolveOrganizationGithubAuth(c, c.state.organizationId);
-  await driver.github.createPr(repoFullName, record.branchName, record.title ?? c.state.task, undefined, {
+  const created = await driver.github.createPr(repoFullName, record.branchName, record.title ?? record.task, undefined, {
     githubToken: auth?.githubToken ?? null,
     baseBranch: metadata.defaultBranch ?? undefined,
   });
-  await broadcastTaskUpdate(c);
+  await syncTaskPullRequest(c, {
+    number: created.number,
+    title: record.title ?? record.task,
+    body: null,
+    state: "open",
+    url: created.url,
+    headRefName: record.branchName,
+    baseRefName: metadata.defaultBranch ?? "main",
+    authorLogin: null,
+    isDraft: false,
+    merged: false,
+    updatedAtMs: Date.now(),
+  });
 }
 
 export async function revertWorkspaceFile(c: any, path: string): Promise<void> {

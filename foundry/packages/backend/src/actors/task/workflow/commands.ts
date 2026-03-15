@@ -65,7 +65,7 @@ export async function handlePushActivity(loopCtx: any, msg: any): Promise<void> 
   await msg.complete({ ok: true });
 }
 
-export async function handleSimpleCommandActivity(loopCtx: any, msg: any, _statusMessage: string, historyKind: string): Promise<void> {
+export async function handleSimpleCommandActivity(loopCtx: any, msg: any, historyKind: string): Promise<void> {
   await appendAuditLog(loopCtx, historyKind, { reason: msg.body?.reason ?? null });
   await msg.complete({ ok: true });
 }

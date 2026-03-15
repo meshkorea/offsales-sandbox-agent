@@ -1,16 +1,29 @@
 // @ts-nocheck
 import { eq } from "drizzle-orm";
 import { actor, queue } from "rivetkit";
-import { workflow, Loop } from "rivetkit/workflow";
+import { workflow } from "rivetkit/workflow";
 import type { FoundryOrganization } from "@sandbox-agent/foundry-shared";
 import { getActorRuntimeContext } from "../context.js";
 import { getOrCreateOrganization, getOrCreateRepository, getTask } from "../handles.js";
 import { repoIdFromRemote } from "../../services/repo.js";
 import { resolveOrganizationGithubAuth } from "../../services/github-auth.js";
+import { expectQueueResponse } from "../../services/queue.js";
+import { organizationWorkflowQueueName } from "../organization/queues.js";
+import { repositoryWorkflowQueueName } from "../repository/workflow.js";
+import { taskWorkflowQueueName } from "../task/workflow/index.js";
 import { githubDataDb } from "./db/db.js";
 import { githubBranches, githubMembers, githubMeta, githubPullRequests, githubRepositories } from "./db/schema.js";
+import { GITHUB_DATA_QUEUE_NAMES, runGithubDataWorkflow } from "./workflow.js";
 
 const META_ROW_ID = 1;
+const SYNC_REPOSITORY_BATCH_SIZE = 10;
+
+type GithubSyncPhase =
+  | "discovering_repositories"
+  | "syncing_repositories"
+  | "syncing_branches"
+  | "syncing_members"
+  | "syncing_pull_requests";
 
 interface GithubDataInput {
   organizationId: string;
@@ -70,6 +83,12 @@ interface ClearStateInput {
   label: string;
 }
 
+async function sendOrganizationCommand(organization: any, name: Parameters<typeof organizationWorkflowQueueName>[0], body: unknown): Promise<void> {
+  await expectQueueResponse<{ ok: true }>(
+    await organization.send(organizationWorkflowQueueName(name), body, { wait: true, timeout: 60_000 }),
+  );
+}
+
 interface PullRequestWebhookInput {
   connectedAccount: string;
   installationStatus: FoundryOrganization["github"]["installationStatus"];
@@ -91,6 +110,19 @@ interface PullRequestWebhookInput {
     isDraft: boolean;
     merged?: boolean;
   };
+}
+
+interface GithubMetaState {
+  connectedAccount: string;
+  installationStatus: FoundryOrganization["github"]["installationStatus"];
+  syncStatus: FoundryOrganization["github"]["syncStatus"];
+  installationId: number | null;
+  lastSyncLabel: string;
+  lastSyncAt: number | null;
+  syncGeneration: number;
+  syncPhase: GithubSyncPhase | null;
+  processedRepositoryCount: number;
+  totalRepositoryCount: number;
 }
 
 function normalizePrStatus(input: { state: string; isDraft?: boolean; merged?: boolean }): "OPEN" | "DRAFT" | "CLOSED" | "MERGED" {
@@ -117,7 +149,18 @@ function pullRequestSummaryFromRow(row: any) {
   };
 }
 
-async function readMeta(c: any) {
+function chunkItems<T>(items: T[], size: number): T[][] {
+  if (items.length === 0) {
+    return [];
+  }
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+export async function readMeta(c: any): Promise<GithubMetaState> {
   const row = await c.db.select().from(githubMeta).where(eq(githubMeta.id, META_ROW_ID)).get();
   return {
     connectedAccount: row?.connectedAccount ?? "",
@@ -126,10 +169,14 @@ async function readMeta(c: any) {
     installationId: row?.installationId ?? null,
     lastSyncLabel: row?.lastSyncLabel ?? "Waiting for first import",
     lastSyncAt: row?.lastSyncAt ?? null,
+    syncGeneration: row?.syncGeneration ?? 0,
+    syncPhase: (row?.syncPhase ?? null) as GithubSyncPhase | null,
+    processedRepositoryCount: row?.processedRepositoryCount ?? 0,
+    totalRepositoryCount: row?.totalRepositoryCount ?? 0,
   };
 }
 
-async function writeMeta(c: any, patch: Partial<Awaited<ReturnType<typeof readMeta>>>) {
+async function writeMeta(c: any, patch: Partial<GithubMetaState>) {
   const current = await readMeta(c);
   const next = {
     ...current,
@@ -145,6 +192,10 @@ async function writeMeta(c: any, patch: Partial<Awaited<ReturnType<typeof readMe
       installationId: next.installationId,
       lastSyncLabel: next.lastSyncLabel,
       lastSyncAt: next.lastSyncAt,
+      syncGeneration: next.syncGeneration,
+      syncPhase: next.syncPhase,
+      processedRepositoryCount: next.processedRepositoryCount,
+      totalRepositoryCount: next.totalRepositoryCount,
       updatedAt: Date.now(),
     })
     .onConflictDoUpdate({
@@ -156,11 +207,44 @@ async function writeMeta(c: any, patch: Partial<Awaited<ReturnType<typeof readMe
         installationId: next.installationId,
         lastSyncLabel: next.lastSyncLabel,
         lastSyncAt: next.lastSyncAt,
+        syncGeneration: next.syncGeneration,
+        syncPhase: next.syncPhase,
+        processedRepositoryCount: next.processedRepositoryCount,
+        totalRepositoryCount: next.totalRepositoryCount,
         updatedAt: Date.now(),
       },
     })
     .run();
   return next;
+}
+
+async function publishSyncProgress(c: any, patch: Partial<GithubMetaState>): Promise<GithubMetaState> {
+  const meta = await writeMeta(c, patch);
+  const organization = await getOrCreateOrganization(c, c.state.organizationId);
+  await sendOrganizationCommand(organization, "organization.command.github.sync_progress.apply", {
+    connectedAccount: meta.connectedAccount,
+    installationStatus: meta.installationStatus,
+    installationId: meta.installationId,
+    syncStatus: meta.syncStatus,
+    lastSyncLabel: meta.lastSyncLabel,
+    lastSyncAt: meta.lastSyncAt,
+    syncGeneration: meta.syncGeneration,
+    syncPhase: meta.syncPhase,
+    processedRepositoryCount: meta.processedRepositoryCount,
+    totalRepositoryCount: meta.totalRepositoryCount,
+  });
+  return meta;
+}
+
+async function runSyncStep<T>(c: any, name: string, run: () => Promise<T>): Promise<T> {
+  if (typeof c.step !== "function") {
+    return await run();
+  }
+  return await c.step({
+    name,
+    timeout: 90_000,
+    run,
+  });
 }
 
 async function getOrganizationContext(c: any, overrides?: FullSyncInput) {
@@ -183,8 +267,7 @@ async function getOrganizationContext(c: any, overrides?: FullSyncInput) {
   };
 }
 
-async function replaceRepositories(c: any, repositories: GithubRepositoryRecord[], updatedAt: number) {
-  await c.db.delete(githubRepositories).run();
+async function upsertRepositories(c: any, repositories: GithubRepositoryRecord[], updatedAt: number, syncGeneration: number) {
   for (const repository of repositories) {
     await c.db
       .insert(githubRepositories)
@@ -194,14 +277,35 @@ async function replaceRepositories(c: any, repositories: GithubRepositoryRecord[
         cloneUrl: repository.cloneUrl,
         private: repository.private ? 1 : 0,
         defaultBranch: repository.defaultBranch,
+        syncGeneration,
         updatedAt,
+      })
+      .onConflictDoUpdate({
+        target: githubRepositories.repoId,
+        set: {
+          fullName: repository.fullName,
+          cloneUrl: repository.cloneUrl,
+          private: repository.private ? 1 : 0,
+          defaultBranch: repository.defaultBranch,
+          syncGeneration,
+          updatedAt,
+        },
       })
       .run();
   }
 }
 
-async function replaceBranches(c: any, branches: GithubBranchRecord[], updatedAt: number) {
-  await c.db.delete(githubBranches).run();
+async function sweepRepositories(c: any, syncGeneration: number) {
+  const rows = await c.db.select({ repoId: githubRepositories.repoId, syncGeneration: githubRepositories.syncGeneration }).from(githubRepositories).all();
+  for (const row of rows) {
+    if (row.syncGeneration === syncGeneration) {
+      continue;
+    }
+    await c.db.delete(githubRepositories).where(eq(githubRepositories.repoId, row.repoId)).run();
+  }
+}
+
+async function upsertBranches(c: any, branches: GithubBranchRecord[], updatedAt: number, syncGeneration: number) {
   for (const branch of branches) {
     await c.db
       .insert(githubBranches)
@@ -210,14 +314,34 @@ async function replaceBranches(c: any, branches: GithubBranchRecord[], updatedAt
         repoId: branch.repoId,
         branchName: branch.branchName,
         commitSha: branch.commitSha,
+        syncGeneration,
         updatedAt,
+      })
+      .onConflictDoUpdate({
+        target: githubBranches.branchId,
+        set: {
+          repoId: branch.repoId,
+          branchName: branch.branchName,
+          commitSha: branch.commitSha,
+          syncGeneration,
+          updatedAt,
+        },
       })
       .run();
   }
 }
 
-async function replaceMembers(c: any, members: GithubMemberRecord[], updatedAt: number) {
-  await c.db.delete(githubMembers).run();
+async function sweepBranches(c: any, syncGeneration: number) {
+  const rows = await c.db.select({ branchId: githubBranches.branchId, syncGeneration: githubBranches.syncGeneration }).from(githubBranches).all();
+  for (const row of rows) {
+    if (row.syncGeneration === syncGeneration) {
+      continue;
+    }
+    await c.db.delete(githubBranches).where(eq(githubBranches.branchId, row.branchId)).run();
+  }
+}
+
+async function upsertMembers(c: any, members: GithubMemberRecord[], updatedAt: number, syncGeneration: number) {
   for (const member of members) {
     await c.db
       .insert(githubMembers)
@@ -228,14 +352,36 @@ async function replaceMembers(c: any, members: GithubMemberRecord[], updatedAt: 
         email: member.email ?? null,
         role: member.role ?? null,
         state: member.state ?? "active",
+        syncGeneration,
         updatedAt,
+      })
+      .onConflictDoUpdate({
+        target: githubMembers.memberId,
+        set: {
+          login: member.login,
+          displayName: member.name || member.login,
+          email: member.email ?? null,
+          role: member.role ?? null,
+          state: member.state ?? "active",
+          syncGeneration,
+          updatedAt,
+        },
       })
       .run();
   }
 }
 
-async function replacePullRequests(c: any, pullRequests: GithubPullRequestRecord[]) {
-  await c.db.delete(githubPullRequests).run();
+async function sweepMembers(c: any, syncGeneration: number) {
+  const rows = await c.db.select({ memberId: githubMembers.memberId, syncGeneration: githubMembers.syncGeneration }).from(githubMembers).all();
+  for (const row of rows) {
+    if (row.syncGeneration === syncGeneration) {
+      continue;
+    }
+    await c.db.delete(githubMembers).where(eq(githubMembers.memberId, row.memberId)).run();
+  }
+}
+
+async function upsertPullRequests(c: any, pullRequests: GithubPullRequestRecord[], syncGeneration: number) {
   for (const pullRequest of pullRequests) {
     await c.db
       .insert(githubPullRequests)
@@ -252,19 +398,54 @@ async function replacePullRequests(c: any, pullRequests: GithubPullRequestRecord
         baseRefName: pullRequest.baseRefName,
         authorLogin: pullRequest.authorLogin ?? null,
         isDraft: pullRequest.isDraft ? 1 : 0,
+        syncGeneration,
         updatedAt: pullRequest.updatedAt,
+      })
+      .onConflictDoUpdate({
+        target: githubPullRequests.prId,
+        set: {
+          repoId: pullRequest.repoId,
+          repoFullName: pullRequest.repoFullName,
+          number: pullRequest.number,
+          title: pullRequest.title,
+          body: pullRequest.body ?? null,
+          state: pullRequest.state,
+          url: pullRequest.url,
+          headRefName: pullRequest.headRefName,
+          baseRefName: pullRequest.baseRefName,
+          authorLogin: pullRequest.authorLogin ?? null,
+          isDraft: pullRequest.isDraft ? 1 : 0,
+          syncGeneration,
+          updatedAt: pullRequest.updatedAt,
+        },
       })
       .run();
   }
 }
 
-async function refreshTaskSummaryForBranch(c: any, repoId: string, branchName: string) {
+async function sweepPullRequests(c: any, syncGeneration: number) {
+  const rows = await c.db.select({ prId: githubPullRequests.prId, syncGeneration: githubPullRequests.syncGeneration }).from(githubPullRequests).all();
+  for (const row of rows) {
+    if (row.syncGeneration === syncGeneration) {
+      continue;
+    }
+    await c.db.delete(githubPullRequests).where(eq(githubPullRequests.prId, row.prId)).run();
+  }
+}
+
+async function refreshTaskSummaryForBranch(c: any, repoId: string, branchName: string, pullRequest: ReturnType<typeof pullRequestSummaryFromRow> | null) {
   const repositoryRecord = await c.db.select().from(githubRepositories).where(eq(githubRepositories.repoId, repoId)).get();
   if (!repositoryRecord) {
     return;
   }
-  const repository = await getOrCreateRepository(c, c.state.organizationId, repoId, repositoryRecord.cloneUrl);
-  await repository.refreshTaskSummaryForBranch({ branchName });
+  const repository = await getOrCreateRepository(c, c.state.organizationId, repoId);
+  await expectQueueResponse<{ ok: true }>(
+    await repository.send(
+      repositoryWorkflowQueueName("repository.command.refreshTaskSummaryForBranch"),
+      { branchName, pullRequest },
+      { wait: true, timeout: 10_000 },
+    ),
+  );
 }
 
 async function emitPullRequestChangeEvents(c: any, beforeRows: any[], afterRows: any[]) {
@@ -286,14 +467,14 @@ async function emitPullRequestChangeEvents(c: any, beforeRows: any[], afterRows:
     if (!changed) {
       continue;
     }
-    await refreshTaskSummaryForBranch(c, row.repoId, row.headRefName);
+    await refreshTaskSummaryForBranch(c, row.repoId, row.headRefName, pullRequestSummaryFromRow(row));
   }
 
   for (const [prId, row] of beforeById) {
     if (afterById.has(prId)) {
       continue;
     }
-    await refreshTaskSummaryForBranch(c, row.repoId, row.headRefName);
+    await refreshTaskSummaryForBranch(c, row.repoId, row.headRefName, null);
   }
 }
 
@@ -302,7 +483,7 @@ async function autoArchiveTaskForClosedPullRequest(c: any, row: any) {
   if (!repositoryRecord) {
     return;
   }
-  const repository = await getOrCreateRepository(c, c.state.organizationId, row.repoId, repositoryRecord.cloneUrl);
+  const repository = await getOrCreateRepository(c, c.state.organizationId, row.repoId);
   const match = await repository.findTaskForBranch({
     branchName: row.headRefName,
   });
@@ -311,7 +492,7 @@ async function autoArchiveTaskForClosedPullRequest(c: any, row: any) {
   }
   try {
     const task = getTask(c, c.state.organizationId, row.repoId, match.taskId);
-    await task.archive({ reason: `PR ${String(row.state).toLowerCase()}` });
+    await task.send(taskWorkflowQueueName("task.command.archive"), { reason: `PR ${String(row.state).toLowerCase()}` }, { wait: false });
   } catch {
     // Best-effort only. Task summary refresh will still clear the PR state.
   }
@@ -363,8 +544,7 @@ async function resolveMembers(c: any, context: Awaited<ReturnType<typeof getOrga
   return await appShell.github.listOrganizationMembers(context.accessToken, context.githubLogin);
 }
 
-async function resolvePullRequests(
-  c: any,
+async function listPullRequestsForRepositories(
   context: Awaited<ReturnType<typeof getOrganizationContext>>,
   repositories: GithubRepositoryRecord[],
 ): Promise<GithubPullRequestRecord[]> {
@@ -448,11 +628,51 @@ async function listRepositoryBranchesForContext(
 }
 
 async function resolveBranches(
-  _c: any,
+  c: any,
   context: Awaited<ReturnType<typeof getOrganizationContext>>,
   repositories: GithubRepositoryRecord[],
-): Promise<GithubBranchRecord[]> {
-  return (await Promise.all(repositories.map((repository) => listRepositoryBranchesForContext(context, repository)))).flat();
+  onBatch?: (branches: GithubBranchRecord[]) => Promise<void>,
+  onProgress?: (processedRepositoryCount: number, totalRepositoryCount: number) => Promise<void>,
+): Promise<void> {
+  const batches = chunkItems(repositories, SYNC_REPOSITORY_BATCH_SIZE);
+  let processedRepositoryCount = 0;
+
+  for (const batch of batches) {
+    const batchBranches = await runSyncStep(c, `github-sync-branches-${processedRepositoryCount / SYNC_REPOSITORY_BATCH_SIZE + 1}`, async () =>
+      (await Promise.all(batch.map((repository) => listRepositoryBranchesForContext(context, repository)))).flat(),
+    );
+    if (onBatch) {
+      await onBatch(batchBranches);
+    }
+    processedRepositoryCount += batch.length;
+    if (onProgress) {
+      await onProgress(processedRepositoryCount, repositories.length);
+    }
+  }
+}
+
+async function resolvePullRequests(
+  c: any,
+  context: Awaited<ReturnType<typeof getOrganizationContext>>,
+  repositories: GithubRepositoryRecord[],
+  onBatch?: (pullRequests: GithubPullRequestRecord[]) => Promise<void>,
+  onProgress?: (processedRepositoryCount: number, totalRepositoryCount: number) => Promise<void>,
+): Promise<void> {
+  const batches = chunkItems(repositories, SYNC_REPOSITORY_BATCH_SIZE);
+  let processedRepositoryCount = 0;
+
+  for (const batch of batches) {
+    const batchPullRequests = await runSyncStep(c, `github-sync-pull-requests-${processedRepositoryCount / SYNC_REPOSITORY_BATCH_SIZE + 1}`, async () =>
+      listPullRequestsForRepositories(context, batch),
+    );
+    if (onBatch) {
+      await onBatch(batchPullRequests);
+    }
+    processedRepositoryCount += batch.length;
+    if (onProgress) {
+      await onProgress(processedRepositoryCount, repositories.length);
+    }
+  }
 }
 
 async function refreshRepositoryBranches(
@@ -461,6 +681,7 @@ async function refreshRepositoryBranches(
   repository: GithubRepositoryRecord,
   updatedAt: number,
 ): Promise<void> {
+  const currentMeta = await readMeta(c);
   const nextBranches = await listRepositoryBranchesForContext(context, repository);
   await c.db
     .delete(githubBranches)
@@ -475,6 +696,7 @@ async function refreshRepositoryBranches(
         repoId: branch.repoId,
         branchName: branch.branchName,
         commitSha: branch.commitSha,
+        syncGeneration: currentMeta.syncGeneration,
         updatedAt,
       })
       .run();
@@ -485,118 +707,176 @@ async function readAllPullRequestRows(c: any) {
   return await c.db.select().from(githubPullRequests).all();
 }
 
-async function runFullSync(c: any, input: FullSyncInput = {}) {
+export async function runFullSync(c: any, input: FullSyncInput = {}) {
   const startedAt = Date.now();
   const beforeRows = await readAllPullRequestRows(c);
-  const context = await getOrganizationContext(c, input);
+  const currentMeta = await readMeta(c);
+  let context: Awaited<ReturnType<typeof getOrganizationContext>> | null = null;
+  let syncGeneration = currentMeta.syncGeneration + 1;
 
-  await writeMeta(c, {
-    connectedAccount: context.connectedAccount,
-    installationStatus: context.installationStatus,
-    installationId: context.installationId,
-    syncStatus: "syncing",
-    lastSyncLabel: input.label?.trim() || "Syncing GitHub data...",
-  });
+  try {
+    context = await getOrganizationContext(c, input);
+    syncGeneration = currentMeta.syncGeneration + 1;
 
-  const repositories = await resolveRepositories(c, context);
-  const branches = await resolveBranches(c, context, repositories);
-  const members = await resolveMembers(c, context);
-  const pullRequests = await resolvePullRequests(c, context, repositories);
-
-  await replaceRepositories(c, repositories, startedAt);
-  await replaceBranches(c, branches, startedAt);
-  await replaceMembers(c, members, startedAt);
-  await replacePullRequests(c, pullRequests);
-
-  const organization = await getOrCreateOrganization(c, c.state.organizationId);
-  await organization.applyGithubDataProjection({
-    connectedAccount: context.connectedAccount,
-    installationStatus: context.installationStatus,
-    installationId: context.installationId,
-    syncStatus: "synced",
-    lastSyncLabel: repositories.length > 0 ? `Synced ${repositories.length} repositories` : "No repositories available",
-    lastSyncAt: startedAt,
-    repositories,
-  });
-
-  const meta = await writeMeta(c, {
-    connectedAccount: context.connectedAccount,
-    installationStatus: context.installationStatus,
-    installationId: context.installationId,
-    syncStatus: "synced",
-    lastSyncLabel: repositories.length > 0 ? `Synced ${repositories.length} repositories` : "No repositories available",
-    lastSyncAt: startedAt,
-  });
-
-  const afterRows = await readAllPullRequestRows(c);
-  await emitPullRequestChangeEvents(c, beforeRows, afterRows);
-
-  return {
-    ...meta,
-    repositoryCount: repositories.length,
-    memberCount: members.length,
-    pullRequestCount: afterRows.length,
-  };
-}
-
-const GITHUB_DATA_QUEUE_NAMES = ["githubData.command.syncRepos"] as const;
-
-async function runGithubDataWorkflow(ctx: any): Promise<void> {
-  // Initial sync: if this actor was just created and has never synced,
-  // kick off the first full sync automatically.
-  await ctx.step({
-    name: "github-data-initial-sync",
-    timeout: 5 * 60_000,
-    run: async () => {
-      const meta = await readMeta(ctx);
-      if (meta.syncStatus !== "pending") {
-        return; // Already synced or syncing — skip initial sync
-      }
-      try {
-        await runFullSync(ctx, { label: "Importing repository catalog..." });
-      } catch (error) {
-        // Best-effort initial sync. Write the error to meta so the client
-        // sees the failure and can trigger a manual retry.
-        const currentMeta = await readMeta(ctx);
-        const organization = await getOrCreateOrganization(ctx, ctx.state.organizationId);
-        await organization.markOrganizationSyncFailed({
-          message: error instanceof Error ? error.message : "GitHub import failed",
-          installationStatus: currentMeta.installationStatus,
-        });
-      }
-    },
-  });
-
-  // Command loop for explicit sync requests (reload, re-import, etc.)
-  await ctx.loop("github-data-command-loop", async (loopCtx: any) => {
-    const msg = await loopCtx.queue.next("next-github-data-command", {
-      names: [...GITHUB_DATA_QUEUE_NAMES],
-      completable: true,
+    await publishSyncProgress(c, {
+      connectedAccount: context.connectedAccount,
+      installationStatus: context.installationStatus,
+      installationId: context.installationId,
+      syncStatus: "syncing",
+      lastSyncLabel: input.label?.trim() || "Syncing GitHub data...",
+      syncGeneration,
+      syncPhase: "discovering_repositories",
+      processedRepositoryCount: 0,
+      totalRepositoryCount: 0,
     });
-    if (!msg) {
-      return Loop.continue(undefined);
-    }
 
-    try {
-      if (msg.name === "githubData.command.syncRepos") {
-        await loopCtx.step({
-          name: "github-data-sync-repos",
-          timeout: 5 * 60_000,
-          run: async () => {
-            const body = msg.body as FullSyncInput;
-            await runFullSync(loopCtx, body);
-          },
+    const repositories = await runSyncStep(c, "github-sync-repositories", async () => resolveRepositories(c, context));
+    const totalRepositoryCount = repositories.length;
+
+    await publishSyncProgress(c, {
+      connectedAccount: context.connectedAccount,
+      installationStatus: context.installationStatus,
+      installationId: context.installationId,
+      syncStatus: "syncing",
+      lastSyncLabel: totalRepositoryCount > 0 ? `Importing ${totalRepositoryCount} repositories...` : "No repositories available",
+      syncGeneration,
+      syncPhase: "syncing_repositories",
+      processedRepositoryCount: totalRepositoryCount,
+      totalRepositoryCount,
+    });
+
+    await upsertRepositories(c, repositories, startedAt, syncGeneration);
+
+    const organization = await getOrCreateOrganization(c, c.state.organizationId);
+    await sendOrganizationCommand(organization, "organization.command.github.data_projection.apply", {
+      connectedAccount: context.connectedAccount,
+      installationStatus: context.installationStatus,
+      installationId: context.installationId,
+      syncStatus: "syncing",
+      lastSyncLabel: totalRepositoryCount > 0 ? `Imported ${totalRepositoryCount} repositories` : "No repositories available",
+      lastSyncAt: currentMeta.lastSyncAt,
+      syncGeneration,
+      syncPhase: totalRepositoryCount > 0 ? "syncing_branches" : null,
+      processedRepositoryCount: 0,
+      totalRepositoryCount,
+      repositories,
+    });
+
+    await resolveBranches(
+      c,
+      context,
+      repositories,
+      async (batchBranches) => {
+        await upsertBranches(c, batchBranches, startedAt, syncGeneration);
+      },
+      async (processedRepositoryCount, repositoryCount) => {
+        await publishSyncProgress(c, {
+          connectedAccount: context.connectedAccount,
+          installationStatus: context.installationStatus,
+          installationId: context.installationId,
+          syncStatus: "syncing",
+          lastSyncLabel: `Synced branches for ${processedRepositoryCount} of ${repositoryCount} repositories`,
+          syncGeneration,
+          syncPhase: "syncing_branches",
+          processedRepositoryCount,
+          totalRepositoryCount: repositoryCount,
         });
-        await msg.complete({ ok: true });
-        return Loop.continue(undefined);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      await msg.complete({ error: message }).catch(() => {});
-    }
+      },
+    );
 
-    return Loop.continue(undefined);
-  });
+    await publishSyncProgress(c, {
+      connectedAccount: context.connectedAccount,
+      installationStatus: context.installationStatus,
+      installationId: context.installationId,
+      syncStatus: "syncing",
+      lastSyncLabel: "Syncing GitHub members...",
+      syncGeneration,
+      syncPhase: "syncing_members",
+      processedRepositoryCount: totalRepositoryCount,
+      totalRepositoryCount,
+    });
+
+    const members = await runSyncStep(c, "github-sync-members", async () => resolveMembers(c, context));
+    await upsertMembers(c, members, startedAt, syncGeneration);
+    await sweepMembers(c, syncGeneration);
+
+    await resolvePullRequests(
+      c,
+      context,
+      repositories,
+      async (batchPullRequests) => {
+        await upsertPullRequests(c, batchPullRequests, syncGeneration);
+      },
+      async (processedRepositoryCount, repositoryCount) => {
+        await publishSyncProgress(c, {
+          connectedAccount: context.connectedAccount,
+          installationStatus: context.installationStatus,
+          installationId: context.installationId,
+          syncStatus: "syncing",
+          lastSyncLabel: `Synced pull requests for ${processedRepositoryCount} of ${repositoryCount} repositories`,
+          syncGeneration,
+          syncPhase: "syncing_pull_requests",
+          processedRepositoryCount,
+          totalRepositoryCount: repositoryCount,
+        });
+      },
+    );
+
+    await sweepBranches(c, syncGeneration);
+    await sweepPullRequests(c, syncGeneration);
+    await sweepRepositories(c, syncGeneration);
+
+    await sendOrganizationCommand(organization, "organization.command.github.data_projection.apply", {
+      connectedAccount: context.connectedAccount,
+      installationStatus: context.installationStatus,
+      installationId: context.installationId,
+      syncStatus: "synced",
+      lastSyncLabel: totalRepositoryCount > 0 ? `Synced ${totalRepositoryCount} repositories` : "No repositories available",
+      lastSyncAt: startedAt,
+      syncGeneration,
+      syncPhase: null,
+      processedRepositoryCount: totalRepositoryCount,
+      totalRepositoryCount,
+      repositories,
+    });
+
+    const meta = await writeMeta(c, {
+      connectedAccount: context.connectedAccount,
+      installationStatus: context.installationStatus,
+      installationId: context.installationId,
+      syncStatus: "synced",
+      lastSyncLabel: totalRepositoryCount > 0 ? `Synced ${totalRepositoryCount} repositories` : "No repositories available",
+      lastSyncAt: startedAt,
+      syncGeneration,
+      syncPhase: null,
+      processedRepositoryCount: totalRepositoryCount,
+      totalRepositoryCount,
+    });
+
+    const afterRows = await readAllPullRequestRows(c);
+    await emitPullRequestChangeEvents(c, beforeRows, afterRows);
+
+    return {
+      ...meta,
+      repositoryCount: repositories.length,
+      memberCount: members.length,
+      pullRequestCount: afterRows.length,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "GitHub import failed";
+    await publishSyncProgress(c, {
+      connectedAccount: context?.connectedAccount ?? currentMeta.connectedAccount,
+      installationStatus: context?.installationStatus ?? currentMeta.installationStatus,
+      installationId: context?.installationId ?? currentMeta.installationId,
+      syncStatus: "error",
+      lastSyncLabel: message,
+      syncGeneration,
+      syncPhase: null,
+      processedRepositoryCount: 0,
+      totalRepositoryCount: 0,
+    });
+    throw error;
+  }
 }
 
 export const githubData = actor({
@@ -651,11 +931,6 @@ export const githubData = actor({
       };
     },
 
-    async listPullRequestsForRepository(c, input: { repoId: string }) {
-      const rows = await c.db.select().from(githubPullRequests).where(eq(githubPullRequests.repoId, input.repoId)).all();
-      return rows.map(pullRequestSummaryFromRow);
-    },
-
     async listBranchesForRepository(c, input: { repoId: string }) {
       const rows = await c.db.select().from(githubBranches).where(eq(githubBranches.repoId, input.repoId)).all();
       return rows
@@ -666,36 +941,10 @@ export const githubData = actor({
         .sort((left, right) => left.branchName.localeCompare(right.branchName));
     },
 
-    async listOpenPullRequests(c) {
-      const rows = await c.db.select().from(githubPullRequests).all();
-      return rows.map(pullRequestSummaryFromRow).sort((left, right) => right.updatedAtMs - left.updatedAtMs);
-    },
+  },
+});
 
-    async getPullRequestForBranch(c, input: { repoId: string; branchName: string }) {
-      const rows = await c.db.select().from(githubPullRequests).where(eq(githubPullRequests.repoId, input.repoId)).all();
-      const match = rows.find((candidate) => candidate.headRefName === input.branchName) ?? null;
-      if (!match) {
-        return null;
-      }
-      return {
-        number: match.number,
-        status: match.isDraft ? ("draft" as const) : ("ready" as const),
-      };
-    },
-
-    async adminFullSync(c, input: FullSyncInput = {}) {
-      return await runFullSync(c, input);
-    },
-
-    async adminReloadOrganization(c) {
-      return await runFullSync(c, { label: "Reloading GitHub organization..." });
-    },
-
-    async adminReloadAllPullRequests(c) {
-      return await runFullSync(c, { label: "Reloading GitHub pull requests..." });
-    },
-
-    async reloadRepository(c, input: { repoId: string }) {
+export async function reloadRepositoryMutation(c: any, input: { repoId: string }) {
       const context = await getOrganizationContext(c);
       const current = await c.db.select().from(githubRepositories).where(eq(githubRepositories.repoId, input.repoId)).get();
       if (!current) {
@@ -713,6 +962,7 @@ export const githubData = actor({
       }
 
       const updatedAt = Date.now();
+      const currentMeta = await readMeta(c);
       await c.db
         .insert(githubRepositories)
         .values({
@@ -721,6 +971,7 @@ export const githubData = actor({
           cloneUrl: repository.cloneUrl,
           private: repository.private ? 1 : 0,
           defaultBranch: repository.defaultBranch,
+          syncGeneration: currentMeta.syncGeneration,
           updatedAt,
         })
         .onConflictDoUpdate({
@@ -730,6 +981,7 @@ export const githubData = actor({
             cloneUrl: repository.cloneUrl,
             private: repository.private ? 1 : 0,
             defaultBranch: repository.defaultBranch,
+            syncGeneration: currentMeta.syncGeneration,
             updatedAt,
           },
         })
@@ -747,7 +999,7 @@ export const githubData = actor({
       );
 
       const organization = await getOrCreateOrganization(c, c.state.organizationId);
-      await organization.applyGithubRepositoryProjection({
+      await sendOrganizationCommand(organization, "organization.command.github.repository_projection.apply", {
         repoId: input.repoId,
         remoteUrl: repository.cloneUrl,
       });
@@ -758,98 +1010,11 @@ export const githubData = actor({
         private: repository.private,
         defaultBranch: repository.defaultBranch,
       };
-    },
+}
 
-    async reloadPullRequest(c, input: { repoId: string; prNumber: number }) {
-      const repository = await c.db.select().from(githubRepositories).where(eq(githubRepositories.repoId, input.repoId)).get();
-      if (!repository) {
-        throw new Error(`Unknown GitHub repository: ${input.repoId}`);
-      }
-      const context = await getOrganizationContext(c);
-      const { appShell } = getActorRuntimeContext();
-      const pullRequest =
-        context.installationId != null
-          ? await appShell.github.getInstallationPullRequest(context.installationId, repository.fullName, input.prNumber)
-          : context.accessToken
-            ? await appShell.github.getUserPullRequest(context.accessToken, repository.fullName, input.prNumber)
-            : null;
-      if (!pullRequest) {
-        throw new Error(`Unable to reload pull request #${input.prNumber} for ${repository.fullName}`);
-      }
-
+export async function clearStateMutation(c: any, input: ClearStateInput) {
       const beforeRows = await readAllPullRequestRows(c);
-      const updatedAt = Date.now();
-      const nextState = normalizePrStatus(pullRequest);
-      const prId = `${input.repoId}#${input.prNumber}`;
-      if (nextState === "CLOSED" || nextState === "MERGED") {
-        await c.db.delete(githubPullRequests).where(eq(githubPullRequests.prId, prId)).run();
-      } else {
-        await c.db
-          .insert(githubPullRequests)
-          .values({
-            prId,
-            repoId: input.repoId,
-            repoFullName: repository.fullName,
-            number: pullRequest.number,
-            title: pullRequest.title,
-            body: pullRequest.body ?? null,
-            state: nextState,
-            url: pullRequest.url,
-            headRefName: pullRequest.headRefName,
-            baseRefName: pullRequest.baseRefName,
-            authorLogin: pullRequest.authorLogin ?? null,
-            isDraft: pullRequest.isDraft ? 1 : 0,
-            updatedAt,
-          })
-          .onConflictDoUpdate({
-            target: githubPullRequests.prId,
-            set: {
-              title: pullRequest.title,
-              body: pullRequest.body ?? null,
-              state: nextState,
-              url: pullRequest.url,
-              headRefName: pullRequest.headRefName,
-              baseRefName: pullRequest.baseRefName,
-              authorLogin: pullRequest.authorLogin ?? null,
-              isDraft: pullRequest.isDraft ? 1 : 0,
-              updatedAt,
-            },
-          })
-          .run();
-      }
-
-      const afterRows = await readAllPullRequestRows(c);
-      await emitPullRequestChangeEvents(c, beforeRows, afterRows);
-      const closed = afterRows.find((row) => row.prId === prId);
-      if (!closed && (nextState === "CLOSED" || nextState === "MERGED")) {
-        const previous = beforeRows.find((row) => row.prId === prId);
-        if (previous) {
-          await autoArchiveTaskForClosedPullRequest(c, {
-            ...previous,
-            state: nextState,
-          });
-        }
-      }
-      return pullRequestSummaryFromRow(
-        afterRows.find((row) => row.prId === prId) ?? {
-          prId,
-          repoId: input.repoId,
-          repoFullName: repository.fullName,
-          number: input.prNumber,
-          title: pullRequest.title,
-          state: nextState,
-          url: pullRequest.url,
-          headRefName: pullRequest.headRefName,
-          baseRefName: pullRequest.baseRefName,
-          authorLogin: pullRequest.authorLogin ?? null,
-          isDraft: pullRequest.isDraft ? 1 : 0,
-          updatedAt,
-        },
-      );
-    },
-
-    async adminClearState(c, input: ClearStateInput) {
-      const beforeRows = await readAllPullRequestRows(c);
+      const currentMeta = await readMeta(c);
       await c.db.delete(githubPullRequests).run();
       await c.db.delete(githubBranches).run();
       await c.db.delete(githubRepositories).run();
@@ -861,26 +1026,35 @@ export const githubData = actor({
         syncStatus: "pending",
         lastSyncLabel: input.label,
         lastSyncAt: null,
+        syncGeneration: currentMeta.syncGeneration,
+        syncPhase: null,
+        processedRepositoryCount: 0,
+        totalRepositoryCount: 0,
       });
 
       const organization = await getOrCreateOrganization(c, c.state.organizationId);
-      await organization.applyGithubDataProjection({
+      await sendOrganizationCommand(organization, "organization.command.github.data_projection.apply", {
         connectedAccount: input.connectedAccount,
         installationStatus: input.installationStatus,
         installationId: input.installationId,
         syncStatus: "pending",
         lastSyncLabel: input.label,
         lastSyncAt: null,
+        syncGeneration: currentMeta.syncGeneration,
+        syncPhase: null,
+        processedRepositoryCount: 0,
+        totalRepositoryCount: 0,
         repositories: [],
       });
       await emitPullRequestChangeEvents(c, beforeRows, []);
-    },
+}
 
-    async handlePullRequestWebhook(c, input: PullRequestWebhookInput) {
+export async function handlePullRequestWebhookMutation(c: any, input: PullRequestWebhookInput) {
       const beforeRows = await readAllPullRequestRows(c);
       const repoId = repoIdFromRemote(input.repository.cloneUrl);
       const currentRepository = await c.db.select().from(githubRepositories).where(eq(githubRepositories.repoId, repoId)).get();
       const updatedAt = Date.now();
+      const currentMeta = await readMeta(c);
       const state = normalizePrStatus(input.pullRequest);
       const prId = `${repoId}#${input.pullRequest.number}`;
 
@@ -892,6 +1066,7 @@ export const githubData = actor({
           cloneUrl: input.repository.cloneUrl,
           private: input.repository.private ? 1 : 0,
           defaultBranch: currentRepository?.defaultBranch ?? input.pullRequest.baseRefName ?? "main",
+          syncGeneration: currentMeta.syncGeneration,
           updatedAt,
         })
         .onConflictDoUpdate({
@@ -901,6 +1076,7 @@ export const githubData = actor({
             cloneUrl: input.repository.cloneUrl,
             private: input.repository.private ? 1 : 0,
             defaultBranch: currentRepository?.defaultBranch ?? input.pullRequest.baseRefName ?? "main",
+            syncGeneration: currentMeta.syncGeneration,
             updatedAt,
           },
         })
@@ -924,6 +1100,7 @@ export const githubData = actor({
             baseRefName: input.pullRequest.baseRefName,
             authorLogin: input.pullRequest.authorLogin ?? null,
             isDraft: input.pullRequest.isDraft ? 1 : 0,
+            syncGeneration: currentMeta.syncGeneration,
             updatedAt,
           })
           .onConflictDoUpdate({
@@ -937,23 +1114,27 @@ export const githubData = actor({
               baseRefName: input.pullRequest.baseRefName,
               authorLogin: input.pullRequest.authorLogin ?? null,
               isDraft: input.pullRequest.isDraft ? 1 : 0,
+              syncGeneration: currentMeta.syncGeneration,
               updatedAt,
             },
           })
           .run();
       }
 
-      await writeMeta(c, {
+      await publishSyncProgress(c, {
         connectedAccount: input.connectedAccount,
         installationStatus: input.installationStatus,
         installationId: input.installationId,
         syncStatus: "synced",
         lastSyncLabel: "GitHub webhook received",
         lastSyncAt: updatedAt,
+        syncPhase: null,
+        processedRepositoryCount: 0,
+        totalRepositoryCount: 0,
       });
 
       const organization = await getOrCreateOrganization(c, c.state.organizationId);
-      await organization.applyGithubRepositoryProjection({
+      await sendOrganizationCommand(organization, "organization.command.github.repository_projection.apply", {
         repoId,
         remoteUrl: input.repository.cloneUrl,
       });
@@ -969,6 +1150,4 @@ export const githubData = actor({
           });
         }
       }
-    },
-  },
-});
+}

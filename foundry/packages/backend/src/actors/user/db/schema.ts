@@ -1,16 +1,25 @@
 import { check, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
+import { DEFAULT_WORKSPACE_MODEL_ID } from "@sandbox-agent/foundry-shared";
 
 /** Better Auth core model — schema defined at https://better-auth.com/docs/concepts/database */
-export const authUsers = sqliteTable("user", {
-  id: text("id").notNull().primaryKey(),
-  name: text("name").notNull(),
-  email: text("email").notNull(),
-  emailVerified: integer("email_verified").notNull(),
-  image: text("image"),
-  createdAt: integer("created_at").notNull(),
-  updatedAt: integer("updated_at").notNull(),
-});
+export const authUsers = sqliteTable(
+  "user",
+  {
+    id: integer("id").primaryKey(),
+    authUserId: text("auth_user_id").notNull(),
+    name: text("name").notNull(),
+    email: text("email").notNull(),
+    emailVerified: integer("email_verified").notNull(),
+    image: text("image"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    authUserIdIdx: uniqueIndex("user_auth_user_id_idx").on(table.authUserId),
+    singletonCheck: check("user_singleton_id_check", sql`${table.id} = 1`),
+  }),
+);
 
 /** Better Auth core model — schema defined at https://better-auth.com/docs/concepts/database */
 export const authSessions = sqliteTable(
@@ -62,7 +71,7 @@ export const userProfiles = sqliteTable(
     githubAccountId: text("github_account_id"),
     githubLogin: text("github_login"),
     roleLabel: text("role_label").notNull(),
-    defaultModel: text("default_model").notNull().default("claude-sonnet-4"),
+    defaultModel: text("default_model").notNull().default(DEFAULT_WORKSPACE_MODEL_ID),
     eligibleOrganizationIdsJson: text("eligible_organization_ids_json").notNull(),
     starterRepoStatus: text("starter_repo_status").notNull(),
     starterRepoStarredAt: integer("starter_repo_starred_at"),

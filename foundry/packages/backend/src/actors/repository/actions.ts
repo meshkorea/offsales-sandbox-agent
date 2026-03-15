@@ -1,9 +1,7 @@
 // @ts-nocheck
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNotNull, ne } from "drizzle-orm";
-import { Loop } from "rivetkit/workflow";
 import type {
-  AgentType,
   RepoOverview,
   SandboxProviderId,
   TaskRecord,
@@ -12,19 +10,21 @@ import type {
   WorkspaceSessionSummary,
   WorkspaceTaskSummary,
 } from "@sandbox-agent/foundry-shared";
-import { getGithubData, getOrCreateAuditLog, getOrCreateOrganization, getOrCreateTask, getTask, selfRepository } from "../handles.js";
+import { getActorRuntimeContext } from "../context.js";
+import { getOrCreateAuditLog, getOrCreateOrganization, getOrCreateTask, getTask } from "../handles.js";
+import { organizationWorkflowQueueName } from "../organization/queues.js";
+import { taskWorkflowQueueName } from "../task/workflow/index.js";
 import { deriveFallbackTitle, resolveCreateFlowDecision } from "../../services/create-flow.js";
 import { expectQueueResponse } from "../../services/queue.js";
 import { isActorNotFoundError, logActorWarning, resolveErrorMessage } from "../logging.js";
+import { defaultSandboxProviderId } from "../../sandbox-config.js";
 import { repoMeta, taskIndex, tasks } from "./db/schema.js";
 
 interface CreateTaskCommand {
   task: string;
   sandboxProviderId: SandboxProviderId;
-  agentType: AgentType | null;
   explicitTitle: string | null;
   explicitBranchName: string | null;
-  initialPrompt: string | null;
   onBranch: string | null;
 }
 
@@ -38,18 +38,8 @@ interface ListTaskSummariesCommand {
   includeArchived?: boolean;
 }
 
-interface GetPullRequestForBranchCommand {
-  branchName: string;
-}
-
-const REPOSITORY_QUEUE_NAMES = ["repository.command.createTask", "repository.command.registerTaskBranch"] as const;
-
-type RepositoryQueueName = (typeof REPOSITORY_QUEUE_NAMES)[number];
-
-export { REPOSITORY_QUEUE_NAMES };
-
-export function repositoryWorkflowQueueName(name: RepositoryQueueName): RepositoryQueueName {
-  return name;
+interface GetProjectedTaskSummaryCommand {
+  taskId: string;
 }
 
 function isStaleTaskReferenceError(error: unknown): boolean {
@@ -109,26 +99,14 @@ async function upsertTaskSummary(c: any, taskSummary: WorkspaceTaskSummary): Pro
 
 async function notifyOrganizationSnapshotChanged(c: any): Promise<void> {
   const organization = await getOrCreateOrganization(c, c.state.organizationId);
-  await organization.refreshOrganizationSnapshot({});
+  await expectQueueResponse<{ ok: true }>(
+    await organization.send(organizationWorkflowQueueName("organization.command.snapshot.broadcast"), {}, { wait: true, timeout: 10_000 }),
+  );
 }
 
-async function persistRemoteUrl(c: any, remoteUrl: string): Promise<void> {
-  c.state.remoteUrl = remoteUrl;
-  await c.db
-    .insert(repoMeta)
-    .values({
-      id: 1,
-      remoteUrl,
-      updatedAt: Date.now(),
-    })
-    .onConflictDoUpdate({
-      target: repoMeta.id,
-      set: {
-        remoteUrl,
-        updatedAt: Date.now(),
-      },
-    })
-    .run();
+async function readStoredRemoteUrl(c: any): Promise<string | null> {
+  const row = await c.db.select({ remoteUrl: repoMeta.remoteUrl }).from(repoMeta).where(eq(repoMeta.id, 1)).get();
+  return row?.remoteUrl ?? null;
 }
 
 async function deleteStaleTaskIndexRow(c: any, taskId: string): Promise<void> {
@@ -164,31 +142,6 @@ async function listKnownTaskBranches(c: any): Promise<string[]> {
   return rows.map((row) => row.branchName).filter((value): value is string => typeof value === "string" && value.trim().length > 0);
 }
 
-function parseJsonValue<T>(value: string | null | undefined, fallback: T): T {
-  if (!value) {
-    return fallback;
-  }
-
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function taskSummaryRowFromSummary(taskSummary: WorkspaceTaskSummary) {
-  return {
-    taskId: taskSummary.id,
-    title: taskSummary.title,
-    status: taskSummary.status,
-    repoName: taskSummary.repoName,
-    updatedAtMs: taskSummary.updatedAtMs,
-    branch: taskSummary.branch,
-    pullRequestJson: JSON.stringify(taskSummary.pullRequest),
-    sessionsSummaryJson: JSON.stringify(taskSummary.sessionsSummary),
-  };
-}
-
 async function resolveGitHubRepository(c: any) {
   const githubData = getGithubData(c, c.state.organizationId);
   return await githubData.getRepository({ repoId: c.state.repoId }).catch(() => null);
@@ -199,16 +152,28 @@ async function listGitHubBranches(c: any): Promise<Array<{ branchName: string; c
   return await githubData.listBranchesForRepository({ repoId: c.state.repoId }).catch(() => []);
 }
 
-async function createTaskMutation(c: any, cmd: CreateTaskCommand): Promise<TaskRecord> {
+async function resolveRepositoryRemoteUrl(c: any): Promise<string> {
+  const storedRemoteUrl = await readStoredRemoteUrl(c);
+  if (storedRemoteUrl) {
+    return storedRemoteUrl;
+  }
+
+  const repository = await resolveGitHubRepository(c);
+  const remoteUrl = repository?.cloneUrl?.trim();
+  if (!remoteUrl) {
+    throw new Error(`Missing remote URL for repo ${c.state.repoId}`);
+  }
+  return remoteUrl;
+}
+
+export async function createTaskMutation(c: any, cmd: CreateTaskCommand): Promise<TaskRecord> {
   const organizationId = c.state.organizationId;
   const repoId = c.state.repoId;
-  const repoRemote = c.state.remoteUrl;
+  await resolveRepositoryRemoteUrl(c);
   const onBranch = cmd.onBranch?.trim() || null;
   const taskId = randomUUID();
   let initialBranchName: string | null = null;
   let initialTitle: string | null = null;
-
-  await persistRemoteUrl(c, repoRemote);
 
   if (onBranch) {
     initialBranchName = onBranch;
@@ -251,15 +216,6 @@ async function createTaskMutation(c: any, cmd: CreateTaskCommand): Promise<TaskR
       organizationId,
       repoId,
       taskId,
-      repoRemote,
-      branchName: initialBranchName,
-      title: initialTitle,
-      task: cmd.task,
-      sandboxProviderId: cmd.sandboxProviderId,
-      agentType: cmd.agentType,
-      explicitTitle: null,
-      explicitBranchName: null,
-      initialPrompt: cmd.initialPrompt,
     });
   } catch (error) {
     if (initialBranchName) {
@@ -268,7 +224,21 @@ async function createTaskMutation(c: any, cmd: CreateTaskCommand): Promise<TaskR
     throw error;
   }
 
-  const created = await taskHandle.initialize({ sandboxProviderId: cmd.sandboxProviderId });
+  const created = await expectQueueResponse<TaskRecord>(
+    await taskHandle.send(
+      taskWorkflowQueueName("task.command.initialize"),
+      {
+        sandboxProviderId: cmd.sandboxProviderId,
+        branchName: initialBranchName,
+        title: initialTitle,
+        task: cmd.task,
+      },
+      {
+        wait: true,
+        timeout: 10_000,
+      },
+    ),
+  );
 
   try {
     await upsertTaskSummary(c, await taskHandle.getTaskSummary({}));
@@ -313,24 +283,11 @@ async function createTaskMutation(c: any, cmd: CreateTaskCommand): Promise<TaskR
   return created;
 }
 
-async function upsertTaskSummary(c: any, taskSummary: WorkspaceTaskSummary): Promise<void> {
-  await c.db
-    .insert(tasks)
-    .values(taskSummaryRowFromSummary(taskSummary))
-    .onConflictDoUpdate({
-      target: tasks.taskId,
-      set: taskSummaryRowFromSummary(taskSummary),
-    })
-    .run();
-}
-
-async function registerTaskBranchMutation(c: any, cmd: RegisterTaskBranchCommand): Promise<{ branchName: string; headSha: string }> {
+export async function registerTaskBranchMutation(c: any, cmd: RegisterTaskBranchCommand): Promise<{ branchName: string; headSha: string }> {
   const branchName = cmd.branchName.trim();
   if (!branchName) {
     throw new Error("branchName is required");
   }
-
-  await persistRemoteUrl(c, c.state.remoteUrl);
 
   const existingOwner = await c.db
     .select({ taskId: taskIndex.taskId })
@@ -397,6 +354,7 @@ async function listTaskSummaries(c: any, includeArchived = false): Promise<TaskS
       title: row.title,
       status: row.status,
       updatedAt: row.updatedAtMs,
+      pullRequest: parseJsonValue<WorkspacePullRequestSummary | null>(row.pullRequestJson, null),
     }))
     .filter((row) => includeArchived || row.status !== "archived");
 }
@@ -413,12 +371,8 @@ function sortOverviewBranches(
     taskId: string | null;
     taskTitle: string | null;
     taskStatus: TaskRecord["status"] | null;
-    prNumber: number | null;
-    prState: string | null;
-    prUrl: string | null;
+    pullRequest: WorkspacePullRequestSummary | null;
     ciStatus: string | null;
-    reviewStatus: string | null;
-    reviewer: string | null;
     updatedAt: number;
   }>,
   defaultBranch: string | null,
@@ -438,60 +392,59 @@ function sortOverviewBranches(
   });
 }
 
-export async function runRepositoryWorkflow(ctx: any): Promise<void> {
-  await ctx.loop("repository-command-loop", async (loopCtx: any) => {
-    const msg = await loopCtx.queue.next("next-repository-command", {
-      names: [...REPOSITORY_QUEUE_NAMES],
-      completable: true,
+export async function applyTaskSummaryUpdateMutation(c: any, input: { taskSummary: WorkspaceTaskSummary }): Promise<void> {
+  await upsertTaskSummary(c, input.taskSummary);
+  await notifyOrganizationSnapshotChanged(c);
+}
+
+export async function removeTaskSummaryMutation(c: any, input: { taskId: string }): Promise<void> {
+  await c.db.delete(tasks).where(eq(tasks.taskId, input.taskId)).run();
+  await notifyOrganizationSnapshotChanged(c);
+}
+
+export async function refreshTaskSummaryForBranchMutation(
+  c: any,
+  input: { branchName: string; pullRequest?: WorkspacePullRequestSummary | null },
+): Promise<void> {
+  const pullRequest = input.pullRequest ?? null;
+  let rows = await c.db.select({ taskId: tasks.taskId }).from(tasks).where(eq(tasks.branch, input.branchName)).all();
+
+  if (rows.length === 0 && pullRequest) {
+    const { config } = getActorRuntimeContext();
+    const created = await createTaskMutation(c, {
+      task: pullRequest.title?.trim() || `Review ${input.branchName}`,
+      sandboxProviderId: defaultSandboxProviderId(config),
+      explicitTitle: pullRequest.title?.trim() || input.branchName,
+      explicitBranchName: null,
+      onBranch: input.branchName,
     });
-    if (!msg) {
-      return Loop.continue(undefined);
-    }
+    rows = [{ taskId: created.taskId }];
+  }
 
+  for (const row of rows) {
     try {
-      if (msg.name === "repository.command.createTask") {
-        const result = await loopCtx.step({
-          name: "repository-create-task",
-          timeout: 5 * 60_000,
-          run: async () => createTaskMutation(loopCtx, msg.body as CreateTaskCommand),
-        });
-        await msg.complete(result);
-        return Loop.continue(undefined);
-      }
-
-      if (msg.name === "repository.command.registerTaskBranch") {
-        const result = await loopCtx.step({
-          name: "repository-register-task-branch",
-          timeout: 60_000,
-          run: async () => registerTaskBranchMutation(loopCtx, msg.body as RegisterTaskBranchCommand),
-        });
-        await msg.complete(result);
-        return Loop.continue(undefined);
-      }
+      const task = getTask(c, c.state.organizationId, c.state.repoId, row.taskId);
+      await expectQueueResponse<{ ok: true }>(
+        await task.send(
+          taskWorkflowQueueName("task.command.pull_request.sync"),
+          { pullRequest },
+          { wait: true, timeout: 10_000 },
+        ),
+      );
     } catch (error) {
-      const message = resolveErrorMessage(error);
-      logActorWarning("repository", "repository workflow command failed", {
-        queueName: msg.name,
-        error: message,
+      logActorWarning("repository", "failed refreshing task summary for branch", {
+        organizationId: c.state.organizationId,
+        repoId: c.state.repoId,
+        branchName: input.branchName,
+        taskId: row.taskId,
+        error: resolveErrorMessage(error),
       });
-      await msg.complete({ error: message }).catch(() => {});
     }
+  }
 
-    return Loop.continue(undefined);
-  });
 }
 
 export const repositoryActions = {
-  async createTask(c: any, cmd: CreateTaskCommand): Promise<TaskRecord> {
-    const self = selfRepository(c);
-    return expectQueueResponse<TaskRecord>(
-      await self.send(repositoryWorkflowQueueName("repository.command.createTask"), cmd, {
-        wait: true,
-        timeout: 10_000,
-      }),
-    );
-  },
-
   async listReservedBranches(c: any): Promise<string[]> {
     return await listKnownTaskBranches(c);
   },
@@ -506,23 +459,19 @@ export const repositoryActions = {
 
   async getRepositoryMetadata(c: any): Promise<{ defaultBranch: string | null; fullName: string | null; remoteUrl: string }> {
     const repository = await resolveGitHubRepository(c);
+    const remoteUrl = await resolveRepositoryRemoteUrl(c);
     return {
       defaultBranch: repository?.defaultBranch ?? null,
       fullName: repository?.fullName ?? null,
-      remoteUrl: c.state.remoteUrl,
+      remoteUrl,
     };
   },
 
   async getRepoOverview(c: any): Promise<RepoOverview> {
-    await persistRemoteUrl(c, c.state.remoteUrl);
-
     const now = Date.now();
     const repository = await resolveGitHubRepository(c);
+    const remoteUrl = await resolveRepositoryRemoteUrl(c);
     const githubBranches = await listGitHubBranches(c).catch(() => []);
-    const githubData = getGithubData(c, c.state.organizationId);
-    const prRows = await githubData.listPullRequestsForRepository({ repoId: c.state.repoId }).catch(() => []);
-    const prByBranch = new Map(prRows.map((row) => [row.headRefName, row]));
-
     const taskRows = await c.db.select().from(tasks).all();
 
     const taskMetaByBranch = new Map<
@@ -558,19 +507,15 @@ export const repositoryActions = {
     const branches = sortOverviewBranches(
       [...branchMap.values()].map((branch) => {
         const taskMeta = taskMetaByBranch.get(branch.branchName);
-        const pr = taskMeta?.pullRequest ?? prByBranch.get(branch.branchName) ?? null;
+        const pr = taskMeta?.pullRequest ?? null;
         return {
           branchName: branch.branchName,
           commitSha: branch.commitSha,
           taskId: taskMeta?.taskId ?? null,
           taskTitle: taskMeta?.title ?? null,
           taskStatus: taskMeta?.status ?? null,
-          prNumber: pr?.number ?? null,
-          prState: "state" in (pr ?? {}) ? pr.state : null,
-          prUrl: "url" in (pr ?? {}) ? pr.url : null,
+          pullRequest: pr,
           ciStatus: null,
-          reviewStatus: pr && "isDraft" in pr ? (pr.isDraft ? "draft" : "ready") : null,
-          reviewer: pr?.authorLogin ?? null,
           updatedAt: Math.max(taskMeta?.updatedAt ?? 0, pr?.updatedAtMs ?? 0, now),
         };
       }),
@@ -580,21 +525,11 @@ export const repositoryActions = {
     return {
       organizationId: c.state.organizationId,
       repoId: c.state.repoId,
-      remoteUrl: c.state.remoteUrl,
+      remoteUrl,
       baseRef: repository?.defaultBranch ?? null,
       fetchedAt: now,
       branches,
     };
-  },
-
-  async applyTaskSummaryUpdate(c: any, input: { taskSummary: WorkspaceTaskSummary }): Promise<void> {
-    await upsertTaskSummary(c, input.taskSummary);
-    await notifyOrganizationSnapshotChanged(c);
-  },
-
-  async removeTaskSummary(c: any, input: { taskId: string }): Promise<void> {
-    await c.db.delete(tasks).where(eq(tasks.taskId, input.taskId)).run();
-    await notifyOrganizationSnapshotChanged(c);
   },
 
   async findTaskForBranch(c: any, input: { branchName: string }): Promise<{ taskId: string | null }> {
@@ -602,36 +537,12 @@ export const repositoryActions = {
     return { taskId: row?.taskId ?? null };
   },
 
-  async refreshTaskSummaryForBranch(c: any, input: { branchName: string }): Promise<void> {
-    const rows = await c.db.select({ taskId: tasks.taskId }).from(tasks).where(eq(tasks.branch, input.branchName)).all();
-
-    for (const row of rows) {
-      try {
-        const task = getTask(c, c.state.organizationId, c.state.repoId, row.taskId);
-        await upsertTaskSummary(c, await task.getTaskSummary({}));
-      } catch (error) {
-        logActorWarning("repository", "failed refreshing task summary for branch", {
-          organizationId: c.state.organizationId,
-          repoId: c.state.repoId,
-          branchName: input.branchName,
-          taskId: row.taskId,
-          error: resolveErrorMessage(error),
-        });
-      }
-    }
-
-    await notifyOrganizationSnapshotChanged(c);
-  },
-
-  async getPullRequestForBranch(c: any, cmd: GetPullRequestForBranchCommand): Promise<WorkspacePullRequestSummary | null> {
-    const branchName = cmd.branchName?.trim();
-    if (!branchName) {
+  async getProjectedTaskSummary(c: any, input: GetProjectedTaskSummaryCommand): Promise<WorkspaceTaskSummary | null> {
+    const taskId = input.taskId?.trim();
+    if (!taskId) {
       return null;
     }
-    const githubData = getGithubData(c, c.state.organizationId);
-    const rows = await githubData.listPullRequestsForRepository({
-      repoId: c.state.repoId,
-    });
-    return rows.find((candidate: WorkspacePullRequestSummary) => candidate.headRefName === branchName) ?? null;
+    const row = await c.db.select().from(tasks).where(eq(tasks.taskId, taskId)).get();
+    return row ? taskSummaryFromRow(c, row) : null;
   },
 };

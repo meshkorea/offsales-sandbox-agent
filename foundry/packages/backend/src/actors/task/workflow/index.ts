@@ -24,10 +24,12 @@ import {
   publishWorkspacePr,
   renameWorkspaceTask,
   renameWorkspaceSession,
+  selectWorkspaceSession,
   revertWorkspaceFile,
   sendWorkspaceMessage,
   setWorkspaceSessionUnread,
   stopWorkspaceSession,
+  syncTaskPullRequest,
   syncWorkspaceSessionStatus,
   updateWorkspaceDraft,
 } from "../workspace.js";
@@ -71,7 +73,7 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
       await loopCtx.step("init-complete", async () => initCompleteActivity(loopCtx, msg.body));
       await msg.complete({ ok: true });
     } catch (error) {
-      await loopCtx.step("init-failed-v3", async () => initFailedActivity(loopCtx, error));
+      await loopCtx.step("init-failed-v3", async () => initFailedActivity(loopCtx, error, msg.body));
       await msg.complete({
         ok: false,
         error: resolveErrorMessage(error),
@@ -92,11 +94,11 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
   },
 
   "task.command.sync": async (loopCtx, msg) => {
-    await loopCtx.step("handle-sync", async () => handleSimpleCommandActivity(loopCtx, msg, "sync requested", "task.sync"));
+    await loopCtx.step("handle-sync", async () => handleSimpleCommandActivity(loopCtx, msg, "task.sync"));
   },
 
   "task.command.merge": async (loopCtx, msg) => {
-    await loopCtx.step("handle-merge", async () => handleSimpleCommandActivity(loopCtx, msg, "merge requested", "task.merge"));
+    await loopCtx.step("handle-merge", async () => handleSimpleCommandActivity(loopCtx, msg, "task.merge"));
   },
 
   "task.command.archive": async (loopCtx, msg) => {
@@ -110,6 +112,11 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
 
   "task.command.get": async (loopCtx, msg) => {
     await loopCtx.step("handle-get", async () => handleGetActivity(loopCtx, msg));
+  },
+
+  "task.command.pull_request.sync": async (loopCtx, msg) => {
+    await loopCtx.step("task-pull-request-sync", async () => syncTaskPullRequest(loopCtx, msg.body?.pullRequest ?? null));
+    await msg.complete({ ok: true });
   },
 
   "task.command.workspace.mark_unread": async (loopCtx, msg) => {
@@ -169,22 +176,23 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
     await msg.complete({ ok: true });
   },
 
+  "task.command.workspace.select_session": async (loopCtx, msg) => {
+    await loopCtx.step("workspace-select-session", async () => selectWorkspaceSession(loopCtx, msg.body.sessionId, msg.body?.authSessionId));
+    await msg.complete({ ok: true });
+  },
+
   "task.command.workspace.set_session_unread": async (loopCtx, msg) => {
-    await loopCtx.step("workspace-set-session-unread", async () =>
-      setWorkspaceSessionUnread(loopCtx, msg.body.sessionId, msg.body.unread, msg.body?.authSessionId),
-    );
+    await loopCtx.step("workspace-set-session-unread", async () => setWorkspaceSessionUnread(loopCtx, msg.body.sessionId, msg.body.unread, msg.body?.authSessionId));
     await msg.complete({ ok: true });
   },
 
   "task.command.workspace.update_draft": async (loopCtx, msg) => {
-    await loopCtx.step("workspace-update-draft", async () =>
-      updateWorkspaceDraft(loopCtx, msg.body.sessionId, msg.body.text, msg.body.attachments, msg.body?.authSessionId),
-    );
+    await loopCtx.step("workspace-update-draft", async () => updateWorkspaceDraft(loopCtx, msg.body.sessionId, msg.body.text, msg.body.attachments, msg.body?.authSessionId));
     await msg.complete({ ok: true });
   },
 
   "task.command.workspace.change_model": async (loopCtx, msg) => {
-    await loopCtx.step("workspace-change-model", async () => changeWorkspaceModel(loopCtx, msg.body.sessionId, msg.body.model));
+    await loopCtx.step("workspace-change-model", async () => changeWorkspaceModel(loopCtx, msg.body.sessionId, msg.body.model, msg.body?.authSessionId));
     await msg.complete({ ok: true });
   },
 

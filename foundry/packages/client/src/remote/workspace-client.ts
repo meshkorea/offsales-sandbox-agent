@@ -109,6 +109,11 @@ class RemoteWorkspaceStore implements TaskWorkspaceClient {
     await this.refresh();
   }
 
+  async selectSession(input: TaskWorkspaceSessionInput): Promise<void> {
+    await this.backend.selectWorkspaceSession(this.organizationId, input);
+    await this.refresh();
+  }
+
   async setSessionUnread(input: TaskWorkspaceSetSessionUnreadInput): Promise<void> {
     await this.backend.setWorkspaceSessionUnread(this.organizationId, input);
     await this.refresh();

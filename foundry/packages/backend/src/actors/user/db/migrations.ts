@@ -23,14 +23,18 @@ export default {
   journal,
   migrations: {
     m0000: `CREATE TABLE \`user\` (
-	\`id\` text PRIMARY KEY NOT NULL,
+	\`id\` integer PRIMARY KEY NOT NULL,
+	\`auth_user_id\` text NOT NULL,
 	\`name\` text NOT NULL,
 	\`email\` text NOT NULL,
 	\`email_verified\` integer NOT NULL,
 	\`image\` text,
 	\`created_at\` integer NOT NULL,
-	\`updated_at\` integer NOT NULL
+	\`updated_at\` integer NOT NULL,
+	CONSTRAINT \`user_singleton_id_check\` CHECK(\`id\` = 1)
 );
+--> statement-breakpoint
+CREATE UNIQUE INDEX \`user_auth_user_id_idx\` ON \`user\` (\`auth_user_id\`);
 --> statement-breakpoint
 CREATE TABLE \`session\` (
 	\`id\` text PRIMARY KEY NOT NULL,
@@ -69,7 +73,7 @@ CREATE TABLE \`user_profiles\` (
 	\`github_account_id\` text,
 	\`github_login\` text,
 	\`role_label\` text NOT NULL,
-	\`default_model\` text DEFAULT 'claude-sonnet-4' NOT NULL,
+	\`default_model\` text DEFAULT 'gpt-5.3-codex' NOT NULL,
 	\`eligible_organization_ids_json\` text NOT NULL,
 	\`starter_repo_status\` text NOT NULL,
 	\`starter_repo_starred_at\` integer,
