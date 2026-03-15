@@ -142,6 +142,7 @@ class MockWorkspaceStore implements TaskWorkspaceClient {
       updatedAtMs: nowMs(),
       pullRequest: {
         number: nextPrNumber,
+        status: "ready",
         title: task.title,
         state: "open",
         url: `https://example.test/pr/${nextPrNumber}`,

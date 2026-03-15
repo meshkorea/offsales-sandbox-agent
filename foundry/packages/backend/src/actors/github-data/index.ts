@@ -138,6 +138,7 @@ function pullRequestSummaryFromRow(row: any) {
     repoId: row.repoId,
     repoFullName: row.repoFullName,
     number: row.number,
+    status: Boolean(row.isDraft) ? "draft" : "ready",
     title: row.title,
     state: row.state,
     url: row.url,

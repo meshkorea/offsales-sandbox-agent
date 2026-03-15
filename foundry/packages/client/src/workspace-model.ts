@@ -198,6 +198,7 @@ function buildPullRequestSummary(params: {
 }) {
   return {
     number: params.number,
+    status: params.status,
     title: params.title,
     state: "open",
     url: `https://github.com/${params.repoName}/pull/${params.number}`,

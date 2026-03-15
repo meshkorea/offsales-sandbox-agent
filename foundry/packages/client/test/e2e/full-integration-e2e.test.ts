@@ -132,11 +132,11 @@ describe("e2e(client): full integration stack workflow", () => {
         90_000,
         1_000,
         async () => client.getRepoOverview(organizationId, repo.repoId),
-        (value) => value.branches.some((row) => row.branchName === seededBranch),
+        (value) => value.branches.some((row: RepoOverview["branches"][number]) => row.branchName === seededBranch),
       );
 
       const postActionOverview = await client.getRepoOverview(organizationId, repo.repoId);
-      const seededRow = postActionOverview.branches.find((row) => row.branchName === seededBranch);
+      const seededRow = postActionOverview.branches.find((row: RepoOverview["branches"][number]) => row.branchName === seededBranch);
       expect(Boolean(seededRow)).toBe(true);
       expect(postActionOverview.fetchedAt).toBeGreaterThanOrEqual(overview.fetchedAt);
     } finally {

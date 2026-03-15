@@ -1378,6 +1378,7 @@ export async function publishWorkspacePr(c: any): Promise<void> {
   });
   await syncTaskPullRequest(c, {
     number: created.number,
+    status: "ready",
     title: record.title ?? record.task,
     body: null,
     state: "open",

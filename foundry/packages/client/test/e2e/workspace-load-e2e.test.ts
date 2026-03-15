@@ -245,12 +245,14 @@ describe("e2e(client): workspace load", () => {
         const expectedReply = `LOAD_REPLY_${runId}_${sessionIndex}`;
         const createSessionStartedAt = performance.now();
         const createdSession = await client.createWorkspaceSession(organizationId, {
+          repoId: repo.repoId,
           taskId: created.taskId,
           model,
         });
         createSessionLatencies.push(performance.now() - createSessionStartedAt);
 
         await client.sendWorkspaceMessage(organizationId, {
+          repoId: repo.repoId,
           taskId: created.taskId,
           sessionId: createdSession.sessionId,
           text: `Run pwd in the repo, then reply with exactly: ${expectedReply}`,

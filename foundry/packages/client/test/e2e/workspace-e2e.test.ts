@@ -176,27 +176,32 @@ describe("e2e(client): workspace flows", () => {
       expect(transcriptIncludesAgentText(findTab(initialCompleted, primaryTab.id).transcript, expectedInitialReply)).toBe(true);
 
       await client.renameWorkspaceTask(organizationId, {
+        repoId: repo.repoId,
         taskId: created.taskId,
         value: `Workspace E2E ${runId} Renamed`,
       });
       await client.renameWorkspaceSession(organizationId, {
+        repoId: repo.repoId,
         taskId: created.taskId,
         sessionId: primaryTab.id,
         title: "Primary Session",
       });
 
       const secondTab = await client.createWorkspaceSession(organizationId, {
+        repoId: repo.repoId,
         taskId: created.taskId,
         model,
       });
 
       await client.renameWorkspaceSession(organizationId, {
+        repoId: repo.repoId,
         taskId: created.taskId,
         sessionId: secondTab.sessionId,
         title: "Follow-up Session",
       });
 
       await client.updateWorkspaceDraft(organizationId, {
+        repoId: repo.repoId,
         taskId: created.taskId,
         sessionId: secondTab.sessionId,
         text: [
@@ -219,6 +224,7 @@ describe("e2e(client): workspace flows", () => {
       expect(findTab(drafted, secondTab.sessionId).draft.attachments).toHaveLength(1);
 
       await client.sendWorkspaceMessage(organizationId, {
+        repoId: repo.repoId,
         taskId: created.taskId,
         sessionId: secondTab.sessionId,
         text: [
@@ -254,16 +260,18 @@ describe("e2e(client): workspace flows", () => {
       expect(withSecondReply.fileChanges.some((file) => file.path === expectedFile)).toBe(true);
 
       await client.setWorkspaceSessionUnread(organizationId, {
+        repoId: repo.repoId,
         taskId: created.taskId,
         sessionId: secondTab.sessionId,
         unread: false,
       });
-      await client.markWorkspaceUnread(organizationId, { taskId: created.taskId });
+      await client.markWorkspaceUnread(organizationId, { repoId: repo.repoId, taskId: created.taskId });
 
       const unreadSnapshot = findTask(await client.getWorkspace(organizationId), created.taskId);
       expect(unreadSnapshot.sessions.some((tab) => tab.unread)).toBe(true);
 
       await client.closeWorkspaceSession(organizationId, {
+        repoId: repo.repoId,
         taskId: created.taskId,
         sessionId: secondTab.sessionId,
       });
@@ -278,6 +286,7 @@ describe("e2e(client): workspace flows", () => {
       expect(closedSnapshot.sessions).toHaveLength(1);
 
       await client.revertWorkspaceFile(organizationId, {
+        repoId: repo.repoId,
         taskId: created.taskId,
         path: expectedFile,
       });

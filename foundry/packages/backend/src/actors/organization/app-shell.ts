@@ -1089,6 +1089,7 @@ export const organizationAppActions = {
                 },
                 pullRequest: {
                   number: body.pull_request.number,
+                  status: body.pull_request.draft ? "draft" : "ready",
                   title: body.pull_request.title ?? "",
                   body: body.pull_request.body ?? null,
                   state: body.pull_request.state ?? "open",

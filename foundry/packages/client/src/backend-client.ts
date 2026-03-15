@@ -7,6 +7,7 @@ import type {
   CreateTaskInput,
   AppEvent,
   SessionEvent,
+  SandboxProcessSnapshot,
   SandboxProcessesEvent,
   TaskRecord,
   TaskSummary,
@@ -40,7 +41,7 @@ import type {
   WorkspaceModelGroup,
   WorkspaceModelId,
 } from "@sandbox-agent/foundry-shared";
-import type { ProcessCreateRequest, ProcessInfo, ProcessLogFollowQuery, ProcessLogsResponse, ProcessSignalQuery } from "sandbox-agent";
+import type { ProcessCreateRequest, ProcessLogFollowQuery, ProcessLogsResponse, ProcessSignalQuery } from "sandbox-agent";
 import { createMockBackendClient } from "./mock/backend-client.js";
 import { taskKey, taskSandboxKey, organizationKey } from "./keys.js";
 
@@ -66,7 +67,7 @@ export interface SandboxSessionEventRecord {
   payload: unknown;
 }
 
-export type SandboxProcessRecord = ProcessInfo;
+export type SandboxProcessRecord = SandboxProcessSnapshot;
 
 export interface ActorConn {
   on(event: string, listener: (payload: any) => void): () => void;

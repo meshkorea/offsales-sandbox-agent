@@ -60,6 +60,7 @@ export type CreateTaskInput = z.infer<typeof CreateTaskInputSchema>;
 
 export const WorkspacePullRequestSummarySchema = z.object({
   number: z.number().int(),
+  status: z.enum(["draft", "ready"]),
   title: z.string().min(1),
   state: z.string().min(1),
   url: z.string().min(1),
