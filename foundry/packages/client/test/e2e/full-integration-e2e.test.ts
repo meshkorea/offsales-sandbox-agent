@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import type { HistoryEvent, RepoOverview } from "@sandbox-agent/foundry-shared";
+import type { AuditLogEvent as HistoryEvent, RepoOverview } from "@sandbox-agent/foundry-shared";
 import { createBackendClient } from "../../src/backend-client.js";
 import { requireImportedRepo } from "./helpers.js";
 

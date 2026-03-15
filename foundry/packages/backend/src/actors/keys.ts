@@ -4,7 +4,7 @@ export function organizationKey(organizationId: string): ActorKey {
   return ["org", organizationId];
 }
 
-export function authUserKey(userId: string): ActorKey {
+export function userKey(userId: string): ActorKey {
   return ["org", "app", "user", userId];
 }
 
@@ -20,8 +20,8 @@ export function taskSandboxKey(organizationId: string, sandboxId: string): Actor
   return ["org", organizationId, "sandbox", sandboxId];
 }
 
-export function historyKey(organizationId: string, repoId: string): ActorKey {
-  return ["org", organizationId, "repository", repoId, "history"];
+export function auditLogKey(organizationId: string, repoId: string): ActorKey {
+  return ["org", organizationId, "repository", repoId, "audit-log"];
 }
 
 export function githubDataKey(organizationId: string): ActorKey {

@@ -221,8 +221,8 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "task_workbench_sessions": {
-      "name": "task_workbench_sessions",
+    "task_workspace_sessions": {
+      "name": "task_workspace_sessions",
       "columns": {
         "session_id": {
           "name": "session_id",

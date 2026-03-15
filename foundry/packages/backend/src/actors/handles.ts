@@ -1,4 +1,4 @@
-import { authUserKey, githubDataKey, historyKey, organizationKey, repositoryKey, taskKey, taskSandboxKey } from "./keys.js";
+import { auditLogKey, githubDataKey, organizationKey, repositoryKey, taskKey, taskSandboxKey, userKey } from "./keys.js";
 
 export function actorClient(c: any) {
   return c.client();
@@ -10,14 +10,14 @@ export async function getOrCreateOrganization(c: any, organizationId: string) {
   });
 }
 
-export async function getOrCreateAuthUser(c: any, userId: string) {
-  return await actorClient(c).authUser.getOrCreate(authUserKey(userId), {
+export async function getOrCreateUser(c: any, userId: string) {
+  return await actorClient(c).user.getOrCreate(userKey(userId), {
     createWithInput: { userId },
   });
 }
 
-export function getAuthUser(c: any, userId: string) {
-  return actorClient(c).authUser.get(authUserKey(userId));
+export function getUser(c: any, userId: string) {
+  return actorClient(c).user.get(userKey(userId));
 }
 
 export async function getOrCreateRepository(c: any, organizationId: string, repoId: string, remoteUrl: string) {
@@ -44,8 +44,8 @@ export async function getOrCreateTask(c: any, organizationId: string, repoId: st
   });
 }
 
-export async function getOrCreateHistory(c: any, organizationId: string, repoId: string) {
-  return await actorClient(c).history.getOrCreate(historyKey(organizationId, repoId), {
+export async function getOrCreateAuditLog(c: any, organizationId: string, repoId: string) {
+  return await actorClient(c).auditLog.getOrCreate(auditLogKey(organizationId, repoId), {
     createWithInput: {
       organizationId,
       repoId,
@@ -75,8 +75,8 @@ export async function getOrCreateTaskSandbox(c: any, organizationId: string, san
   });
 }
 
-export function selfHistory(c: any) {
-  return actorClient(c).history.getForId(c.actorId);
+export function selfAuditLog(c: any) {
+  return actorClient(c).auditLog.getForId(c.actorId);
 }
 
 export function selfTask(c: any) {
@@ -91,8 +91,8 @@ export function selfRepository(c: any) {
   return actorClient(c).repository.getForId(c.actorId);
 }
 
-export function selfAuthUser(c: any) {
-  return actorClient(c).authUser.getForId(c.actorId);
+export function selfUser(c: any) {
+  return actorClient(c).user.getForId(c.actorId);
 }
 
 export function selfGithubData(c: any) {

@@ -2,8 +2,8 @@
 import { eq } from "drizzle-orm";
 import { getTaskSandbox } from "../../handles.js";
 import { resolveOrganizationGithubAuth } from "../../../services/github-auth.js";
-import { taskRuntime, taskSandboxes } from "../db/schema.js";
-import { TASK_ROW_ID, appendHistory, getCurrentRecord } from "./common.js";
+import { taskSandboxes } from "../db/schema.js";
+import { appendAuditLog, getCurrentRecord } from "./common.js";
 
 export interface PushActiveBranchOptions {
   reason?: string | null;
@@ -29,12 +29,6 @@ export async function pushActiveBranchActivity(loopCtx: any, options: PushActive
   }
 
   const now = Date.now();
-  await loopCtx.db
-    .update(taskRuntime)
-    .set({ statusMessage: `pushing branch ${branchName}`, updatedAt: now })
-    .where(eq(taskRuntime.id, TASK_ROW_ID))
-    .run();
-
   await loopCtx.db
     .update(taskSandboxes)
     .set({ statusMessage: `pushing branch ${branchName}`, updatedAt: now })
@@ -70,18 +64,12 @@ export async function pushActiveBranchActivity(loopCtx: any, options: PushActive
 
   const updatedAt = Date.now();
   await loopCtx.db
-    .update(taskRuntime)
-    .set({ statusMessage: `push complete for ${branchName}`, updatedAt })
-    .where(eq(taskRuntime.id, TASK_ROW_ID))
-    .run();
-
-  await loopCtx.db
     .update(taskSandboxes)
     .set({ statusMessage: `push complete for ${branchName}`, updatedAt })
     .where(eq(taskSandboxes.sandboxId, activeSandboxId))
     .run();
 
-  await appendHistory(loopCtx, options.historyKind ?? "task.push", {
+  await appendAuditLog(loopCtx, options.historyKind ?? "task.push", {
     reason: options.reason ?? null,
     branchName,
     sandboxId: activeSandboxId,

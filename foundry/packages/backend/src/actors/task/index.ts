@@ -1,14 +1,13 @@
 import { actor, queue } from "rivetkit";
 import { workflow } from "rivetkit/workflow";
 import type {
-  AgentType,
   TaskRecord,
-  TaskWorkbenchChangeModelInput,
-  TaskWorkbenchRenameInput,
-  TaskWorkbenchRenameSessionInput,
-  TaskWorkbenchSetSessionUnreadInput,
-  TaskWorkbenchSendMessageInput,
-  TaskWorkbenchUpdateDraftInput,
+  TaskWorkspaceChangeModelInput,
+  TaskWorkspaceRenameInput,
+  TaskWorkspaceRenameSessionInput,
+  TaskWorkspaceSetSessionUnreadInput,
+  TaskWorkspaceSendMessageInput,
+  TaskWorkspaceUpdateDraftInput,
   SandboxProviderId,
 } from "@sandbox-agent/foundry-shared";
 import { expectQueueResponse } from "../../services/queue.js";
@@ -16,24 +15,23 @@ import { selfTask } from "../handles.js";
 import { taskDb } from "./db/db.js";
 import { getCurrentRecord } from "./workflow/common.js";
 import {
-  changeWorkbenchModel,
-  closeWorkbenchSession,
-  createWorkbenchSession,
+  changeWorkspaceModel,
+  closeWorkspaceSession,
+  createWorkspaceSession,
   getSessionDetail,
   getTaskDetail,
   getTaskSummary,
-  markWorkbenchUnread,
-  publishWorkbenchPr,
-  renameWorkbenchBranch,
-  renameWorkbenchTask,
-  renameWorkbenchSession,
-  revertWorkbenchFile,
-  sendWorkbenchMessage,
-  syncWorkbenchSessionStatus,
-  setWorkbenchSessionUnread,
-  stopWorkbenchSession,
-  updateWorkbenchDraft,
-} from "./workbench.js";
+  markWorkspaceUnread,
+  publishWorkspacePr,
+  renameWorkspaceTask,
+  renameWorkspaceSession,
+  revertWorkspaceFile,
+  sendWorkspaceMessage,
+  syncWorkspaceSessionStatus,
+  setWorkspaceSessionUnread,
+  stopWorkspaceSession,
+  updateWorkspaceDraft,
+} from "./workspace.js";
 import { TASK_QUEUE_NAMES, taskWorkflowQueueName, runTaskWorkflow } from "./workflow/index.js";
 
 export interface TaskInput {
@@ -45,10 +43,8 @@ export interface TaskInput {
   title: string | null;
   task: string;
   sandboxProviderId: SandboxProviderId;
-  agentType: AgentType | null;
   explicitTitle: string | null;
   explicitBranchName: string | null;
-  initialPrompt: string | null;
 }
 
 interface InitializeCommand {
@@ -69,48 +65,57 @@ interface TaskStatusSyncCommand {
   at: number;
 }
 
-interface TaskWorkbenchValueCommand {
+interface TaskWorkspaceValueCommand {
   value: string;
+  authSessionId?: string;
 }
 
-interface TaskWorkbenchSessionTitleCommand {
+interface TaskWorkspaceSessionTitleCommand {
   sessionId: string;
   title: string;
+  authSessionId?: string;
 }
 
-interface TaskWorkbenchSessionUnreadCommand {
+interface TaskWorkspaceSessionUnreadCommand {
   sessionId: string;
   unread: boolean;
+  authSessionId?: string;
 }
 
-interface TaskWorkbenchUpdateDraftCommand {
+interface TaskWorkspaceUpdateDraftCommand {
   sessionId: string;
   text: string;
   attachments: Array<any>;
+  authSessionId?: string;
 }
 
-interface TaskWorkbenchChangeModelCommand {
+interface TaskWorkspaceChangeModelCommand {
   sessionId: string;
   model: string;
+  authSessionId?: string;
 }
 
-interface TaskWorkbenchSendMessageCommand {
+interface TaskWorkspaceSendMessageCommand {
   sessionId: string;
   text: string;
   attachments: Array<any>;
+  authSessionId?: string;
 }
 
-interface TaskWorkbenchCreateSessionCommand {
+interface TaskWorkspaceCreateSessionCommand {
   model?: string;
+  authSessionId?: string;
 }
 
-interface TaskWorkbenchCreateSessionAndSendCommand {
+interface TaskWorkspaceCreateSessionAndSendCommand {
   model?: string;
   text: string;
+  authSessionId?: string;
 }
 
-interface TaskWorkbenchSessionCommand {
+interface TaskWorkspaceSessionCommand {
   sessionId: string;
+  authSessionId?: string;
 }
 
 export const task = actor({
@@ -126,16 +131,6 @@ export const task = actor({
     repoId: input.repoId,
     taskId: input.taskId,
     repoRemote: input.repoRemote,
-    branchName: input.branchName,
-    title: input.title,
-    task: input.task,
-    sandboxProviderId: input.sandboxProviderId,
-    agentType: input.agentType,
-    explicitTitle: input.explicitTitle,
-    explicitBranchName: input.explicitBranchName,
-    initialPrompt: input.initialPrompt,
-    initialized: false,
-    previousStatus: null as string | null,
   }),
   actions: {
     async initialize(c, cmd: InitializeCommand): Promise<TaskRecord> {
@@ -220,19 +215,19 @@ export const task = actor({
       return await getTaskSummary(c);
     },
 
-    async getTaskDetail(c) {
-      return await getTaskDetail(c);
+    async getTaskDetail(c, input?: { authSessionId?: string }) {
+      return await getTaskDetail(c, input?.authSessionId);
     },
 
-    async getSessionDetail(c, input: { sessionId: string }) {
-      return await getSessionDetail(c, input.sessionId);
+    async getSessionDetail(c, input: { sessionId: string; authSessionId?: string }) {
+      return await getSessionDetail(c, input.sessionId, input.authSessionId);
     },
 
-    async markWorkbenchUnread(c): Promise<void> {
+    async markWorkspaceUnread(c, input?: { authSessionId?: string }): Promise<void> {
       const self = selfTask(c);
       await self.send(
-        taskWorkflowQueueName("task.command.workbench.mark_unread"),
-        {},
+        taskWorkflowQueueName("task.command.workspace.mark_unread"),
+        { authSessionId: input?.authSessionId },
         {
           wait: true,
           timeout: 10_000,
@@ -240,26 +235,26 @@ export const task = actor({
       );
     },
 
-    async renameWorkbenchTask(c, input: TaskWorkbenchRenameInput): Promise<void> {
+    async renameWorkspaceTask(c, input: TaskWorkspaceRenameInput): Promise<void> {
       const self = selfTask(c);
-      await self.send(taskWorkflowQueueName("task.command.workbench.rename_task"), { value: input.value } satisfies TaskWorkbenchValueCommand, {
-        wait: true,
-        timeout: 20_000,
-      });
+      await self.send(
+        taskWorkflowQueueName("task.command.workspace.rename_task"),
+        { value: input.value, authSessionId: input.authSessionId } satisfies TaskWorkspaceValueCommand,
+        {
+          wait: true,
+          timeout: 20_000,
+        },
+      );
     },
 
-    async renameWorkbenchBranch(c, input: TaskWorkbenchRenameInput): Promise<void> {
-      const self = selfTask(c);
-      await self.send(taskWorkflowQueueName("task.command.workbench.rename_branch"), { value: input.value } satisfies TaskWorkbenchValueCommand, {
-        wait: false,
-      });
-    },
-
-    async createWorkbenchSession(c, input?: { model?: string }): Promise<{ sessionId: string }> {
+    async createWorkspaceSession(c, input?: { model?: string; authSessionId?: string }): Promise<{ sessionId: string }> {
       const self = selfTask(c);
       const result = await self.send(
-        taskWorkflowQueueName("task.command.workbench.create_session"),
-        { ...(input?.model ? { model: input.model } : {}) } satisfies TaskWorkbenchCreateSessionCommand,
+        taskWorkflowQueueName("task.command.workspace.create_session"),
+        {
+          ...(input?.model ? { model: input.model } : {}),
+          ...(input?.authSessionId ? { authSessionId: input.authSessionId } : {}),
+        } satisfies TaskWorkspaceCreateSessionCommand,
         {
           wait: true,
           timeout: 10_000,
@@ -269,23 +264,23 @@ export const task = actor({
     },
 
     /**
-     * Fire-and-forget: creates a workbench session and sends the initial message.
-     * Used by createWorkbenchTask so the caller doesn't block on session creation.
+     * Fire-and-forget: creates a session and sends the initial message.
+     * Used by createWorkspaceTask so the caller doesn't block on session creation.
      */
-    async createWorkbenchSessionAndSend(c, input: { model?: string; text: string }): Promise<void> {
+    async createWorkspaceSessionAndSend(c, input: { model?: string; text: string; authSessionId?: string }): Promise<void> {
       const self = selfTask(c);
       await self.send(
-        taskWorkflowQueueName("task.command.workbench.create_session_and_send"),
-        { model: input.model, text: input.text } satisfies TaskWorkbenchCreateSessionAndSendCommand,
+        taskWorkflowQueueName("task.command.workspace.create_session_and_send"),
+        { model: input.model, text: input.text, authSessionId: input.authSessionId } satisfies TaskWorkspaceCreateSessionAndSendCommand,
         { wait: false },
       );
     },
 
-    async renameWorkbenchSession(c, input: TaskWorkbenchRenameSessionInput): Promise<void> {
+    async renameWorkspaceSession(c, input: TaskWorkspaceRenameSessionInput): Promise<void> {
       const self = selfTask(c);
       await self.send(
-        taskWorkflowQueueName("task.command.workbench.rename_session"),
-        { sessionId: input.sessionId, title: input.title } satisfies TaskWorkbenchSessionTitleCommand,
+        taskWorkflowQueueName("task.command.workspace.rename_session"),
+        { sessionId: input.sessionId, title: input.title, authSessionId: input.authSessionId } satisfies TaskWorkspaceSessionTitleCommand,
         {
           wait: true,
           timeout: 10_000,
@@ -293,11 +288,11 @@ export const task = actor({
       );
     },
 
-    async setWorkbenchSessionUnread(c, input: TaskWorkbenchSetSessionUnreadInput): Promise<void> {
+    async setWorkspaceSessionUnread(c, input: TaskWorkspaceSetSessionUnreadInput): Promise<void> {
       const self = selfTask(c);
       await self.send(
-        taskWorkflowQueueName("task.command.workbench.set_session_unread"),
-        { sessionId: input.sessionId, unread: input.unread } satisfies TaskWorkbenchSessionUnreadCommand,
+        taskWorkflowQueueName("task.command.workspace.set_session_unread"),
+        { sessionId: input.sessionId, unread: input.unread, authSessionId: input.authSessionId } satisfies TaskWorkspaceSessionUnreadCommand,
         {
           wait: true,
           timeout: 10_000,
@@ -305,26 +300,27 @@ export const task = actor({
       );
     },
 
-    async updateWorkbenchDraft(c, input: TaskWorkbenchUpdateDraftInput): Promise<void> {
+    async updateWorkspaceDraft(c, input: TaskWorkspaceUpdateDraftInput): Promise<void> {
       const self = selfTask(c);
       await self.send(
-        taskWorkflowQueueName("task.command.workbench.update_draft"),
+        taskWorkflowQueueName("task.command.workspace.update_draft"),
         {
           sessionId: input.sessionId,
           text: input.text,
           attachments: input.attachments,
-        } satisfies TaskWorkbenchUpdateDraftCommand,
+          authSessionId: input.authSessionId,
+        } satisfies TaskWorkspaceUpdateDraftCommand,
         {
           wait: false,
         },
       );
     },
 
-    async changeWorkbenchModel(c, input: TaskWorkbenchChangeModelInput): Promise<void> {
+    async changeWorkspaceModel(c, input: TaskWorkspaceChangeModelInput): Promise<void> {
       const self = selfTask(c);
       await self.send(
-        taskWorkflowQueueName("task.command.workbench.change_model"),
-        { sessionId: input.sessionId, model: input.model } satisfies TaskWorkbenchChangeModelCommand,
+        taskWorkflowQueueName("task.command.workspace.change_model"),
+        { sessionId: input.sessionId, model: input.model, authSessionId: input.authSessionId } satisfies TaskWorkspaceChangeModelCommand,
         {
           wait: true,
           timeout: 10_000,
@@ -332,47 +328,56 @@ export const task = actor({
       );
     },
 
-    async sendWorkbenchMessage(c, input: TaskWorkbenchSendMessageInput): Promise<void> {
+    async sendWorkspaceMessage(c, input: TaskWorkspaceSendMessageInput): Promise<void> {
       const self = selfTask(c);
       await self.send(
-        taskWorkflowQueueName("task.command.workbench.send_message"),
+        taskWorkflowQueueName("task.command.workspace.send_message"),
         {
           sessionId: input.sessionId,
           text: input.text,
           attachments: input.attachments,
-        } satisfies TaskWorkbenchSendMessageCommand,
+          authSessionId: input.authSessionId,
+        } satisfies TaskWorkspaceSendMessageCommand,
         {
           wait: false,
         },
       );
     },
 
-    async stopWorkbenchSession(c, input: TaskSessionCommand): Promise<void> {
+    async stopWorkspaceSession(c, input: TaskSessionCommand): Promise<void> {
       const self = selfTask(c);
-      await self.send(taskWorkflowQueueName("task.command.workbench.stop_session"), { sessionId: input.sessionId } satisfies TaskWorkbenchSessionCommand, {
-        wait: false,
-      });
+      await self.send(
+        taskWorkflowQueueName("task.command.workspace.stop_session"),
+        { sessionId: input.sessionId, authSessionId: input.authSessionId } satisfies TaskWorkspaceSessionCommand,
+        {
+          wait: false,
+        },
+      );
     },
 
-    async syncWorkbenchSessionStatus(c, input: TaskStatusSyncCommand): Promise<void> {
+    async syncWorkspaceSessionStatus(c, input: TaskStatusSyncCommand): Promise<void> {
       const self = selfTask(c);
-      await self.send(taskWorkflowQueueName("task.command.workbench.sync_session_status"), input, {
+      await self.send(taskWorkflowQueueName("task.command.workspace.sync_session_status"), input, {
         wait: true,
         timeout: 20_000,
       });
     },
 
-    async closeWorkbenchSession(c, input: TaskSessionCommand): Promise<void> {
-      const self = selfTask(c);
-      await self.send(taskWorkflowQueueName("task.command.workbench.close_session"), { sessionId: input.sessionId } satisfies TaskWorkbenchSessionCommand, {
-        wait: false,
-      });
-    },
-
-    async publishWorkbenchPr(c): Promise<void> {
+    async closeWorkspaceSession(c, input: TaskSessionCommand): Promise<void> {
       const self = selfTask(c);
       await self.send(
-        taskWorkflowQueueName("task.command.workbench.publish_pr"),
+        taskWorkflowQueueName("task.command.workspace.close_session"),
+        { sessionId: input.sessionId, authSessionId: input.authSessionId } satisfies TaskWorkspaceSessionCommand,
+        {
+          wait: false,
+        },
+      );
+    },
+
+    async publishWorkspacePr(c): Promise<void> {
+      const self = selfTask(c);
+      await self.send(
+        taskWorkflowQueueName("task.command.workspace.publish_pr"),
         {},
         {
           wait: false,
@@ -380,9 +385,9 @@ export const task = actor({
       );
     },
 
-    async revertWorkbenchFile(c, input: { path: string }): Promise<void> {
+    async revertWorkspaceFile(c, input: { path: string }): Promise<void> {
       const self = selfTask(c);
-      await self.send(taskWorkflowQueueName("task.command.workbench.revert_file"), input, {
+      await self.send(taskWorkflowQueueName("task.command.workspace.revert_file"), input, {
         wait: false,
       });
     },

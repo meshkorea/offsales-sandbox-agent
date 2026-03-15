@@ -1,4 +1,4 @@
-import type { TaskStatus, WorkbenchSessionStatus } from "@sandbox-agent/foundry-shared";
+import type { TaskStatus, WorkspaceSessionStatus } from "@sandbox-agent/foundry-shared";
 import type { HeaderStatusInfo } from "../../components/mock-layout/ui";
 
 export type TaskDisplayStatus = TaskStatus | "new";
@@ -73,7 +73,7 @@ export function describeTaskState(status: TaskDisplayStatus | null | undefined, 
 export function deriveHeaderStatus(
   taskStatus: TaskDisplayStatus | null | undefined,
   taskStatusMessage: string | null | undefined,
-  sessionStatus: WorkbenchSessionStatus | null | undefined,
+  sessionStatus: WorkspaceSessionStatus | null | undefined,
   sessionErrorMessage: string | null | undefined,
   hasSandbox?: boolean,
 ): HeaderStatusInfo {

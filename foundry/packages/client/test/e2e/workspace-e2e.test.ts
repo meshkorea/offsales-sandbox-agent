@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { TaskWorkbenchSnapshot, WorkbenchSession, WorkbenchTask, WorkbenchModelId, WorkbenchTranscriptEvent } from "@sandbox-agent/foundry-shared";
+import type { TaskWorkspaceSnapshot, WorkspaceSession, WorkspaceTask, WorkspaceModelId, WorkspaceTranscriptEvent } from "@sandbox-agent/foundry-shared";
 import { createBackendClient } from "../../src/backend-client.js";
 import { requireImportedRepo } from "./helpers.js";
 
@@ -13,7 +13,7 @@ function requiredEnv(name: string): string {
   return value;
 }
 
-function workbenchModelEnv(name: string, fallback: WorkbenchModelId): WorkbenchModelId {
+function workspaceModelEnv(name: string, fallback: WorkspaceModelId): WorkspaceModelId {
   const value = process.env[name]?.trim();
   switch (value) {
     case "claude-sonnet-4":
@@ -50,7 +50,7 @@ async function poll<T>(label: string, timeoutMs: number, intervalMs: number, fn:
   }
 }
 
-function findTask(snapshot: TaskWorkbenchSnapshot, taskId: string): WorkbenchTask {
+function findTask(snapshot: TaskWorkspaceSnapshot, taskId: string): WorkspaceTask {
   const task = snapshot.tasks.find((candidate) => candidate.id === taskId);
   if (!task) {
     throw new Error(`task ${taskId} missing from snapshot`);
@@ -58,7 +58,7 @@ function findTask(snapshot: TaskWorkbenchSnapshot, taskId: string): WorkbenchTas
   return task;
 }
 
-function findTab(task: WorkbenchTask, sessionId: string): WorkbenchSession {
+function findTab(task: WorkspaceTask, sessionId: string): WorkspaceSession {
   const tab = task.sessions.find((candidate) => candidate.id === sessionId);
   if (!tab) {
     throw new Error(`tab ${sessionId} missing from task ${task.id}`);
@@ -66,7 +66,7 @@ function findTab(task: WorkbenchTask, sessionId: string): WorkbenchSession {
   return tab;
 }
 
-function extractEventText(event: WorkbenchTranscriptEvent): string {
+function extractEventText(event: WorkspaceTranscriptEvent): string {
   const payload = event.payload;
   if (!payload || typeof payload !== "object") {
     return String(payload ?? "");
@@ -127,7 +127,7 @@ function extractEventText(event: WorkbenchTranscriptEvent): string {
   return JSON.stringify(payload);
 }
 
-function transcriptIncludesAgentText(transcript: WorkbenchTranscriptEvent[], expectedText: string): boolean {
+function transcriptIncludesAgentText(transcript: WorkspaceTranscriptEvent[], expectedText: string): boolean {
   return transcript
     .filter((event) => event.sender === "agent")
     .map((event) => extractEventText(event))
@@ -135,15 +135,15 @@ function transcriptIncludesAgentText(transcript: WorkbenchTranscriptEvent[], exp
     .includes(expectedText);
 }
 
-describe("e2e(client): workbench flows", () => {
+describe("e2e(client): workspace flows", () => {
   it.skipIf(!RUN_WORKBENCH_E2E)(
-    "creates a task from an imported repo, adds sessions, exchanges messages, and manages workbench state",
+    "creates a task from an imported repo, adds sessions, exchanges messages, and manages workspace state",
     { timeout: 20 * 60_000 },
     async () => {
       const endpoint = process.env.HF_E2E_BACKEND_ENDPOINT?.trim() || "http://127.0.0.1:7741/v1/rivet";
       const organizationId = process.env.HF_E2E_WORKSPACE?.trim() || "default";
       const repoRemote = requiredEnv("HF_E2E_GITHUB_REPO");
-      const model = workbenchModelEnv("HF_E2E_MODEL", "gpt-5.3-codex");
+      const model = workspaceModelEnv("HF_E2E_MODEL", "gpt-5.3-codex");
       const runId = `wb-${Date.now().toString(36)}`;
       const expectedFile = `${runId}.txt`;
       const expectedInitialReply = `WORKBENCH_READY_${runId}`;
@@ -155,9 +155,9 @@ describe("e2e(client): workbench flows", () => {
       });
 
       const repo = await requireImportedRepo(client, organizationId, repoRemote);
-      const created = await client.createWorkbenchTask(organizationId, {
+      const created = await client.createWorkspaceTask(organizationId, {
         repoId: repo.repoId,
-        title: `Workbench E2E ${runId}`,
+        title: `Workspace E2E ${runId}`,
         branch: `e2e/${runId}`,
         model,
         task: `Reply with exactly: ${expectedInitialReply}`,
@@ -167,7 +167,7 @@ describe("e2e(client): workbench flows", () => {
         "task provisioning",
         12 * 60_000,
         2_000,
-        async () => findTask(await client.getWorkbench(organizationId), created.taskId),
+        async () => findTask(await client.getWorkspace(organizationId), created.taskId),
         (task) => task.branch === `e2e/${runId}` && task.sessions.length > 0,
       );
 
@@ -177,7 +177,7 @@ describe("e2e(client): workbench flows", () => {
         "initial agent response",
         12 * 60_000,
         2_000,
-        async () => findTask(await client.getWorkbench(organizationId), created.taskId),
+        async () => findTask(await client.getWorkspace(organizationId), created.taskId),
         (task) => {
           const tab = findTab(task, primaryTab.id);
           return task.status === "idle" && tab.status === "idle" && transcriptIncludesAgentText(tab.transcript, expectedInitialReply);
@@ -187,28 +187,28 @@ describe("e2e(client): workbench flows", () => {
       expect(findTab(initialCompleted, primaryTab.id).sessionId).toBeTruthy();
       expect(transcriptIncludesAgentText(findTab(initialCompleted, primaryTab.id).transcript, expectedInitialReply)).toBe(true);
 
-      await client.renameWorkbenchTask(organizationId, {
+      await client.renameWorkspaceTask(organizationId, {
         taskId: created.taskId,
-        value: `Workbench E2E ${runId} Renamed`,
+        value: `Workspace E2E ${runId} Renamed`,
       });
-      await client.renameWorkbenchSession(organizationId, {
+      await client.renameWorkspaceSession(organizationId, {
         taskId: created.taskId,
         sessionId: primaryTab.id,
         title: "Primary Session",
       });
 
-      const secondTab = await client.createWorkbenchSession(organizationId, {
+      const secondTab = await client.createWorkspaceSession(organizationId, {
         taskId: created.taskId,
         model,
       });
 
-      await client.renameWorkbenchSession(organizationId, {
+      await client.renameWorkspaceSession(organizationId, {
         taskId: created.taskId,
         sessionId: secondTab.sessionId,
         title: "Follow-up Session",
       });
 
-      await client.updateWorkbenchDraft(organizationId, {
+      await client.updateWorkspaceDraft(organizationId, {
         taskId: created.taskId,
         sessionId: secondTab.sessionId,
         text: [
@@ -226,11 +226,11 @@ describe("e2e(client): workbench flows", () => {
         ],
       });
 
-      const drafted = findTask(await client.getWorkbench(organizationId), created.taskId);
+      const drafted = findTask(await client.getWorkspace(organizationId), created.taskId);
       expect(findTab(drafted, secondTab.sessionId).draft.text).toContain(expectedReply);
       expect(findTab(drafted, secondTab.sessionId).draft.attachments).toHaveLength(1);
 
-      await client.sendWorkbenchMessage(organizationId, {
+      await client.sendWorkspaceMessage(organizationId, {
         taskId: created.taskId,
         sessionId: secondTab.sessionId,
         text: [
@@ -252,7 +252,7 @@ describe("e2e(client): workbench flows", () => {
         "follow-up session response",
         10 * 60_000,
         2_000,
-        async () => findTask(await client.getWorkbench(organizationId), created.taskId),
+        async () => findTask(await client.getWorkspace(organizationId), created.taskId),
         (task) => {
           const tab = findTab(task, secondTab.sessionId);
           return (
@@ -265,17 +265,17 @@ describe("e2e(client): workbench flows", () => {
       expect(transcriptIncludesAgentText(secondTranscript, expectedReply)).toBe(true);
       expect(withSecondReply.fileChanges.some((file) => file.path === expectedFile)).toBe(true);
 
-      await client.setWorkbenchSessionUnread(organizationId, {
+      await client.setWorkspaceSessionUnread(organizationId, {
         taskId: created.taskId,
         sessionId: secondTab.sessionId,
         unread: false,
       });
-      await client.markWorkbenchUnread(organizationId, { taskId: created.taskId });
+      await client.markWorkspaceUnread(organizationId, { taskId: created.taskId });
 
-      const unreadSnapshot = findTask(await client.getWorkbench(organizationId), created.taskId);
+      const unreadSnapshot = findTask(await client.getWorkspace(organizationId), created.taskId);
       expect(unreadSnapshot.sessions.some((tab) => tab.unread)).toBe(true);
 
-      await client.closeWorkbenchSession(organizationId, {
+      await client.closeWorkspaceSession(organizationId, {
         taskId: created.taskId,
         sessionId: secondTab.sessionId,
       });
@@ -284,26 +284,26 @@ describe("e2e(client): workbench flows", () => {
         "secondary session closed",
         30_000,
         1_000,
-        async () => findTask(await client.getWorkbench(organizationId), created.taskId),
+        async () => findTask(await client.getWorkspace(organizationId), created.taskId),
         (task) => !task.sessions.some((tab) => tab.id === secondTab.sessionId),
       );
       expect(closedSnapshot.sessions).toHaveLength(1);
 
-      await client.revertWorkbenchFile(organizationId, {
+      await client.revertWorkspaceFile(organizationId, {
         taskId: created.taskId,
         path: expectedFile,
       });
 
       const revertedSnapshot = await poll(
-        "file revert reflected in workbench",
+        "file revert reflected in workspace",
         30_000,
         1_000,
-        async () => findTask(await client.getWorkbench(organizationId), created.taskId),
+        async () => findTask(await client.getWorkspace(organizationId), created.taskId),
         (task) => !task.fileChanges.some((file) => file.path === expectedFile),
       );
 
       expect(revertedSnapshot.fileChanges.some((file) => file.path === expectedFile)).toBe(false);
-      expect(revertedSnapshot.title).toBe(`Workbench E2E ${runId} Renamed`);
+      expect(revertedSnapshot.title).toBe(`Workspace E2E ${runId} Renamed`);
       expect(findTab(revertedSnapshot, primaryTab.id).sessionName).toBe("Primary Session");
     },
   );

@@ -16,6 +16,6 @@ export function taskSandboxKey(organizationId: string, sandboxId: string): Actor
   return ["org", organizationId, "sandbox", sandboxId];
 }
 
-export function historyKey(organizationId: string, repoId: string): ActorKey {
-  return ["org", organizationId, "repository", repoId, "history"];
+export function auditLogKey(organizationId: string, repoId: string): ActorKey {
+  return ["org", organizationId, "repository", repoId, "audit-log"];
 }

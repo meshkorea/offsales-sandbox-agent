@@ -6,13 +6,13 @@ Keep the backend actor tree aligned with this shape unless we explicitly decide 
 
 ```text
 OrganizationActor
-├─ HistoryActor(organization-scoped global feed)
+├─ AuditLogActor(organization-scoped global feed)
 ├─ GithubDataActor
 ├─ RepositoryActor(repo)
 │  └─ TaskActor(task)
 │     ├─ TaskSessionActor(session) × N
 │     │  └─ SessionStatusSyncActor(session) × 0..1
-│     └─ Task-local workbench state
+│     └─ Task-local workspace state
 └─ SandboxInstanceActor(sandboxProviderId, sandboxId) × N
 ```
 
@@ -46,12 +46,12 @@ OrganizationActor (coordinator for repos + auth users)
 │  └─ TaskActor (coordinator for sessions + sandboxes)
 │     │
 │     │  Index tables:
-│     │  ├─ taskWorkbenchSessions → Session index (session metadata, transcript, draft)
+│     │  ├─ taskWorkspaceSessions → Session index (session metadata, transcript, draft)
 │     │  └─ taskSandboxes         → SandboxInstanceActor index (sandbox history)
 │     │
 │     └─ SandboxInstanceActor (leaf)
 │
-├─ HistoryActor (organization-scoped audit log, not a coordinator)
+├─ AuditLogActor (organization-scoped audit log, not a coordinator)
 └─ GithubDataActor (GitHub API cache, not a coordinator)
 ```
 
@@ -60,13 +60,13 @@ When adding a new index table, annotate it in the schema file with a doc comment
 ## Ownership Rules
 
 - `OrganizationActor` is the organization coordinator and lookup/index owner.
-- `HistoryActor` is organization-scoped. There is one organization-level history feed.
+- `AuditLogActor` is organization-scoped. There is one organization-level audit log feed.
 - `RepositoryActor` is the repo coordinator and owns repo-local caches/indexes.
 - `TaskActor` is one branch. Treat `1 task = 1 branch` once branch assignment is finalized.
 - `TaskActor` can have many sessions.
 - `TaskActor` can reference many sandbox instances historically, but should have only one active sandbox/session at a time.
-- Session unread state and draft prompts are backend-owned workbench state, not frontend-local state.
-- Branch rename is a real git operation, not just metadata.
+- Session unread state and draft prompts are backend-owned workspace state, not frontend-local state.
+- Branch names are immutable after task creation. Do not implement branch-rename flows.
 - `SandboxInstanceActor` stays separate from `TaskActor`; tasks/sessions reference it by identity.
 - The backend stores no local git state. No clones, no refs, no working trees, and no git-spice. Repository metadata comes from GitHub API data and webhook events. Any working-tree git operation runs inside a sandbox via `executeInSandbox()`.
 - When a backend request path must aggregate multiple independent actor calls or reads, prefer bounded parallelism over sequential fan-out when correctness permits. Do not serialize independent work by default.
@@ -74,6 +74,11 @@ When adding a new index table, annotate it in the schema file with a doc comment
 - Children push state changes up to their direct coordinator only — never skip levels (e.g., task pushes to repo, not directly to org, unless org is the direct coordinator for that index).
 - Read paths must use the coordinator's local index tables. Do not fan out to child actors on the hot read path.
 - Never build "enriched" read actions that chain through multiple actors (e.g., coordinator → child actor → sibling actor). If data from multiple actors is needed for a read, it should already be materialized in the coordinator's index tables via push updates. If it's not there, fix the write path to push it — do not add a fan-out read path.
+
+## SQLite Constraints
+
+- Single-row tables must use an integer primary key with `CHECK (id = 1)` to enforce the singleton invariant at the database level.
+- Follow the task actor pattern for metadata/profile rows and keep the fixed row id in code as `1`, not a string sentinel.
 
 ## Multiplayer Correctness
 
@@ -84,6 +89,10 @@ Per-user UI state must live on the user actor, not on shared task/session actors
 **Task-global state (task actor):** session transcript, session model, session runtime status, sandbox identity, task status, branch name, PR state. These are shared across all users viewing the task — that is correct behavior.
 
 Do not store per-user preferences, selections, or ephemeral UI state on shared actors. If a field's value should differ between two users looking at the same task, it belongs on the user actor.
+
+## Audit Log Maintenance
+
+Every new action or command handler that represents a user-visible or workflow-significant event must append to the audit log actor. The audit log must remain a comprehensive record of significant operations.
 
 ## Maintenance
 

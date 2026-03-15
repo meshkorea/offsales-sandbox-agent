@@ -1,17 +1,17 @@
 import type {
-  WorkbenchAgentKind as AgentKind,
-  WorkbenchSession as AgentSession,
-  WorkbenchDiffLineKind as DiffLineKind,
-  WorkbenchFileTreeNode as FileTreeNode,
-  WorkbenchTask as Task,
-  TaskWorkbenchSnapshot,
-  WorkbenchHistoryEvent as HistoryEvent,
-  WorkbenchModelGroup as ModelGroup,
-  WorkbenchModelId as ModelId,
-  WorkbenchParsedDiffLine as ParsedDiffLine,
-  WorkbenchRepositorySection,
-  WorkbenchRepo,
-  WorkbenchTranscriptEvent as TranscriptEvent,
+  WorkspaceAgentKind as AgentKind,
+  WorkspaceSession as AgentSession,
+  WorkspaceDiffLineKind as DiffLineKind,
+  WorkspaceFileTreeNode as FileTreeNode,
+  WorkspaceTask as Task,
+  TaskWorkspaceSnapshot,
+  WorkspaceHistoryEvent as HistoryEvent,
+  WorkspaceModelGroup as ModelGroup,
+  WorkspaceModelId as ModelId,
+  WorkspaceParsedDiffLine as ParsedDiffLine,
+  WorkspaceRepositorySection,
+  WorkspaceRepo,
+  WorkspaceTranscriptEvent as TranscriptEvent,
 } from "@sandbox-agent/foundry-shared";
 import rivetDevFixture from "../../../scripts/data/rivet-dev.json" with { type: "json" };
 
@@ -1300,7 +1300,7 @@ export function buildInitialTasks(): Task[] {
  * Uses real public repos so the mock sidebar matches what an actual rivet-dev
  * organization would show after a GitHub sync.
  */
-function buildMockRepos(): WorkbenchRepo[] {
+function buildMockRepos(): WorkspaceRepo[] {
   return rivetDevFixture.repos.map((r) => ({
     id: repoIdFromFullName(r.fullName),
     label: r.fullName,
@@ -1349,19 +1349,19 @@ function buildPrTasks(): Task[] {
     });
 }
 
-export function buildInitialMockLayoutViewModel(): TaskWorkbenchSnapshot {
+export function buildInitialMockLayoutViewModel(): TaskWorkspaceSnapshot {
   const repos = buildMockRepos();
   const tasks = [...buildInitialTasks(), ...buildPrTasks()];
   return {
     organizationId: "default",
     repos,
-    repositories: groupWorkbenchRepositories(repos, tasks),
+    repositories: groupWorkspaceRepositories(repos, tasks),
     tasks,
   };
 }
 
-export function groupWorkbenchRepositories(repos: WorkbenchRepo[], tasks: Task[]): WorkbenchRepositorySection[] {
-  const grouped = new Map<string, WorkbenchRepositorySection>();
+export function groupWorkspaceRepositories(repos: WorkspaceRepo[], tasks: Task[]): WorkspaceRepositorySection[] {
+  const grouped = new Map<string, WorkspaceRepositorySection>();
 
   for (const repo of repos) {
     grouped.set(repo.id, {

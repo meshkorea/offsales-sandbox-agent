@@ -1,15 +1,20 @@
-import { integer, sqliteTable, text } from "rivetkit/db/drizzle";
+import { check, integer, sqliteTable, text } from "rivetkit/db/drizzle";
+import { sql } from "drizzle-orm";
 
-export const githubMeta = sqliteTable("github_meta", {
-  id: integer("id").primaryKey(),
-  connectedAccount: text("connected_account").notNull(),
-  installationStatus: text("installation_status").notNull(),
-  syncStatus: text("sync_status").notNull(),
-  installationId: integer("installation_id"),
-  lastSyncLabel: text("last_sync_label").notNull(),
-  lastSyncAt: integer("last_sync_at"),
-  updatedAt: integer("updated_at").notNull(),
-});
+export const githubMeta = sqliteTable(
+  "github_meta",
+  {
+    id: integer("id").primaryKey(),
+    connectedAccount: text("connected_account").notNull(),
+    installationStatus: text("installation_status").notNull(),
+    syncStatus: text("sync_status").notNull(),
+    installationId: integer("installation_id"),
+    lastSyncLabel: text("last_sync_label").notNull(),
+    lastSyncAt: integer("last_sync_at"),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [check("github_meta_singleton_id_check", sql`${table.id} = 1`)],
+);
 
 export const githubRepositories = sqliteTable("github_repositories", {
   repoId: text("repo_id").notNull().primaryKey(),

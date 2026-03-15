@@ -32,7 +32,8 @@ export default {
 	\`installation_id\` integer,
 	\`last_sync_label\` text NOT NULL,
 	\`last_sync_at\` integer,
-	\`updated_at\` integer NOT NULL
+	\`updated_at\` integer NOT NULL,
+	CONSTRAINT \`github_meta_singleton_id_check\` CHECK(\`id\` = 1)
 );
 --> statement-breakpoint
 CREATE TABLE \`github_repositories\` (

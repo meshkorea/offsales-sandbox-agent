@@ -5,8 +5,8 @@ import type {
   SandboxProcessesEvent,
   SessionEvent,
   TaskEvent,
-  WorkbenchSessionDetail,
-  WorkbenchTaskDetail,
+  WorkspaceSessionDetail,
+  WorkspaceTaskDetail,
   OrganizationEvent,
   OrganizationSummarySnapshot,
 } from "@sandbox-agent/foundry-shared";
@@ -48,16 +48,6 @@ export interface SandboxProcessesTopicParams {
   sandboxId: string;
 }
 
-function upsertById<T extends { id: string }>(items: T[], nextItem: T, sort: (left: T, right: T) => number): T[] {
-  const filtered = items.filter((item) => item.id !== nextItem.id);
-  return [...filtered, nextItem].sort(sort);
-}
-
-function upsertByPrId<T extends { prId: string }>(items: T[], nextItem: T, sort: (left: T, right: T) => number): T[] {
-  const filtered = items.filter((item) => item.prId !== nextItem.prId);
-  return [...filtered, nextItem].sort(sort);
-}
-
 export const topicDefinitions = {
   app: {
     key: () => "app",
@@ -72,41 +62,7 @@ export const topicDefinitions = {
     event: "organizationUpdated",
     connect: (backend: BackendClient, params: OrganizationTopicParams) => backend.connectOrganization(params.organizationId),
     fetchInitial: (backend: BackendClient, params: OrganizationTopicParams) => backend.getOrganizationSummary(params.organizationId),
-    applyEvent: (current: OrganizationSummarySnapshot, event: OrganizationEvent) => {
-      switch (event.type) {
-        case "taskSummaryUpdated":
-          return {
-            ...current,
-            taskSummaries: upsertById(current.taskSummaries, event.taskSummary, (left, right) => right.updatedAtMs - left.updatedAtMs),
-          };
-        case "taskRemoved":
-          return {
-            ...current,
-            taskSummaries: current.taskSummaries.filter((task) => task.id !== event.taskId),
-          };
-        case "repoAdded":
-        case "repoUpdated":
-          return {
-            ...current,
-            repos: upsertById(current.repos, event.repo, (left, right) => right.latestActivityMs - left.latestActivityMs),
-          };
-        case "repoRemoved":
-          return {
-            ...current,
-            repos: current.repos.filter((repo) => repo.id !== event.repoId),
-          };
-        case "pullRequestUpdated":
-          return {
-            ...current,
-            openPullRequests: upsertByPrId(current.openPullRequests, event.pullRequest, (left, right) => right.updatedAtMs - left.updatedAtMs),
-          };
-        case "pullRequestRemoved":
-          return {
-            ...current,
-            openPullRequests: current.openPullRequests.filter((pullRequest) => pullRequest.prId !== event.prId),
-          };
-      }
-    },
+    applyEvent: (_current: OrganizationSummarySnapshot, event: OrganizationEvent) => event.snapshot,
   } satisfies TopicDefinition<OrganizationSummarySnapshot, OrganizationTopicParams, OrganizationEvent>,
 
   task: {
@@ -114,8 +70,8 @@ export const topicDefinitions = {
     event: "taskUpdated",
     connect: (backend: BackendClient, params: TaskTopicParams) => backend.connectTask(params.organizationId, params.repoId, params.taskId),
     fetchInitial: (backend: BackendClient, params: TaskTopicParams) => backend.getTaskDetail(params.organizationId, params.repoId, params.taskId),
-    applyEvent: (_current: WorkbenchTaskDetail, event: TaskEvent) => event.detail,
-  } satisfies TopicDefinition<WorkbenchTaskDetail, TaskTopicParams, TaskEvent>,
+    applyEvent: (_current: WorkspaceTaskDetail, event: TaskEvent) => event.detail,
+  } satisfies TopicDefinition<WorkspaceTaskDetail, TaskTopicParams, TaskEvent>,
 
   session: {
     key: (params: SessionTopicParams) => `session:${params.organizationId}:${params.taskId}:${params.sessionId}`,
@@ -123,13 +79,13 @@ export const topicDefinitions = {
     connect: (backend: BackendClient, params: SessionTopicParams) => backend.connectTask(params.organizationId, params.repoId, params.taskId),
     fetchInitial: (backend: BackendClient, params: SessionTopicParams) =>
       backend.getSessionDetail(params.organizationId, params.repoId, params.taskId, params.sessionId),
-    applyEvent: (current: WorkbenchSessionDetail, event: SessionEvent) => {
+    applyEvent: (current: WorkspaceSessionDetail, event: SessionEvent) => {
       if (event.session.sessionId !== current.sessionId) {
         return current;
       }
       return event.session;
     },
-  } satisfies TopicDefinition<WorkbenchSessionDetail, SessionTopicParams, SessionEvent>,
+  } satisfies TopicDefinition<WorkspaceSessionDetail, SessionTopicParams, SessionEvent>,
 
   sandboxProcesses: {
     key: (params: SandboxProcessesTopicParams) => `sandbox:${params.organizationId}:${params.sandboxProviderId}:${params.sandboxId}`,

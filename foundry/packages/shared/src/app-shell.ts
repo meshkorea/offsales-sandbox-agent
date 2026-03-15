@@ -1,4 +1,4 @@
-import type { WorkbenchModelId } from "./workbench.js";
+import type { WorkspaceModelId } from "./workspace.js";
 
 export type FoundryBillingPlanId = "free" | "team";
 export type FoundryBillingStatus = "active" | "trialing" | "past_due" | "scheduled_cancel";
@@ -14,6 +14,7 @@ export interface FoundryUser {
   githubLogin: string;
   roleLabel: string;
   eligibleOrganizationIds: string[];
+  defaultModel: WorkspaceModelId;
 }
 
 export interface FoundryOrganizationMember {
@@ -59,7 +60,6 @@ export interface FoundryOrganizationSettings {
   slug: string;
   primaryDomain: string;
   seatAccrualMode: "first_prompt";
-  defaultModel: WorkbenchModelId;
   autoImportRepos: boolean;
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { historyKey, organizationKey, repositoryKey, taskKey, taskSandboxKey } from "../src/keys.js";
+import { auditLogKey, organizationKey, repositoryKey, taskKey, taskSandboxKey } from "../src/keys.js";
 
 describe("actor keys", () => {
   it("prefixes every key with organization namespace", () => {
@@ -8,7 +8,7 @@ describe("actor keys", () => {
       repositoryKey("default", "repo"),
       taskKey("default", "repo", "task"),
       taskSandboxKey("default", "sbx"),
-      historyKey("default", "repo"),
+      auditLogKey("default", "repo"),
     ];
 
     for (const key of keys) {

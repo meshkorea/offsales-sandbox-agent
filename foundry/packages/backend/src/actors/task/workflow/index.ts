@@ -14,24 +14,23 @@ import {
 } from "./commands.js";
 import { TASK_QUEUE_NAMES } from "./queue.js";
 import {
-  changeWorkbenchModel,
-  closeWorkbenchSession,
-  createWorkbenchSession,
-  ensureWorkbenchSession,
-  refreshWorkbenchDerivedState,
-  refreshWorkbenchSessionTranscript,
-  markWorkbenchUnread,
-  publishWorkbenchPr,
-  renameWorkbenchBranch,
-  renameWorkbenchTask,
-  renameWorkbenchSession,
-  revertWorkbenchFile,
-  sendWorkbenchMessage,
-  setWorkbenchSessionUnread,
-  stopWorkbenchSession,
-  syncWorkbenchSessionStatus,
-  updateWorkbenchDraft,
-} from "../workbench.js";
+  changeWorkspaceModel,
+  closeWorkspaceSession,
+  createWorkspaceSession,
+  ensureWorkspaceSession,
+  refreshWorkspaceDerivedState,
+  refreshWorkspaceSessionTranscript,
+  markWorkspaceUnread,
+  publishWorkspacePr,
+  renameWorkspaceTask,
+  renameWorkspaceSession,
+  revertWorkspaceFile,
+  sendWorkspaceMessage,
+  setWorkspaceSessionUnread,
+  stopWorkspaceSession,
+  syncWorkspaceSessionStatus,
+  updateWorkspaceDraft,
+} from "../workspace.js";
 
 export { TASK_QUEUE_NAMES, taskWorkflowQueueName } from "./queue.js";
 
@@ -113,31 +112,22 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
     await loopCtx.step("handle-get", async () => handleGetActivity(loopCtx, msg));
   },
 
-  "task.command.workbench.mark_unread": async (loopCtx, msg) => {
-    await loopCtx.step("workbench-mark-unread", async () => markWorkbenchUnread(loopCtx));
+  "task.command.workspace.mark_unread": async (loopCtx, msg) => {
+    await loopCtx.step("workspace-mark-unread", async () => markWorkspaceUnread(loopCtx));
     await msg.complete({ ok: true });
   },
 
-  "task.command.workbench.rename_task": async (loopCtx, msg) => {
-    await loopCtx.step("workbench-rename-task", async () => renameWorkbenchTask(loopCtx, msg.body.value));
+  "task.command.workspace.rename_task": async (loopCtx, msg) => {
+    await loopCtx.step("workspace-rename-task", async () => renameWorkspaceTask(loopCtx, msg.body.value));
     await msg.complete({ ok: true });
   },
 
-  "task.command.workbench.rename_branch": async (loopCtx, msg) => {
-    await loopCtx.step({
-      name: "workbench-rename-branch",
-      timeout: 5 * 60_000,
-      run: async () => renameWorkbenchBranch(loopCtx, msg.body.value),
-    });
-    await msg.complete({ ok: true });
-  },
-
-  "task.command.workbench.create_session": async (loopCtx, msg) => {
+  "task.command.workspace.create_session": async (loopCtx, msg) => {
     try {
       const created = await loopCtx.step({
-        name: "workbench-create-session",
+        name: "workspace-create-session",
         timeout: 5 * 60_000,
-        run: async () => createWorkbenchSession(loopCtx, msg.body?.model),
+        run: async () => createWorkspaceSession(loopCtx, msg.body?.model),
       });
       await msg.complete(created);
     } catch (error) {
@@ -145,17 +135,17 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
     }
   },
 
-  "task.command.workbench.create_session_and_send": async (loopCtx, msg) => {
+  "task.command.workspace.create_session_and_send": async (loopCtx, msg) => {
     try {
       const created = await loopCtx.step({
-        name: "workbench-create-session-for-send",
+        name: "workspace-create-session-for-send",
         timeout: 5 * 60_000,
-        run: async () => createWorkbenchSession(loopCtx, msg.body?.model),
+        run: async () => createWorkspaceSession(loopCtx, msg.body?.model),
       });
       await loopCtx.step({
-        name: "workbench-send-initial-message",
+        name: "workspace-send-initial-message",
         timeout: 5 * 60_000,
-        run: async () => sendWorkbenchMessage(loopCtx, created.sessionId, msg.body.text, []),
+        run: async () => sendWorkspaceMessage(loopCtx, created.sessionId, msg.body.text, []),
       });
     } catch (error) {
       logActorWarning("task.workflow", "create_session_and_send failed", {
@@ -165,41 +155,41 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
     await msg.complete({ ok: true });
   },
 
-  "task.command.workbench.ensure_session": async (loopCtx, msg) => {
+  "task.command.workspace.ensure_session": async (loopCtx, msg) => {
     await loopCtx.step({
-      name: "workbench-ensure-session",
+      name: "workspace-ensure-session",
       timeout: 5 * 60_000,
-      run: async () => ensureWorkbenchSession(loopCtx, msg.body.sessionId, msg.body?.model),
+      run: async () => ensureWorkspaceSession(loopCtx, msg.body.sessionId, msg.body?.model),
     });
     await msg.complete({ ok: true });
   },
 
-  "task.command.workbench.rename_session": async (loopCtx, msg) => {
-    await loopCtx.step("workbench-rename-session", async () => renameWorkbenchSession(loopCtx, msg.body.sessionId, msg.body.title));
+  "task.command.workspace.rename_session": async (loopCtx, msg) => {
+    await loopCtx.step("workspace-rename-session", async () => renameWorkspaceSession(loopCtx, msg.body.sessionId, msg.body.title));
     await msg.complete({ ok: true });
   },
 
-  "task.command.workbench.set_session_unread": async (loopCtx, msg) => {
-    await loopCtx.step("workbench-set-session-unread", async () => setWorkbenchSessionUnread(loopCtx, msg.body.sessionId, msg.body.unread));
+  "task.command.workspace.set_session_unread": async (loopCtx, msg) => {
+    await loopCtx.step("workspace-set-session-unread", async () => setWorkspaceSessionUnread(loopCtx, msg.body.sessionId, msg.body.unread));
     await msg.complete({ ok: true });
   },
 
-  "task.command.workbench.update_draft": async (loopCtx, msg) => {
-    await loopCtx.step("workbench-update-draft", async () => updateWorkbenchDraft(loopCtx, msg.body.sessionId, msg.body.text, msg.body.attachments));
+  "task.command.workspace.update_draft": async (loopCtx, msg) => {
+    await loopCtx.step("workspace-update-draft", async () => updateWorkspaceDraft(loopCtx, msg.body.sessionId, msg.body.text, msg.body.attachments));
     await msg.complete({ ok: true });
   },
 
-  "task.command.workbench.change_model": async (loopCtx, msg) => {
-    await loopCtx.step("workbench-change-model", async () => changeWorkbenchModel(loopCtx, msg.body.sessionId, msg.body.model));
+  "task.command.workspace.change_model": async (loopCtx, msg) => {
+    await loopCtx.step("workspace-change-model", async () => changeWorkspaceModel(loopCtx, msg.body.sessionId, msg.body.model));
     await msg.complete({ ok: true });
   },
 
-  "task.command.workbench.send_message": async (loopCtx, msg) => {
+  "task.command.workspace.send_message": async (loopCtx, msg) => {
     try {
       await loopCtx.step({
-        name: "workbench-send-message",
+        name: "workspace-send-message",
         timeout: 10 * 60_000,
-        run: async () => sendWorkbenchMessage(loopCtx, msg.body.sessionId, msg.body.text, msg.body.attachments),
+        run: async () => sendWorkspaceMessage(loopCtx, msg.body.sessionId, msg.body.text, msg.body.attachments),
       });
       await msg.complete({ ok: true });
     } catch (error) {
@@ -207,61 +197,61 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
     }
   },
 
-  "task.command.workbench.stop_session": async (loopCtx, msg) => {
+  "task.command.workspace.stop_session": async (loopCtx, msg) => {
     await loopCtx.step({
-      name: "workbench-stop-session",
+      name: "workspace-stop-session",
       timeout: 5 * 60_000,
-      run: async () => stopWorkbenchSession(loopCtx, msg.body.sessionId),
+      run: async () => stopWorkspaceSession(loopCtx, msg.body.sessionId),
     });
     await msg.complete({ ok: true });
   },
 
-  "task.command.workbench.sync_session_status": async (loopCtx, msg) => {
-    await loopCtx.step("workbench-sync-session-status", async () => syncWorkbenchSessionStatus(loopCtx, msg.body.sessionId, msg.body.status, msg.body.at));
+  "task.command.workspace.sync_session_status": async (loopCtx, msg) => {
+    await loopCtx.step("workspace-sync-session-status", async () => syncWorkspaceSessionStatus(loopCtx, msg.body.sessionId, msg.body.status, msg.body.at));
     await msg.complete({ ok: true });
   },
 
-  "task.command.workbench.refresh_derived": async (loopCtx, msg) => {
+  "task.command.workspace.refresh_derived": async (loopCtx, msg) => {
     await loopCtx.step({
-      name: "workbench-refresh-derived",
+      name: "workspace-refresh-derived",
       timeout: 5 * 60_000,
-      run: async () => refreshWorkbenchDerivedState(loopCtx),
+      run: async () => refreshWorkspaceDerivedState(loopCtx),
     });
     await msg.complete({ ok: true });
   },
 
-  "task.command.workbench.refresh_session_transcript": async (loopCtx, msg) => {
+  "task.command.workspace.refresh_session_transcript": async (loopCtx, msg) => {
     await loopCtx.step({
-      name: "workbench-refresh-session-transcript",
+      name: "workspace-refresh-session-transcript",
       timeout: 60_000,
-      run: async () => refreshWorkbenchSessionTranscript(loopCtx, msg.body.sessionId),
+      run: async () => refreshWorkspaceSessionTranscript(loopCtx, msg.body.sessionId),
     });
     await msg.complete({ ok: true });
   },
 
-  "task.command.workbench.close_session": async (loopCtx, msg) => {
+  "task.command.workspace.close_session": async (loopCtx, msg) => {
     await loopCtx.step({
-      name: "workbench-close-session",
+      name: "workspace-close-session",
       timeout: 5 * 60_000,
-      run: async () => closeWorkbenchSession(loopCtx, msg.body.sessionId),
+      run: async () => closeWorkspaceSession(loopCtx, msg.body.sessionId),
     });
     await msg.complete({ ok: true });
   },
 
-  "task.command.workbench.publish_pr": async (loopCtx, msg) => {
+  "task.command.workspace.publish_pr": async (loopCtx, msg) => {
     await loopCtx.step({
-      name: "workbench-publish-pr",
+      name: "workspace-publish-pr",
       timeout: 10 * 60_000,
-      run: async () => publishWorkbenchPr(loopCtx),
+      run: async () => publishWorkspacePr(loopCtx),
     });
     await msg.complete({ ok: true });
   },
 
-  "task.command.workbench.revert_file": async (loopCtx, msg) => {
+  "task.command.workspace.revert_file": async (loopCtx, msg) => {
     await loopCtx.step({
-      name: "workbench-revert-file",
+      name: "workspace-revert-file",
       timeout: 5 * 60_000,
-      run: async () => revertWorkbenchFile(loopCtx, msg.body.path),
+      run: async () => revertWorkspaceFile(loopCtx, msg.body.path),
     });
     await msg.complete({ ok: true });
   },

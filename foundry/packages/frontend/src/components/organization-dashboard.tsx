@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { AgentType, RepoBranchRecord, RepoOverview, TaskWorkbenchSnapshot, WorkbenchTaskStatus } from "@sandbox-agent/foundry-shared";
+import type { AgentType, RepoBranchRecord, RepoOverview, TaskWorkspaceSnapshot, WorkspaceTaskStatus } from "@sandbox-agent/foundry-shared";
 import { currentFoundryOrganization, useSubscription } from "@sandbox-agent/foundry-client";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -100,7 +100,7 @@ const AGENT_OPTIONS: SelectItem[] = [
   { id: "claude", label: "claude" },
 ];
 
-function statusKind(status: WorkbenchTaskStatus): StatusTagKind {
+function statusKind(status: WorkspaceTaskStatus): StatusTagKind {
   if (status === "running") return "positive";
   if (status === "error") return "negative";
   if (status === "new" || String(status).startsWith("init_")) return "warning";
@@ -515,7 +515,7 @@ export function OrganizationDashboard({ organizationId, selectedTaskId, selected
     };
   }, [repoOverviewMode, selectedForSession, selectedSummary]);
   const devPanelSnapshot = useMemo(
-    (): TaskWorkbenchSnapshot => ({
+    (): TaskWorkspaceSnapshot => ({
       organizationId,
       repos: repos.map((repo) => ({ id: repo.id, label: repo.label })),
       repositories: [],

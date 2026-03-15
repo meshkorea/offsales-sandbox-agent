@@ -3,7 +3,7 @@ CREATE TABLE `task` (
 	`branch_name` text,
 	`title` text,
 	`task` text NOT NULL,
-	`provider_id` text NOT NULL,
+	`sandbox_provider_id` text NOT NULL,
 	`status` text NOT NULL,
 	`agent_type` text DEFAULT 'claude',
 	`pr_submitted` integer DEFAULT 0,
@@ -19,13 +19,17 @@ CREATE TABLE `task_runtime` (
 	`active_switch_target` text,
 	`active_cwd` text,
 	`status_message` text,
+	`git_state_json` text,
+	`git_state_updated_at` integer,
+	`provision_stage` text,
+	`provision_stage_updated_at` integer,
 	`updated_at` integer NOT NULL,
 	CONSTRAINT "task_runtime_singleton_id_check" CHECK("task_runtime"."id" = 1)
 );
 --> statement-breakpoint
 CREATE TABLE `task_sandboxes` (
 	`sandbox_id` text PRIMARY KEY NOT NULL,
-	`provider_id` text NOT NULL,
+	`sandbox_provider_id` text NOT NULL,
 	`sandbox_actor_id` text,
 	`switch_target` text NOT NULL,
 	`cwd` text,
@@ -34,10 +38,15 @@ CREATE TABLE `task_sandboxes` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `task_workbench_sessions` (
+CREATE TABLE `task_workspace_sessions` (
 	`session_id` text PRIMARY KEY NOT NULL,
+	`sandbox_session_id` text,
 	`session_name` text NOT NULL,
 	`model` text NOT NULL,
+	`status` text DEFAULT 'ready' NOT NULL,
+	`error_message` text,
+	`transcript_json` text DEFAULT '[]' NOT NULL,
+	`transcript_updated_at` integer,
 	`unread` integer DEFAULT 0 NOT NULL,
 	`draft_text` text DEFAULT '' NOT NULL,
 	`draft_attachments_json` text DEFAULT '[]' NOT NULL,

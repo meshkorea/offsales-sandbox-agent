@@ -10,24 +10,6 @@ const journal = {
       tag: "0000_melted_viper",
       breakpoints: true,
     },
-    {
-      idx: 1,
-      when: 1773638400000,
-      tag: "0001_auth_index_tables",
-      breakpoints: true,
-    },
-    {
-      idx: 2,
-      when: 1773720000000,
-      tag: "0002_task_summaries",
-      breakpoints: true,
-    },
-    {
-      idx: 3,
-      when: 1773810001000,
-      tag: "0003_drop_provider_profiles",
-      breakpoints: true,
-    },
   ],
 } as const;
 
@@ -73,7 +55,7 @@ CREATE TABLE \`organization_members\` (
 );
 --> statement-breakpoint
 CREATE TABLE \`organization_profile\` (
-	\`id\` text PRIMARY KEY NOT NULL,
+	\`id\` integer PRIMARY KEY NOT NULL,
 	\`kind\` text NOT NULL,
 	\`github_account_id\` text NOT NULL,
 	\`github_login\` text NOT NULL,
@@ -81,7 +63,6 @@ CREATE TABLE \`organization_profile\` (
 	\`display_name\` text NOT NULL,
 	\`slug\` text NOT NULL,
 	\`primary_domain\` text NOT NULL,
-	\`default_model\` text NOT NULL,
 	\`auto_import_repos\` integer NOT NULL,
 	\`repo_import_status\` text NOT NULL,
 	\`github_connected_account\` text NOT NULL,
@@ -102,7 +83,8 @@ CREATE TABLE \`organization_profile\` (
 	\`billing_renewal_at\` text,
 	\`billing_payment_method_label\` text NOT NULL,
 	\`created_at\` integer NOT NULL,
-	\`updated_at\` integer NOT NULL
+	\`updated_at\` integer NOT NULL,
+	CONSTRAINT \`organization_profile_singleton_id_check\` CHECK(\`id\` = 1)
 );
 --> statement-breakpoint
 CREATE TABLE \`repos\` (
@@ -122,56 +104,6 @@ CREATE TABLE \`stripe_lookup\` (
 	\`organization_id\` text NOT NULL,
 	\`updated_at\` integer NOT NULL
 );
---> statement-breakpoint
-CREATE TABLE \`task_lookup\` (
-	\`task_id\` text PRIMARY KEY NOT NULL,
-	\`repo_id\` text NOT NULL
-);
-`,
-    m0001: `CREATE TABLE IF NOT EXISTS \`auth_session_index\` (
-	\`session_id\` text PRIMARY KEY NOT NULL,
-	\`session_token\` text NOT NULL,
-	\`user_id\` text NOT NULL,
-	\`created_at\` integer NOT NULL,
-	\`updated_at\` integer NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS \`auth_email_index\` (
-	\`email\` text PRIMARY KEY NOT NULL,
-	\`user_id\` text NOT NULL,
-	\`updated_at\` integer NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS \`auth_account_index\` (
-	\`id\` text PRIMARY KEY NOT NULL,
-	\`provider_id\` text NOT NULL,
-	\`account_id\` text NOT NULL,
-	\`user_id\` text NOT NULL,
-	\`updated_at\` integer NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS \`auth_verification\` (
-	\`id\` text PRIMARY KEY NOT NULL,
-	\`identifier\` text NOT NULL,
-	\`value\` text NOT NULL,
-	\`expires_at\` integer NOT NULL,
-	\`created_at\` integer NOT NULL,
-	\`updated_at\` integer NOT NULL
-);
-`,
-    m0002: `CREATE TABLE IF NOT EXISTS \`task_summaries\` (
-	\`task_id\` text PRIMARY KEY NOT NULL,
-	\`repo_id\` text NOT NULL,
-	\`title\` text NOT NULL,
-	\`status\` text NOT NULL,
-	\`repo_name\` text NOT NULL,
-	\`updated_at_ms\` integer NOT NULL,
-	\`branch\` text,
-	\`pull_request_json\` text,
-	\`sessions_summary_json\` text DEFAULT '[]' NOT NULL
-);
-`,
-    m0003: `DROP TABLE IF EXISTS \`provider_profiles\`;
 `,
   } as const,
 };

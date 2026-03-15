@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { createAdapterFactory } from "better-auth/adapters";
 import { APP_SHELL_ORGANIZATION_ID } from "../actors/organization/app-shell.js";
-import { authUserKey, organizationKey } from "../actors/keys.js";
+import { organizationKey, userKey } from "../actors/keys.js";
 import { logger } from "../logging.js";
 
 const AUTH_BASE_PATH = "/v1/auth";
@@ -75,7 +75,7 @@ export function initBetterAuthService(actorClient: any, options: { apiUrl: strin
   }
 
   // getOrCreate is intentional here: the adapter runs during Better Auth callbacks
-  // which can fire before any explicit create path. The app organization and auth user
+  // which can fire before any explicit create path. The app organization and user
   // actors must exist by the time the adapter needs them.
   const appOrganization = () =>
     actorClient.organization.getOrCreate(organizationKey(APP_SHELL_ORGANIZATION_ID), {
@@ -83,9 +83,9 @@ export function initBetterAuthService(actorClient: any, options: { apiUrl: strin
     });
 
   // getOrCreate is intentional: Better Auth creates user records during OAuth
-  // callbacks, so the auth-user actor must be lazily provisioned on first access.
-  const getAuthUser = async (userId: string) =>
-    await actorClient.authUser.getOrCreate(authUserKey(userId), {
+  // callbacks, so the user actor must be lazily provisioned on first access.
+  const getUser = async (userId: string) =>
+    await actorClient.user.getOrCreate(userKey(userId), {
       createWithInput: { userId },
     });
 
@@ -178,7 +178,7 @@ export function initBetterAuthService(actorClient: any, options: { apiUrl: strin
             throw new Error(`Unable to resolve auth actor for create(${model})`);
           }
 
-          const userActor = await getAuthUser(userId);
+          const userActor = await getUser(userId);
           const created = await userActor.createAuthRecord({ model, data: transformed });
           const organization = await appOrganization();
 
@@ -220,7 +220,7 @@ export function initBetterAuthService(actorClient: any, options: { apiUrl: strin
             return null;
           }
 
-          const userActor = await getAuthUser(userId);
+          const userActor = await getUser(userId);
           const found = await userActor.findOneAuthRecord({ model, where: transformedWhere, join });
           return found ? ((await transformOutput(found, model, undefined, join)) as any) : null;
         },
@@ -259,7 +259,7 @@ export function initBetterAuthService(actorClient: any, options: { apiUrl: strin
 
               const rows = [];
               for (const [userId, tokens] of byUser) {
-                const userActor = await getAuthUser(userId);
+                const userActor = await getUser(userId);
                 const scopedWhere = transformedWhere.map((entry: any) =>
                   entry.field === "token" && entry.operator === "in" ? { ...entry, value: tokens } : entry,
                 );
@@ -275,7 +275,7 @@ export function initBetterAuthService(actorClient: any, options: { apiUrl: strin
             return [];
           }
 
-          const userActor = await getAuthUser(userId);
+          const userActor = await getUser(userId);
           const found = await userActor.findManyAuthRecords({ model, where: transformedWhere, limit, sortBy, offset, join });
           return await Promise.all(found.map(async (row: any) => await transformOutput(row, model, undefined, join)));
         },
@@ -292,7 +292,7 @@ export function initBetterAuthService(actorClient: any, options: { apiUrl: strin
             return null;
           }
 
-          const userActor = await getAuthUser(userId);
+          const userActor = await getUser(userId);
           const before =
             model === "user"
               ? await userActor.findOneAuthRecord({ model, where: transformedWhere })
@@ -345,7 +345,7 @@ export function initBetterAuthService(actorClient: any, options: { apiUrl: strin
             return 0;
           }
 
-          const userActor = await getAuthUser(userId);
+          const userActor = await getUser(userId);
           return await userActor.updateManyAuthRecords({ model, where: transformedWhere, update: transformedUpdate });
         },
 
@@ -361,7 +361,7 @@ export function initBetterAuthService(actorClient: any, options: { apiUrl: strin
             return;
           }
 
-          const userActor = await getAuthUser(userId);
+          const userActor = await getUser(userId);
           const organization = await appOrganization();
           const before = await userActor.findOneAuthRecord({ model, where: transformedWhere });
           await userActor.deleteAuthRecord({ model, where: transformedWhere });
@@ -397,7 +397,7 @@ export function initBetterAuthService(actorClient: any, options: { apiUrl: strin
             if (!userId) {
               return 0;
             }
-            const userActor = await getAuthUser(userId);
+            const userActor = await getUser(userId);
             const organization = await appOrganization();
             const sessions = await userActor.findManyAuthRecords({ model, where: transformedWhere, limit: 5000 });
             const deleted = await userActor.deleteManyAuthRecords({ model, where: transformedWhere });
@@ -415,7 +415,7 @@ export function initBetterAuthService(actorClient: any, options: { apiUrl: strin
             return 0;
           }
 
-          const userActor = await getAuthUser(userId);
+          const userActor = await getUser(userId);
           const deleted = await userActor.deleteManyAuthRecords({ model, where: transformedWhere });
           return deleted;
         },
@@ -431,7 +431,7 @@ export function initBetterAuthService(actorClient: any, options: { apiUrl: strin
             return 0;
           }
 
-          const userActor = await getAuthUser(userId);
+          const userActor = await getUser(userId);
           return await userActor.countAuthRecords({ model, where: transformedWhere });
         },
       };
@@ -481,12 +481,12 @@ export function initBetterAuthService(actorClient: any, options: { apiUrl: strin
       if (!route?.userId) {
         return null;
       }
-      const userActor = await getAuthUser(route.userId);
+      const userActor = await getUser(route.userId);
       return await userActor.getAppAuthState({ sessionId });
     },
 
     async upsertUserProfile(userId: string, patch: Record<string, unknown>) {
-      const userActor = await getAuthUser(userId);
+      const userActor = await getUser(userId);
       return await userActor.upsertUserProfile({ userId, patch });
     },
 
@@ -495,7 +495,7 @@ export function initBetterAuthService(actorClient: any, options: { apiUrl: strin
       if (!authState?.user?.id) {
         throw new Error(`Unknown auth session ${sessionId}`);
       }
-      const userActor = await getAuthUser(authState.user.id);
+      const userActor = await getUser(authState.user.id);
       return await userActor.upsertSessionState({ sessionId, activeOrganizationId });
     },
 

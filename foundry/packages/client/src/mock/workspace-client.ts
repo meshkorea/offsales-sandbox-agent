@@ -1,33 +1,33 @@
 import {
   MODEL_GROUPS,
   buildInitialMockLayoutViewModel,
-  groupWorkbenchRepositories,
+  groupWorkspaceRepositories,
   nowMs,
   providerAgent,
   randomReply,
   removeFileTreePath,
   slugify,
   uid,
-} from "../workbench-model.js";
+} from "../workspace-model.js";
 import type {
-  TaskWorkbenchAddSessionResponse,
-  TaskWorkbenchChangeModelInput,
-  TaskWorkbenchCreateTaskInput,
-  TaskWorkbenchCreateTaskResponse,
-  TaskWorkbenchDiffInput,
-  TaskWorkbenchRenameInput,
-  TaskWorkbenchRenameSessionInput,
-  TaskWorkbenchSelectInput,
-  TaskWorkbenchSetSessionUnreadInput,
-  TaskWorkbenchSendMessageInput,
-  TaskWorkbenchSnapshot,
-  TaskWorkbenchSessionInput,
-  TaskWorkbenchUpdateDraftInput,
-  WorkbenchSession as AgentSession,
-  WorkbenchTask as Task,
-  WorkbenchTranscriptEvent as TranscriptEvent,
+  TaskWorkspaceAddSessionResponse,
+  TaskWorkspaceChangeModelInput,
+  TaskWorkspaceCreateTaskInput,
+  TaskWorkspaceCreateTaskResponse,
+  TaskWorkspaceDiffInput,
+  TaskWorkspaceRenameInput,
+  TaskWorkspaceRenameSessionInput,
+  TaskWorkspaceSelectInput,
+  TaskWorkspaceSetSessionUnreadInput,
+  TaskWorkspaceSendMessageInput,
+  TaskWorkspaceSnapshot,
+  TaskWorkspaceSessionInput,
+  TaskWorkspaceUpdateDraftInput,
+  WorkspaceSession as AgentSession,
+  WorkspaceTask as Task,
+  WorkspaceTranscriptEvent as TranscriptEvent,
 } from "@sandbox-agent/foundry-shared";
-import type { TaskWorkbenchClient } from "../workbench-client.js";
+import type { TaskWorkspaceClient } from "../workspace-client.js";
 
 function buildTranscriptEvent(params: {
   sessionId: string;
@@ -47,12 +47,12 @@ function buildTranscriptEvent(params: {
   };
 }
 
-class MockWorkbenchStore implements TaskWorkbenchClient {
+class MockWorkspaceStore implements TaskWorkspaceClient {
   private snapshot = buildInitialMockLayoutViewModel();
   private listeners = new Set<() => void>();
   private pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-  getSnapshot(): TaskWorkbenchSnapshot {
+  getSnapshot(): TaskWorkspaceSnapshot {
     return this.snapshot;
   }
 
@@ -63,7 +63,7 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
     };
   }
 
-  async createTask(input: TaskWorkbenchCreateTaskInput): Promise<TaskWorkbenchCreateTaskResponse> {
+  async createTask(input: TaskWorkspaceCreateTaskInput): Promise<TaskWorkspaceCreateTaskResponse> {
     const id = uid();
     const sessionId = `session-${id}`;
     const repo = this.snapshot.repos.find((candidate) => candidate.id === input.repoId);
@@ -109,7 +109,7 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
     return { taskId: id, sessionId };
   }
 
-  async markTaskUnread(input: TaskWorkbenchSelectInput): Promise<void> {
+  async markTaskUnread(input: TaskWorkspaceSelectInput): Promise<void> {
     this.updateTask(input.taskId, (task) => {
       const targetSession = task.sessions[task.sessions.length - 1] ?? null;
       if (!targetSession) {
@@ -123,7 +123,7 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
     });
   }
 
-  async renameTask(input: TaskWorkbenchRenameInput): Promise<void> {
+  async renameTask(input: TaskWorkspaceRenameInput): Promise<void> {
     const value = input.value.trim();
     if (!value) {
       throw new Error(`Cannot rename task ${input.taskId} to an empty title`);
@@ -131,19 +131,11 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
     this.updateTask(input.taskId, (task) => ({ ...task, title: value, updatedAtMs: nowMs() }));
   }
 
-  async renameBranch(input: TaskWorkbenchRenameInput): Promise<void> {
-    const value = input.value.trim();
-    if (!value) {
-      throw new Error(`Cannot rename branch for task ${input.taskId} to an empty value`);
-    }
-    this.updateTask(input.taskId, (task) => ({ ...task, branch: value, updatedAtMs: nowMs() }));
-  }
-
-  async archiveTask(input: TaskWorkbenchSelectInput): Promise<void> {
+  async archiveTask(input: TaskWorkspaceSelectInput): Promise<void> {
     this.updateTask(input.taskId, (task) => ({ ...task, status: "archived", updatedAtMs: nowMs() }));
   }
 
-  async publishPr(input: TaskWorkbenchSelectInput): Promise<void> {
+  async publishPr(input: TaskWorkspaceSelectInput): Promise<void> {
     const nextPrNumber = Math.max(0, ...this.snapshot.tasks.map((task) => task.pullRequest?.number ?? 0)) + 1;
     this.updateTask(input.taskId, (task) => ({
       ...task,
@@ -152,7 +144,7 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
     }));
   }
 
-  async revertFile(input: TaskWorkbenchDiffInput): Promise<void> {
+  async revertFile(input: TaskWorkspaceDiffInput): Promise<void> {
     this.updateTask(input.taskId, (task) => {
       const file = task.fileChanges.find((entry) => entry.path === input.path);
       const nextDiffs = { ...task.diffs };
@@ -167,7 +159,7 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
     });
   }
 
-  async updateDraft(input: TaskWorkbenchUpdateDraftInput): Promise<void> {
+  async updateDraft(input: TaskWorkspaceUpdateDraftInput): Promise<void> {
     this.assertSession(input.taskId, input.sessionId);
     this.updateTask(input.taskId, (task) => ({
       ...task,
@@ -187,7 +179,7 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
     }));
   }
 
-  async sendMessage(input: TaskWorkbenchSendMessageInput): Promise<void> {
+  async sendMessage(input: TaskWorkspaceSendMessageInput): Promise<void> {
     const text = input.text.trim();
     if (!text) {
       throw new Error(`Cannot send an empty mock prompt for task ${input.taskId}`);
@@ -288,7 +280,7 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
     this.pendingTimers.set(input.sessionId, timer);
   }
 
-  async stopAgent(input: TaskWorkbenchSessionInput): Promise<void> {
+  async stopAgent(input: TaskWorkspaceSessionInput): Promise<void> {
     this.assertSession(input.taskId, input.sessionId);
     const existing = this.pendingTimers.get(input.sessionId);
     if (existing) {
@@ -311,14 +303,14 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
     });
   }
 
-  async setSessionUnread(input: TaskWorkbenchSetSessionUnreadInput): Promise<void> {
+  async setSessionUnread(input: TaskWorkspaceSetSessionUnreadInput): Promise<void> {
     this.updateTask(input.taskId, (currentTask) => ({
       ...currentTask,
       sessions: currentTask.sessions.map((candidate) => (candidate.id === input.sessionId ? { ...candidate, unread: input.unread } : candidate)),
     }));
   }
 
-  async renameSession(input: TaskWorkbenchRenameSessionInput): Promise<void> {
+  async renameSession(input: TaskWorkspaceRenameSessionInput): Promise<void> {
     const title = input.title.trim();
     if (!title) {
       throw new Error(`Cannot rename session ${input.sessionId} to an empty title`);
@@ -329,7 +321,7 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
     }));
   }
 
-  async closeSession(input: TaskWorkbenchSessionInput): Promise<void> {
+  async closeSession(input: TaskWorkspaceSessionInput): Promise<void> {
     this.updateTask(input.taskId, (currentTask) => {
       if (currentTask.sessions.length <= 1) {
         return currentTask;
@@ -342,7 +334,7 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
     });
   }
 
-  async addSession(input: TaskWorkbenchSelectInput): Promise<TaskWorkbenchAddSessionResponse> {
+  async addSession(input: TaskWorkspaceSelectInput): Promise<TaskWorkspaceAddSessionResponse> {
     this.assertTask(input.taskId);
     const nextSessionId = uid();
     const nextSession: AgentSession = {
@@ -368,7 +360,7 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
     return { sessionId: nextSession.id };
   }
 
-  async changeModel(input: TaskWorkbenchChangeModelInput): Promise<void> {
+  async changeModel(input: TaskWorkspaceChangeModelInput): Promise<void> {
     const group = MODEL_GROUPS.find((candidate) => candidate.models.some((entry) => entry.id === input.model));
     if (!group) {
       throw new Error(`Unable to resolve model provider for ${input.model}`);
@@ -382,11 +374,11 @@ class MockWorkbenchStore implements TaskWorkbenchClient {
     }));
   }
 
-  private updateState(updater: (current: TaskWorkbenchSnapshot) => TaskWorkbenchSnapshot): void {
+  private updateState(updater: (current: TaskWorkspaceSnapshot) => TaskWorkspaceSnapshot): void {
     const nextSnapshot = updater(this.snapshot);
     this.snapshot = {
       ...nextSnapshot,
-      repositories: groupWorkbenchRepositories(nextSnapshot.repos, nextSnapshot.tasks),
+      repositories: groupWorkspaceRepositories(nextSnapshot.repos, nextSnapshot.tasks),
     };
     this.notify();
   }
@@ -436,11 +428,11 @@ function candidateEventIndex(task: Task, sessionId: string): number {
   return (session?.transcript.length ?? 0) + 1;
 }
 
-let sharedMockWorkbenchClient: TaskWorkbenchClient | null = null;
+let sharedMockWorkspaceClient: TaskWorkspaceClient | null = null;
 
-export function getSharedMockWorkbenchClient(): TaskWorkbenchClient {
-  if (!sharedMockWorkbenchClient) {
-    sharedMockWorkbenchClient = new MockWorkbenchStore();
+export function getSharedMockWorkspaceClient(): TaskWorkspaceClient {
+  if (!sharedMockWorkspaceClient) {
+    sharedMockWorkspaceClient = new MockWorkspaceStore();
   }
-  return sharedMockWorkbenchClient;
+  return sharedMockWorkspaceClient;
 }

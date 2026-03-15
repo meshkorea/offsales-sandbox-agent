@@ -10,6 +10,12 @@ const journal = {
       tag: "0000_auth_user",
       breakpoints: true,
     },
+    {
+      idx: 1,
+      when: 1773532800000,
+      tag: "0001_user_task_state",
+      breakpoints: true,
+    },
   ],
 } as const;
 
@@ -58,23 +64,39 @@ CREATE TABLE \`account\` (
 CREATE UNIQUE INDEX \`account_provider_account_idx\` ON \`account\` (\`provider_id\`, \`account_id\`);
 --> statement-breakpoint
 CREATE TABLE \`user_profiles\` (
-	\`user_id\` text PRIMARY KEY NOT NULL,
+	\`id\` integer PRIMARY KEY NOT NULL,
+	\`user_id\` text NOT NULL,
 	\`github_account_id\` text,
 	\`github_login\` text,
 	\`role_label\` text NOT NULL,
+	\`default_model\` text DEFAULT 'claude-sonnet-4' NOT NULL,
 	\`eligible_organization_ids_json\` text NOT NULL,
 	\`starter_repo_status\` text NOT NULL,
 	\`starter_repo_starred_at\` integer,
 	\`starter_repo_skipped_at\` integer,
 	\`created_at\` integer NOT NULL,
-	\`updated_at\` integer NOT NULL
+	\`updated_at\` integer NOT NULL,
+	CONSTRAINT \`user_profiles_singleton_id_check\` CHECK(\`id\` = 1)
 );
+--> statement-breakpoint
+CREATE UNIQUE INDEX \`user_profiles_user_id_idx\` ON \`user_profiles\` (\`user_id\`);
 --> statement-breakpoint
 CREATE TABLE \`session_state\` (
 	\`session_id\` text PRIMARY KEY NOT NULL,
 	\`active_organization_id\` text,
 	\`created_at\` integer NOT NULL,
 	\`updated_at\` integer NOT NULL
+);`,
+    m0001: `CREATE TABLE \`user_task_state\` (
+	\`task_id\` text NOT NULL,
+	\`session_id\` text NOT NULL,
+	\`active_session_id\` text,
+	\`unread\` integer DEFAULT 0 NOT NULL,
+	\`draft_text\` text DEFAULT '' NOT NULL,
+	\`draft_attachments_json\` text DEFAULT '[]' NOT NULL,
+	\`draft_updated_at\` integer,
+	\`updated_at\` integer NOT NULL,
+	PRIMARY KEY(\`task_id\`, \`session_id\`)
 );`,
   } as const,
 };

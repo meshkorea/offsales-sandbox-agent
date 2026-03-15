@@ -73,7 +73,7 @@ Use `pnpm` workspaces and Turborepo.
 - All backend interaction (actor calls, metadata/health checks, backend HTTP endpoint access) must go through the dedicated client library in `packages/client`.
 - Outside `packages/client`, do not call backend endpoints directly (for example `fetch(.../v1/rivet...)`), except in black-box E2E tests that intentionally exercise raw transport behavior.
 - GUI state should update in realtime (no manual refresh buttons). Prefer RivetKit push reactivity and actor-driven events; do not add polling/refetch for normal product flows.
-- Keep the mock workbench types and mock client in `packages/shared` + `packages/client` up to date with the frontend contract. The mock is the UI testing reference implementation while backend functionality catches up.
+- Keep the mock workspace types and mock client in `packages/shared` + `packages/client` up to date with the frontend contract. The mock is the UI testing reference implementation while backend functionality catches up.
 - Keep frontend route/state coverage current in code and tests; there is no separate page-inventory doc to maintain.
 - If Foundry uses a shared component from `@sandbox-agent/react`, make changes in `sdks/react` instead of copying or forking that component into Foundry.
 - When changing shared React components in `sdks/react` for Foundry, verify they still work in the Sandbox Agent Inspector before finishing.
@@ -227,8 +227,8 @@ Action handlers must return fast. The pattern:
 
 Examples:
 - `createTask` → `wait: true` (returns `{ taskId }`), then enqueue provisioning with `wait: false`. Client sees task appear immediately with pending status, observes `ready` via organization events.
-- `sendWorkbenchMessage` → validate session is `ready` (throw if not), enqueue with `wait: false`. Client observes session transition to `running` → `idle` via session events.
-- `createWorkbenchSession` → `wait: true` (returns `{ tabId }`), enqueue sandbox provisioning with `wait: false`. Client observes `pending_provision` → `ready` via task events.
+- `sendWorkspaceMessage` → validate session is `ready` (throw if not), enqueue with `wait: false`. Client observes session transition to `running` → `idle` via session events.
+- `createWorkspaceSession` → `wait: true` (returns `{ sessionId }`), enqueue sandbox provisioning with `wait: false`. Client observes `pending_provision` → `ready` via task events.
 
 Never use `wait: true` for operations that depend on external readiness, sandbox I/O, agent responses, git network operations, polling loops, or long-running queue drains. Never hold an action open while waiting for an external system to become ready — that is a polling/retry loop in disguise.
 
@@ -320,9 +320,9 @@ Each entry must include:
 - Friction/issue
 - Attempted fix/workaround and outcome
 
-## History Events
+## Audit Log Events
 
-Log notable workflow changes to `events` so `hf history` remains complete:
+Log notable workflow changes to `events` so the audit log remains complete:
 
 - create
 - attach
@@ -330,6 +330,8 @@ Log notable workflow changes to `events` so `hf history` remains complete:
 - archive/kill
 - status transitions
 - PR state transitions
+
+When adding new task/workspace commands, always add a corresponding audit log event.
 
 ## Validation After Changes
 

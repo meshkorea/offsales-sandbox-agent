@@ -7,10 +7,10 @@ import type {
   FoundryAppSnapshot,
   FoundryOrganization,
   TaskStatus,
-  TaskWorkbenchSnapshot,
-  WorkbenchSandboxSummary,
-  WorkbenchSessionSummary,
-  WorkbenchTaskStatus,
+  TaskWorkspaceSnapshot,
+  WorkspaceSandboxSummary,
+  WorkspaceSessionSummary,
+  WorkspaceTaskStatus,
 } from "@sandbox-agent/foundry-shared";
 import { useSubscription } from "@sandbox-agent/foundry-client";
 import type { DebugSubscriptionTopic } from "@sandbox-agent/foundry-client";
@@ -18,7 +18,7 @@ import { describeTaskState } from "../features/tasks/status";
 
 interface DevPanelProps {
   organizationId: string;
-  snapshot: TaskWorkbenchSnapshot;
+  snapshot: TaskWorkspaceSnapshot;
   organization?: FoundryOrganization | null;
   focusedTask?: DevPanelFocusedTask | null;
 }
@@ -27,14 +27,14 @@ export interface DevPanelFocusedTask {
   id: string;
   repoId: string;
   title: string | null;
-  status: WorkbenchTaskStatus;
+  status: WorkspaceTaskStatus;
   runtimeStatus?: TaskStatus | null;
   statusMessage?: string | null;
   branch?: string | null;
   activeSandboxId?: string | null;
   activeSessionId?: string | null;
-  sandboxes?: WorkbenchSandboxSummary[];
-  sessions?: WorkbenchSessionSummary[];
+  sandboxes?: WorkspaceSandboxSummary[];
+  sessions?: WorkspaceSessionSummary[];
 }
 
 interface TopicInfo {

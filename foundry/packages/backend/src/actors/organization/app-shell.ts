@@ -8,6 +8,7 @@ import type {
   FoundryOrganizationMember,
   FoundryUser,
   UpdateFoundryOrganizationProfileInput,
+  WorkspaceModelId,
 } from "@sandbox-agent/foundry-shared";
 import { getActorRuntimeContext } from "../context.js";
 import { getOrCreateGithubData, getOrCreateOrganization, selfOrganization } from "../handles.js";
@@ -98,7 +99,7 @@ const githubWebhookLogger = logger.child({
   scope: "github-webhook",
 });
 
-const PROFILE_ROW_ID = "profile";
+const PROFILE_ROW_ID = 1;
 
 function roundDurationMs(start: number): number {
   return Math.round((performance.now() - start) * 100) / 100;
@@ -359,6 +360,7 @@ async function buildAppSnapshot(c: any, sessionId: string, allowOrganizationRepa
         githubLogin: profile?.githubLogin ?? "",
         roleLabel: profile?.roleLabel ?? "GitHub user",
         eligibleOrganizationIds,
+        defaultModel: profile?.defaultModel ?? "claude-sonnet-4",
       }
     : null;
 
@@ -685,7 +687,6 @@ async function buildOrganizationStateFromRow(c: any, row: any, startedAt: number
         slug: row.slug,
         primaryDomain: row.primaryDomain,
         seatAccrualMode: "first_prompt",
-        defaultModel: row.defaultModel,
         autoImportRepos: row.autoImportRepos === 1,
       },
       github: {
@@ -1078,6 +1079,15 @@ export const organizationAppActions = {
     return await buildAppSnapshot(c, input.sessionId);
   },
 
+  async setAppDefaultModel(c: any, input: { sessionId: string; defaultModel: WorkspaceModelId }): Promise<FoundryAppSnapshot> {
+    assertAppOrganization(c);
+    const session = await requireSignedInSession(c, input.sessionId);
+    await getBetterAuthService().upsertUserProfile(session.authUserId, {
+      defaultModel: input.defaultModel,
+    });
+    return await buildAppSnapshot(c, input.sessionId);
+  },
+
   async updateAppOrganizationProfile(
     c: any,
     input: { sessionId: string; organizationId: string } & UpdateFoundryOrganizationProfileInput,
@@ -1393,14 +1403,14 @@ export const organizationAppActions = {
         "installation_event",
       );
       if (body.action === "deleted") {
-        await githubData.clearState({
+        await githubData.adminClearState({
           connectedAccount: accountLogin,
           installationStatus: "install_required",
           installationId: null,
           label: "GitHub App installation removed",
         });
       } else if (body.action === "created") {
-        await githubData.fullSync({
+        await githubData.adminFullSync({
           connectedAccount: accountLogin,
           installationStatus: "connected",
           installationId: body.installation?.id ?? null,
@@ -1409,14 +1419,14 @@ export const organizationAppActions = {
           label: "Syncing GitHub data from installation webhook...",
         });
       } else if (body.action === "suspend") {
-        await githubData.clearState({
+        await githubData.adminClearState({
           connectedAccount: accountLogin,
           installationStatus: "reconnect_required",
           installationId: body.installation?.id ?? null,
           label: "GitHub App installation suspended",
         });
       } else if (body.action === "unsuspend") {
-        await githubData.fullSync({
+        await githubData.adminFullSync({
           connectedAccount: accountLogin,
           installationStatus: "connected",
           installationId: body.installation?.id ?? null,
@@ -1440,7 +1450,7 @@ export const organizationAppActions = {
         },
         "repository_membership_changed",
       );
-      await githubData.fullSync({
+      await githubData.adminFullSync({
         connectedAccount: accountLogin,
         installationStatus: "connected",
         installationId: body.installation?.id ?? null,
@@ -1578,7 +1588,6 @@ export const organizationAppActions = {
         displayName: input.displayName,
         slug,
         primaryDomain: existing?.primaryDomain ?? (input.kind === "personal" ? "personal" : `${slug}.github`),
-        defaultModel: existing?.defaultModel ?? "claude-sonnet-4",
         autoImportRepos: existing?.autoImportRepos ?? 1,
         repoImportStatus: existing?.repoImportStatus ?? "not_started",
         githubConnectedAccount: input.githubLogin,

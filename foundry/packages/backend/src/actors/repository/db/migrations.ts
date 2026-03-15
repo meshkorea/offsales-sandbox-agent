@@ -10,12 +10,6 @@ const journal = {
       tag: "0000_useful_la_nuit",
       breakpoints: true,
     },
-    {
-      idx: 1,
-      when: 1778900000000,
-      tag: "0001_remove_local_git_state",
-      breakpoints: true,
-    },
   ],
 } as const;
 
@@ -23,21 +17,30 @@ export default {
   journal,
   migrations: {
     m0000: `CREATE TABLE \`repo_meta\` (
-\t\`id\` integer PRIMARY KEY NOT NULL,
-\t\`remote_url\` text NOT NULL,
-\t\`updated_at\` integer NOT NULL
+	\`id\` integer PRIMARY KEY NOT NULL,
+	\`remote_url\` text NOT NULL,
+	\`updated_at\` integer NOT NULL,
+	CONSTRAINT \`repo_meta_singleton_id_check\` CHECK(\`id\` = 1)
 );
 --> statement-breakpoint
 CREATE TABLE \`task_index\` (
-\t\`task_id\` text PRIMARY KEY NOT NULL,
-\t\`branch_name\` text,
-\t\`created_at\` integer NOT NULL,
-\t\`updated_at\` integer NOT NULL
+	\`task_id\` text PRIMARY KEY NOT NULL,
+	\`branch_name\` text,
+	\`created_at\` integer NOT NULL,
+	\`updated_at\` integer NOT NULL
 );
-`,
-    m0001: `DROP TABLE IF EXISTS \`branches\`;
 --> statement-breakpoint
-DROP TABLE IF EXISTS \`repo_action_jobs\`;
+CREATE TABLE \`tasks\` (
+	\`task_id\` text PRIMARY KEY NOT NULL,
+	\`repo_id\` text NOT NULL,
+	\`title\` text NOT NULL,
+	\`status\` text NOT NULL,
+	\`repo_name\` text NOT NULL,
+	\`updated_at_ms\` integer NOT NULL,
+	\`branch\` text,
+	\`pull_request_json\` text,
+	\`sessions_summary_json\` text DEFAULT '[]' NOT NULL
+);
 `,
   } as const,
 };

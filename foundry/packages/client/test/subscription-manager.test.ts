@@ -115,17 +115,24 @@ describe("RemoteSubscriptionManager", () => {
     ]);
 
     conn.emit("organizationUpdated", {
-      type: "taskSummaryUpdated",
-      taskSummary: {
-        id: "task-1",
-        repoId: "repo-1",
-        title: "Updated task",
-        status: "running",
-        repoName: "repo-1",
-        updatedAtMs: 20,
-        branch: "feature/live",
-        pullRequest: null,
-        sessionsSummary: [],
+      type: "organizationUpdated",
+      snapshot: {
+        organizationId: "org-1",
+        repos: [],
+        taskSummaries: [
+          {
+            id: "task-1",
+            repoId: "repo-1",
+            title: "Updated task",
+            status: "running",
+            repoName: "repo-1",
+            updatedAtMs: 20,
+            branch: "feature/live",
+            pullRequest: null,
+            sessionsSummary: [],
+          },
+        ],
+        openPullRequests: [],
       },
     } satisfies OrganizationEvent);
 

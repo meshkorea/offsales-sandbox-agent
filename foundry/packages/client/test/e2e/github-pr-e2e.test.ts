@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { TaskRecord, HistoryEvent } from "@sandbox-agent/foundry-shared";
+import type { AuditLogEvent as HistoryEvent, TaskRecord } from "@sandbox-agent/foundry-shared";
 import { createBackendClient } from "../../src/backend-client.js";
 import { requireImportedRepo } from "./helpers.js";
 

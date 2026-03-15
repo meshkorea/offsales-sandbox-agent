@@ -681,15 +681,15 @@ export const githubData = actor({
       };
     },
 
-    async fullSync(c, input: FullSyncInput = {}) {
+    async adminFullSync(c, input: FullSyncInput = {}) {
       return await runFullSync(c, input);
     },
 
-    async reloadOrganization(c) {
+    async adminReloadOrganization(c) {
       return await runFullSync(c, { label: "Reloading GitHub organization..." });
     },
 
-    async reloadAllPullRequests(c) {
+    async adminReloadAllPullRequests(c) {
       return await runFullSync(c, { label: "Reloading GitHub pull requests..." });
     },
 
@@ -846,7 +846,7 @@ export const githubData = actor({
       );
     },
 
-    async clearState(c, input: ClearStateInput) {
+    async adminClearState(c, input: ClearStateInput) {
       const beforeRows = await readAllPullRequestRows(c);
       await c.db.delete(githubPullRequests).run();
       await c.db.delete(githubBranches).run();

@@ -3,7 +3,7 @@ import { desc, eq } from "drizzle-orm";
 import { Loop } from "rivetkit/workflow";
 import type {
   CreateTaskInput,
-  HistoryEvent,
+  AuditLogEvent,
   HistoryQueryInput,
   ListTasksInput,
   SandboxProviderId,
@@ -14,32 +14,30 @@ import type {
   SwitchResult,
   TaskRecord,
   TaskSummary,
-  TaskWorkbenchChangeModelInput,
-  TaskWorkbenchCreateTaskInput,
-  TaskWorkbenchDiffInput,
-  TaskWorkbenchRenameInput,
-  TaskWorkbenchRenameSessionInput,
-  TaskWorkbenchSelectInput,
-  TaskWorkbenchSetSessionUnreadInput,
-  TaskWorkbenchSendMessageInput,
-  TaskWorkbenchSessionInput,
-  TaskWorkbenchUpdateDraftInput,
-  WorkbenchOpenPrSummary,
-  WorkbenchRepositorySummary,
-  WorkbenchSessionSummary,
-  WorkbenchTaskSummary,
+  TaskWorkspaceChangeModelInput,
+  TaskWorkspaceCreateTaskInput,
+  TaskWorkspaceDiffInput,
+  TaskWorkspaceRenameInput,
+  TaskWorkspaceRenameSessionInput,
+  TaskWorkspaceSelectInput,
+  TaskWorkspaceSetSessionUnreadInput,
+  TaskWorkspaceSendMessageInput,
+  TaskWorkspaceSessionInput,
+  TaskWorkspaceUpdateDraftInput,
+  WorkspaceRepositorySummary,
+  WorkspaceTaskSummary,
   OrganizationEvent,
   OrganizationSummarySnapshot,
   OrganizationUseInput,
 } from "@sandbox-agent/foundry-shared";
 import { getActorRuntimeContext } from "../context.js";
-import { getGithubData, getOrCreateGithubData, getTask, getOrCreateHistory, getOrCreateRepository, selfOrganization } from "../handles.js";
+import { getGithubData, getOrCreateAuditLog, getOrCreateGithubData, getTask as getTaskHandle, getOrCreateRepository, selfOrganization } from "../handles.js";
 import { logActorWarning, resolveErrorMessage } from "../logging.js";
 import { defaultSandboxProviderId } from "../../sandbox-config.js";
 import { repoIdFromRemote } from "../../services/repo.js";
 import { resolveOrganizationGithubAuth } from "../../services/github-auth.js";
-import { organizationProfile, taskLookup, repos, taskSummaries } from "./db/schema.js";
-import { agentTypeForModel } from "../task/workbench.js";
+import { organizationProfile, repos } from "./db/schema.js";
+import { agentTypeForModel } from "../task/workspace.js";
 import { expectQueueResponse } from "../../services/queue.js";
 import { organizationAppActions } from "./app-shell.js";
 
@@ -49,6 +47,7 @@ interface OrganizationState {
 
 interface GetTaskInput {
   organizationId: string;
+  repoId?: string;
   taskId: string;
 }
 
@@ -72,47 +71,11 @@ export function organizationWorkflowQueueName(name: OrganizationQueueName): Orga
   return name;
 }
 
-const ORGANIZATION_PROFILE_ROW_ID = "profile";
+const ORGANIZATION_PROFILE_ROW_ID = 1;
 
 function assertOrganization(c: { state: OrganizationState }, organizationId: string): void {
   if (organizationId !== c.state.organizationId) {
     throw new Error(`Organization actor mismatch: actor=${c.state.organizationId} command=${organizationId}`);
-  }
-}
-
-async function resolveRepoId(c: any, taskId: string): Promise<string> {
-  const row = await c.db.select({ repoId: taskLookup.repoId }).from(taskLookup).where(eq(taskLookup.taskId, taskId)).get();
-
-  if (!row) {
-    throw new Error(`Unknown task: ${taskId} (not in lookup)`);
-  }
-
-  return row.repoId;
-}
-
-async function upsertTaskLookupRow(c: any, taskId: string, repoId: string): Promise<void> {
-  await c.db
-    .insert(taskLookup)
-    .values({
-      taskId,
-      repoId,
-    })
-    .onConflictDoUpdate({
-      target: taskLookup.taskId,
-      set: { repoId },
-    })
-    .run();
-}
-
-function parseJsonValue<T>(value: string | null | undefined, fallback: T): T {
-  if (!value) {
-    return fallback;
-  }
-
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
   }
 }
 
@@ -152,7 +115,7 @@ function repoLabelFromRemote(remoteUrl: string): string {
   return remoteUrl;
 }
 
-function buildRepoSummary(repoRow: { repoId: string; remoteUrl: string; updatedAt: number }, taskRows: WorkbenchTaskSummary[]): WorkbenchRepositorySummary {
+function buildRepoSummary(repoRow: { repoId: string; remoteUrl: string; updatedAt: number }, taskRows: WorkspaceTaskSummary[]): WorkspaceRepositorySummary {
   const repoTasks = taskRows.filter((task) => task.repoId === repoRow.repoId);
   const latestActivityMs = repoTasks.reduce((latest, task) => Math.max(latest, task.updatedAtMs), repoRow.updatedAt);
 
@@ -164,79 +127,42 @@ function buildRepoSummary(repoRow: { repoId: string; remoteUrl: string; updatedA
   };
 }
 
-function taskSummaryRowFromSummary(taskSummary: WorkbenchTaskSummary) {
-  return {
-    taskId: taskSummary.id,
-    repoId: taskSummary.repoId,
-    title: taskSummary.title,
-    status: taskSummary.status,
-    repoName: taskSummary.repoName,
-    updatedAtMs: taskSummary.updatedAtMs,
-    branch: taskSummary.branch,
-    pullRequestJson: JSON.stringify(taskSummary.pullRequest),
-    sessionsSummaryJson: JSON.stringify(taskSummary.sessionsSummary),
-  };
+async function resolveRepositoryForTask(c: any, taskId: string, repoId?: string | null) {
+  if (repoId) {
+    const repoRow = await c.db.select({ remoteUrl: repos.remoteUrl }).from(repos).where(eq(repos.repoId, repoId)).get();
+    if (!repoRow) {
+      throw new Error(`Unknown repo: ${repoId}`);
+    }
+    const repository = await getOrCreateRepository(c, c.state.organizationId, repoId, repoRow.remoteUrl);
+    return { repoId, repository };
+  }
+
+  const repoRows = await c.db.select({ repoId: repos.repoId, remoteUrl: repos.remoteUrl }).from(repos).orderBy(desc(repos.updatedAt)).all();
+  for (const row of repoRows) {
+    const repository = await getOrCreateRepository(c, c.state.organizationId, row.repoId, row.remoteUrl);
+    const summaries = await repository.listTaskSummaries({ includeArchived: true });
+    if (summaries.some((summary: TaskSummary) => summary.taskId === taskId)) {
+      return { repoId: row.repoId, repository };
+    }
+  }
+
+  throw new Error(`Unknown task: ${taskId}`);
 }
 
-function taskSummaryFromRow(row: any): WorkbenchTaskSummary {
-  return {
-    id: row.taskId,
-    repoId: row.repoId,
-    title: row.title,
-    status: row.status,
-    repoName: row.repoName,
-    updatedAtMs: row.updatedAtMs,
-    branch: row.branch ?? null,
-    pullRequest: parseJsonValue(row.pullRequestJson, null),
-    sessionsSummary: parseJsonValue<WorkbenchSessionSummary[]>(row.sessionsSummaryJson, []),
-  };
-}
-
-async function listOpenPullRequestsSnapshot(c: any, taskRows: WorkbenchTaskSummary[]): Promise<WorkbenchOpenPrSummary[]> {
-  const githubData = getGithubData(c, c.state.organizationId);
-  const openPullRequests = await githubData.listOpenPullRequests({}).catch(() => []);
-  const claimedBranches = new Set(taskRows.filter((task) => task.branch).map((task) => `${task.repoId}:${task.branch}`));
-
-  return openPullRequests.filter((pullRequest: WorkbenchOpenPrSummary) => !claimedBranches.has(`${pullRequest.repoId}:${pullRequest.headRefName}`));
-}
-
-async function reconcileWorkbenchProjection(c: any): Promise<OrganizationSummarySnapshot> {
+async function reconcileWorkspaceProjection(c: any): Promise<OrganizationSummarySnapshot> {
   const repoRows = await c.db
     .select({ repoId: repos.repoId, remoteUrl: repos.remoteUrl, updatedAt: repos.updatedAt })
     .from(repos)
     .orderBy(desc(repos.updatedAt))
     .all();
 
-  const taskRows: WorkbenchTaskSummary[] = [];
+  const taskRows: WorkspaceTaskSummary[] = [];
   for (const row of repoRows) {
     try {
       const repository = await getOrCreateRepository(c, c.state.organizationId, row.repoId, row.remoteUrl);
-      const summaries = await repository.listTaskSummaries({ includeArchived: true });
-      for (const summary of summaries) {
-        try {
-          await upsertTaskLookupRow(c, summary.taskId, row.repoId);
-          const task = getTask(c, c.state.organizationId, row.repoId, summary.taskId);
-          const taskSummary = await task.getTaskSummary({});
-          taskRows.push(taskSummary);
-          await c.db
-            .insert(taskSummaries)
-            .values(taskSummaryRowFromSummary(taskSummary))
-            .onConflictDoUpdate({
-              target: taskSummaries.taskId,
-              set: taskSummaryRowFromSummary(taskSummary),
-            })
-            .run();
-        } catch (error) {
-          logActorWarning("organization", "failed collecting task summary during reconciliation", {
-            organizationId: c.state.organizationId,
-            repoId: row.repoId,
-            taskId: summary.taskId,
-            error: resolveErrorMessage(error),
-          });
-        }
-      }
+      taskRows.push(...(await repository.listWorkspaceTaskSummaries({})));
     } catch (error) {
-      logActorWarning("organization", "failed collecting repo during workbench reconciliation", {
+      logActorWarning("organization", "failed collecting repo during workspace reconciliation", {
         organizationId: c.state.organizationId,
         repoId: row.repoId,
         error: resolveErrorMessage(error),
@@ -249,19 +175,17 @@ async function reconcileWorkbenchProjection(c: any): Promise<OrganizationSummary
     organizationId: c.state.organizationId,
     repos: repoRows.map((row) => buildRepoSummary(row, taskRows)).sort((left, right) => right.latestActivityMs - left.latestActivityMs),
     taskSummaries: taskRows,
-    openPullRequests: await listOpenPullRequestsSnapshot(c, taskRows),
   };
 }
 
-async function requireWorkbenchTask(c: any, taskId: string) {
-  const repoId = await resolveRepoId(c, taskId);
-  return getTask(c, c.state.organizationId, repoId, taskId);
+async function requireWorkspaceTask(c: any, repoId: string, taskId: string) {
+  return getTaskHandle(c, c.state.organizationId, repoId, taskId);
 }
 
 /**
- * Reads the organization sidebar snapshot from the organization actor's local SQLite
- * plus the org-scoped GitHub actor for open PRs. Task actors still push
- * summary updates into `task_summaries`, so the hot read path stays bounded.
+ * Reads the organization sidebar snapshot by fanning out one level to the
+ * repository coordinators. Task summaries are repository-owned; organization
+ * only aggregates them.
  */
 async function getOrganizationSummarySnapshot(c: any): Promise<OrganizationSummarySnapshot> {
   const repoRows = await c.db
@@ -273,25 +197,33 @@ async function getOrganizationSummarySnapshot(c: any): Promise<OrganizationSumma
     .from(repos)
     .orderBy(desc(repos.updatedAt))
     .all();
-  const taskRows = await c.db.select().from(taskSummaries).orderBy(desc(taskSummaries.updatedAtMs)).all();
-  const summaries = taskRows.map(taskSummaryFromRow);
+  const summaries: WorkspaceTaskSummary[] = [];
+  for (const row of repoRows) {
+    try {
+      const repository = await getOrCreateRepository(c, c.state.organizationId, row.repoId, row.remoteUrl);
+      summaries.push(...(await repository.listWorkspaceTaskSummaries({})));
+    } catch (error) {
+      logActorWarning("organization", "failed reading repository task projection", {
+        organizationId: c.state.organizationId,
+        repoId: row.repoId,
+        error: resolveErrorMessage(error),
+      });
+    }
+  }
+  summaries.sort((left, right) => right.updatedAtMs - left.updatedAtMs);
 
   return {
     organizationId: c.state.organizationId,
     repos: repoRows.map((row) => buildRepoSummary(row, summaries)).sort((left, right) => right.latestActivityMs - left.latestActivityMs),
     taskSummaries: summaries,
-    openPullRequests: await listOpenPullRequestsSnapshot(c, summaries),
   };
 }
 
-async function broadcastRepoSummary(
-  c: any,
-  type: "repoAdded" | "repoUpdated",
-  repoRow: { repoId: string; remoteUrl: string; updatedAt: number },
-): Promise<void> {
-  const matchingTaskRows = await c.db.select().from(taskSummaries).where(eq(taskSummaries.repoId, repoRow.repoId)).all();
-  const repo = buildRepoSummary(repoRow, matchingTaskRows.map(taskSummaryFromRow));
-  c.broadcast("organizationUpdated", { type, repo } satisfies OrganizationEvent);
+async function broadcastOrganizationSnapshot(c: any): Promise<void> {
+  c.broadcast("organizationUpdated", {
+    type: "organizationUpdated",
+    snapshot: await getOrganizationSummarySnapshot(c),
+  } satisfies OrganizationEvent);
 }
 
 async function createTaskMutation(c: any, input: CreateTaskInput): Promise<TaskRecord> {
@@ -317,32 +249,6 @@ async function createTaskMutation(c: any, input: CreateTaskInput): Promise<TaskR
     explicitBranchName: input.explicitBranchName ?? null,
     onBranch: input.onBranch ?? null,
   });
-
-  await c.db
-    .insert(taskLookup)
-    .values({
-      taskId: created.taskId,
-      repoId,
-    })
-    .onConflictDoUpdate({
-      target: taskLookup.taskId,
-      set: { repoId },
-    })
-    .run();
-
-  try {
-    const task = getTask(c, c.state.organizationId, repoId, created.taskId);
-    await organizationActions.applyTaskSummaryUpdate(c, {
-      taskSummary: await task.getTaskSummary({}),
-    });
-  } catch (error) {
-    logActorWarning("organization", "failed seeding task summary after task creation", {
-      organizationId: c.state.organizationId,
-      repoId,
-      taskId: created.taskId,
-      error: resolveErrorMessage(error),
-    });
-  }
 
   return created;
 }
@@ -451,67 +357,8 @@ export const organizationActions = {
     };
   },
 
-  /**
-   * Called by task actors when their summary-level state changes.
-   * This is the write path for the local materialized projection; clients read
-   * the projection via `getOrganizationSummary`, but only task actors should push
-   * rows into it.
-   */
-  async applyTaskSummaryUpdate(c: any, input: { taskSummary: WorkbenchTaskSummary }): Promise<void> {
-    await c.db
-      .insert(taskSummaries)
-      .values(taskSummaryRowFromSummary(input.taskSummary))
-      .onConflictDoUpdate({
-        target: taskSummaries.taskId,
-        set: taskSummaryRowFromSummary(input.taskSummary),
-      })
-      .run();
-    c.broadcast("organizationUpdated", { type: "taskSummaryUpdated", taskSummary: input.taskSummary } satisfies OrganizationEvent);
-  },
-
-  async removeTaskSummary(c: any, input: { taskId: string }): Promise<void> {
-    await c.db.delete(taskSummaries).where(eq(taskSummaries.taskId, input.taskId)).run();
-    c.broadcast("organizationUpdated", { type: "taskRemoved", taskId: input.taskId } satisfies OrganizationEvent);
-  },
-
-  async findTaskForGithubBranch(c: any, input: { repoId: string; branchName: string }): Promise<{ taskId: string | null }> {
-    const summaries = await c.db.select().from(taskSummaries).where(eq(taskSummaries.repoId, input.repoId)).all();
-    const existing = summaries.find((summary) => summary.branch === input.branchName);
-    return { taskId: existing?.taskId ?? null };
-  },
-
-  async refreshTaskSummaryForGithubBranch(c: any, input: { repoId: string; branchName: string }): Promise<void> {
-    const summaries = await c.db.select().from(taskSummaries).where(eq(taskSummaries.repoId, input.repoId)).all();
-    const matches = summaries.filter((summary) => summary.branch === input.branchName);
-
-    for (const summary of matches) {
-      try {
-        const task = getTask(c, c.state.organizationId, input.repoId, summary.taskId);
-        await organizationActions.applyTaskSummaryUpdate(c, {
-          taskSummary: await task.getTaskSummary({}),
-        });
-      } catch (error) {
-        logActorWarning("organization", "failed refreshing task summary for GitHub branch", {
-          organizationId: c.state.organizationId,
-          repoId: input.repoId,
-          branchName: input.branchName,
-          taskId: summary.taskId,
-          error: resolveErrorMessage(error),
-        });
-      }
-    }
-  },
-
-  async applyOpenPullRequestUpdate(c: any, input: { pullRequest: WorkbenchOpenPrSummary }): Promise<void> {
-    const summaries = await c.db.select().from(taskSummaries).where(eq(taskSummaries.repoId, input.pullRequest.repoId)).all();
-    if (summaries.some((summary) => summary.branch === input.pullRequest.headRefName)) {
-      return;
-    }
-    c.broadcast("organizationUpdated", { type: "pullRequestUpdated", pullRequest: input.pullRequest } satisfies OrganizationEvent);
-  },
-
-  async removeOpenPullRequest(c: any, input: { prId: string }): Promise<void> {
-    c.broadcast("organizationUpdated", { type: "pullRequestRemoved", prId: input.prId } satisfies OrganizationEvent);
+  async refreshOrganizationSnapshot(c: any): Promise<void> {
+    await broadcastOrganizationSnapshot(c);
   },
 
   async applyGithubRepositoryProjection(c: any, input: { repoId: string; remoteUrl: string }): Promise<void> {
@@ -533,11 +380,7 @@ export const organizationActions = {
         },
       })
       .run();
-    await broadcastRepoSummary(c, existing ? "repoUpdated" : "repoAdded", {
-      repoId: input.repoId,
-      remoteUrl: input.remoteUrl,
-      updatedAt: now,
-    });
+    await broadcastOrganizationSnapshot(c);
   },
 
   async applyGithubDataProjection(
@@ -576,11 +419,7 @@ export const organizationActions = {
           },
         })
         .run();
-      await broadcastRepoSummary(c, existingById.has(repoId) ? "repoUpdated" : "repoAdded", {
-        repoId,
-        remoteUrl: repository.cloneUrl,
-        updatedAt: now,
-      });
+      await broadcastOrganizationSnapshot(c);
     }
 
     for (const repo of existingRepos) {
@@ -588,7 +427,7 @@ export const organizationActions = {
         continue;
       }
       await c.db.delete(repos).where(eq(repos.repoId, repo.repoId)).run();
-      c.broadcast("organizationUpdated", { type: "repoRemoved", repoId: repo.repoId } satisfies OrganizationEvent);
+      await broadcastOrganizationSnapshot(c);
     }
 
     const profile = await c.db
@@ -648,12 +487,12 @@ export const organizationActions = {
     return await getOrganizationSummarySnapshot(c);
   },
 
-  async reconcileWorkbenchState(c: any, input: OrganizationUseInput): Promise<OrganizationSummarySnapshot> {
+  async adminReconcileWorkspaceState(c: any, input: OrganizationUseInput): Promise<OrganizationSummarySnapshot> {
     assertOrganization(c, input.organizationId);
-    return await reconcileWorkbenchProjection(c);
+    return await reconcileWorkspaceProjection(c);
   },
 
-  async createWorkbenchTask(c: any, input: TaskWorkbenchCreateTaskInput): Promise<{ taskId: string; sessionId?: string }> {
+  async createWorkspaceTask(c: any, input: TaskWorkspaceCreateTaskInput): Promise<{ taskId: string; sessionId?: string }> {
     // Step 1: Create the task record (wait: true — local state mutations only).
     const created = await organizationActions.createTask(c, {
       organizationId: c.state.organizationId,
@@ -668,8 +507,8 @@ export const organizationActions = {
     // The task workflow creates the session record and sends the message in
     // the background. The client observes progress via push events on the
     // task subscription topic.
-    const task = await requireWorkbenchTask(c, created.taskId);
-    await task.createWorkbenchSessionAndSend({
+    const task = await requireWorkspaceTask(c, input.repoId, created.taskId);
+    await task.createWorkspaceSessionAndSend({
       model: input.model,
       text: input.task,
     });
@@ -677,84 +516,79 @@ export const organizationActions = {
     return { taskId: created.taskId };
   },
 
-  async markWorkbenchUnread(c: any, input: TaskWorkbenchSelectInput): Promise<void> {
-    const task = await requireWorkbenchTask(c, input.taskId);
-    await task.markWorkbenchUnread({});
+  async markWorkspaceUnread(c: any, input: TaskWorkspaceSelectInput): Promise<void> {
+    const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
+    await task.markWorkspaceUnread({});
   },
 
-  async renameWorkbenchTask(c: any, input: TaskWorkbenchRenameInput): Promise<void> {
-    const task = await requireWorkbenchTask(c, input.taskId);
-    await task.renameWorkbenchTask(input);
+  async renameWorkspaceTask(c: any, input: TaskWorkspaceRenameInput): Promise<void> {
+    const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
+    await task.renameWorkspaceTask(input);
   },
 
-  async renameWorkbenchBranch(c: any, input: TaskWorkbenchRenameInput): Promise<void> {
-    const task = await requireWorkbenchTask(c, input.taskId);
-    await task.renameWorkbenchBranch(input);
+  async createWorkspaceSession(c: any, input: TaskWorkspaceSelectInput & { model?: string }): Promise<{ sessionId: string }> {
+    const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
+    return await task.createWorkspaceSession({ ...(input.model ? { model: input.model } : {}) });
   },
 
-  async createWorkbenchSession(c: any, input: TaskWorkbenchSelectInput & { model?: string }): Promise<{ sessionId: string }> {
-    const task = await requireWorkbenchTask(c, input.taskId);
-    return await task.createWorkbenchSession({ ...(input.model ? { model: input.model } : {}) });
+  async renameWorkspaceSession(c: any, input: TaskWorkspaceRenameSessionInput): Promise<void> {
+    const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
+    await task.renameWorkspaceSession(input);
   },
 
-  async renameWorkbenchSession(c: any, input: TaskWorkbenchRenameSessionInput): Promise<void> {
-    const task = await requireWorkbenchTask(c, input.taskId);
-    await task.renameWorkbenchSession(input);
+  async setWorkspaceSessionUnread(c: any, input: TaskWorkspaceSetSessionUnreadInput): Promise<void> {
+    const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
+    await task.setWorkspaceSessionUnread(input);
   },
 
-  async setWorkbenchSessionUnread(c: any, input: TaskWorkbenchSetSessionUnreadInput): Promise<void> {
-    const task = await requireWorkbenchTask(c, input.taskId);
-    await task.setWorkbenchSessionUnread(input);
+  async updateWorkspaceDraft(c: any, input: TaskWorkspaceUpdateDraftInput): Promise<void> {
+    const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
+    await task.updateWorkspaceDraft(input);
   },
 
-  async updateWorkbenchDraft(c: any, input: TaskWorkbenchUpdateDraftInput): Promise<void> {
-    const task = await requireWorkbenchTask(c, input.taskId);
-    await task.updateWorkbenchDraft(input);
+  async changeWorkspaceModel(c: any, input: TaskWorkspaceChangeModelInput): Promise<void> {
+    const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
+    await task.changeWorkspaceModel(input);
   },
 
-  async changeWorkbenchModel(c: any, input: TaskWorkbenchChangeModelInput): Promise<void> {
-    const task = await requireWorkbenchTask(c, input.taskId);
-    await task.changeWorkbenchModel(input);
+  async sendWorkspaceMessage(c: any, input: TaskWorkspaceSendMessageInput): Promise<void> {
+    const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
+    await task.sendWorkspaceMessage(input);
   },
 
-  async sendWorkbenchMessage(c: any, input: TaskWorkbenchSendMessageInput): Promise<void> {
-    const task = await requireWorkbenchTask(c, input.taskId);
-    await task.sendWorkbenchMessage(input);
+  async stopWorkspaceSession(c: any, input: TaskWorkspaceSessionInput): Promise<void> {
+    const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
+    await task.stopWorkspaceSession(input);
   },
 
-  async stopWorkbenchSession(c: any, input: TaskWorkbenchSessionInput): Promise<void> {
-    const task = await requireWorkbenchTask(c, input.taskId);
-    await task.stopWorkbenchSession(input);
+  async closeWorkspaceSession(c: any, input: TaskWorkspaceSessionInput): Promise<void> {
+    const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
+    await task.closeWorkspaceSession(input);
   },
 
-  async closeWorkbenchSession(c: any, input: TaskWorkbenchSessionInput): Promise<void> {
-    const task = await requireWorkbenchTask(c, input.taskId);
-    await task.closeWorkbenchSession(input);
+  async publishWorkspacePr(c: any, input: TaskWorkspaceSelectInput): Promise<void> {
+    const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
+    await task.publishWorkspacePr({});
   },
 
-  async publishWorkbenchPr(c: any, input: TaskWorkbenchSelectInput): Promise<void> {
-    const task = await requireWorkbenchTask(c, input.taskId);
-    await task.publishWorkbenchPr({});
+  async revertWorkspaceFile(c: any, input: TaskWorkspaceDiffInput): Promise<void> {
+    const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
+    await task.revertWorkspaceFile(input);
   },
 
-  async revertWorkbenchFile(c: any, input: TaskWorkbenchDiffInput): Promise<void> {
-    const task = await requireWorkbenchTask(c, input.taskId);
-    await task.revertWorkbenchFile(input);
+  async adminReloadGithubOrganization(c: any): Promise<void> {
+    await getOrCreateGithubData(c, c.state.organizationId).adminReloadOrganization({});
   },
 
-  async reloadGithubOrganization(c: any): Promise<void> {
-    await getOrCreateGithubData(c, c.state.organizationId).reloadOrganization({});
+  async adminReloadGithubPullRequests(c: any): Promise<void> {
+    await getOrCreateGithubData(c, c.state.organizationId).adminReloadAllPullRequests({});
   },
 
-  async reloadGithubPullRequests(c: any): Promise<void> {
-    await getOrCreateGithubData(c, c.state.organizationId).reloadAllPullRequests({});
-  },
-
-  async reloadGithubRepository(c: any, input: { repoId: string }): Promise<void> {
+  async adminReloadGithubRepository(c: any, input: { repoId: string }): Promise<void> {
     await getOrCreateGithubData(c, c.state.organizationId).reloadRepository(input);
   },
 
-  async reloadGithubPullRequest(c: any, input: { repoId: string; prNumber: number }): Promise<void> {
+  async adminReloadGithubPullRequest(c: any, input: { repoId: string; prNumber: number }): Promise<void> {
     await getOrCreateGithubData(c, c.state.organizationId).reloadPullRequest(input);
   },
 
@@ -786,39 +620,39 @@ export const organizationActions = {
     return await repository.getRepoOverview({});
   },
 
-  async switchTask(c: any, taskId: string): Promise<SwitchResult> {
-    const repoId = await resolveRepoId(c, taskId);
-    const h = getTask(c, c.state.organizationId, repoId, taskId);
+  async switchTask(c: any, input: { repoId?: string; taskId: string }): Promise<SwitchResult> {
+    const { repoId } = await resolveRepositoryForTask(c, input.taskId, input.repoId);
+    const h = getTaskHandle(c, c.state.organizationId, repoId, input.taskId);
     const record = await h.get();
     const switched = await h.switch();
 
     return {
       organizationId: c.state.organizationId,
-      taskId,
+      taskId: input.taskId,
       sandboxProviderId: record.sandboxProviderId,
       switchTarget: switched.switchTarget,
     };
   },
 
-  async history(c: any, input: HistoryQueryInput): Promise<HistoryEvent[]> {
+  async auditLog(c: any, input: HistoryQueryInput): Promise<AuditLogEvent[]> {
     assertOrganization(c, input.organizationId);
 
     const limit = input.limit ?? 20;
     const repoRows = await c.db.select({ repoId: repos.repoId }).from(repos).all();
 
-    const allEvents: HistoryEvent[] = [];
+    const allEvents: AuditLogEvent[] = [];
 
     for (const row of repoRows) {
       try {
-        const hist = await getOrCreateHistory(c, c.state.organizationId, row.repoId);
-        const items = await hist.list({
+        const auditLog = await getOrCreateAuditLog(c, c.state.organizationId, row.repoId);
+        const items = await auditLog.list({
           branch: input.branch,
           taskId: input.taskId,
           limit,
         });
         allEvents.push(...items);
       } catch (error) {
-        logActorWarning("organization", "history lookup failed for repo", {
+        logActorWarning("organization", "audit log lookup failed for repo", {
           organizationId: c.state.organizationId,
           repoId: row.repoId,
           error: resolveErrorMessage(error),
@@ -832,57 +666,49 @@ export const organizationActions = {
 
   async getTask(c: any, input: GetTaskInput): Promise<TaskRecord> {
     assertOrganization(c, input.organizationId);
-
-    const repoId = await resolveRepoId(c, input.taskId);
-
-    const repoRow = await c.db.select({ remoteUrl: repos.remoteUrl }).from(repos).where(eq(repos.repoId, repoId)).get();
-    if (!repoRow) {
-      throw new Error(`Unknown repo: ${repoId}`);
-    }
-
-    const repository = await getOrCreateRepository(c, c.state.organizationId, repoId, repoRow.remoteUrl);
-    return await repository.getTaskEnriched({ taskId: input.taskId });
+    const { repoId } = await resolveRepositoryForTask(c, input.taskId, input.repoId);
+    return await getTaskHandle(c, c.state.organizationId, repoId, input.taskId).get();
   },
 
   async attachTask(c: any, input: TaskProxyActionInput): Promise<{ target: string; sessionId: string | null }> {
     assertOrganization(c, input.organizationId);
-    const repoId = await resolveRepoId(c, input.taskId);
-    const h = getTask(c, c.state.organizationId, repoId, input.taskId);
+    const { repoId } = await resolveRepositoryForTask(c, input.taskId, input.repoId);
+    const h = getTaskHandle(c, c.state.organizationId, repoId, input.taskId);
     return await h.attach({ reason: input.reason });
   },
 
   async pushTask(c: any, input: TaskProxyActionInput): Promise<void> {
     assertOrganization(c, input.organizationId);
-    const repoId = await resolveRepoId(c, input.taskId);
-    const h = getTask(c, c.state.organizationId, repoId, input.taskId);
+    const { repoId } = await resolveRepositoryForTask(c, input.taskId, input.repoId);
+    const h = getTaskHandle(c, c.state.organizationId, repoId, input.taskId);
     await h.push({ reason: input.reason });
   },
 
   async syncTask(c: any, input: TaskProxyActionInput): Promise<void> {
     assertOrganization(c, input.organizationId);
-    const repoId = await resolveRepoId(c, input.taskId);
-    const h = getTask(c, c.state.organizationId, repoId, input.taskId);
+    const { repoId } = await resolveRepositoryForTask(c, input.taskId, input.repoId);
+    const h = getTaskHandle(c, c.state.organizationId, repoId, input.taskId);
     await h.sync({ reason: input.reason });
   },
 
   async mergeTask(c: any, input: TaskProxyActionInput): Promise<void> {
     assertOrganization(c, input.organizationId);
-    const repoId = await resolveRepoId(c, input.taskId);
-    const h = getTask(c, c.state.organizationId, repoId, input.taskId);
+    const { repoId } = await resolveRepositoryForTask(c, input.taskId, input.repoId);
+    const h = getTaskHandle(c, c.state.organizationId, repoId, input.taskId);
     await h.merge({ reason: input.reason });
   },
 
   async archiveTask(c: any, input: TaskProxyActionInput): Promise<void> {
     assertOrganization(c, input.organizationId);
-    const repoId = await resolveRepoId(c, input.taskId);
-    const h = getTask(c, c.state.organizationId, repoId, input.taskId);
+    const { repoId } = await resolveRepositoryForTask(c, input.taskId, input.repoId);
+    const h = getTaskHandle(c, c.state.organizationId, repoId, input.taskId);
     await h.archive({ reason: input.reason });
   },
 
   async killTask(c: any, input: TaskProxyActionInput): Promise<void> {
     assertOrganization(c, input.organizationId);
-    const repoId = await resolveRepoId(c, input.taskId);
-    const h = getTask(c, c.state.organizationId, repoId, input.taskId);
+    const { repoId } = await resolveRepositoryForTask(c, input.taskId, input.repoId);
+    const h = getTaskHandle(c, c.state.organizationId, repoId, input.taskId);
     await h.kill({ reason: input.reason });
   },
 };

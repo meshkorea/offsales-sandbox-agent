@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { requireSendableSessionMeta, shouldMarkSessionUnreadForStatus, shouldRecreateSessionForModelChange } from "../src/actors/task/workbench.js";
+import { requireSendableSessionMeta, shouldMarkSessionUnreadForStatus, shouldRecreateSessionForModelChange } from "../src/actors/task/workspace.js";
 
-describe("workbench unread status transitions", () => {
+describe("workspace unread status transitions", () => {
   it("marks unread when a running session first becomes idle", () => {
     expect(shouldMarkSessionUnreadForStatus({ thinkingSinceMs: Date.now() - 1_000 }, "idle")).toBe(true);
   });
@@ -15,7 +15,7 @@ describe("workbench unread status transitions", () => {
   });
 });
 
-describe("workbench model changes", () => {
+describe("workspace model changes", () => {
   it("recreates an unused ready session so the selected model takes effect", () => {
     expect(
       shouldRecreateSessionForModelChange({
@@ -58,9 +58,9 @@ describe("workbench model changes", () => {
   });
 });
 
-describe("workbench send readiness", () => {
+describe("workspace send readiness", () => {
   it("rejects unknown sessions", () => {
-    expect(() => requireSendableSessionMeta(null, "session-1")).toThrow("Unknown workbench session: session-1");
+    expect(() => requireSendableSessionMeta(null, "session-1")).toThrow("Unknown workspace session: session-1");
   });
 
   it("rejects pending sessions", () => {

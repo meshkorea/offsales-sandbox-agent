@@ -7,7 +7,13 @@ import {
   eligibleFoundryOrganizations,
   type FoundryAppClient,
 } from "@sandbox-agent/foundry-client";
-import type { FoundryAppSnapshot, FoundryBillingPlanId, FoundryOrganization, UpdateFoundryOrganizationProfileInput } from "@sandbox-agent/foundry-shared";
+import type {
+  FoundryAppSnapshot,
+  FoundryBillingPlanId,
+  FoundryOrganization,
+  UpdateFoundryOrganizationProfileInput,
+  WorkspaceModelId,
+} from "@sandbox-agent/foundry-shared";
 import { backendClient } from "./backend";
 import { subscriptionManager } from "./subscription";
 import { frontendClientMode } from "./env";
@@ -57,6 +63,9 @@ const remoteAppClient: FoundryAppClient = {
   },
   async selectOrganization(organizationId: string): Promise<void> {
     await backendClient.selectAppOrganization(organizationId);
+  },
+  async setDefaultModel(defaultModel: WorkspaceModelId): Promise<void> {
+    await backendClient.setAppDefaultModel(defaultModel);
   },
   async updateOrganizationProfile(input: UpdateFoundryOrganizationProfileInput): Promise<void> {
     await backendClient.updateAppOrganizationProfile(input);

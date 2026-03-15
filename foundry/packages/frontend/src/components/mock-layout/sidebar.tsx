@@ -68,7 +68,6 @@ export const Sidebar = memo(function Sidebar({
   onSelectNewTaskRepo,
   onMarkUnread,
   onRenameTask,
-  onRenameBranch,
   onReorderRepositories,
   taskOrderByRepository,
   onReorderTasks,
@@ -87,7 +86,6 @@ export const Sidebar = memo(function Sidebar({
   onSelectNewTaskRepo: (repoId: string) => void;
   onMarkUnread: (id: string) => void;
   onRenameTask: (id: string) => void;
-  onRenameBranch: (id: string) => void;
   onReorderRepositories: (fromIndex: number, toIndex: number) => void;
   taskOrderByRepository: Record<string, string[]>;
   onReorderTasks: (repositoryId: string, fromIndex: number, toIndex: number) => void;
@@ -729,7 +727,6 @@ export const Sidebar = memo(function Sidebar({
                           }
                           contextMenu.open(event, [
                             { label: "Rename task", onClick: () => onRenameTask(task.id) },
-                            { label: "Rename branch", onClick: () => onRenameBranch(task.id) },
                             { label: "Mark as unread", onClick: () => onMarkUnread(task.id) },
                           ]);
                         }}

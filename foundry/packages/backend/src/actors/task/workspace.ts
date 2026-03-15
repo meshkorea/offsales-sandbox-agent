@@ -3,12 +3,12 @@ import { randomUUID } from "node:crypto";
 import { basename, dirname } from "node:path";
 import { asc, eq } from "drizzle-orm";
 import { getActorRuntimeContext } from "../context.js";
-import { getOrCreateRepository, getOrCreateTaskSandbox, getOrCreateOrganization, getTaskSandbox, selfTask } from "../handles.js";
+import { getOrCreateRepository, getOrCreateTaskSandbox, getTaskSandbox, selfTask } from "../handles.js";
 import { SANDBOX_REPO_CWD } from "../sandbox/index.js";
 import { resolveSandboxProviderId } from "../../sandbox-config.js";
 import { resolveOrganizationGithubAuth } from "../../services/github-auth.js";
 import { githubRepoFullNameFromRemote } from "../../services/repo.js";
-import { task as taskTable, taskRuntime, taskSandboxes, taskWorkbenchSessions } from "./db/schema.js";
+import { task as taskTable, taskRuntime, taskSandboxes, taskWorkspaceSessions } from "./db/schema.js";
 import { getCurrentRecord } from "./workflow/common.js";
 
 function emptyGitState() {
@@ -18,42 +18,6 @@ function emptyGitState() {
     fileTree: [],
     updatedAt: null as number | null,
   };
-}
-
-async function ensureWorkbenchSessionTable(c: any): Promise<void> {
-  await c.db.execute(`
-    CREATE TABLE IF NOT EXISTS task_workbench_sessions (
-      session_id text PRIMARY KEY NOT NULL,
-      sandbox_session_id text,
-      session_name text NOT NULL,
-      model text NOT NULL,
-      status text DEFAULT 'ready' NOT NULL,
-      error_message text,
-      transcript_json text DEFAULT '[]' NOT NULL,
-      transcript_updated_at integer,
-      unread integer DEFAULT 0 NOT NULL,
-      draft_text text DEFAULT '' NOT NULL,
-      draft_attachments_json text DEFAULT '[]' NOT NULL,
-      draft_updated_at integer,
-      created integer DEFAULT 1 NOT NULL,
-      closed integer DEFAULT 0 NOT NULL,
-      thinking_since_ms integer,
-      created_at integer NOT NULL,
-      updated_at integer NOT NULL
-    )
-  `);
-  await c.db.execute(`ALTER TABLE task_workbench_sessions ADD COLUMN sandbox_session_id text`).catch(() => {});
-  await c.db.execute(`ALTER TABLE task_workbench_sessions ADD COLUMN status text DEFAULT 'ready' NOT NULL`).catch(() => {});
-  await c.db.execute(`ALTER TABLE task_workbench_sessions ADD COLUMN error_message text`).catch(() => {});
-  await c.db.execute(`ALTER TABLE task_workbench_sessions ADD COLUMN transcript_json text DEFAULT '[]' NOT NULL`).catch(() => {});
-  await c.db.execute(`ALTER TABLE task_workbench_sessions ADD COLUMN transcript_updated_at integer`).catch(() => {});
-}
-
-async function ensureTaskRuntimeCacheColumns(c: any): Promise<void> {
-  await c.db.execute(`ALTER TABLE task_runtime ADD COLUMN git_state_json text`).catch(() => {});
-  await c.db.execute(`ALTER TABLE task_runtime ADD COLUMN git_state_updated_at integer`).catch(() => {});
-  await c.db.execute(`ALTER TABLE task_runtime ADD COLUMN provision_stage text`).catch(() => {});
-  await c.db.execute(`ALTER TABLE task_runtime ADD COLUMN provision_stage_updated_at integer`).catch(() => {});
 }
 
 function defaultModelForAgent(agentType: string | null | undefined) {
@@ -168,8 +132,7 @@ export function shouldRecreateSessionForModelChange(meta: {
 }
 
 async function listSessionMetaRows(c: any, options?: { includeClosed?: boolean }): Promise<Array<any>> {
-  await ensureWorkbenchSessionTable(c);
-  const rows = await c.db.select().from(taskWorkbenchSessions).orderBy(asc(taskWorkbenchSessions.createdAt)).all();
+  const rows = await c.db.select().from(taskWorkspaceSessions).orderBy(asc(taskWorkspaceSessions.createdAt)).all();
   const mapped = rows.map((row: any) => ({
     ...row,
     id: row.sessionId,
@@ -199,8 +162,7 @@ async function nextSessionName(c: any): Promise<string> {
 }
 
 async function readSessionMeta(c: any, sessionId: string): Promise<any | null> {
-  await ensureWorkbenchSessionTable(c);
-  const row = await c.db.select().from(taskWorkbenchSessions).where(eq(taskWorkbenchSessions.sessionId, sessionId)).get();
+  const row = await c.db.select().from(taskWorkspaceSessions).where(eq(taskWorkspaceSessions.sessionId, sessionId)).get();
 
   if (!row) {
     return null;
@@ -236,7 +198,6 @@ async function ensureSessionMeta(
     errorMessage?: string | null;
   },
 ): Promise<any> {
-  await ensureWorkbenchSessionTable(c);
   const existing = await readSessionMeta(c, params.sessionId);
   if (existing) {
     return existing;
@@ -248,7 +209,7 @@ async function ensureSessionMeta(
   const unread = params.unread ?? false;
 
   await c.db
-    .insert(taskWorkbenchSessions)
+    .insert(taskWorkspaceSessions)
     .values({
       sessionId: params.sessionId,
       sandboxSessionId: params.sandboxSessionId ?? null,
@@ -276,19 +237,18 @@ async function ensureSessionMeta(
 async function updateSessionMeta(c: any, sessionId: string, values: Record<string, unknown>): Promise<any> {
   await ensureSessionMeta(c, { sessionId });
   await c.db
-    .update(taskWorkbenchSessions)
+    .update(taskWorkspaceSessions)
     .set({
       ...values,
       updatedAt: Date.now(),
     })
-    .where(eq(taskWorkbenchSessions.sessionId, sessionId))
+    .where(eq(taskWorkspaceSessions.sessionId, sessionId))
     .run();
   return await readSessionMeta(c, sessionId);
 }
 
 async function readSessionMetaBySandboxSessionId(c: any, sandboxSessionId: string): Promise<any | null> {
-  await ensureWorkbenchSessionTable(c);
-  const row = await c.db.select().from(taskWorkbenchSessions).where(eq(taskWorkbenchSessions.sandboxSessionId, sandboxSessionId)).get();
+  const row = await c.db.select().from(taskWorkspaceSessions).where(eq(taskWorkspaceSessions.sandboxSessionId, sandboxSessionId)).get();
   if (!row) {
     return null;
   }
@@ -298,17 +258,17 @@ async function readSessionMetaBySandboxSessionId(c: any, sandboxSessionId: strin
 async function requireReadySessionMeta(c: any, sessionId: string): Promise<any> {
   const meta = await readSessionMeta(c, sessionId);
   if (!meta) {
-    throw new Error(`Unknown workbench session: ${sessionId}`);
+    throw new Error(`Unknown workspace session: ${sessionId}`);
   }
   if (meta.status !== "ready" || !meta.sandboxSessionId) {
-    throw new Error(meta.errorMessage ?? "This workbench session is still preparing");
+    throw new Error(meta.errorMessage ?? "This workspace session is still preparing");
   }
   return meta;
 }
 
 export function requireSendableSessionMeta(meta: any, sessionId: string): any {
   if (!meta) {
-    throw new Error(`Unknown workbench session: ${sessionId}`);
+    throw new Error(`Unknown workspace session: ${sessionId}`);
   }
   if (meta.status !== "ready" || !meta.sandboxSessionId) {
     throw new Error(`Session is not ready (status: ${meta.status}). Wait for session provisioning to complete.`);
@@ -389,7 +349,7 @@ async function getTaskSandboxRuntime(
 /**
  * Track whether the sandbox repo has been fully prepared (cloned + fetched + checked out)
  * for the current actor lifecycle. Subsequent calls can skip the expensive `git fetch`
- * when `skipFetch` is true (used by sendWorkbenchMessage to avoid blocking on every prompt).
+ * when `skipFetch` is true (used by sendWorkspaceMessage to avoid blocking on every prompt).
  */
 let sandboxRepoPrepared = false;
 
@@ -452,7 +412,7 @@ async function executeInSandbox(
     label: string;
   },
 ): Promise<{ exitCode: number; result: string }> {
-  const record = await ensureWorkbenchSeeded(c);
+  const record = await ensureWorkspaceSeeded(c);
   const runtime = await getTaskSandboxRuntime(c, record);
   await ensureSandboxRepo(c, runtime.sandbox, record);
   const response = await runtime.sandbox.runProcess({
@@ -555,7 +515,7 @@ function buildFileTree(paths: string[]): Array<any> {
   return sortNodes(root.children.values());
 }
 
-async function collectWorkbenchGitState(c: any, record: any) {
+async function collectWorkspaceGitState(c: any, record: any) {
   const activeSandboxId = record.activeSandboxId;
   const activeSandbox = activeSandboxId != null ? ((record.sandboxes ?? []).find((candidate: any) => candidate.sandboxId === activeSandboxId) ?? null) : null;
   const cwd = activeSandbox?.cwd ?? record.sandboxes?.[0]?.cwd ?? null;
@@ -628,7 +588,6 @@ async function collectWorkbenchGitState(c: any, record: any) {
 }
 
 async function readCachedGitState(c: any): Promise<{ fileChanges: Array<any>; diffs: Record<string, string>; fileTree: Array<any>; updatedAt: number | null }> {
-  await ensureTaskRuntimeCacheColumns(c);
   const row = await c.db
     .select({
       gitStateJson: taskRuntime.gitStateJson,
@@ -645,7 +604,6 @@ async function readCachedGitState(c: any): Promise<{ fileChanges: Array<any>; di
 }
 
 async function writeCachedGitState(c: any, gitState: { fileChanges: Array<any>; diffs: Record<string, string>; fileTree: Array<any> }): Promise<void> {
-  await ensureTaskRuntimeCacheColumns(c);
   const now = Date.now();
   await c.db
     .update(taskRuntime)
@@ -687,19 +645,19 @@ async function writeSessionTranscript(c: any, sessionId: string, transcript: Arr
   });
 }
 
-async function enqueueWorkbenchRefresh(
+async function enqueueWorkspaceRefresh(
   c: any,
-  command: "task.command.workbench.refresh_derived" | "task.command.workbench.refresh_session_transcript",
+  command: "task.command.workspace.refresh_derived" | "task.command.workspace.refresh_session_transcript",
   body: Record<string, unknown>,
 ): Promise<void> {
   const self = selfTask(c);
   await self.send(command, body, { wait: false });
 }
 
-async function enqueueWorkbenchEnsureSession(c: any, sessionId: string): Promise<void> {
+async function enqueueWorkspaceEnsureSession(c: any, sessionId: string): Promise<void> {
   const self = selfTask(c);
   await self.send(
-    "task.command.workbench.ensure_session",
+    "task.command.workspace.ensure_session",
     {
       sessionId,
     },
@@ -709,21 +667,21 @@ async function enqueueWorkbenchEnsureSession(c: any, sessionId: string): Promise
   );
 }
 
-function pendingWorkbenchSessionStatus(record: any): "pending_provision" | "pending_session_create" {
+function pendingWorkspaceSessionStatus(record: any): "pending_provision" | "pending_session_create" {
   return record.activeSandboxId ? "pending_session_create" : "pending_provision";
 }
 
-async function maybeScheduleWorkbenchRefreshes(c: any, record: any, sessions: Array<any>): Promise<void> {
+async function maybeScheduleWorkspaceRefreshes(c: any, record: any, sessions: Array<any>): Promise<void> {
   const gitState = await readCachedGitState(c);
   if (record.activeSandboxId && !gitState.updatedAt) {
-    await enqueueWorkbenchRefresh(c, "task.command.workbench.refresh_derived", {});
+    await enqueueWorkspaceRefresh(c, "task.command.workspace.refresh_derived", {});
   }
 
   for (const session of sessions) {
     if (session.closed || session.status !== "ready" || !session.sandboxSessionId || session.transcriptUpdatedAt) {
       continue;
     }
-    await enqueueWorkbenchRefresh(c, "task.command.workbench.refresh_session_transcript", {
+    await enqueueWorkspaceRefresh(c, "task.command.workspace.refresh_session_transcript", {
       sessionId: session.sandboxSessionId,
     });
   }
@@ -756,8 +714,7 @@ async function readPullRequestSummary(c: any, branchName: string | null) {
   }
 }
 
-export async function ensureWorkbenchSeeded(c: any): Promise<any> {
-  await ensureTaskRuntimeCacheColumns(c);
+export async function ensureWorkspaceSeeded(c: any): Promise<any> {
   const record = await getCurrentRecord({ db: c.db, state: c.state });
   if (record.activeSessionId) {
     await ensureSessionMeta(c, {
@@ -826,13 +783,13 @@ function buildSessionDetailFromMeta(record: any, meta: any): any {
 }
 
 /**
- * Builds a WorkbenchTaskSummary from local task actor state. Task actors push
+ * Builds a WorkspaceTaskSummary from local task actor state. Task actors push
  * this to the parent organization actor so organization sidebar reads stay local.
  */
 export async function buildTaskSummary(c: any): Promise<any> {
-  const record = await ensureWorkbenchSeeded(c);
+  const record = await ensureWorkspaceSeeded(c);
   const sessions = await listSessionMetaRows(c);
-  await maybeScheduleWorkbenchRefreshes(c, record, sessions);
+  await maybeScheduleWorkspaceRefreshes(c, record, sessions);
 
   return {
     id: c.state.taskId,
@@ -848,14 +805,14 @@ export async function buildTaskSummary(c: any): Promise<any> {
 }
 
 /**
- * Builds a WorkbenchTaskDetail from local task actor state for direct task
+ * Builds a WorkspaceTaskDetail from local task actor state for direct task
  * subscribers. This is a full replacement payload, not a patch.
  */
 export async function buildTaskDetail(c: any): Promise<any> {
-  const record = await ensureWorkbenchSeeded(c);
+  const record = await ensureWorkspaceSeeded(c);
   const gitState = await readCachedGitState(c);
   const sessions = await listSessionMetaRows(c);
-  await maybeScheduleWorkbenchRefreshes(c, record, sessions);
+  await maybeScheduleWorkspaceRefreshes(c, record, sessions);
   const summary = await buildTaskSummary(c);
 
   return {
@@ -882,13 +839,13 @@ export async function buildTaskDetail(c: any): Promise<any> {
 }
 
 /**
- * Builds a WorkbenchSessionDetail for a specific session.
+ * Builds a WorkspaceSessionDetail for a specific session.
  */
 export async function buildSessionDetail(c: any, sessionId: string): Promise<any> {
-  const record = await ensureWorkbenchSeeded(c);
+  const record = await ensureWorkspaceSeeded(c);
   const meta = await readSessionMeta(c, sessionId);
   if (!meta || meta.closed) {
-    throw new Error(`Unknown workbench session: ${sessionId}`);
+    throw new Error(`Unknown workspace session: ${sessionId}`);
   }
 
   if (!meta.sandboxSessionId) {
@@ -925,7 +882,7 @@ export async function getSessionDetail(c: any, sessionId: string): Promise<any> 
 }
 
 /**
- * Replaces the old notifyWorkbenchUpdated pattern.
+ * Replaces the old notifyWorkspaceUpdated pattern.
  *
  * The task actor emits two kinds of updates:
  * - Push summary state up to the parent organization actor so the sidebar
@@ -933,10 +890,10 @@ export async function getSessionDetail(c: any, sessionId: string): Promise<any> 
  * - Broadcast full detail/session payloads down to direct task subscribers.
  */
 export async function broadcastTaskUpdate(c: any, options?: { sessionId?: string }): Promise<void> {
-  const organization = await getOrCreateOrganization(c, c.state.organizationId);
-  await organization.applyTaskSummaryUpdate({ taskSummary: await buildTaskSummary(c) });
+  const repository = await getOrCreateRepository(c, c.state.organizationId, c.state.repoId, c.state.repoRemote);
+  await repository.applyTaskSummaryUpdate({ taskSummary: await buildTaskSummary(c) });
   c.broadcast("taskUpdated", {
-    type: "taskDetailUpdated",
+    type: "taskUpdated",
     detail: await buildTaskDetail(c),
   });
 
@@ -948,15 +905,15 @@ export async function broadcastTaskUpdate(c: any, options?: { sessionId?: string
   }
 }
 
-export async function refreshWorkbenchDerivedState(c: any): Promise<void> {
-  const record = await ensureWorkbenchSeeded(c);
-  const gitState = await collectWorkbenchGitState(c, record);
+export async function refreshWorkspaceDerivedState(c: any): Promise<void> {
+  const record = await ensureWorkspaceSeeded(c);
+  const gitState = await collectWorkspaceGitState(c, record);
   await writeCachedGitState(c, gitState);
   await broadcastTaskUpdate(c);
 }
 
-export async function refreshWorkbenchSessionTranscript(c: any, sessionId: string): Promise<void> {
-  const record = await ensureWorkbenchSeeded(c);
+export async function refreshWorkspaceSessionTranscript(c: any, sessionId: string): Promise<void> {
+  const record = await ensureWorkspaceSeeded(c);
   const meta = (await readSessionMetaBySandboxSessionId(c, sessionId)) ?? (await readSessionMeta(c, sessionId));
   if (!meta?.sandboxSessionId) {
     return;
@@ -967,7 +924,7 @@ export async function refreshWorkbenchSessionTranscript(c: any, sessionId: strin
   await broadcastTaskUpdate(c, { sessionId: meta.sessionId });
 }
 
-export async function renameWorkbenchTask(c: any, value: string): Promise<void> {
+export async function renameWorkspaceTask(c: any, value: string): Promise<void> {
   const nextTitle = value.trim();
   if (!nextTitle) {
     throw new Error("task title is required");
@@ -985,81 +942,30 @@ export async function renameWorkbenchTask(c: any, value: string): Promise<void> 
   await broadcastTaskUpdate(c);
 }
 
-export async function renameWorkbenchBranch(c: any, value: string): Promise<void> {
-  const nextBranch = value.trim();
-  if (!nextBranch) {
-    throw new Error("branch name is required");
-  }
-
-  const record = await ensureWorkbenchSeeded(c);
-  if (!record.branchName) {
-    throw new Error("cannot rename branch before task branch exists");
-  }
-  if (!record.activeSandboxId) {
-    throw new Error("cannot rename branch without an active sandbox");
-  }
-  const activeSandbox = (record.sandboxes ?? []).find((candidate: any) => candidate.sandboxId === record.activeSandboxId) ?? null;
-  if (!activeSandbox?.cwd) {
-    throw new Error("cannot rename branch without a sandbox cwd");
-  }
-
-  const renameResult = await executeInSandbox(c, {
-    sandboxId: record.activeSandboxId,
-    cwd: activeSandbox.cwd,
-    command: [
-      `git branch -m ${JSON.stringify(record.branchName)} ${JSON.stringify(nextBranch)}`,
-      `if git ls-remote --exit-code --heads origin ${JSON.stringify(record.branchName)} >/dev/null 2>&1; then git push origin :${JSON.stringify(record.branchName)}; fi`,
-      `git push origin ${JSON.stringify(nextBranch)}`,
-      `git branch --set-upstream-to=${JSON.stringify(`origin/${nextBranch}`)} ${JSON.stringify(nextBranch)} || git push --set-upstream origin ${JSON.stringify(nextBranch)}`,
-    ].join(" && "),
-    label: `git branch -m ${record.branchName} ${nextBranch}`,
-  });
-  if (renameResult.exitCode !== 0) {
-    throw new Error(`branch rename failed (${renameResult.exitCode}): ${renameResult.result}`);
-  }
-
-  await c.db
-    .update(taskTable)
-    .set({
-      branchName: nextBranch,
-      updatedAt: Date.now(),
-    })
-    .where(eq(taskTable.id, 1))
-    .run();
-  c.state.branchName = nextBranch;
-
-  const repository = await getOrCreateRepository(c, c.state.organizationId, c.state.repoId, c.state.repoRemote);
-  await repository.registerTaskBranch({
-    taskId: c.state.taskId,
-    branchName: nextBranch,
-  });
-  await broadcastTaskUpdate(c);
-}
-
-export async function createWorkbenchSession(c: any, model?: string): Promise<{ sessionId: string }> {
+export async function createWorkspaceSession(c: any, model?: string): Promise<{ sessionId: string }> {
   const sessionId = `session-${randomUUID()}`;
-  const record = await ensureWorkbenchSeeded(c);
+  const record = await ensureWorkspaceSeeded(c);
   await ensureSessionMeta(c, {
     sessionId,
     model: model ?? defaultModelForAgent(record.agentType),
     sandboxSessionId: null,
-    status: pendingWorkbenchSessionStatus(record),
+    status: pendingWorkspaceSessionStatus(record),
     created: false,
   });
   await broadcastTaskUpdate(c, { sessionId: sessionId });
-  await enqueueWorkbenchEnsureSession(c, sessionId);
+  await enqueueWorkspaceEnsureSession(c, sessionId);
   return { sessionId };
 }
 
-export async function ensureWorkbenchSession(c: any, sessionId: string, model?: string): Promise<void> {
+export async function ensureWorkspaceSession(c: any, sessionId: string, model?: string): Promise<void> {
   const meta = await readSessionMeta(c, sessionId);
   if (!meta || meta.closed) {
     return;
   }
 
-  const record = await ensureWorkbenchSeeded(c);
+  const record = await ensureWorkspaceSeeded(c);
   if (meta.sandboxSessionId && meta.status === "ready") {
-    await enqueueWorkbenchRefresh(c, "task.command.workbench.refresh_session_transcript", {
+    await enqueueWorkspaceRefresh(c, "task.command.workspace.refresh_session_transcript", {
       sessionId: meta.sandboxSessionId,
     });
     await broadcastTaskUpdate(c, { sessionId: sessionId });
@@ -1089,7 +995,7 @@ export async function ensureWorkbenchSession(c: any, sessionId: string, model?: 
       status: "ready",
       errorMessage: null,
     });
-    await enqueueWorkbenchRefresh(c, "task.command.workbench.refresh_session_transcript", {
+    await enqueueWorkspaceRefresh(c, "task.command.workspace.refresh_session_transcript", {
       sessionId: meta.sandboxSessionId ?? sessionId,
     });
   } catch (error) {
@@ -1102,7 +1008,7 @@ export async function ensureWorkbenchSession(c: any, sessionId: string, model?: 
   await broadcastTaskUpdate(c, { sessionId: sessionId });
 }
 
-export async function enqueuePendingWorkbenchSessions(c: any): Promise<void> {
+export async function enqueuePendingWorkspaceSessions(c: any): Promise<void> {
   const self = selfTask(c);
   const pending = (await listSessionMetaRows(c, { includeClosed: true })).filter(
     (row) => row.closed !== true && row.status !== "ready" && row.status !== "error",
@@ -1110,7 +1016,7 @@ export async function enqueuePendingWorkbenchSessions(c: any): Promise<void> {
 
   for (const row of pending) {
     await self.send(
-      "task.command.workbench.ensure_session",
+      "task.command.workspace.ensure_session",
       {
         sessionId: row.sessionId,
         model: row.model,
@@ -1122,7 +1028,7 @@ export async function enqueuePendingWorkbenchSessions(c: any): Promise<void> {
   }
 }
 
-export async function renameWorkbenchSession(c: any, sessionId: string, title: string): Promise<void> {
+export async function renameWorkspaceSession(c: any, sessionId: string, title: string): Promise<void> {
   const trimmed = title.trim();
   if (!trimmed) {
     throw new Error("session title is required");
@@ -1133,14 +1039,14 @@ export async function renameWorkbenchSession(c: any, sessionId: string, title: s
   await broadcastTaskUpdate(c, { sessionId });
 }
 
-export async function setWorkbenchSessionUnread(c: any, sessionId: string, unread: boolean): Promise<void> {
+export async function setWorkspaceSessionUnread(c: any, sessionId: string, unread: boolean): Promise<void> {
   await updateSessionMeta(c, sessionId, {
     unread: unread ? 1 : 0,
   });
   await broadcastTaskUpdate(c, { sessionId });
 }
 
-export async function updateWorkbenchDraft(c: any, sessionId: string, text: string, attachments: Array<any>): Promise<void> {
+export async function updateWorkspaceDraft(c: any, sessionId: string, text: string, attachments: Array<any>): Promise<void> {
   await updateSessionMeta(c, sessionId, {
     draftText: text,
     draftAttachmentsJson: JSON.stringify(attachments),
@@ -1149,7 +1055,7 @@ export async function updateWorkbenchDraft(c: any, sessionId: string, text: stri
   await broadcastTaskUpdate(c, { sessionId });
 }
 
-export async function changeWorkbenchModel(c: any, sessionId: string, model: string): Promise<void> {
+export async function changeWorkspaceModel(c: any, sessionId: string, model: string): Promise<void> {
   const meta = await readSessionMeta(c, sessionId);
   if (!meta || meta.closed) {
     return;
@@ -1159,7 +1065,7 @@ export async function changeWorkbenchModel(c: any, sessionId: string, model: str
     return;
   }
 
-  const record = await ensureWorkbenchSeeded(c);
+  const record = await ensureWorkspaceSeeded(c);
   let nextMeta = await updateSessionMeta(c, sessionId, {
     model,
   });
@@ -1170,7 +1076,7 @@ export async function changeWorkbenchModel(c: any, sessionId: string, model: str
     await sandbox.destroySession(nextMeta.sandboxSessionId);
     nextMeta = await updateSessionMeta(c, sessionId, {
       sandboxSessionId: null,
-      status: pendingWorkbenchSessionStatus(record),
+      status: pendingWorkspaceSessionStatus(record),
       errorMessage: null,
       transcriptJson: "[]",
       transcriptUpdatedAt: null,
@@ -1191,20 +1097,20 @@ export async function changeWorkbenchModel(c: any, sessionId: string, model: str
     }
   } else if (nextMeta.status !== "ready") {
     nextMeta = await updateSessionMeta(c, sessionId, {
-      status: pendingWorkbenchSessionStatus(record),
+      status: pendingWorkspaceSessionStatus(record),
       errorMessage: null,
     });
   }
 
   if (shouldEnsure) {
-    await enqueueWorkbenchEnsureSession(c, sessionId);
+    await enqueueWorkspaceEnsureSession(c, sessionId);
   }
   await broadcastTaskUpdate(c, { sessionId });
 }
 
-export async function sendWorkbenchMessage(c: any, sessionId: string, text: string, attachments: Array<any>): Promise<void> {
+export async function sendWorkspaceMessage(c: any, sessionId: string, text: string, attachments: Array<any>): Promise<void> {
   const meta = requireSendableSessionMeta(await readSessionMeta(c, sessionId), sessionId);
-  const record = await ensureWorkbenchSeeded(c);
+  const record = await ensureWorkspaceSeeded(c);
   const runtime = await getTaskSandboxRuntime(c, record);
   // Skip git fetch on subsequent messages — the repo was already prepared during session
   // creation. This avoids a 5-30s network round-trip to GitHub on every prompt.
@@ -1234,25 +1140,25 @@ export async function sendWorkbenchMessage(c: any, sessionId: string, text: stri
     .where(eq(taskRuntime.id, 1))
     .run();
 
-  await syncWorkbenchSessionStatus(c, meta.sandboxSessionId, "running", Date.now());
+  await syncWorkspaceSessionStatus(c, meta.sandboxSessionId, "running", Date.now());
 
   try {
     await runtime.sandbox.sendPrompt({
       sessionId: meta.sandboxSessionId,
       prompt: prompt.join("\n\n"),
     });
-    await syncWorkbenchSessionStatus(c, meta.sandboxSessionId, "idle", Date.now());
+    await syncWorkspaceSessionStatus(c, meta.sandboxSessionId, "idle", Date.now());
   } catch (error) {
     await updateSessionMeta(c, sessionId, {
       status: "error",
       errorMessage: error instanceof Error ? error.message : String(error),
     });
-    await syncWorkbenchSessionStatus(c, meta.sandboxSessionId, "error", Date.now());
+    await syncWorkspaceSessionStatus(c, meta.sandboxSessionId, "error", Date.now());
     throw error;
   }
 }
 
-export async function stopWorkbenchSession(c: any, sessionId: string): Promise<void> {
+export async function stopWorkspaceSession(c: any, sessionId: string): Promise<void> {
   const meta = await requireReadySessionMeta(c, sessionId);
   const sandbox = getTaskSandbox(c, c.state.organizationId, stableSandboxId(c));
   await sandbox.destroySession(meta.sandboxSessionId);
@@ -1262,8 +1168,8 @@ export async function stopWorkbenchSession(c: any, sessionId: string): Promise<v
   await broadcastTaskUpdate(c, { sessionId });
 }
 
-export async function syncWorkbenchSessionStatus(c: any, sessionId: string, status: "running" | "idle" | "error", at: number): Promise<void> {
-  const record = await ensureWorkbenchSeeded(c);
+export async function syncWorkspaceSessionStatus(c: any, sessionId: string, status: "running" | "idle" | "error", at: number): Promise<void> {
+  const record = await ensureWorkspaceSeeded(c);
   const meta = (await readSessionMetaBySandboxSessionId(c, sessionId)) ?? (await ensureSessionMeta(c, { sessionId: sessionId, sandboxSessionId: sessionId }));
   let changed = false;
 
@@ -1318,18 +1224,18 @@ export async function syncWorkbenchSessionStatus(c: any, sessionId: string, stat
   }
 
   if (changed) {
-    await enqueueWorkbenchRefresh(c, "task.command.workbench.refresh_session_transcript", {
+    await enqueueWorkspaceRefresh(c, "task.command.workspace.refresh_session_transcript", {
       sessionId,
     });
     if (status !== "running") {
-      await enqueueWorkbenchRefresh(c, "task.command.workbench.refresh_derived", {});
+      await enqueueWorkspaceRefresh(c, "task.command.workspace.refresh_derived", {});
     }
     await broadcastTaskUpdate(c, { sessionId: meta.sessionId });
   }
 }
 
-export async function closeWorkbenchSession(c: any, sessionId: string): Promise<void> {
-  const record = await ensureWorkbenchSeeded(c);
+export async function closeWorkspaceSession(c: any, sessionId: string): Promise<void> {
+  const record = await ensureWorkspaceSeeded(c);
   const sessions = await listSessionMetaRows(c);
   if (sessions.filter((candidate) => candidate.closed !== true).length <= 1) {
     return;
@@ -1360,7 +1266,7 @@ export async function closeWorkbenchSession(c: any, sessionId: string): Promise<
   await broadcastTaskUpdate(c);
 }
 
-export async function markWorkbenchUnread(c: any): Promise<void> {
+export async function markWorkspaceUnread(c: any): Promise<void> {
   const sessions = await listSessionMetaRows(c);
   const latest = sessions[sessions.length - 1];
   if (!latest) {
@@ -1372,8 +1278,8 @@ export async function markWorkbenchUnread(c: any): Promise<void> {
   await broadcastTaskUpdate(c, { sessionId: latest.sessionId });
 }
 
-export async function publishWorkbenchPr(c: any): Promise<void> {
-  const record = await ensureWorkbenchSeeded(c);
+export async function publishWorkspacePr(c: any): Promise<void> {
+  const record = await ensureWorkspaceSeeded(c);
   if (!record.branchName) {
     throw new Error("cannot publish PR without a branch");
   }
@@ -1400,8 +1306,8 @@ export async function publishWorkbenchPr(c: any): Promise<void> {
   await broadcastTaskUpdate(c);
 }
 
-export async function revertWorkbenchFile(c: any, path: string): Promise<void> {
-  const record = await ensureWorkbenchSeeded(c);
+export async function revertWorkspaceFile(c: any, path: string): Promise<void> {
+  const record = await ensureWorkspaceSeeded(c);
   if (!record.activeSandboxId) {
     throw new Error("cannot revert file without an active sandbox");
   }
@@ -1419,6 +1325,6 @@ export async function revertWorkbenchFile(c: any, path: string): Promise<void> {
   if (result.exitCode !== 0) {
     throw new Error(`file revert failed (${result.exitCode}): ${result.result}`);
   }
-  await enqueueWorkbenchRefresh(c, "task.command.workbench.refresh_derived", {});
+  await enqueueWorkspaceRefresh(c, "task.command.workspace.refresh_derived", {});
   await broadcastTaskUpdate(c);
 }
