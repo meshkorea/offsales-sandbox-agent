@@ -1,14 +1,16 @@
 import { ModalClient } from "modal";
 import type { SandboxProvider } from "./types.ts";
-import { DEFAULT_AGENTS, SANDBOX_AGENT_INSTALL_SCRIPT, buildServerStartCommand } from "./shared.ts";
+import { DEFAULT_AGENTS, SANDBOX_AGENT_INSTALL_SCRIPT } from "./shared.ts";
 
 const DEFAULT_AGENT_PORT = 3000;
 const DEFAULT_APP_NAME = "sandbox-agent";
+const DEFAULT_MEMORY_MIB = 2048;
 
 export interface ModalProviderOptions {
   create?: {
     secrets?: Record<string, string>;
     appName?: string;
+    memoryMiB?: number;
   };
   agentPort?: number;
 }
@@ -16,6 +18,7 @@ export interface ModalProviderOptions {
 export function modal(options: ModalProviderOptions = {}): SandboxProvider {
   const agentPort = options.agentPort ?? DEFAULT_AGENT_PORT;
   const appName = options.create?.appName ?? DEFAULT_APP_NAME;
+  const memoryMiB = options.create?.memoryMiB ?? DEFAULT_MEMORY_MIB;
   const client = new ModalClient();
 
   return {
@@ -23,11 +26,15 @@ export function modal(options: ModalProviderOptions = {}): SandboxProvider {
     async create(): Promise<string> {
       const app = await client.apps.fromName(appName, { createIfMissing: true });
 
+      // Pre-install sandbox-agent and agents in the image so they are cached
+      // across sandbox creates and don't need to be installed at runtime.
+      const installAgentCmds = DEFAULT_AGENTS.map((agent) => `RUN sandbox-agent install-agent ${agent}`);
       const image = client.images
         .fromRegistry("node:22-slim")
         .dockerfileCommands([
           "RUN apt-get update && apt-get install -y curl ca-certificates && rm -rf /var/lib/apt/lists/*",
           `RUN curl -fsSL ${SANDBOX_AGENT_INSTALL_SCRIPT} | sh`,
+          ...installAgentCmds,
         ]);
 
       const envVars = options.create?.secrets ?? {};
@@ -36,25 +43,13 @@ export function modal(options: ModalProviderOptions = {}): SandboxProvider {
       const sb = await client.sandboxes.create(app, image, {
         encryptedPorts: [agentPort],
         secrets,
+        memoryMiB,
       });
 
-      const exec = async (cmd: string) => {
-        const p = await sb.exec(["bash", "-c", cmd], {
-          stdout: "pipe",
-          stderr: "pipe",
-        });
-        const exitCode = await p.wait();
-        if (exitCode !== 0) {
-          const stderr = await p.stderr.readText();
-          throw new Error(`modal command failed (exit ${exitCode}): ${cmd}\n${stderr}`);
-        }
-      };
-
-      for (const agent of DEFAULT_AGENTS) {
-        await exec(`sandbox-agent install-agent ${agent}`);
-      }
-
-      await sb.exec(["bash", "-c", buildServerStartCommand(agentPort)]);
+      // Start the server as a long-running exec process. We intentionally
+      // do NOT await p.wait() — the process stays alive for the sandbox
+      // lifetime and keeps the port open for the tunnel.
+      sb.exec(["sandbox-agent", "server", "--no-token", "--host", "0.0.0.0", "--port", String(agentPort)]);
 
       return sb.sandboxId;
     },
