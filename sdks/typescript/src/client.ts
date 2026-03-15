@@ -1770,7 +1770,7 @@ export class SandboxAgent {
       };
 
       try {
-        await this.persist.insertEvent(event);
+        await this.persist.insertEvent(localSessionId, event);
         break;
       } catch (error) {
         if (!isSessionEventIndexConflict(error) || attempt === MAX_EVENT_INDEX_INSERT_RETRIES - 1) {

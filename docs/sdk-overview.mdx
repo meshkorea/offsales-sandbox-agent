@@ -23,12 +23,6 @@ The TypeScript SDK is centered on `sandbox-agent` and its `SandboxAgent` class.
   </Tab>
 </Tabs>
 
-## Optional persistence drivers
-
-```bash
-npm install @sandbox-agent/persist-indexeddb@0.3.x @sandbox-agent/persist-sqlite@0.3.x @sandbox-agent/persist-postgres@0.3.x
-```
-
 ## Optional React components
 
 ```bash
@@ -68,15 +62,12 @@ const sdk = await SandboxAgent.connect({
 controller.abort();
 ```
 
-With persistence:
+With persistence (see [Persisting Sessions](/session-persistence) for driver options):
 
 ```ts
-import { SandboxAgent } from "sandbox-agent";
-import { SQLiteSessionPersistDriver } from "@sandbox-agent/persist-sqlite";
+import { SandboxAgent, InMemorySessionPersistDriver } from "sandbox-agent";
 
-const persist = new SQLiteSessionPersistDriver({
-  filename: "./sessions.db",
-});
+const persist = new InMemorySessionPersistDriver();
 
 const sdk = await SandboxAgent.connect({
   baseUrl: "http://127.0.0.1:2468",

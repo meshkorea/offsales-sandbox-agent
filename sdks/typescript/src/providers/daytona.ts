@@ -7,15 +7,17 @@ const DEFAULT_PREVIEW_TTL_SECONDS = 4 * 60 * 60;
 
 type DaytonaCreateParams = NonNullable<Parameters<Daytona["create"]>[0]>;
 
+type DaytonaCreateOverrides = Partial<DaytonaCreateParams>;
+
 export interface DaytonaProviderOptions {
-  create?: DaytonaCreateParams | (() => DaytonaCreateParams | Promise<DaytonaCreateParams>);
+  create?: DaytonaCreateOverrides | (() => DaytonaCreateOverrides | Promise<DaytonaCreateOverrides>);
   image?: string;
   agentPort?: number;
   previewTtlSeconds?: number;
   deleteTimeoutSeconds?: number;
 }
 
-async function resolveCreateOptions(value: DaytonaProviderOptions["create"]): Promise<DaytonaCreateParams | undefined> {
+async function resolveCreateOptions(value: DaytonaProviderOptions["create"]): Promise<DaytonaCreateOverrides | undefined> {
   if (!value) return undefined;
   if (typeof value === "function") return await value();
   return value;

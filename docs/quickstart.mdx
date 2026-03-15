@@ -22,36 +22,15 @@ icon: "rocket"
     </Tabs>
   </Step>
 
-  <Step title="Set environment variables">
-    Each coding agent requires API keys to connect to their respective LLM providers.
-
-    ```bash
-    export ANTHROPIC_API_KEY="sk-ant-..."
-    export OPENAI_API_KEY="sk-..."
-    ```
-
-    <AccordionGroup>
-      <Accordion title="Extracting API keys from current machine">
-        Use `sandbox-agent credentials extract-env --export` to extract your existing API keys (Anthropic, OpenAI, etc.) from local Claude Code or Codex config files.
-      </Accordion>
-      <Accordion title="Testing without API keys">
-        Use the `mock` agent for SDK and integration testing without provider credentials.
-      </Accordion>
-      <Accordion title="Multi-tenant and per-user billing">
-        For per-tenant token tracking, budget enforcement, or usage-based billing, see [LLM Credentials](/llm-credentials) for gateway options like OpenRouter, LiteLLM, and Portkey.
-      </Accordion>
-    </AccordionGroup>
-  </Step>
-
   <Step title="Start the sandbox">
-    `SandboxAgent.start()` provisions a sandbox, starts a lightweight [Sandbox Agent server](/architecture) inside it, and connects your SDK client.
+    `SandboxAgent.start()` provisions a sandbox, starts a lightweight [Sandbox Agent server](/architecture) inside it, and connects your SDK client. Pass your LLM API keys so the agent can reach its provider.
 
     <CodeGroup>
       ```typescript Local
       import { SandboxAgent } from "sandbox-agent";
       import { local } from "sandbox-agent/local";
 
-      // Runs on your machine. Best for local development and testing.
+      // Runs on your machine. Inherits process.env automatically.
       const sdk = await SandboxAgent.start({
         sandbox: local(),
       });
@@ -62,7 +41,15 @@ icon: "rocket"
       import { e2b } from "sandbox-agent/e2b";
 
       const sdk = await SandboxAgent.start({
-        sandbox: e2b({ create: { envs } }),
+        sandbox: e2b({
+          create: {
+            // Pass whichever keys your agent needs
+            envs: {
+              ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+              OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+            },
+          },
+        }),
       });
       ```
 
@@ -71,7 +58,14 @@ icon: "rocket"
       import { daytona } from "sandbox-agent/daytona";
 
       const sdk = await SandboxAgent.start({
-        sandbox: daytona({ create: { envVars } }),
+        sandbox: daytona({
+          create: {
+            envVars: {
+              ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+              OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+            },
+          },
+        }),
       });
       ```
 
@@ -80,7 +74,15 @@ icon: "rocket"
       import { vercel } from "sandbox-agent/vercel";
 
       const sdk = await SandboxAgent.start({
-        sandbox: vercel({ create: { runtime: "node24", env } }),
+        sandbox: vercel({
+          create: {
+            runtime: "node24",
+            env: {
+              ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+              OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+            },
+          },
+        }),
       });
       ```
 
@@ -100,13 +102,16 @@ icon: "rocket"
       // Good for testing. Not security-hardened like cloud sandboxes.
       const sdk = await SandboxAgent.start({
         sandbox: docker({
-          env: [`ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY}`],
+          env: [
+            `ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY}`,
+            `OPENAI_API_KEY=${process.env.OPENAI_API_KEY}`,
+          ],
         }),
       });
       ```
     </CodeGroup>
 
-    Each provider handles provisioning, server installation, and networking. Install the provider's peer dependency (e.g. `@e2b/code-interpreter`, `dockerode`) in your project. See the [Deploy](/deploy/local) guides for full setup details.
+    Each provider handles provisioning, server installation, and networking. Install the provider's peer dependency (e.g. `@e2b/code-interpreter`, `dockerode`) in your project. See the [Deploy](/deploy/local) guides for full setup details. For multi-tenant billing, per-user keys, and gateway options, see [LLM Credentials](/llm-credentials).
 
     <AccordionGroup>
       <Accordion title="Implementing a custom provider">
@@ -212,10 +217,14 @@ icon: "rocket"
 
 ```typescript
 import { SandboxAgent } from "sandbox-agent";
-import { local } from "sandbox-agent/local";
+import { e2b } from "sandbox-agent/e2b";
 
 const sdk = await SandboxAgent.start({
-  sandbox: local(),
+  sandbox: e2b({
+    create: {
+      envs: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY },
+    },
+  }),
 });
 
 try {
