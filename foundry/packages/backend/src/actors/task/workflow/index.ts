@@ -11,7 +11,6 @@ import {
   killDestroySandboxActivity,
   killWriteDbActivity,
 } from "./commands.js";
-import { TASK_QUEUE_NAMES } from "./queue.js";
 import {
   changeWorkspaceModel,
   closeWorkspaceSession,
@@ -33,205 +32,233 @@ import {
   updateWorkspaceDraft,
 } from "../workspace.js";
 
-export { TASK_QUEUE_NAMES, taskWorkflowQueueName } from "./queue.js";
+export { taskWorkflowQueueName } from "./queue.js";
 
-type TaskQueueName = (typeof TASK_QUEUE_NAMES)[number];
-
-type CommandHandler = (c: any, msg: { name: TaskQueueName; body: any; complete: (response: unknown) => Promise<void> }) => Promise<void>;
-
-const commandHandlers: Record<TaskQueueName, CommandHandler> = {
-  "task.command.initialize": async (c, msg) => {
-    const body = msg.body;
+/**
+ * Task command actions — converted from queue/workflow handlers to direct actions.
+ * Each export becomes an action on the task actor.
+ */
+export const taskCommandActions = {
+  async initialize(c: any, body: any) {
     await initBootstrapDbActivity(c, body);
     await initEnqueueProvisionActivity(c, body);
-    const currentRecord = await getCurrentRecord(c);
+    return await getCurrentRecord(c);
+  },
+
+  async provision(c: any, body: any) {
     try {
-      await msg.complete(currentRecord);
+      await initCompleteActivity(c, body);
+      return { ok: true };
     } catch (error) {
-      logActorWarning("task.workflow", "initialize completion failed", {
-        error: resolveErrorMessage(error),
-      });
+      await initFailedActivity(c, error, body);
+      return { ok: false, error: resolveErrorMessage(error) };
     }
   },
 
-  "task.command.provision": async (c, msg) => {
-    try {
-      await initCompleteActivity(c, msg.body);
-      await msg.complete({ ok: true });
-    } catch (error) {
-      await initFailedActivity(c, error, msg.body);
-      await msg.complete({
-        ok: false,
-        error: resolveErrorMessage(error),
-      });
-    }
-  },
-
-  "task.command.attach": async (c, msg) => {
+  async attach(c: any, body: any) {
+    // handleAttachActivity expects msg with complete — adapt
+    const result = { value: undefined as any };
+    const msg = {
+      name: "task.command.attach",
+      body,
+      complete: async (v: any) => {
+        result.value = v;
+      },
+    };
     await handleAttachActivity(c, msg);
+    return result.value;
   },
 
-  "task.command.switch": async (c, msg) => {
+  async switchTask(c: any, body: any) {
+    const result = { value: undefined as any };
+    const msg = {
+      name: "task.command.switch",
+      body,
+      complete: async (v: any) => {
+        result.value = v;
+      },
+    };
     await handleSwitchActivity(c, msg);
+    return result.value;
   },
 
-  "task.command.push": async (c, msg) => {
+  async push(c: any, body: any) {
+    const result = { value: undefined as any };
+    const msg = {
+      name: "task.command.push",
+      body,
+      complete: async (v: any) => {
+        result.value = v;
+      },
+    };
     await handlePushActivity(c, msg);
+    return result.value;
   },
 
-  "task.command.sync": async (c, msg) => {
+  async sync(c: any, body: any) {
+    const result = { value: undefined as any };
+    const msg = {
+      name: "task.command.sync",
+      body,
+      complete: async (v: any) => {
+        result.value = v;
+      },
+    };
     await handleSimpleCommandActivity(c, msg, "task.sync");
+    return result.value;
   },
 
-  "task.command.merge": async (c, msg) => {
+  async merge(c: any, body: any) {
+    const result = { value: undefined as any };
+    const msg = {
+      name: "task.command.merge",
+      body,
+      complete: async (v: any) => {
+        result.value = v;
+      },
+    };
     await handleSimpleCommandActivity(c, msg, "task.merge");
+    return result.value;
   },
 
-  "task.command.archive": async (c, msg) => {
+  async archive(c: any, body: any) {
+    const result = { value: undefined as any };
+    const msg = {
+      name: "task.command.archive",
+      body,
+      complete: async (v: any) => {
+        result.value = v;
+      },
+    };
     await handleArchiveActivity(c, msg);
+    return result.value;
   },
 
-  "task.command.kill": async (c, msg) => {
+  async kill(c: any, body: any) {
+    const result = { value: undefined as any };
+    const msg = {
+      name: "task.command.kill",
+      body,
+      complete: async (v: any) => {
+        result.value = v;
+      },
+    };
     await killDestroySandboxActivity(c);
     await killWriteDbActivity(c, msg);
+    return result.value;
   },
 
-  "task.command.get": async (c, msg) => {
+  async getRecord(c: any, body: any) {
+    const result = { value: undefined as any };
+    const msg = {
+      name: "task.command.get",
+      body,
+      complete: async (v: any) => {
+        result.value = v;
+      },
+    };
     await handleGetActivity(c, msg);
+    return result.value;
   },
 
-  "task.command.pull_request.sync": async (c, msg) => {
-    await syncTaskPullRequest(c, msg.body?.pullRequest ?? null);
-    await msg.complete({ ok: true });
+  async pullRequestSync(c: any, body: any) {
+    await syncTaskPullRequest(c, body?.pullRequest ?? null);
+    return { ok: true };
   },
 
-  "task.command.workspace.mark_unread": async (c, msg) => {
-    await markWorkspaceUnread(c, msg.body?.authSessionId);
-    await msg.complete({ ok: true });
+  async markUnread(c: any, body: any) {
+    await markWorkspaceUnread(c, body?.authSessionId);
+    return { ok: true };
   },
 
-  "task.command.workspace.rename_task": async (c, msg) => {
-    await renameWorkspaceTask(c, msg.body.value);
-    await msg.complete({ ok: true });
+  async renameTask(c: any, body: any) {
+    await renameWorkspaceTask(c, body.value);
+    return { ok: true };
   },
 
-  "task.command.workspace.create_session": async (c, msg) => {
+  async createSession(c: any, body: any) {
+    return await createWorkspaceSession(c, body?.model, body?.authSessionId);
+  },
+
+  async createSessionAndSend(c: any, body: any) {
     try {
-      const created = await createWorkspaceSession(c, msg.body?.model, msg.body?.authSessionId);
-      await msg.complete(created);
-    } catch (error) {
-      await msg.complete({ error: resolveErrorMessage(error) });
-    }
-  },
-
-  "task.command.workspace.create_session_and_send": async (c, msg) => {
-    try {
-      const created = await createWorkspaceSession(c, msg.body?.model, msg.body?.authSessionId);
-      await sendWorkspaceMessage(c, created.sessionId, msg.body.text, [], msg.body?.authSessionId);
+      const created = await createWorkspaceSession(c, body?.model, body?.authSessionId);
+      await sendWorkspaceMessage(c, created.sessionId, body.text, [], body?.authSessionId);
     } catch (error) {
       logActorWarning("task.workflow", "create_session_and_send failed", {
         error: resolveErrorMessage(error),
       });
     }
-    await msg.complete({ ok: true });
+    return { ok: true };
   },
 
-  "task.command.workspace.ensure_session": async (c, msg) => {
-    await ensureWorkspaceSession(c, msg.body.sessionId, msg.body?.model, msg.body?.authSessionId);
-    await msg.complete({ ok: true });
+  async ensureSession(c: any, body: any) {
+    await ensureWorkspaceSession(c, body.sessionId, body?.model, body?.authSessionId);
+    return { ok: true };
   },
 
-  "task.command.workspace.rename_session": async (c, msg) => {
-    await renameWorkspaceSession(c, msg.body.sessionId, msg.body.title);
-    await msg.complete({ ok: true });
+  async renameSession(c: any, body: any) {
+    await renameWorkspaceSession(c, body.sessionId, body.title);
+    return { ok: true };
   },
 
-  "task.command.workspace.select_session": async (c, msg) => {
-    await selectWorkspaceSession(c, msg.body.sessionId, msg.body?.authSessionId);
-    await msg.complete({ ok: true });
+  async selectSession(c: any, body: any) {
+    await selectWorkspaceSession(c, body.sessionId, body?.authSessionId);
+    return { ok: true };
   },
 
-  "task.command.workspace.set_session_unread": async (c, msg) => {
-    await setWorkspaceSessionUnread(c, msg.body.sessionId, msg.body.unread, msg.body?.authSessionId);
-    await msg.complete({ ok: true });
+  async setSessionUnread(c: any, body: any) {
+    await setWorkspaceSessionUnread(c, body.sessionId, body.unread, body?.authSessionId);
+    return { ok: true };
   },
 
-  "task.command.workspace.update_draft": async (c, msg) => {
-    await updateWorkspaceDraft(c, msg.body.sessionId, msg.body.text, msg.body.attachments, msg.body?.authSessionId);
-    await msg.complete({ ok: true });
+  async updateDraft(c: any, body: any) {
+    await updateWorkspaceDraft(c, body.sessionId, body.text, body.attachments, body?.authSessionId);
+    return { ok: true };
   },
 
-  "task.command.workspace.change_model": async (c, msg) => {
-    await changeWorkspaceModel(c, msg.body.sessionId, msg.body.model, msg.body?.authSessionId);
-    await msg.complete({ ok: true });
+  async changeModel(c: any, body: any) {
+    await changeWorkspaceModel(c, body.sessionId, body.model, body?.authSessionId);
+    return { ok: true };
   },
 
-  "task.command.workspace.send_message": async (c, msg) => {
-    try {
-      await sendWorkspaceMessage(c, msg.body.sessionId, msg.body.text, msg.body.attachments, msg.body?.authSessionId);
-      await msg.complete({ ok: true });
-    } catch (error) {
-      await msg.complete({ error: resolveErrorMessage(error) });
-    }
+  async sendMessage(c: any, body: any) {
+    await sendWorkspaceMessage(c, body.sessionId, body.text, body.attachments, body?.authSessionId);
+    return { ok: true };
   },
 
-  "task.command.workspace.stop_session": async (c, msg) => {
-    await stopWorkspaceSession(c, msg.body.sessionId);
-    await msg.complete({ ok: true });
+  async stopSession(c: any, body: any) {
+    await stopWorkspaceSession(c, body.sessionId);
+    return { ok: true };
   },
 
-  "task.command.workspace.sync_session_status": async (c, msg) => {
-    await syncWorkspaceSessionStatus(c, msg.body.sessionId, msg.body.status, msg.body.at);
-    await msg.complete({ ok: true });
+  async syncSessionStatus(c: any, body: any) {
+    await syncWorkspaceSessionStatus(c, body.sessionId, body.status, body.at);
+    return { ok: true };
   },
 
-  "task.command.workspace.refresh_derived": async (c, msg) => {
+  async refreshDerived(c: any, _body: any) {
     await refreshWorkspaceDerivedState(c);
-    await msg.complete({ ok: true });
+    return { ok: true };
   },
 
-  "task.command.workspace.refresh_session_transcript": async (c, msg) => {
-    await refreshWorkspaceSessionTranscript(c, msg.body.sessionId);
-    await msg.complete({ ok: true });
+  async refreshSessionTranscript(c: any, body: any) {
+    await refreshWorkspaceSessionTranscript(c, body.sessionId);
+    return { ok: true };
   },
 
-  "task.command.workspace.close_session": async (c, msg) => {
-    await closeWorkspaceSession(c, msg.body.sessionId, msg.body?.authSessionId);
-    await msg.complete({ ok: true });
+  async closeSession(c: any, body: any) {
+    await closeWorkspaceSession(c, body.sessionId, body?.authSessionId);
+    return { ok: true };
   },
 
-  "task.command.workspace.publish_pr": async (c, msg) => {
+  async publishPr(c: any, _body: any) {
     await publishWorkspacePr(c);
-    await msg.complete({ ok: true });
+    return { ok: true };
   },
 
-  "task.command.workspace.revert_file": async (c, msg) => {
-    await revertWorkspaceFile(c, msg.body.path);
-    await msg.complete({ ok: true });
+  async revertFile(c: any, body: any) {
+    await revertWorkspaceFile(c, body.path);
+    return { ok: true };
   },
 };
-
-/**
- * Plain run handler (no workflow engine). Drains the queue using `c.queue.iter()`
- * with completable messages.
- */
-export async function runTaskCommandLoop(c: any): Promise<void> {
-  for await (const msg of c.queue.iter({ names: [...TASK_QUEUE_NAMES], completable: true })) {
-    const handler = commandHandlers[msg.name as TaskQueueName];
-    if (handler) {
-      try {
-        await handler(c, msg);
-      } catch (error) {
-        const message = resolveErrorMessage(error);
-        logActorWarning("task.workflow", "task command failed", {
-          queueName: msg.name,
-          error: message,
-        });
-        await msg.complete({ error: message }).catch(() => {});
-      }
-    } else {
-      logActorWarning("task.workflow", "unknown queue message", { queueName: msg.name });
-      await msg.complete({ error: `Unknown command: ${msg.name}` });
-    }
-  }
-}

@@ -21,12 +21,10 @@ import type {
   TaskWorkspaceUpdateDraftInput,
 } from "@sandbox-agent/foundry-shared";
 import { getActorRuntimeContext } from "../../context.js";
-import { getOrCreateAuditLog, getOrCreateGithubData, getTask as getTaskHandle, selfOrganization } from "../../handles.js";
+import { getOrCreateAuditLog, getOrCreateTask, getTask as getTaskHandle } from "../../handles.js";
 import { defaultSandboxProviderId } from "../../../sandbox-config.js";
-import { expectQueueResponse } from "../../../services/queue.js";
 import { logActorWarning, resolveErrorMessage } from "../../logging.js";
-import { taskWorkflowQueueName } from "../../task/workflow/index.js";
-import { organizationWorkflowQueueName } from "../queues.js";
+import { taskIndex, taskSummaries } from "../db/schema.js";
 import {
   createTaskMutation,
   getRepoOverviewFromOrg,
@@ -42,16 +40,35 @@ function assertOrganization(c: { state: { organizationId: string } }, organizati
   }
 }
 
-async function requireRepoExists(c: any, repoId: string): Promise<void> {
-  const githubData = await getOrCreateGithubData(c, c.state.organizationId);
-  const repo = await githubData.getRepository({ repoId });
-  if (!repo) {
-    throw new Error(`Unknown repo: ${repoId}`);
+/**
+ * Look up the repoId for a task from the local task index.
+ * Used when callers (e.g. sandbox actor) only have taskId but need repoId
+ * to construct the task actor key.
+ */
+async function resolveTaskRepoId(c: any, taskId: string): Promise<string> {
+  const row = await c.db.select({ repoId: taskIndex.repoId }).from(taskIndex).where(eq(taskIndex.taskId, taskId)).get();
+  if (!row) {
+    throw new Error(`Task ${taskId} not found in task index`);
   }
+  return row.repoId;
 }
 
+/**
+ * Get or lazily create a task actor for a user-initiated action.
+ * Uses getOrCreate because the user may be interacting with a virtual task
+ * (PR-driven) that has no actor yet. The task actor self-initializes in
+ * getCurrentRecord() from the org's getTaskIndexEntry data.
+ *
+ * This is safe because requireWorkspaceTask is only called from user-initiated
+ * actions (createSession, sendMessage, etc.), never from sync loops.
+ * See CLAUDE.md "Lazy Task Actor Creation".
+ */
 async function requireWorkspaceTask(c: any, repoId: string, taskId: string) {
-  return getTaskHandle(c, c.state.organizationId, repoId, taskId);
+  return getOrCreateTask(c, c.state.organizationId, repoId, taskId, {
+    organizationId: c.state.organizationId,
+    repoId,
+    taskId,
+  });
 }
 
 interface GetTaskInput {
@@ -76,46 +93,30 @@ export const organizationTaskActions = {
     assertOrganization(c, input.organizationId);
     const { config } = getActorRuntimeContext();
     const sandboxProviderId = input.sandboxProviderId ?? defaultSandboxProviderId(config);
-    await requireRepoExists(c, input.repoId);
 
-    const self = selfOrganization(c);
-    return expectQueueResponse<TaskRecord>(
-      await self.send(
-        organizationWorkflowQueueName("organization.command.createTask"),
-        {
-          repoId: input.repoId,
-          task: input.task,
-          sandboxProviderId,
-          explicitTitle: input.explicitTitle ?? null,
-          explicitBranchName: input.explicitBranchName ?? null,
-          onBranch: input.onBranch ?? null,
-        },
-        {
-          wait: true,
-          timeout: 10_000,
-        },
-      ),
-    );
+    // Self-call: call the mutation directly since we're inside the org actor
+    return await createTaskMutation(c, {
+      repoId: input.repoId,
+      task: input.task,
+      sandboxProviderId,
+      explicitTitle: input.explicitTitle ?? null,
+      explicitBranchName: input.explicitBranchName ?? null,
+      onBranch: input.onBranch ?? null,
+    });
   },
 
   async materializeTask(c: any, input: { organizationId: string; repoId: string; virtualTaskId: string }): Promise<TaskRecord> {
     assertOrganization(c, input.organizationId);
     const { config } = getActorRuntimeContext();
-    const self = selfOrganization(c);
-    return expectQueueResponse<TaskRecord>(
-      await self.send(
-        organizationWorkflowQueueName("organization.command.materializeTask"),
-        {
-          repoId: input.repoId,
-          task: input.virtualTaskId,
-          sandboxProviderId: defaultSandboxProviderId(config),
-          explicitTitle: null,
-          explicitBranchName: null,
-          onBranch: null,
-        },
-        { wait: true, timeout: 10_000 },
-      ),
-    );
+    // Self-call: call the mutation directly
+    return await createTaskMutation(c, {
+      repoId: input.repoId,
+      task: input.virtualTaskId,
+      sandboxProviderId: defaultSandboxProviderId(config),
+      explicitTitle: null,
+      explicitBranchName: null,
+      onBranch: null,
+    });
   },
 
   async createWorkspaceTask(c: any, input: TaskWorkspaceCreateTaskInput): Promise<{ taskId: string; sessionId?: string }> {
@@ -128,171 +129,117 @@ export const organizationTaskActions = {
     });
 
     const task = await requireWorkspaceTask(c, input.repoId, created.taskId);
-    await task.send(
-      taskWorkflowQueueName("task.command.workspace.create_session_and_send"),
-      {
+    void task
+      .createSessionAndSend({
         model: input.model,
         text: input.task,
         authSessionId: input.authSessionId,
-      },
-      { wait: false },
-    );
+      })
+      .catch(() => {});
 
     return { taskId: created.taskId };
   },
 
   async markWorkspaceUnread(c: any, input: TaskWorkspaceSelectInput): Promise<void> {
     const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
-    await expectQueueResponse<{ ok: true }>(
-      await task.send(taskWorkflowQueueName("task.command.workspace.mark_unread"), { authSessionId: input.authSessionId }, { wait: true, timeout: 10_000 }),
-    );
+    await task.markUnread({ authSessionId: input.authSessionId });
   },
 
   async renameWorkspaceTask(c: any, input: TaskWorkspaceRenameInput): Promise<void> {
     const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
-    await expectQueueResponse<{ ok: true }>(
-      await task.send(taskWorkflowQueueName("task.command.workspace.rename_task"), { value: input.value }, { wait: true, timeout: 20_000 }),
-    );
+    await task.renameTask({ value: input.value });
   },
 
   async createWorkspaceSession(c: any, input: TaskWorkspaceSelectInput & { model?: string }): Promise<{ sessionId: string }> {
     const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
-    return await expectQueueResponse<{ sessionId: string }>(
-      await task.send(
-        taskWorkflowQueueName("task.command.workspace.create_session"),
-        {
-          ...(input.model ? { model: input.model } : {}),
-          ...(input.authSessionId ? { authSessionId: input.authSessionId } : {}),
-        },
-        { wait: true, timeout: 10_000 },
-      ),
-    );
+    return await task.createSession({
+      ...(input.model ? { model: input.model } : {}),
+      ...(input.authSessionId ? { authSessionId: input.authSessionId } : {}),
+    });
   },
 
   async renameWorkspaceSession(c: any, input: TaskWorkspaceRenameSessionInput): Promise<void> {
     const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
-    await expectQueueResponse<{ ok: true }>(
-      await task.send(
-        taskWorkflowQueueName("task.command.workspace.rename_session"),
-        { sessionId: input.sessionId, title: input.title, authSessionId: input.authSessionId },
-        { wait: true, timeout: 10_000 },
-      ),
-    );
+    await task.renameSession({ sessionId: input.sessionId, title: input.title, authSessionId: input.authSessionId });
   },
 
   async selectWorkspaceSession(c: any, input: TaskWorkspaceSessionInput): Promise<void> {
     const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
-    await expectQueueResponse<{ ok: true }>(
-      await task.send(
-        taskWorkflowQueueName("task.command.workspace.select_session"),
-        { sessionId: input.sessionId, authSessionId: input.authSessionId },
-        { wait: true, timeout: 10_000 },
-      ),
-    );
+    await task.selectSession({ sessionId: input.sessionId, authSessionId: input.authSessionId });
   },
 
   async setWorkspaceSessionUnread(c: any, input: TaskWorkspaceSetSessionUnreadInput): Promise<void> {
     const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
-    await expectQueueResponse<{ ok: true }>(
-      await task.send(
-        taskWorkflowQueueName("task.command.workspace.set_session_unread"),
-        { sessionId: input.sessionId, unread: input.unread, authSessionId: input.authSessionId },
-        { wait: true, timeout: 10_000 },
-      ),
-    );
+    await task.setSessionUnread({ sessionId: input.sessionId, unread: input.unread, authSessionId: input.authSessionId });
   },
 
   async updateWorkspaceDraft(c: any, input: TaskWorkspaceUpdateDraftInput): Promise<void> {
     const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
-    await task.send(
-      taskWorkflowQueueName("task.command.workspace.update_draft"),
-      {
+    void task
+      .updateDraft({
         sessionId: input.sessionId,
         text: input.text,
         attachments: input.attachments,
         authSessionId: input.authSessionId,
-      },
-      { wait: false },
-    );
+      })
+      .catch(() => {});
   },
 
   async changeWorkspaceModel(c: any, input: TaskWorkspaceChangeModelInput): Promise<void> {
     const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
-    await expectQueueResponse<{ ok: true }>(
-      await task.send(
-        taskWorkflowQueueName("task.command.workspace.change_model"),
-        { sessionId: input.sessionId, model: input.model, authSessionId: input.authSessionId },
-        { wait: true, timeout: 10_000 },
-      ),
-    );
+    await task.changeModel({ sessionId: input.sessionId, model: input.model, authSessionId: input.authSessionId });
   },
 
   async sendWorkspaceMessage(c: any, input: TaskWorkspaceSendMessageInput): Promise<void> {
     const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
-    await task.send(
-      taskWorkflowQueueName("task.command.workspace.send_message"),
-      {
+    void task
+      .sendMessage({
         sessionId: input.sessionId,
         text: input.text,
         attachments: input.attachments,
         authSessionId: input.authSessionId,
-      },
-      { wait: false },
-    );
+      })
+      .catch(() => {});
   },
 
   async stopWorkspaceSession(c: any, input: TaskWorkspaceSessionInput): Promise<void> {
     const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
-    await task.send(
-      taskWorkflowQueueName("task.command.workspace.stop_session"),
-      { sessionId: input.sessionId, authSessionId: input.authSessionId },
-      { wait: false },
-    );
+    void task.stopSession({ sessionId: input.sessionId, authSessionId: input.authSessionId }).catch(() => {});
   },
 
   async closeWorkspaceSession(c: any, input: TaskWorkspaceSessionInput): Promise<void> {
     const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
-    await task.send(
-      taskWorkflowQueueName("task.command.workspace.close_session"),
-      { sessionId: input.sessionId, authSessionId: input.authSessionId },
-      { wait: false },
-    );
+    void task.closeSession({ sessionId: input.sessionId, authSessionId: input.authSessionId }).catch(() => {});
   },
 
   async publishWorkspacePr(c: any, input: TaskWorkspaceSelectInput): Promise<void> {
     const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
-    await task.send(taskWorkflowQueueName("task.command.workspace.publish_pr"), {}, { wait: false });
+    void task.publishPr({}).catch(() => {});
   },
 
   async revertWorkspaceFile(c: any, input: TaskWorkspaceDiffInput): Promise<void> {
     const task = await requireWorkspaceTask(c, input.repoId, input.taskId);
-    await task.send(taskWorkflowQueueName("task.command.workspace.revert_file"), input, { wait: false });
+    void task.revertFile(input).catch(() => {});
   },
 
   async getRepoOverview(c: any, input: RepoOverviewInput): Promise<RepoOverview> {
     assertOrganization(c, input.organizationId);
-    await requireRepoExists(c, input.repoId);
+
     return await getRepoOverviewFromOrg(c, input.repoId);
   },
 
   async listTasks(c: any, input: ListTasksInput): Promise<TaskSummary[]> {
     assertOrganization(c, input.organizationId);
-
     if (input.repoId) {
       return await listTaskSummariesForRepo(c, input.repoId, true);
     }
-
     return await listAllTaskSummaries(c, true);
   },
 
   async switchTask(c: any, input: { repoId: string; taskId: string }): Promise<SwitchResult> {
-    await requireRepoExists(c, input.repoId);
     const h = getTaskHandle(c, c.state.organizationId, input.repoId, input.taskId);
     const record = await h.get();
-    const switched = await expectQueueResponse<{ switchTarget: string }>(
-      await h.send(taskWorkflowQueueName("task.command.switch"), {}, { wait: true, timeout: 10_000 }),
-    );
-
+    const switched = await h.switchTask({});
     return {
       organizationId: c.state.organizationId,
       taskId: input.taskId,
@@ -303,7 +250,6 @@ export const organizationTaskActions = {
 
   async auditLog(c: any, input: HistoryQueryInput): Promise<AuditLogEvent[]> {
     assertOrganization(c, input.organizationId);
-
     const auditLog = await getOrCreateAuditLog(c, c.state.organizationId);
     return await auditLog.list({
       repoId: input.repoId,
@@ -315,52 +261,58 @@ export const organizationTaskActions = {
 
   async getTask(c: any, input: GetTaskInput): Promise<TaskRecord> {
     assertOrganization(c, input.organizationId);
-    await requireRepoExists(c, input.repoId);
-    return await getTaskHandle(c, c.state.organizationId, input.repoId, input.taskId).get();
+    // Resolve repoId from local task index if not provided (e.g. sandbox actor only has taskId)
+    const repoId = input.repoId || (await resolveTaskRepoId(c, input.taskId));
+    // Use getOrCreate — the task may be virtual (PR-driven, no actor yet).
+    // The task actor self-initializes in getCurrentRecord().
+    const handle = await getOrCreateTask(c, c.state.organizationId, repoId, input.taskId, {
+      organizationId: c.state.organizationId,
+      repoId,
+      taskId: input.taskId,
+    });
+    return await handle.get();
   },
 
   async attachTask(c: any, input: TaskProxyActionInput): Promise<{ target: string; sessionId: string | null }> {
     assertOrganization(c, input.organizationId);
-    await requireRepoExists(c, input.repoId);
+
     const h = getTaskHandle(c, c.state.organizationId, input.repoId, input.taskId);
-    return await expectQueueResponse<{ target: string; sessionId: string | null }>(
-      await h.send(taskWorkflowQueueName("task.command.attach"), { reason: input.reason }, { wait: true, timeout: 10_000 }),
-    );
+    return await h.attach({ reason: input.reason });
   },
 
   async pushTask(c: any, input: TaskProxyActionInput): Promise<void> {
     assertOrganization(c, input.organizationId);
-    await requireRepoExists(c, input.repoId);
+
     const h = getTaskHandle(c, c.state.organizationId, input.repoId, input.taskId);
-    await h.send(taskWorkflowQueueName("task.command.push"), { reason: input.reason }, { wait: false });
+    void h.push({ reason: input.reason }).catch(() => {});
   },
 
   async syncTask(c: any, input: TaskProxyActionInput): Promise<void> {
     assertOrganization(c, input.organizationId);
-    await requireRepoExists(c, input.repoId);
+
     const h = getTaskHandle(c, c.state.organizationId, input.repoId, input.taskId);
-    await h.send(taskWorkflowQueueName("task.command.sync"), { reason: input.reason }, { wait: false });
+    void h.sync({ reason: input.reason }).catch(() => {});
   },
 
   async mergeTask(c: any, input: TaskProxyActionInput): Promise<void> {
     assertOrganization(c, input.organizationId);
-    await requireRepoExists(c, input.repoId);
+
     const h = getTaskHandle(c, c.state.organizationId, input.repoId, input.taskId);
-    await h.send(taskWorkflowQueueName("task.command.merge"), { reason: input.reason }, { wait: false });
+    void h.merge({ reason: input.reason }).catch(() => {});
   },
 
   async archiveTask(c: any, input: TaskProxyActionInput): Promise<void> {
     assertOrganization(c, input.organizationId);
-    await requireRepoExists(c, input.repoId);
+
     const h = getTaskHandle(c, c.state.organizationId, input.repoId, input.taskId);
-    await h.send(taskWorkflowQueueName("task.command.archive"), { reason: input.reason }, { wait: false });
+    void h.archive({ reason: input.reason }).catch(() => {});
   },
 
   async killTask(c: any, input: TaskProxyActionInput): Promise<void> {
     assertOrganization(c, input.organizationId);
-    await requireRepoExists(c, input.repoId);
+
     const h = getTaskHandle(c, c.state.organizationId, input.repoId, input.taskId);
-    await h.send(taskWorkflowQueueName("task.command.kill"), { reason: input.reason }, { wait: false });
+    void h.kill({ reason: input.reason }).catch(() => {});
   },
 
   async getRepositoryMetadata(c: any, input: { repoId: string }): Promise<{ defaultBranch: string | null; fullName: string | null; remoteUrl: string }> {
@@ -369,5 +321,20 @@ export const organizationTaskActions = {
 
   async findTaskForBranch(c: any, input: { repoId: string; branchName: string }): Promise<{ taskId: string | null }> {
     return await findTaskForBranch(c, input.repoId, input.branchName);
+  },
+
+  /**
+   * Lightweight read of task index + summary data. Used by the task actor
+   * to self-initialize when lazily materialized from a virtual task.
+   * Does NOT trigger materialization — no circular dependency.
+   */
+  async getTaskIndexEntry(c: any, input: { taskId: string }): Promise<{ branchName: string | null; title: string | null } | null> {
+    const idx = await c.db.select({ branchName: taskIndex.branchName }).from(taskIndex).where(eq(taskIndex.taskId, input.taskId)).get();
+    const summary = await c.db.select({ title: taskSummaries.title }).from(taskSummaries).where(eq(taskSummaries.taskId, input.taskId)).get();
+    if (!idx && !summary) return null;
+    return {
+      branchName: idx?.branchName ?? null,
+      title: summary?.title ?? null,
+    };
   },
 };

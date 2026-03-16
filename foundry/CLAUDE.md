@@ -144,6 +144,15 @@ The client subscribes to `app` always, `organization` when entering an organizat
 - Do not add backend git clone paths, `git fetch`, `git for-each-ref`, or direct backend git CLI calls. If you need git data, either read stored GitHub metadata or run the command inside a sandbox.
 - The `BackendDriver` has no `GitDriver` or `StackDriver`. Only `GithubDriver` and `TmuxDriver` remain.
 
+## React Hook Dependency Safety
+
+- **Never use unstable references as `useEffect`/`useMemo`/`useCallback` dependencies.** React compares dependencies by reference, not value. Expressions like `?? []`, `?? {}`, `.map(...)`, `.filter(...)`, or object/array literals create new references every render, causing infinite re-render loops when used as dependencies.
+- If the upstream value may be `undefined`/`null` and you need a fallback, either:
+  - Use the raw upstream value as the dependency and apply the fallback inside the effect body: `useEffect(() => { doThing(value ?? []); }, [value]);`
+  - Derive a stable primitive key: `const key = JSON.stringify(value ?? []);` then depend on `key`
+  - Memoize: `const stable = useMemo(() => value ?? [], [value]);`
+- When reviewing code, treat any `?? []`, `?? {}`, or inline `.map()/.filter()` in a dependency array as a bug.
+
 ## UI System
 
 - Foundry's base UI system is `BaseUI` with `Styletron`, plus Foundry-specific theme/tokens on top. Treat that as the default UI foundation.
@@ -168,6 +177,7 @@ The client subscribes to `app` always, `organization` when entering an organizat
 - If the system reaches an unexpected state, raise an explicit error with actionable context.
 - Do not fail silently, swallow errors, or auto-ignore inconsistent data.
 - Prefer fail-fast behavior over hidden degradation when correctness is uncertain.
+- **Never use bare `catch {}` or `catch { }` blocks.** Every catch must at minimum log the error with `logActorWarning` or `console.warn`. Silent catches hide bugs and make debugging impossible. If a catch is intentionally degrading (e.g. returning empty data when a sandbox is expired), it must still log so operators can see what happened. Use `catch (error) { logActorWarning(..., { error: resolveErrorMessage(error) }); }` or equivalent.
 
 ## RivetKit Dependency Policy
 
@@ -208,8 +218,9 @@ For all Rivet/RivetKit implementation:
 - Do not add custom backend REST endpoints (no `/v1/*` shim layer).
 - We own the sandbox-agent project; treat sandbox-agent defects as first-party bugs and fix them instead of working around them.
 - Keep strict single-writer ownership: each table/row has exactly one actor writer.
-- Parent actors (`organization`, `repository`, `task`, `history`, `sandbox-instance`) use command-only loops with no timeout.
+- Parent actors (`organization`, `task`, `sandbox-instance`) use command-only loops with no timeout.
 - Periodic syncing lives in dedicated child actors with one timeout cadence each.
+- **Task actors must be created lazily** — never during sync or bulk operations. PR sync writes virtual entries to the org's local `taskIndex`/`taskSummaries` tables. The task actor is created on first user interaction via `getOrCreate`. See `packages/backend/CLAUDE.md` "Lazy Task Actor Creation" for details.
 - Do not build blocking flows that wait on external systems to become ready or complete. Prefer push-based progression driven by actor messages, events, webhooks, or queue/workflow state changes.
 - Use workflows/background commands for any repo sync, sandbox provisioning, agent install, branch restack/rebase, or other multi-step external work. Do not keep user-facing actions/requests open while that work runs.
 - `send` policy: always `await` the `send(...)` call itself so enqueue failures surface immediately, but default to `wait: false`.

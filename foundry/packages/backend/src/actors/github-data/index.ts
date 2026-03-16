@@ -1,17 +1,15 @@
 // @ts-nocheck
 import { eq, inArray } from "drizzle-orm";
-import { actor, queue } from "rivetkit";
+import { actor } from "rivetkit";
 import type { FoundryOrganization } from "@sandbox-agent/foundry-shared";
 import { getActorRuntimeContext } from "../context.js";
 import { getOrCreateOrganization, getTask } from "../handles.js";
 import { repoIdFromRemote } from "../../services/repo.js";
 import { resolveOrganizationGithubAuth } from "../../services/github-auth.js";
-import { expectQueueResponse } from "../../services/queue.js";
-import { organizationWorkflowQueueName } from "../organization/queues.js";
-import { taskWorkflowQueueName } from "../task/workflow/index.js";
+// actions called directly (no queue)
 import { githubDataDb } from "./db/db.js";
 import { githubBranches, githubMembers, githubMeta, githubPullRequests, githubRepositories } from "./db/schema.js";
-import { GITHUB_DATA_QUEUE_NAMES, runGithubDataCommandLoop } from "./workflow.js";
+// workflow.ts is no longer used — commands are actions now
 
 const META_ROW_ID = 1;
 const SYNC_REPOSITORY_BATCH_SIZE = 10;
@@ -76,9 +74,7 @@ interface ClearStateInput {
   label: string;
 }
 
-async function sendOrganizationCommand(organization: any, name: Parameters<typeof organizationWorkflowQueueName>[0], body: unknown): Promise<void> {
-  await expectQueueResponse<{ ok: true }>(await organization.send(organizationWorkflowQueueName(name), body, { wait: true, timeout: 60_000 }));
-}
+// sendOrganizationCommand removed — org actions called directly
 
 interface PullRequestWebhookInput {
   connectedAccount: string;
@@ -213,7 +209,7 @@ async function writeMeta(c: any, patch: Partial<GithubMetaState>) {
 async function publishSyncProgress(c: any, patch: Partial<GithubMetaState>): Promise<GithubMetaState> {
   const meta = await writeMeta(c, patch);
   const organization = await getOrCreateOrganization(c, c.state.organizationId);
-  await sendOrganizationCommand(organization, "organization.command.github.sync_progress.apply", {
+  await organization.commandApplyGithubSyncProgress({
     connectedAccount: meta.connectedAccount,
     installationStatus: meta.installationStatus,
     installationId: meta.installationId,
@@ -229,21 +225,29 @@ async function publishSyncProgress(c: any, patch: Partial<GithubMetaState>): Pro
 }
 
 async function getOrganizationContext(c: any, overrides?: FullSyncInput) {
+  // Try to read the org profile for fallback values, but don't require it.
+  // Webhook-triggered syncs can arrive before the user signs in and creates the
+  // org profile row. The webhook callers already pass the necessary overrides
+  // (connectedAccount, installationId, githubLogin, kind), so we can proceed
+  // without the profile as long as overrides cover the required fields.
   const organizationHandle = await getOrCreateOrganization(c, c.state.organizationId);
   const organizationState = await organizationHandle.getOrganizationShellStateIfInitialized({});
-  if (!organizationState) {
-    throw new Error(`Organization ${c.state.organizationId} is not initialized`);
+
+  // If the org profile doesn't exist and overrides don't provide enough context, fail.
+  if (!organizationState && !overrides?.connectedAccount) {
+    throw new Error(`Organization ${c.state.organizationId} is not initialized and no override context was provided`);
   }
+
   const auth = await resolveOrganizationGithubAuth(c, c.state.organizationId);
   return {
-    kind: overrides?.kind ?? organizationState.snapshot.kind,
-    githubLogin: overrides?.githubLogin ?? organizationState.githubLogin,
-    connectedAccount: overrides?.connectedAccount ?? organizationState.snapshot.github.connectedAccount ?? organizationState.githubLogin,
-    installationId: overrides?.installationId ?? organizationState.githubInstallationId ?? null,
+    kind: overrides?.kind ?? organizationState?.snapshot.kind,
+    githubLogin: overrides?.githubLogin ?? organizationState?.githubLogin,
+    connectedAccount: overrides?.connectedAccount ?? organizationState?.snapshot.github.connectedAccount ?? organizationState?.githubLogin,
+    installationId: overrides?.installationId ?? organizationState?.githubInstallationId ?? null,
     installationStatus:
       overrides?.installationStatus ??
-      organizationState.snapshot.github.installationStatus ??
-      (organizationState.snapshot.kind === "personal" ? "connected" : "reconnect_required"),
+      organizationState?.snapshot.github.installationStatus ??
+      (organizationState?.snapshot.kind === "personal" ? "connected" : "reconnect_required"),
     accessToken: overrides?.accessToken ?? auth?.githubToken ?? null,
   };
 }
@@ -420,11 +424,7 @@ async function refreshTaskSummaryForBranch(c: any, repoId: string, branchName: s
     return;
   }
   const organization = await getOrCreateOrganization(c, c.state.organizationId);
-  await organization.send(
-    organizationWorkflowQueueName("organization.command.refreshTaskSummaryForBranch"),
-    { repoId, branchName, pullRequest },
-    { wait: false },
-  );
+  void organization.commandRefreshTaskSummaryForBranch({ repoId, branchName, pullRequest, repoName: repositoryRecord.fullName ?? undefined }).catch(() => {});
 }
 
 async function emitPullRequestChangeEvents(c: any, beforeRows: any[], afterRows: any[]) {
@@ -472,7 +472,7 @@ async function autoArchiveTaskForClosedPullRequest(c: any, row: any) {
   }
   try {
     const task = getTask(c, c.state.organizationId, row.repoId, match.taskId);
-    await task.send(taskWorkflowQueueName("task.command.archive"), { reason: `PR ${String(row.state).toLowerCase()}` }, { wait: false });
+    void task.archive({ reason: `PR ${String(row.state).toLowerCase()}` }).catch(() => {});
   } catch {
     // Best-effort only. Task summary refresh will still clear the PR state.
   }
@@ -721,7 +721,11 @@ export async function fullSyncBranchBatch(c: any, config: FullSyncConfig, batchI
   if (batchIndex >= batches.length) return true;
 
   const batch = batches[batchIndex]!;
-  const context = await getOrganizationContext(c);
+  const context = await getOrganizationContext(c, {
+    connectedAccount: config.connectedAccount,
+    installationStatus: config.installationStatus as any,
+    installationId: config.installationId,
+  });
   const batchBranches = (await Promise.all(batch.map((repo) => listRepositoryBranchesForContext(context, repo)))).flat();
   await upsertBranches(c, batchBranches, config.startedAt, config.syncGeneration);
 
@@ -757,7 +761,11 @@ export async function fullSyncMembers(c: any, config: FullSyncConfig): Promise<v
     totalRepositoryCount: config.totalRepositoryCount,
   });
 
-  const context = await getOrganizationContext(c);
+  const context = await getOrganizationContext(c, {
+    connectedAccount: config.connectedAccount,
+    installationStatus: config.installationStatus as any,
+    installationId: config.installationId,
+  });
   const members = await resolveMembers(c, context);
   await upsertMembers(c, members, config.startedAt, config.syncGeneration);
   await sweepMembers(c, config.syncGeneration);
@@ -773,7 +781,11 @@ export async function fullSyncPullRequestBatch(c: any, config: FullSyncConfig, b
   if (batchIndex >= batches.length) return true;
 
   const batch = batches[batchIndex]!;
-  const context = await getOrganizationContext(c);
+  const context = await getOrganizationContext(c, {
+    connectedAccount: config.connectedAccount,
+    installationStatus: config.installationStatus as any,
+    installationId: config.installationId,
+  });
   const batchPRs = await listPullRequestsForRepositories(context, batch);
   await upsertPullRequests(c, batchPRs, config.syncGeneration);
 
@@ -801,7 +813,7 @@ export async function fullSyncFinalize(c: any, config: FullSyncConfig): Promise<
   await sweepPullRequests(c, config.syncGeneration);
   await sweepRepositories(c, config.syncGeneration);
 
-  await writeMeta(c, {
+  await publishSyncProgress(c, {
     connectedAccount: config.connectedAccount,
     installationStatus: config.installationStatus,
     installationId: config.installationId,
@@ -867,16 +879,14 @@ export async function fullSyncError(c: any, error: unknown): Promise<void> {
 
 export const githubData = actor({
   db: githubDataDb,
-  queues: Object.fromEntries(GITHUB_DATA_QUEUE_NAMES.map((name) => [name, queue()])),
   options: {
     name: "GitHub Data",
     icon: "github",
-    actionTimeout: 5 * 60_000,
+    actionTimeout: 10 * 60_000,
   },
   createState: (_c, input: GithubDataInput) => ({
     organizationId: input.organizationId,
   }),
-  run: runGithubDataCommandLoop,
   actions: {
     async getSummary(c) {
       const repositories = await c.db.select().from(githubRepositories).all();
@@ -934,6 +944,34 @@ export const githubData = actor({
           commitSha: row.commitSha,
         }))
         .sort((left, right) => left.branchName.localeCompare(right.branchName));
+    },
+
+    async syncRepos(c, body: any) {
+      try {
+        await runFullSync(c, body);
+        return { ok: true };
+      } catch (error) {
+        try {
+          await fullSyncError(c, error);
+        } catch {
+          /* best effort */
+        }
+        throw error;
+      }
+    },
+
+    async reloadRepository(c, body: { repoId: string }) {
+      return await reloadRepositoryMutation(c, body);
+    },
+
+    async clearState(c, body: any) {
+      await clearStateMutation(c, body);
+      return { ok: true };
+    },
+
+    async handlePullRequestWebhook(c, body: any) {
+      await handlePullRequestWebhookMutation(c, body);
+      return { ok: true };
     },
   },
 });

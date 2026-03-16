@@ -6,9 +6,10 @@ import { DEFAULT_WORKSPACE_MODEL_GROUPS, workspaceModelGroupsFromSandboxAgents, 
 import { SandboxAgent } from "sandbox-agent";
 import { getActorRuntimeContext } from "../context.js";
 import { organizationKey } from "../keys.js";
+import { logActorWarning, resolveErrorMessage } from "../logging.js";
 import { resolveSandboxProviderId } from "../../sandbox-config.js";
 
-const SANDBOX_REPO_CWD = "/home/sandbox/organization/repo";
+const SANDBOX_REPO_CWD = "/home/user/repo";
 const DEFAULT_LOCAL_SANDBOX_IMAGE = "rivetdev/sandbox-agent:full";
 const DEFAULT_LOCAL_SANDBOX_PORT = 2468;
 const dockerClient = new Dockerode({ socketPath: "/var/run/docker.sock" });
@@ -204,6 +205,10 @@ const baseTaskSandbox = sandboxActor({
         create: () => ({
           template: config.sandboxProviders.e2b.template ?? "sandbox-agent-full-0.3.x",
           envs: sandboxEnvObject(),
+          // Default E2B timeout is 5 minutes which is too short for task work.
+          // Set to 1 hour. TODO: use betaCreate + autoPause instead so sandboxes
+          // pause (preserving state) rather than being killed on timeout.
+          timeoutMs: 60 * 60 * 1000,
         }),
         installAgents: ["claude", "codex"],
       });
@@ -220,8 +225,12 @@ async function broadcastProcesses(c: any, actions: Record<string, (...args: any[
       type: "processesUpdated",
       processes: listed.processes ?? [],
     });
-  } catch {
+  } catch (error) {
     // Process broadcasts are best-effort. Callers still receive the primary action result.
+    logActorWarning("taskSandbox", "broadcastProcesses failed", {
+      sandboxId: c.state?.sandboxId,
+      error: resolveErrorMessage(error),
+    });
   }
 }
 
@@ -335,6 +344,19 @@ export const taskSandbox = actor({
       }
 
       return sanitizeActorResult(await session.prompt([{ type: "text", text }]));
+    },
+
+    async listProcesses(c: any): Promise<any> {
+      try {
+        return await baseActions.listProcesses(c);
+      } catch (error) {
+        // Sandbox may be gone (E2B timeout, destroyed, etc.) — degrade to empty
+        logActorWarning("taskSandbox", "listProcesses failed, sandbox may be expired", {
+          sandboxId: c.state.sandboxId,
+          error: resolveErrorMessage(error),
+        });
+        return { processes: [] };
+      }
     },
 
     async createProcess(c: any, request: any): Promise<any> {

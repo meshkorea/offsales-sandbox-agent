@@ -1,5 +1,8 @@
 // @ts-nocheck
-import { logActorWarning, resolveErrorMessage } from "../logging.js";
+/**
+ * Organization command actions — converted from queue handlers to direct actions.
+ * Each export becomes an action on the organization actor.
+ */
 import { applyGithubSyncProgressMutation, recordGithubWebhookReceiptMutation, refreshOrganizationSnapshotMutation } from "./actions.js";
 import {
   applyTaskSummaryUpdateMutation,
@@ -33,136 +36,128 @@ import {
   updateOrganizationShellProfileMutation,
   upsertOrganizationInvoiceMutation,
 } from "./app-shell.js";
-import { ORGANIZATION_QUEUE_NAMES } from "./queues.js";
 
-// Command handler dispatch table — maps queue name to handler function.
-const COMMAND_HANDLERS: Record<string, (c: any, body: any) => Promise<any>> = {
-  "organization.command.createTask": (c, body) => createTaskMutation(c, body),
-  "organization.command.materializeTask": (c, body) => createTaskMutation(c, body),
-  "organization.command.registerTaskBranch": (c, body) => registerTaskBranchMutation(c, body),
-  "organization.command.applyTaskSummaryUpdate": async (c, body) => {
+export const organizationCommandActions = {
+  async commandCreateTask(c: any, body: any) {
+    return await createTaskMutation(c, body);
+  },
+  async commandMaterializeTask(c: any, body: any) {
+    return await createTaskMutation(c, body);
+  },
+  async commandRegisterTaskBranch(c: any, body: any) {
+    return await registerTaskBranchMutation(c, body);
+  },
+  async commandApplyTaskSummaryUpdate(c: any, body: any) {
     await applyTaskSummaryUpdateMutation(c, body);
     return { ok: true };
   },
-  "organization.command.removeTaskSummary": async (c, body) => {
+  async commandRemoveTaskSummary(c: any, body: any) {
     await removeTaskSummaryMutation(c, body);
     return { ok: true };
   },
-  "organization.command.refreshTaskSummaryForBranch": async (c, body) => {
+  async commandRefreshTaskSummaryForBranch(c: any, body: any) {
     await refreshTaskSummaryForBranchMutation(c, body);
     return { ok: true };
   },
-  "organization.command.snapshot.broadcast": async (c, _body) => {
+  async commandBroadcastSnapshot(c: any, _body: any) {
     await refreshOrganizationSnapshotMutation(c);
     return { ok: true };
   },
-  "organization.command.syncGithubSession": async (c, body) => {
+  async commandSyncGithubSession(c: any, body: any) {
     const { syncGithubOrganizations } = await import("./app-shell.js");
     await syncGithubOrganizations(c, body);
     return { ok: true };
   },
-  "organization.command.better_auth.session_index.upsert": (c, body) => betterAuthUpsertSessionIndexMutation(c, body),
-  "organization.command.better_auth.session_index.delete": async (c, body) => {
+
+  // Better Auth index actions
+  async commandBetterAuthSessionIndexUpsert(c: any, body: any) {
+    return await betterAuthUpsertSessionIndexMutation(c, body);
+  },
+  async commandBetterAuthSessionIndexDelete(c: any, body: any) {
     await betterAuthDeleteSessionIndexMutation(c, body);
     return { ok: true };
   },
-  "organization.command.better_auth.email_index.upsert": (c, body) => betterAuthUpsertEmailIndexMutation(c, body),
-  "organization.command.better_auth.email_index.delete": async (c, body) => {
+  async commandBetterAuthEmailIndexUpsert(c: any, body: any) {
+    return await betterAuthUpsertEmailIndexMutation(c, body);
+  },
+  async commandBetterAuthEmailIndexDelete(c: any, body: any) {
     await betterAuthDeleteEmailIndexMutation(c, body);
     return { ok: true };
   },
-  "organization.command.better_auth.account_index.upsert": (c, body) => betterAuthUpsertAccountIndexMutation(c, body),
-  "organization.command.better_auth.account_index.delete": async (c, body) => {
+  async commandBetterAuthAccountIndexUpsert(c: any, body: any) {
+    return await betterAuthUpsertAccountIndexMutation(c, body);
+  },
+  async commandBetterAuthAccountIndexDelete(c: any, body: any) {
     await betterAuthDeleteAccountIndexMutation(c, body);
     return { ok: true };
   },
-  "organization.command.better_auth.verification.create": (c, body) => betterAuthCreateVerificationMutation(c, body),
-  "organization.command.better_auth.verification.update": (c, body) => betterAuthUpdateVerificationMutation(c, body),
-  "organization.command.better_auth.verification.update_many": (c, body) => betterAuthUpdateManyVerificationMutation(c, body),
-  "organization.command.better_auth.verification.delete": async (c, body) => {
+  async commandBetterAuthVerificationCreate(c: any, body: any) {
+    return await betterAuthCreateVerificationMutation(c, body);
+  },
+  async commandBetterAuthVerificationUpdate(c: any, body: any) {
+    return await betterAuthUpdateVerificationMutation(c, body);
+  },
+  async commandBetterAuthVerificationUpdateMany(c: any, body: any) {
+    return await betterAuthUpdateManyVerificationMutation(c, body);
+  },
+  async commandBetterAuthVerificationDelete(c: any, body: any) {
     await betterAuthDeleteVerificationMutation(c, body);
     return { ok: true };
   },
-  "organization.command.better_auth.verification.delete_many": (c, body) => betterAuthDeleteManyVerificationMutation(c, body),
-  "organization.command.github.sync_progress.apply": async (c, body) => {
+  async commandBetterAuthVerificationDeleteMany(c: any, body: any) {
+    return await betterAuthDeleteManyVerificationMutation(c, body);
+  },
+
+  // GitHub sync actions
+  async commandApplyGithubSyncProgress(c: any, body: any) {
     await applyGithubSyncProgressMutation(c, body);
     return { ok: true };
   },
-  "organization.command.github.webhook_receipt.record": async (c, body) => {
+  async commandRecordGithubWebhookReceipt(c: any, body: any) {
     await recordGithubWebhookReceiptMutation(c, body);
     return { ok: true };
   },
-  "organization.command.github.organization_shell.sync_from_github": (c, body) => syncOrganizationShellFromGithubMutation(c, body),
-  "organization.command.shell.profile.update": async (c, body) => {
+  async commandSyncOrganizationShellFromGithub(c: any, body: any) {
+    return await syncOrganizationShellFromGithubMutation(c, body);
+  },
+
+  // Shell/profile actions
+  async commandUpdateShellProfile(c: any, body: any) {
     await updateOrganizationShellProfileMutation(c, body);
     return { ok: true };
   },
-  "organization.command.shell.sync_started.mark": async (c, body) => {
+  async commandMarkSyncStarted(c: any, body: any) {
     await markOrganizationSyncStartedMutation(c, body);
     return { ok: true };
   },
-  "organization.command.billing.stripe_customer.apply": async (c, body) => {
+
+  // Billing actions
+  async commandApplyStripeCustomer(c: any, body: any) {
     await applyOrganizationStripeCustomerMutation(c, body);
     return { ok: true };
   },
-  "organization.command.billing.stripe_subscription.apply": async (c, body) => {
+  async commandApplyStripeSubscription(c: any, body: any) {
     await applyOrganizationStripeSubscriptionMutation(c, body);
     return { ok: true };
   },
-  "organization.command.billing.free_plan.apply": async (c, body) => {
+  async commandApplyFreePlan(c: any, body: any) {
     await applyOrganizationFreePlanMutation(c, body);
     return { ok: true };
   },
-  "organization.command.billing.payment_method.set": async (c, body) => {
+  async commandSetPaymentMethod(c: any, body: any) {
     await setOrganizationBillingPaymentMethodMutation(c, body);
     return { ok: true };
   },
-  "organization.command.billing.status.set": async (c, body) => {
+  async commandSetBillingStatus(c: any, body: any) {
     await setOrganizationBillingStatusMutation(c, body);
     return { ok: true };
   },
-  "organization.command.billing.invoice.upsert": async (c, body) => {
+  async commandUpsertInvoice(c: any, body: any) {
     await upsertOrganizationInvoiceMutation(c, body);
     return { ok: true };
   },
-  "organization.command.billing.seat_usage.record": async (c, body) => {
+  async commandRecordSeatUsage(c: any, body: any) {
     await recordOrganizationSeatUsageMutation(c, body);
     return { ok: true };
   },
 };
-
-/**
- * Plain run handler (no workflow engine). Drains the queue using `c.queue.iter()`
- * with completable messages. This avoids the RivetKit bug where actors created
- * from another actor's workflow context never start their `run: workflow(...)`.
- *
- * The queue is still durable — messages survive restarts. Only in-flight processing
- * of a single message is lost on crash (the message is retried). All mutations are
- * idempotent, so this is safe.
- */
-export async function runOrganizationCommandLoop(c: any): Promise<void> {
-  for await (const msg of c.queue.iter({ names: [...ORGANIZATION_QUEUE_NAMES], completable: true })) {
-    try {
-      const handler = COMMAND_HANDLERS[msg.name];
-      if (handler) {
-        const result = await handler(c, msg.body);
-        await msg.complete(result);
-      } else {
-        logActorWarning("organization", "unknown queue message", { queueName: msg.name });
-        await msg.complete({ error: `Unknown command: ${msg.name}` });
-      }
-    } catch (error) {
-      const message = resolveErrorMessage(error);
-      logActorWarning("organization", "organization command failed", {
-        queueName: msg.name,
-        error: message,
-      });
-      await msg.complete({ error: message }).catch((completeError: unknown) => {
-        logActorWarning("organization", "organization command failed completing error response", {
-          queueName: msg.name,
-          error: resolveErrorMessage(completeError),
-        });
-      });
-    }
-  }
-}

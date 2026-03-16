@@ -13,15 +13,12 @@ import type {
 import { DEFAULT_WORKSPACE_MODEL_ID } from "@sandbox-agent/foundry-shared";
 import { getActorRuntimeContext } from "../context.js";
 import { getOrCreateGithubData, getOrCreateOrganization, selfOrganization } from "../handles.js";
-import { githubDataWorkflowQueueName } from "../github-data/workflow.js";
 import { GitHubAppError } from "../../services/app-github.js";
 import { getBetterAuthService } from "../../services/better-auth.js";
-import { expectQueueResponse } from "../../services/queue.js";
 import { repoIdFromRemote, repoLabelFromRemote } from "../../services/repo.js";
 import { logger } from "../../logging.js";
 import { invoices, organizationMembers, organizationProfile, seatAssignments, stripeLookup } from "./db/schema.js";
 import { APP_SHELL_ORGANIZATION_ID } from "./constants.js";
-import { organizationWorkflowQueueName } from "./queues.js";
 
 const githubWebhookLogger = logger.child({
   scope: "github-webhook",
@@ -142,13 +139,7 @@ function stripeWebhookSubscription(event: any) {
   };
 }
 
-async function sendOrganizationCommand<TResponse>(
-  organization: any,
-  name: Parameters<typeof organizationWorkflowQueueName>[0],
-  body: unknown,
-): Promise<TResponse> {
-  return expectQueueResponse<TResponse>(await organization.send(organizationWorkflowQueueName(name), body, { wait: true, timeout: 60_000 }));
-}
+// sendOrganizationCommand removed — org actions called directly
 
 export async function getOrganizationState(organization: any) {
   return await organization.getOrganizationShellState({});
@@ -491,7 +482,7 @@ async function syncGithubOrganizationsInternal(c: any, input: { sessionId: strin
     const organizationId = organizationOrganizationId(account.kind, account.githubLogin);
     const installation = installations.find((candidate) => candidate.accountLogin === account.githubLogin) ?? null;
     const organization = await getOrCreateOrganization(c, organizationId);
-    await sendOrganizationCommand<{ organizationId: string }>(organization, "organization.command.github.organization_shell.sync_from_github", {
+    await organization.commandSyncOrganizationShellFromGithub({
       userId: githubUserId,
       userName: viewer.name || viewer.login,
       userEmail: viewer.email ?? `${viewer.login}@users.noreply.github.com`,
@@ -686,7 +677,7 @@ async function applySubscriptionState(
   },
   fallbackPlanId: FoundryBillingPlanId,
 ): Promise<void> {
-  await sendOrganizationCommand<{ ok: true }>(organization, "organization.command.billing.stripe_subscription.apply", {
+  await organization.commandApplyStripeSubscription({
     subscription,
     fallbackPlanId,
   });
@@ -702,7 +693,7 @@ export const organizationAppActions = {
     const organizationState = await getOrganizationState(organizationHandle);
 
     if (input.planId === "free") {
-      await sendOrganizationCommand<{ ok: true }>(organizationHandle, "organization.command.billing.free_plan.apply", {
+      await organizationHandle.commandApplyFreePlan({
         clearSubscription: false,
       });
       return {
@@ -723,7 +714,7 @@ export const organizationAppActions = {
           email: session.currentUserEmail,
         })
       ).id;
-      await sendOrganizationCommand<{ ok: true }>(organizationHandle, "organization.command.billing.stripe_customer.apply", {
+      await organizationHandle.commandApplyStripeCustomer({
         customerId,
       });
       await upsertStripeLookupEntries(c, input.organizationId, customerId, null);
@@ -753,7 +744,7 @@ export const organizationAppActions = {
     const completion = await appShell.stripe.retrieveCheckoutCompletion(input.checkoutSessionId);
 
     if (completion.customerId) {
-      await sendOrganizationCommand<{ ok: true }>(organizationHandle, "organization.command.billing.stripe_customer.apply", {
+      await organizationHandle.commandApplyStripeCustomer({
         customerId: completion.customerId,
       });
     }
@@ -765,7 +756,7 @@ export const organizationAppActions = {
     }
 
     if (completion.paymentMethodLabel) {
-      await sendOrganizationCommand<{ ok: true }>(organizationHandle, "organization.command.billing.payment_method.set", {
+      await organizationHandle.commandSetPaymentMethod({
         label: completion.paymentMethodLabel,
       });
     }
@@ -805,7 +796,7 @@ export const organizationAppActions = {
       await applySubscriptionState(organizationHandle, subscription, organizationState.billingPlanId);
       await upsertStripeLookupEntries(c, input.organizationId, subscription.customerId ?? organizationState.stripeCustomerId, subscription.id);
     } else {
-      await sendOrganizationCommand<{ ok: true }>(organizationHandle, "organization.command.billing.status.set", {
+      await organizationHandle.commandSetBillingStatus({
         status: "scheduled_cancel",
       });
     }
@@ -826,7 +817,7 @@ export const organizationAppActions = {
       await applySubscriptionState(organizationHandle, subscription, organizationState.billingPlanId);
       await upsertStripeLookupEntries(c, input.organizationId, subscription.customerId ?? organizationState.stripeCustomerId, subscription.id);
     } else {
-      await sendOrganizationCommand<{ ok: true }>(organizationHandle, "organization.command.billing.status.set", {
+      await organizationHandle.commandSetBillingStatus({
         status: "active",
       });
     }
@@ -839,7 +830,7 @@ export const organizationAppActions = {
     const session = await requireSignedInSession(c, input.sessionId);
     requireEligibleOrganization(session, input.organizationId);
     const organization = await getOrCreateOrganization(c, input.organizationId);
-    await sendOrganizationCommand<{ ok: true }>(organization, "organization.command.billing.seat_usage.record", {
+    await organization.commandRecordSeatUsage({
       email: session.currentUserEmail,
     });
     return await buildAppSnapshot(c, input.sessionId);
@@ -862,7 +853,7 @@ export const organizationAppActions = {
       if (organizationId) {
         const organization = await getOrCreateOrganization(c, organizationId);
         if (typeof object.customer === "string") {
-          await sendOrganizationCommand<{ ok: true }>(organization, "organization.command.billing.stripe_customer.apply", {
+          await organization.commandApplyStripeCustomer({
             customerId: object.customer,
           });
         }
@@ -897,7 +888,7 @@ export const organizationAppActions = {
       const organizationId = await findOrganizationIdForStripeEvent(c, subscription.customerId, subscription.id);
       if (organizationId) {
         const organization = await getOrCreateOrganization(c, organizationId);
-        await sendOrganizationCommand<{ ok: true }>(organization, "organization.command.billing.free_plan.apply", {
+        await organization.commandApplyFreePlan({
           clearSubscription: true,
         });
       }
@@ -911,7 +902,7 @@ export const organizationAppActions = {
         const organization = await getOrCreateOrganization(c, organizationId);
         const rawAmount = typeof invoice.amount_paid === "number" ? invoice.amount_paid : invoice.amount_due;
         const amountUsd = Math.round((typeof rawAmount === "number" ? rawAmount : 0) / 100);
-        await sendOrganizationCommand<{ ok: true }>(organization, "organization.command.billing.invoice.upsert", {
+        await organization.commandUpsertInvoice({
           id: String(invoice.id),
           label: typeof invoice.number === "string" ? `Invoice ${invoice.number}` : "Stripe invoice",
           issuedAt: formatUnixDate(typeof invoice.created === "number" ? invoice.created : Math.floor(Date.now() / 1000)),
@@ -947,7 +938,7 @@ export const organizationAppActions = {
     const organizationId = organizationOrganizationId(kind, accountLogin);
     const receivedAt = Date.now();
     const organization = await getOrCreateOrganization(c, organizationId);
-    await sendOrganizationCommand<{ ok: true }>(organization, "organization.command.github.webhook_receipt.record", {
+    await organization.commandRecordGithubWebhookReceipt({
       organizationId: organizationId,
       event,
       action: body.action ?? null,
@@ -966,61 +957,41 @@ export const organizationAppActions = {
         "installation_event",
       );
       if (body.action === "deleted") {
-        await expectQueueResponse<{ ok: true }>(
-          await githubData.send(
-            githubDataWorkflowQueueName("githubData.command.clearState"),
-            {
-              connectedAccount: accountLogin,
-              installationStatus: "install_required",
-              installationId: null,
-              label: "GitHub App installation removed",
-            },
-            { wait: true, timeout: 10_000 },
-          ),
-        );
+        await githubData.clearState({
+          connectedAccount: accountLogin,
+          installationStatus: "install_required",
+          installationId: null,
+          label: "GitHub App installation removed",
+        });
       } else if (body.action === "created") {
-        await expectQueueResponse<{ ok: true }>(
-          await githubData.send(
-            githubDataWorkflowQueueName("githubData.command.syncRepos"),
-            {
-              connectedAccount: accountLogin,
-              installationStatus: "connected",
-              installationId: body.installation?.id ?? null,
-              githubLogin: accountLogin,
-              kind,
-              label: "Syncing GitHub data from installation webhook...",
-            },
-            { wait: true, timeout: 10_000 },
-          ),
-        );
+        void githubData
+          .syncRepos({
+            connectedAccount: accountLogin,
+            installationStatus: "connected",
+            installationId: body.installation?.id ?? null,
+            githubLogin: accountLogin,
+            kind,
+            label: "Syncing GitHub data from installation webhook...",
+          })
+          .catch(() => {});
       } else if (body.action === "suspend") {
-        await expectQueueResponse<{ ok: true }>(
-          await githubData.send(
-            githubDataWorkflowQueueName("githubData.command.clearState"),
-            {
-              connectedAccount: accountLogin,
-              installationStatus: "reconnect_required",
-              installationId: body.installation?.id ?? null,
-              label: "GitHub App installation suspended",
-            },
-            { wait: true, timeout: 10_000 },
-          ),
-        );
+        await githubData.clearState({
+          connectedAccount: accountLogin,
+          installationStatus: "reconnect_required",
+          installationId: body.installation?.id ?? null,
+          label: "GitHub App installation suspended",
+        });
       } else if (body.action === "unsuspend") {
-        await expectQueueResponse<{ ok: true }>(
-          await githubData.send(
-            githubDataWorkflowQueueName("githubData.command.syncRepos"),
-            {
-              connectedAccount: accountLogin,
-              installationStatus: "connected",
-              installationId: body.installation?.id ?? null,
-              githubLogin: accountLogin,
-              kind,
-              label: "Resyncing GitHub data after unsuspend...",
-            },
-            { wait: true, timeout: 10_000 },
-          ),
-        );
+        void githubData
+          .syncRepos({
+            connectedAccount: accountLogin,
+            installationStatus: "connected",
+            installationId: body.installation?.id ?? null,
+            githubLogin: accountLogin,
+            kind,
+            label: "Resyncing GitHub data after unsuspend...",
+          })
+          .catch(() => {});
       }
       return { ok: true };
     }
@@ -1037,20 +1008,16 @@ export const organizationAppActions = {
         },
         "repository_membership_changed",
       );
-      await expectQueueResponse<{ ok: true }>(
-        await githubData.send(
-          githubDataWorkflowQueueName("githubData.command.syncRepos"),
-          {
-            connectedAccount: accountLogin,
-            installationStatus: "connected",
-            installationId: body.installation?.id ?? null,
-            githubLogin: accountLogin,
-            kind,
-            label: "Resyncing GitHub data after repository access change...",
-          },
-          { wait: true, timeout: 10_000 },
-        ),
-      );
+      void githubData
+        .syncRepos({
+          connectedAccount: accountLogin,
+          installationStatus: "connected",
+          installationId: body.installation?.id ?? null,
+          githubLogin: accountLogin,
+          kind,
+          label: "Resyncing GitHub data after repository access change...",
+        })
+        .catch(() => {});
       return { ok: true };
     }
 
@@ -1078,43 +1045,35 @@ export const organizationAppActions = {
           "repository_event",
         );
         if (event === "pull_request" && body.repository?.clone_url && body.pull_request) {
-          await expectQueueResponse<{ ok: true }>(
-            await githubData.send(
-              githubDataWorkflowQueueName("githubData.command.handlePullRequestWebhook"),
-              {
-                connectedAccount: accountLogin,
-                installationStatus: "connected",
-                installationId: body.installation?.id ?? null,
-                repository: {
-                  fullName: body.repository.full_name,
-                  cloneUrl: body.repository.clone_url,
-                  private: Boolean(body.repository.private),
-                },
-                pullRequest: {
-                  number: body.pull_request.number,
-                  status: body.pull_request.draft ? "draft" : "ready",
-                  title: body.pull_request.title ?? "",
-                  body: body.pull_request.body ?? null,
-                  state: body.pull_request.state ?? "open",
-                  url: body.pull_request.html_url ?? `https://github.com/${body.repository.full_name}/pull/${body.pull_request.number}`,
-                  headRefName: body.pull_request.head?.ref ?? "",
-                  baseRefName: body.pull_request.base?.ref ?? "",
-                  authorLogin: body.pull_request.user?.login ?? null,
-                  isDraft: Boolean(body.pull_request.draft),
-                  merged: Boolean(body.pull_request.merged),
-                },
-              },
-              { wait: true, timeout: 10_000 },
-            ),
-          );
+          await githubData.handlePullRequestWebhook({
+            connectedAccount: accountLogin,
+            installationStatus: "connected",
+            installationId: body.installation?.id ?? null,
+            repository: {
+              fullName: body.repository.full_name,
+              cloneUrl: body.repository.clone_url,
+              private: Boolean(body.repository.private),
+            },
+            pullRequest: {
+              number: body.pull_request.number,
+              status: body.pull_request.draft ? "draft" : "ready",
+              title: body.pull_request.title ?? "",
+              body: body.pull_request.body ?? null,
+              state: body.pull_request.state ?? "open",
+              url: body.pull_request.html_url ?? `https://github.com/${body.repository.full_name}/pull/${body.pull_request.number}`,
+              headRefName: body.pull_request.head?.ref ?? "",
+              baseRefName: body.pull_request.base?.ref ?? "",
+              authorLogin: body.pull_request.user?.login ?? null,
+              isDraft: Boolean(body.pull_request.draft),
+              merged: Boolean(body.pull_request.merged),
+            },
+          });
         }
         if ((event === "push" || event === "create" || event === "delete") && body.repository?.clone_url) {
           const repoId = repoIdFromRemote(body.repository.clone_url);
           const knownRepository = await githubData.getRepository({ repoId });
           if (knownRepository) {
-            await expectQueueResponse<unknown>(
-              await githubData.send(githubDataWorkflowQueueName("githubData.command.reloadRepository"), { repoId }, { wait: true, timeout: 10_000 }),
-            );
+            await githubData.reloadRepository({ repoId });
           }
         }
       }
@@ -1272,18 +1231,16 @@ export async function syncOrganizationShellFromGithubMutation(
   const needsInitialSync = installationStatus === "connected" && syncStatus === "pending";
   if (needsInitialSync) {
     const githubData = await getOrCreateGithubData(c, organizationId);
-    await githubData.send(
-      githubDataWorkflowQueueName("githubData.command.syncRepos"),
-      {
+    void githubData
+      .syncRepos({
         connectedAccount: input.githubLogin,
         installationStatus: "connected",
         installationId: input.installationId,
         githubLogin: input.githubLogin,
         kind: input.kind,
         label: "Initial repository sync...",
-      },
-      { wait: false },
-    );
+      })
+      .catch(() => {});
   }
 
   return { organizationId };

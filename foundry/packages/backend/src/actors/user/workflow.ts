@@ -1,28 +1,9 @@
 import { eq, count as sqlCount, and } from "drizzle-orm";
 import { DEFAULT_WORKSPACE_MODEL_ID } from "@sandbox-agent/foundry-shared";
-import { logActorWarning, resolveErrorMessage } from "../logging.js";
 import { authUsers, sessionState, userProfiles, userTaskState } from "./db/schema.js";
 import { buildWhere, columnFor, materializeRow, persistInput, persistPatch, tableFor } from "./query-helpers.js";
 
-export const USER_QUEUE_NAMES = [
-  "user.command.auth.create",
-  "user.command.auth.update",
-  "user.command.auth.update_many",
-  "user.command.auth.delete",
-  "user.command.auth.delete_many",
-  "user.command.profile.upsert",
-  "user.command.session_state.upsert",
-  "user.command.task_state.upsert",
-  "user.command.task_state.delete",
-] as const;
-
-export type UserQueueName = (typeof USER_QUEUE_NAMES)[number];
-
-export function userWorkflowQueueName(name: UserQueueName): UserQueueName {
-  return name;
-}
-
-async function createAuthRecordMutation(c: any, input: { model: string; data: Record<string, unknown> }) {
+export async function createAuthRecordMutation(c: any, input: { model: string; data: Record<string, unknown> }) {
   const table = tableFor(input.model);
   const persisted = persistInput(input.model, input.data);
   await c.db
@@ -37,12 +18,10 @@ async function createAuthRecordMutation(c: any, input: { model: string; data: Re
   return materializeRow(input.model, row);
 }
 
-async function updateAuthRecordMutation(c: any, input: { model: string; where: any[]; update: Record<string, unknown> }) {
+export async function updateAuthRecordMutation(c: any, input: { model: string; where: any[]; update: Record<string, unknown> }) {
   const table = tableFor(input.model);
   const predicate = buildWhere(table, input.where);
-  if (!predicate) {
-    throw new Error("updateAuthRecord requires a where clause");
-  }
+  if (!predicate) throw new Error("updateAuthRecord requires a where clause");
   await c.db
     .update(table)
     .set(persistPatch(input.model, input.update) as any)
@@ -51,12 +30,10 @@ async function updateAuthRecordMutation(c: any, input: { model: string; where: a
   return materializeRow(input.model, await c.db.select().from(table).where(predicate).get());
 }
 
-async function updateManyAuthRecordsMutation(c: any, input: { model: string; where: any[]; update: Record<string, unknown> }) {
+export async function updateManyAuthRecordsMutation(c: any, input: { model: string; where: any[]; update: Record<string, unknown> }) {
   const table = tableFor(input.model);
   const predicate = buildWhere(table, input.where);
-  if (!predicate) {
-    throw new Error("updateManyAuthRecords requires a where clause");
-  }
+  if (!predicate) throw new Error("updateManyAuthRecords requires a where clause");
   await c.db
     .update(table)
     .set(persistPatch(input.model, input.update) as any)
@@ -66,27 +43,23 @@ async function updateManyAuthRecordsMutation(c: any, input: { model: string; whe
   return row?.value ?? 0;
 }
 
-async function deleteAuthRecordMutation(c: any, input: { model: string; where: any[] }) {
+export async function deleteAuthRecordMutation(c: any, input: { model: string; where: any[] }) {
   const table = tableFor(input.model);
   const predicate = buildWhere(table, input.where);
-  if (!predicate) {
-    throw new Error("deleteAuthRecord requires a where clause");
-  }
+  if (!predicate) throw new Error("deleteAuthRecord requires a where clause");
   await c.db.delete(table).where(predicate).run();
 }
 
-async function deleteManyAuthRecordsMutation(c: any, input: { model: string; where: any[] }) {
+export async function deleteManyAuthRecordsMutation(c: any, input: { model: string; where: any[] }) {
   const table = tableFor(input.model);
   const predicate = buildWhere(table, input.where);
-  if (!predicate) {
-    throw new Error("deleteManyAuthRecords requires a where clause");
-  }
+  if (!predicate) throw new Error("deleteManyAuthRecords requires a where clause");
   const rows = await c.db.select().from(table).where(predicate).all();
   await c.db.delete(table).where(predicate).run();
   return rows.length;
 }
 
-async function upsertUserProfileMutation(
+export async function upsertUserProfileMutation(
   c: any,
   input: {
     userId: string;
@@ -134,11 +107,10 @@ async function upsertUserProfileMutation(
       },
     })
     .run();
-
   return await c.db.select().from(userProfiles).where(eq(userProfiles.userId, input.userId)).get();
 }
 
-async function upsertSessionStateMutation(c: any, input: { sessionId: string; activeOrganizationId: string | null }) {
+export async function upsertSessionStateMutation(c: any, input: { sessionId: string; activeOrganizationId: string | null }) {
   const now = Date.now();
   await c.db
     .insert(sessionState)
@@ -150,17 +122,13 @@ async function upsertSessionStateMutation(c: any, input: { sessionId: string; ac
     })
     .onConflictDoUpdate({
       target: sessionState.sessionId,
-      set: {
-        activeOrganizationId: input.activeOrganizationId,
-        updatedAt: now,
-      },
+      set: { activeOrganizationId: input.activeOrganizationId, updatedAt: now },
     })
     .run();
-
   return await c.db.select().from(sessionState).where(eq(sessionState.sessionId, input.sessionId)).get();
 }
 
-async function upsertTaskStateMutation(
+export async function upsertTaskStateMutation(
   c: any,
   input: {
     taskId: string;
@@ -182,14 +150,7 @@ async function upsertTaskStateMutation(
     .get();
 
   if (input.patch.activeSessionId !== undefined) {
-    await c.db
-      .update(userTaskState)
-      .set({
-        activeSessionId: input.patch.activeSessionId,
-        updatedAt: now,
-      })
-      .where(eq(userTaskState.taskId, input.taskId))
-      .run();
+    await c.db.update(userTaskState).set({ activeSessionId: input.patch.activeSessionId, updatedAt: now }).where(eq(userTaskState.taskId, input.taskId)).run();
   }
 
   await c.db
@@ -224,7 +185,7 @@ async function upsertTaskStateMutation(
     .get();
 }
 
-async function deleteTaskStateMutation(c: any, input: { taskId: string; sessionId?: string }) {
+export async function deleteTaskStateMutation(c: any, input: { taskId: string; sessionId?: string }) {
   if (input.sessionId) {
     await c.db
       .delete(userTaskState)
@@ -232,50 +193,5 @@ async function deleteTaskStateMutation(c: any, input: { taskId: string; sessionI
       .run();
     return;
   }
-
   await c.db.delete(userTaskState).where(eq(userTaskState.taskId, input.taskId)).run();
-}
-
-const COMMAND_HANDLERS: Record<string, (c: any, body: any) => Promise<any>> = {
-  "user.command.auth.create": (c, body) => createAuthRecordMutation(c, body),
-  "user.command.auth.update": (c, body) => updateAuthRecordMutation(c, body),
-  "user.command.auth.update_many": (c, body) => updateManyAuthRecordsMutation(c, body),
-  "user.command.auth.delete": async (c, body) => {
-    await deleteAuthRecordMutation(c, body);
-    return { ok: true };
-  },
-  "user.command.auth.delete_many": (c, body) => deleteManyAuthRecordsMutation(c, body),
-  "user.command.profile.upsert": (c, body) => upsertUserProfileMutation(c, body),
-  "user.command.session_state.upsert": (c, body) => upsertSessionStateMutation(c, body),
-  "user.command.task_state.upsert": (c, body) => upsertTaskStateMutation(c, body),
-  "user.command.task_state.delete": async (c, body) => {
-    await deleteTaskStateMutation(c, body);
-    return { ok: true };
-  },
-};
-
-/**
- * Plain run handler (no workflow engine). Drains the queue using `c.queue.iter()`
- * with completable messages.
- */
-export async function runUserCommandLoop(c: any): Promise<void> {
-  for await (const msg of c.queue.iter({ names: [...USER_QUEUE_NAMES], completable: true })) {
-    try {
-      const handler = COMMAND_HANDLERS[msg.name];
-      if (handler) {
-        const result = await handler(c, msg.body);
-        await msg.complete(result);
-      } else {
-        logActorWarning("user", "unknown queue message", { queueName: msg.name });
-        await msg.complete({ error: `Unknown command: ${msg.name}` });
-      }
-    } catch (error) {
-      const message = resolveErrorMessage(error);
-      logActorWarning("user", "user command failed", {
-        queueName: msg.name,
-        error: message,
-      });
-      await msg.complete({ error: message }).catch(() => {});
-    }
-  }
 }

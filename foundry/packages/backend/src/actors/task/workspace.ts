@@ -10,14 +10,15 @@ import {
 } from "@sandbox-agent/foundry-shared";
 import { getActorRuntimeContext } from "../context.js";
 import { getOrCreateOrganization, getOrCreateTaskSandbox, getOrCreateUser, getTaskSandbox, selfTask } from "../handles.js";
+import { logActorWarning, resolveErrorMessage } from "../logging.js";
 import { SANDBOX_REPO_CWD } from "../sandbox/index.js";
 import { resolveSandboxProviderId } from "../../sandbox-config.js";
 import { getBetterAuthService } from "../../services/better-auth.js";
-import { expectQueueResponse } from "../../services/queue.js";
+// expectQueueResponse removed — actions return values directly
 import { resolveOrganizationGithubAuth } from "../../services/github-auth.js";
 import { githubRepoFullNameFromRemote } from "../../services/repo.js";
-import { organizationWorkflowQueueName } from "../organization/queues.js";
-import { userWorkflowQueueName } from "../user/workflow.js";
+// organization actions called directly (no queue)
+
 import { task as taskTable, taskRuntime, taskSandboxes, taskWorkspaceSessions } from "./db/schema.js";
 import { getCurrentRecord } from "./workflow/common.js";
 
@@ -239,17 +240,11 @@ async function upsertUserTaskState(c: any, authSessionId: string | null | undefi
   }
 
   const user = await getOrCreateUser(c, userId);
-  expectQueueResponse(
-    await user.send(
-      userWorkflowQueueName("user.command.task_state.upsert"),
-      {
-        taskId: c.state.taskId,
-        sessionId,
-        patch,
-      },
-      { wait: true, timeout: 60_000 },
-    ),
-  );
+  await user.taskStateUpsert({
+    taskId: c.state.taskId,
+    sessionId,
+    patch,
+  });
 }
 
 async function deleteUserTaskState(c: any, authSessionId: string | null | undefined, sessionId: string): Promise<void> {
@@ -264,16 +259,10 @@ async function deleteUserTaskState(c: any, authSessionId: string | null | undefi
   }
 
   const user = await getOrCreateUser(c, userId);
-  expectQueueResponse(
-    await user.send(
-      userWorkflowQueueName("user.command.task_state.delete"),
-      {
-        taskId: c.state.taskId,
-        sessionId,
-      },
-      { wait: true, timeout: 60_000 },
-    ),
-  );
+  await user.taskStateDelete({
+    taskId: c.state.taskId,
+    sessionId,
+  });
 }
 
 async function resolveDefaultModel(c: any, authSessionId?: string | null): Promise<string> {
@@ -750,21 +739,17 @@ async function enqueueWorkspaceRefresh(
   command: "task.command.workspace.refresh_derived" | "task.command.workspace.refresh_session_transcript",
   body: Record<string, unknown>,
 ): Promise<void> {
-  const self = selfTask(c);
-  await self.send(command, body, { wait: false });
+  // Call directly since we're inside the task actor (no queue needed)
+  if (command === "task.command.workspace.refresh_derived") {
+    void refreshWorkspaceDerivedState(c).catch(() => {});
+  } else {
+    void refreshWorkspaceSessionTranscript(c, body.sessionId as string).catch(() => {});
+  }
 }
 
 async function enqueueWorkspaceEnsureSession(c: any, sessionId: string): Promise<void> {
-  const self = selfTask(c);
-  await self.send(
-    "task.command.workspace.ensure_session",
-    {
-      sessionId,
-    },
-    {
-      wait: false,
-    },
-  );
+  // Call directly since we're inside the task actor
+  void ensureWorkspaceSession(c, sessionId).catch(() => {});
 }
 
 function pendingWorkspaceSessionStatus(record: any): "pending_provision" | "pending_session_create" {
@@ -930,7 +915,10 @@ export async function buildSessionDetail(c: any, sessionId: string, authSessionI
   const userTaskState = await getUserTaskState(c, authSessionId);
   const userSessionState = userTaskState.bySessionId.get(sessionId);
 
-  if (!meta.sandboxSessionId) {
+  // Skip live transcript fetch if the sandbox session doesn't exist yet or
+  // the session is still provisioning — the sandbox API will block/timeout.
+  const isPending = meta.status === "pending_provision" || meta.status === "pending_session_create";
+  if (!meta.sandboxSessionId || isPending) {
     return buildSessionDetailFromMeta(meta, userSessionState);
   }
 
@@ -947,8 +935,13 @@ export async function buildSessionDetail(c: any, sessionId: string, authSessionI
         userSessionState,
       );
     }
-  } catch {
-    // Session detail reads should degrade to cached transcript data if the live sandbox is unavailable.
+  } catch (error) {
+    // Session detail reads degrade to cached transcript when sandbox is unavailable.
+    logActorWarning("task", "readSessionTranscript failed, using cached transcript", {
+      taskId: c.state.taskId,
+      sessionId,
+      error: resolveErrorMessage(error),
+    });
   }
 
   return buildSessionDetailFromMeta(meta, userSessionState);
@@ -976,13 +969,7 @@ export async function getSessionDetail(c: any, sessionId: string, authSessionId?
  */
 export async function broadcastTaskUpdate(c: any, options?: { sessionId?: string }): Promise<void> {
   const organization = await getOrCreateOrganization(c, c.state.organizationId);
-  await expectQueueResponse<{ ok: true }>(
-    await organization.send(
-      organizationWorkflowQueueName("organization.command.applyTaskSummaryUpdate"),
-      { taskSummary: await buildTaskSummary(c) },
-      { wait: true, timeout: 10_000 },
-    ),
-  );
+  await organization.commandApplyTaskSummaryUpdate({ taskSummary: await buildTaskSummary(c) });
   c.broadcast("taskUpdated", {
     type: "taskUpdated",
     detail: await buildTaskDetail(c),
@@ -1119,22 +1106,12 @@ export async function ensureWorkspaceSession(c: any, sessionId: string, model?: 
 }
 
 export async function enqueuePendingWorkspaceSessions(c: any): Promise<void> {
-  const self = selfTask(c);
   const pending = (await listSessionMetaRows(c, { includeClosed: true })).filter(
     (row) => row.closed !== true && row.status !== "ready" && row.status !== "error",
   );
 
   for (const row of pending) {
-    await self.send(
-      "task.command.workspace.ensure_session",
-      {
-        sessionId: row.sessionId,
-        model: row.model,
-      },
-      {
-        wait: false,
-      },
-    );
+    void ensureWorkspaceSession(c, row.sessionId, row.model).catch(() => {});
   }
 }
 

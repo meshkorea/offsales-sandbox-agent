@@ -6,7 +6,7 @@ import { resolveErrorMessage } from "../../logging.js";
 import { defaultSandboxProviderId } from "../../../sandbox-config.js";
 import { task as taskTable, taskRuntime } from "../db/schema.js";
 import { TASK_ROW_ID, appendAuditLog, collectErrorMessages, resolveErrorDetail, setTaskState } from "./common.js";
-import { taskWorkflowQueueName } from "./queue.js";
+// task actions called directly (no queue)
 
 export async function initBootstrapDbActivity(loopCtx: any, body: any): Promise<void> {
   const { config } = getActorRuntimeContext();
@@ -72,9 +72,7 @@ export async function initEnqueueProvisionActivity(loopCtx: any, body: any): Pro
 
   const self = selfTask(loopCtx);
   try {
-    await self.send(taskWorkflowQueueName("task.command.provision"), body, {
-      wait: false,
-    });
+    void self.provision(body).catch(() => {});
   } catch (error) {
     logActorWarning("task.init", "background provision command failed", {
       organizationId: loopCtx.state.organizationId,

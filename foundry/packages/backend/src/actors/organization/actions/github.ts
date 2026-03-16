@@ -2,16 +2,15 @@ import { desc } from "drizzle-orm";
 import type { FoundryAppSnapshot } from "@sandbox-agent/foundry-shared";
 import { getOrCreateGithubData, getOrCreateOrganization } from "../../handles.js";
 import { authSessionIndex } from "../db/schema.js";
-import { githubDataWorkflowQueueName } from "../../github-data/workflow.js";
 import {
   assertAppOrganization,
   buildAppSnapshot,
   requireEligibleOrganization,
   requireSignedInSession,
+  markOrganizationSyncStartedMutation,
 } from "../app-shell.js";
 import { getBetterAuthService } from "../../../services/better-auth.js";
-import { expectQueueResponse } from "../../../services/queue.js";
-import { organizationWorkflowQueueName } from "../queues.js";
+import { refreshOrganizationSnapshotMutation } from "../actions.js";
 
 export const organizationGithubActions = {
   async resolveAppGithubToken(
@@ -59,33 +58,21 @@ export const organizationGithubActions = {
     }
 
     const organizationHandle = await getOrCreateOrganization(c, input.organizationId);
-    await expectQueueResponse<{ ok: true }>(
-      await organizationHandle.send(
-        organizationWorkflowQueueName("organization.command.shell.sync_started.mark"),
-        { label: "Importing repository catalog..." },
-        { wait: true, timeout: 10_000 },
-      ),
-    );
-    await expectQueueResponse<{ ok: true }>(
-      await organizationHandle.send(organizationWorkflowQueueName("organization.command.snapshot.broadcast"), {}, { wait: true, timeout: 10_000 }),
-    );
+    await organizationHandle.commandMarkSyncStarted({ label: "Importing repository catalog..." });
+    await organizationHandle.commandBroadcastSnapshot({});
 
-    await githubData.send("githubData.command.syncRepos", { label: "Importing repository catalog..." }, { wait: false });
+    void githubData.syncRepos({ label: "Importing repository catalog..." }).catch(() => {});
 
     return await buildAppSnapshot(c, input.sessionId);
   },
 
   async adminReloadGithubOrganization(c: any): Promise<void> {
     const githubData = await getOrCreateGithubData(c, c.state.organizationId);
-    await expectQueueResponse<{ ok: true }>(
-      await githubData.send(githubDataWorkflowQueueName("githubData.command.syncRepos"), { label: "Reloading GitHub organization..." }, { wait: true, timeout: 10_000 }),
-    );
+    await githubData.syncRepos({ label: "Reloading GitHub organization..." });
   },
 
   async adminReloadGithubRepository(c: any, input: { repoId: string }): Promise<void> {
     const githubData = await getOrCreateGithubData(c, c.state.organizationId);
-    await expectQueueResponse<unknown>(
-      await githubData.send(githubDataWorkflowQueueName("githubData.command.reloadRepository"), input, { wait: true, timeout: 10_000 }),
-    );
+    await githubData.reloadRepository(input);
   },
 };

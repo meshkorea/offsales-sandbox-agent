@@ -4,6 +4,8 @@ import type { TaskRecord, TaskStatus } from "@sandbox-agent/foundry-shared";
 import { task as taskTable, taskRuntime, taskSandboxes } from "../db/schema.js";
 import { getOrCreateAuditLog, getOrCreateOrganization } from "../../handles.js";
 import { broadcastTaskUpdate } from "../workspace.js";
+import { getActorRuntimeContext } from "../../context.js";
+import { defaultSandboxProviderId } from "../../../sandbox-config.js";
 
 export const TASK_ROW_ID = 1;
 
@@ -64,10 +66,16 @@ export async function setTaskState(ctx: any, status: TaskStatus): Promise<void> 
   await broadcastTaskUpdate(ctx);
 }
 
+/**
+ * Read the task's current record from its local SQLite DB.
+ * If the task actor was lazily created (virtual task from PR sync) and has no
+ * DB rows yet, auto-initializes by reading branch/title from the org actor's
+ * getTaskIndexEntry. This is the self-initialization path for lazy task actors.
+ */
 export async function getCurrentRecord(ctx: any): Promise<TaskRecord> {
   const db = ctx.db;
   const organization = await getOrCreateOrganization(ctx, ctx.state.organizationId);
-  const row = await db
+  let row = await db
     .select({
       branchName: taskTable.branchName,
       title: taskTable.title,
@@ -85,7 +93,48 @@ export async function getCurrentRecord(ctx: any): Promise<TaskRecord> {
     .get();
 
   if (!row) {
-    throw new Error(`Task not found: ${ctx.state.taskId}`);
+    // Virtual task — auto-initialize from org actor's task index data
+    let branchName: string | null = null;
+    let title = "Untitled";
+    try {
+      const entry = await organization.getTaskIndexEntry({ taskId: ctx.state.taskId });
+      branchName = entry?.branchName ?? null;
+      title = entry?.title ?? title;
+    } catch {}
+
+    const { config } = getActorRuntimeContext();
+    const { initBootstrapDbActivity, initCompleteActivity } = await import("./init.js");
+    await initBootstrapDbActivity(ctx, {
+      sandboxProviderId: defaultSandboxProviderId(config),
+      branchName,
+      title,
+      task: title,
+    });
+    await initCompleteActivity(ctx, { sandboxProviderId: defaultSandboxProviderId(config) });
+
+    // Re-read the row after initialization
+    const initialized = await db
+      .select({
+        branchName: taskTable.branchName,
+        title: taskTable.title,
+        task: taskTable.task,
+        sandboxProviderId: taskTable.sandboxProviderId,
+        status: taskTable.status,
+        pullRequestJson: taskTable.pullRequestJson,
+        activeSandboxId: taskRuntime.activeSandboxId,
+        createdAt: taskTable.createdAt,
+        updatedAt: taskTable.updatedAt,
+      })
+      .from(taskTable)
+      .leftJoin(taskRuntime, eq(taskTable.id, taskRuntime.id))
+      .where(eq(taskTable.id, TASK_ROW_ID))
+      .get();
+
+    if (!initialized) {
+      throw new Error(`Task not found after initialization: ${ctx.state.taskId}`);
+    }
+
+    row = initialized;
   }
 
   const repositoryMetadata = await organization.getRepositoryMetadata({ repoId: ctx.state.repoId });
@@ -140,19 +189,13 @@ export async function getCurrentRecord(ctx: any): Promise<TaskRecord> {
 export async function appendAuditLog(ctx: any, kind: string, payload: Record<string, unknown>): Promise<void> {
   const row = await ctx.db.select({ branchName: taskTable.branchName }).from(taskTable).where(eq(taskTable.id, TASK_ROW_ID)).get();
   const auditLog = await getOrCreateAuditLog(ctx, ctx.state.organizationId);
-  await auditLog.send(
-    "auditLog.command.append",
-    {
-      kind,
-      repoId: ctx.state.repoId,
-      taskId: ctx.state.taskId,
-      branchName: row?.branchName ?? null,
-      payload,
-    },
-    {
-      wait: false,
-    },
-  );
+  void auditLog.append({
+    kind,
+    repoId: ctx.state.repoId,
+    taskId: ctx.state.taskId,
+    branchName: row?.branchName ?? null,
+    payload,
+  });
 
   await broadcastTaskUpdate(ctx);
 }

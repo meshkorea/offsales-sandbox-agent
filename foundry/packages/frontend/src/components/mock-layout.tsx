@@ -346,16 +346,17 @@ const TranscriptPanel = memo(function TranscriptPanel({
     (activeAgentSession.status === "pending_provision" || activeAgentSession.status === "pending_session_create" || activeAgentSession.status === "error") &&
     activeMessages.length === 0;
   const serverDraft = promptSession?.draft.text ?? "";
-  const serverAttachments = promptSession?.draft.attachments ?? [];
+  const serverAttachments = promptSession?.draft.attachments;
+  const serverAttachmentsJson = JSON.stringify(serverAttachments ?? []);
 
   // Sync server → local only when user hasn't typed recently (3s cooldown)
   const DRAFT_SYNC_COOLDOWN_MS = 3_000;
   useEffect(() => {
     if (Date.now() - lastEditTimeRef.current > DRAFT_SYNC_COOLDOWN_MS) {
       setLocalDraft(serverDraft);
-      setLocalAttachments(serverAttachments);
+      setLocalAttachments(serverAttachments ?? []);
     }
-  }, [serverDraft, serverAttachments]);
+  }, [serverDraft, serverAttachmentsJson]);
 
   // Reset local draft immediately on session/task switch
   useEffect(() => {

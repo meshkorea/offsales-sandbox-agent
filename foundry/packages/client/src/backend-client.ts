@@ -486,7 +486,15 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       createWithInput: "app",
     }) as unknown as AppOrganizationHandle;
 
-  const task = async (organizationId: string, repoId: string, taskId: string): Promise<TaskHandle> => client.task.get(taskKey(organizationId, repoId, taskId));
+  // getOrCreate is intentional here — this is the ONLY lazy creation point for
+  // virtual tasks (PR-driven entries that exist in the org's local tables but
+  // have no task actor yet). The task actor self-initializes from org data in
+  // getCurrentRecord(). Backend code must NEVER use getOrCreateTask except in
+  // createTaskMutation. See backend/CLAUDE.md "Lazy Task Actor Creation".
+  const task = async (organizationId: string, repoId: string, taskId: string): Promise<TaskHandle> =>
+    client.task.getOrCreate(taskKey(organizationId, repoId, taskId), {
+      createWithInput: { organizationId, repoId, taskId },
+    });
 
   const sandboxByKey = async (organizationId: string, _providerId: SandboxProviderId, sandboxId: string): Promise<TaskSandboxHandle> => {
     return (client as any).taskSandbox.get(taskSandboxKey(organizationId, sandboxId));

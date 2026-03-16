@@ -12,9 +12,9 @@ import type {
 } from "@sandbox-agent/foundry-shared";
 import { getActorRuntimeContext } from "../../context.js";
 import { getGithubData, getOrCreateAuditLog, getOrCreateTask, getTask } from "../../handles.js";
-import { taskWorkflowQueueName } from "../../task/workflow/index.js";
+// task actions called directly (no queue)
 import { deriveFallbackTitle, resolveCreateFlowDecision } from "../../../services/create-flow.js";
-import { expectQueueResponse } from "../../../services/queue.js";
+// actions return directly (no queue response unwrapping)
 import { isActorNotFoundError, logActorWarning, resolveErrorMessage } from "../../logging.js";
 import { defaultSandboxProviderId } from "../../../sandbox-config.js";
 import { taskIndex, taskSummaries } from "../db/schema.js";
@@ -128,6 +128,16 @@ async function resolveRepositoryRemoteUrl(c: any, repoId: string): Promise<strin
   return remoteUrl;
 }
 
+/**
+ * The ONLY backend code path that creates a task actor via getOrCreateTask.
+ * Called when a user explicitly creates a new task (not during sync/webhooks).
+ *
+ * All other code must use getTask (handles.ts) which calls .get() and will
+ * error if the actor doesn't exist. Virtual tasks created during PR sync
+ * are materialized lazily by the client's getOrCreate in backend-client.ts.
+ *
+ * NEVER call this from a sync loop or webhook handler.
+ */
 export async function createTaskMutation(c: any, cmd: CreateTaskCommand): Promise<TaskRecord> {
   const organizationId = c.state.organizationId;
   const repoId = cmd.repoId;
@@ -188,21 +198,12 @@ export async function createTaskMutation(c: any, cmd: CreateTaskCommand): Promis
     throw error;
   }
 
-  const created = await expectQueueResponse<TaskRecord>(
-    await taskHandle.send(
-      taskWorkflowQueueName("task.command.initialize"),
-      {
-        sandboxProviderId: cmd.sandboxProviderId,
-        branchName: initialBranchName,
-        title: initialTitle,
-        task: cmd.task,
-      },
-      {
-        wait: true,
-        timeout: 10_000,
-      },
-    ),
-  );
+  const created = await taskHandle.initialize({
+    sandboxProviderId: cmd.sandboxProviderId,
+    branchName: initialBranchName,
+    title: initialTitle,
+    task: cmd.task,
+  });
 
   try {
     await upsertTaskSummary(c, await taskHandle.getTaskSummary({}));
@@ -217,21 +218,15 @@ export async function createTaskMutation(c: any, cmd: CreateTaskCommand): Promis
   }
 
   const auditLog = await getOrCreateAuditLog(c, organizationId);
-  await auditLog.send(
-    "auditLog.command.append",
-    {
-      kind: "task.created",
+  void auditLog.append({
+    kind: "task.created",
+    repoId,
+    taskId,
+    payload: {
       repoId,
-      taskId,
-      payload: {
-        repoId,
-        sandboxProviderId: cmd.sandboxProviderId,
-      },
+      sandboxProviderId: cmd.sandboxProviderId,
     },
-    {
-      wait: false,
-    },
-  );
+  });
 
   try {
     const taskSummary = await taskHandle.getTaskSummary({});
@@ -319,9 +314,15 @@ export async function removeTaskSummaryMutation(c: any, input: { taskId: string 
   await refreshOrganizationSnapshotMutation(c);
 }
 
+/**
+ * Called for every changed PR during sync and on webhook PR events.
+ * Runs in a bulk loop — MUST NOT create task actors or make cross-actor calls
+ * to task actors. Only writes to the org's local taskIndex/taskSummaries tables.
+ * Task actors are created lazily when the user views the task.
+ */
 export async function refreshTaskSummaryForBranchMutation(
   c: any,
-  input: { repoId: string; branchName: string; pullRequest?: WorkspacePullRequestSummary | null },
+  input: { repoId: string; branchName: string; pullRequest?: WorkspacePullRequestSummary | null; repoName?: string },
 ): Promise<void> {
   const pullRequest = input.pullRequest ?? null;
   let rows = await c.db
@@ -331,34 +332,62 @@ export async function refreshTaskSummaryForBranchMutation(
     .all();
 
   if (rows.length === 0 && pullRequest) {
-    const { config } = getActorRuntimeContext();
-    const created = await createTaskMutation(c, {
-      repoId: input.repoId,
-      task: pullRequest.title?.trim() || `Review ${input.branchName}`,
-      sandboxProviderId: defaultSandboxProviderId(config),
-      explicitTitle: pullRequest.title?.trim() || input.branchName,
-      explicitBranchName: null,
-      onBranch: input.branchName,
-    });
-    rows = [{ taskId: created.taskId }];
-  }
+    // Create a virtual task entry in the org's local tables only.
+    // No task actor is spawned — it will be created lazily when the user
+    // clicks on the task in the sidebar (the "materialize" path).
+    const taskId = randomUUID();
+    const now = Date.now();
+    const title = pullRequest.title?.trim() || input.branchName;
+    const repoName = input.repoName ?? `${c.state.organizationId}/${input.repoId}`;
 
-  for (const row of rows) {
-    try {
-      const task = getTask(c, c.state.organizationId, input.repoId, row.taskId);
-      await expectQueueResponse<{ ok: true }>(
-        await task.send(taskWorkflowQueueName("task.command.pull_request.sync"), { pullRequest }, { wait: true, timeout: 10_000 }),
-      );
-    } catch (error) {
-      logActorWarning("organization", "failed refreshing task summary for branch", {
-        organizationId: c.state.organizationId,
+    await c.db
+      .insert(taskIndex)
+      .values({ taskId, repoId: input.repoId, branchName: input.branchName, createdAt: now, updatedAt: now })
+      .onConflictDoNothing()
+      .run();
+
+    await c.db
+      .insert(taskSummaries)
+      .values({
+        taskId,
         repoId: input.repoId,
-        branchName: input.branchName,
-        taskId: row.taskId,
-        error: resolveErrorMessage(error),
-      });
+        title,
+        status: "init_complete",
+        repoName,
+        updatedAtMs: pullRequest.updatedAtMs ?? now,
+        branch: input.branchName,
+        pullRequestJson: JSON.stringify(pullRequest),
+        sessionsSummaryJson: "[]",
+      })
+      .onConflictDoNothing()
+      .run();
+
+    rows = [{ taskId }];
+  } else {
+    // Update PR data on existing task summaries locally.
+    // If a real task actor exists, also notify it.
+    for (const row of rows) {
+      // Update the local summary with the new PR data
+      await c.db
+        .update(taskSummaries)
+        .set({
+          pullRequestJson: pullRequest ? JSON.stringify(pullRequest) : null,
+          updatedAtMs: pullRequest?.updatedAtMs ?? Date.now(),
+        })
+        .where(eq(taskSummaries.taskId, row.taskId))
+        .run();
+
+      // Best-effort notify the task actor if it exists (fire-and-forget)
+      try {
+        const task = getTask(c, c.state.organizationId, input.repoId, row.taskId);
+        void task.pullRequestSync({ pullRequest }).catch(() => {});
+      } catch {
+        // Task actor doesn't exist yet — that's fine, it's virtual
+      }
     }
   }
+
+  await refreshOrganizationSnapshotMutation(c);
 }
 
 export function sortOverviewBranches(

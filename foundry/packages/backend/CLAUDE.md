@@ -49,6 +49,43 @@ OrganizationActor (coordinator for tasks + auth users)
 
 When adding a new index table, annotate it in the schema file with a doc comment identifying it as a coordinator index and which child actor it indexes (see existing examples).
 
+## Lazy Task Actor Creation — CRITICAL
+
+**Task actors must NEVER be created during GitHub sync or bulk operations.** Creating hundreds of task actors simultaneously causes OOM crashes. An org can have 200+ PRs; spawning an actor per PR kills the process.
+
+### The two creation points
+
+There are exactly **two** places that may create a task actor:
+
+1. **`createTaskMutation`** in `task-mutations.ts` — the only backend code that calls `getOrCreateTask`. Triggered by explicit user action ("New Task" button). One actor at a time.
+
+2. **`backend-client.ts` client helper** — calls `client.task.getOrCreate(...)`. This is the lazy materialization point: when a user clicks a virtual task in the sidebar, the client creates the actor, and it self-initializes in `getCurrentRecord()` (`workflow/common.ts`) by reading branch/title from the org's `getTaskIndexEntry` action.
+
+### The rule
+
+### The rule
+
+**Never use `getOrCreateTask` inside a sync loop, webhook handler, or any bulk operation.** That's what caused the OOM — 186 actors spawned simultaneously during PR sync.
+
+`getOrCreateTask` IS allowed in:
+- `createTaskMutation` — explicit user "New Task" action
+- `requireWorkspaceTask` — user-initiated actions (createSession, sendMessage, etc.) that may hit a virtual task
+- `getTask` action on the org — called by sandbox actor and client, needs to materialize virtual tasks
+- `backend-client.ts` client helper — lazy materialization when user views a task
+
+### Virtual tasks (PR-driven)
+
+During PR sync, `refreshTaskSummaryForBranchMutation` is called for every changed PR (via github-data's `emitPullRequestChangeEvents`). It writes **virtual task entries** to the org actor's local `taskIndex` + `taskSummaries` tables only. No task actor is spawned. No cross-actor calls to task actors.
+
+When the user interacts with a virtual task (clicks it, creates a session):
+1. Client or org actor calls `getOrCreate` on the task actor key → actor is created with empty DB
+2. Any action on the actor calls `getCurrentRecord()` → sees empty DB → reads branch/title from org's `getTaskIndexEntry` → calls `initBootstrapDbActivity` + `initCompleteActivity` → task is now real
+
+### Call sites to watch
+
+- `refreshTaskSummaryForBranchMutation` — called in bulk during sync. Must ONLY write to org local tables. Never create task actors or call task actor actions.
+- `emitPullRequestChangeEvents` in github-data — iterates all changed PRs. Must remain fire-and-forget with no actor fan-out.
+
 ## Ownership Rules
 
 - `OrganizationActor` is the organization coordinator, direct coordinator for tasks, and lookup/index owner. It owns the task index, task summaries, and repo catalog.

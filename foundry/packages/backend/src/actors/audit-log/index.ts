@@ -1,10 +1,9 @@
 // @ts-nocheck
 import { and, desc, eq } from "drizzle-orm";
-import { actor, queue } from "rivetkit";
+import { actor } from "rivetkit";
 import type { AuditLogEvent } from "@sandbox-agent/foundry-shared";
 import { auditLogDb } from "./db/db.js";
 import { events } from "./db/schema.js";
-import { AUDIT_LOG_QUEUE_NAMES, runAuditLogCommandLoop } from "./workflow.js";
 
 export interface AuditLogInput {
   organizationId: string;
@@ -36,7 +35,6 @@ export interface ListAuditLogParams {
  */
 export const auditLog = actor({
   db: auditLogDb,
-  queues: Object.fromEntries(AUDIT_LOG_QUEUE_NAMES.map((name) => [name, queue()])),
   options: {
     name: "Audit Log",
     icon: "database",
@@ -45,6 +43,22 @@ export const auditLog = actor({
     organizationId: input.organizationId,
   }),
   actions: {
+    async append(c, body: AppendAuditLogCommand): Promise<{ ok: true }> {
+      const now = Date.now();
+      await c.db
+        .insert(events)
+        .values({
+          repoId: body.repoId ?? null,
+          taskId: body.taskId ?? null,
+          branchName: body.branchName ?? null,
+          kind: body.kind,
+          payloadJson: JSON.stringify(body.payload),
+          createdAt: now,
+        })
+        .run();
+      return { ok: true };
+    },
+
     async list(c, params?: ListAuditLogParams): Promise<AuditLogEvent[]> {
       const whereParts = [];
       if (params?.repoId) {
@@ -81,5 +95,4 @@ export const auditLog = actor({
       }));
     },
   },
-  run: runAuditLogCommandLoop,
 });
