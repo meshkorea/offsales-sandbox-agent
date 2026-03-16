@@ -42,10 +42,6 @@ icon: "rocket"
         ```
 
         See [Local deploy guide](/deploy/local)
-
-        <Accordion title="Passing LLM credentials">
-          Local inherits `process.env` automatically, so no extra config is needed if your environment variables are already set.
-        </Accordion>
       </Tab>
 
       <Tab title="E2B">
@@ -64,12 +60,6 @@ icon: "rocket"
         ```
 
         See [E2B deploy guide](/deploy/e2b)
-
-        <Accordion title="Passing LLM credentials">
-          ```typescript
-          e2b({ create: { envs: { ANTHROPIC_API_KEY: "..." } } })
-          ```
-        </Accordion>
       </Tab>
 
       <Tab title="Daytona">
@@ -88,12 +78,6 @@ icon: "rocket"
         ```
 
         See [Daytona deploy guide](/deploy/daytona)
-
-        <Accordion title="Passing LLM credentials">
-          ```typescript
-          daytona({ create: { envVars: { ANTHROPIC_API_KEY: "..." } } })
-          ```
-        </Accordion>
       </Tab>
 
       <Tab title="Vercel">
@@ -112,12 +96,6 @@ icon: "rocket"
         ```
 
         See [Vercel deploy guide](/deploy/vercel)
-
-        <Accordion title="Passing LLM credentials">
-          ```typescript
-          vercel({ create: { env: { ANTHROPIC_API_KEY: "..." } } })
-          ```
-        </Accordion>
       </Tab>
 
       <Tab title="Modal">
@@ -137,12 +115,6 @@ icon: "rocket"
         ```
 
         See [Modal deploy guide](/deploy/modal)
-
-        <Accordion title="Passing LLM credentials">
-          ```typescript
-          modal({ create: { secrets: { ANTHROPIC_API_KEY: "..." } } })
-          ```
-        </Accordion>
       </Tab>
 
       <Tab title="Cloudflare">
@@ -164,10 +136,6 @@ icon: "rocket"
         ```
 
         See [Cloudflare deploy guide](/deploy/cloudflare)
-
-        <Accordion title="Passing LLM credentials">
-          Pass credentials via the Cloudflare SDK's environment configuration. See the [Cloudflare deploy guide](/deploy/cloudflare) for details.
-        </Accordion>
       </Tab>
 
       <Tab title="Docker">
@@ -186,16 +154,39 @@ icon: "rocket"
         ```
 
         See [Docker deploy guide](/deploy/docker)
-
-        <Accordion title="Passing LLM credentials">
-          ```typescript
-          docker({ env: ["ANTHROPIC_API_KEY=..."] })
-          ```
-        </Accordion>
       </Tab>
     </Tabs>
 
+    <div style={{ height: "1rem" }} />
+
+    **More info:**
+
     <AccordionGroup>
+      <Accordion title="Passing LLM credentials">
+        Agents need API keys for their LLM provider. Each provider passes credentials differently:
+
+        ```typescript
+        // Local — inherits process.env automatically
+
+        // E2B
+        e2b({ create: { envs: { ANTHROPIC_API_KEY: "..." } } })
+
+        // Daytona
+        daytona({ create: { envVars: { ANTHROPIC_API_KEY: "..." } } })
+
+        // Vercel
+        vercel({ create: { env: { ANTHROPIC_API_KEY: "..." } } })
+
+        // Modal
+        modal({ create: { secrets: { ANTHROPIC_API_KEY: "..." } } })
+
+        // Docker
+        docker({ env: ["ANTHROPIC_API_KEY=..."] })
+        ```
+
+        For multi-tenant billing, per-user keys, and gateway options, see [LLM Credentials](/llm-credentials).
+      </Accordion>
+
       <Accordion title="Implementing a custom provider">
         Implement the `SandboxProvider` interface to use any sandbox platform:
 

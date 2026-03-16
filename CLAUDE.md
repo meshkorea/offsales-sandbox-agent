@@ -43,8 +43,29 @@
 - Regenerate `docs/openapi.json` when HTTP contracts change.
 - Keep `docs/inspector.mdx` and `docs/sdks/typescript.mdx` aligned with implementation.
 - Append blockers/decisions to `research/acp/friction.md` during ACP work.
-- `docs/agent-capabilities.mdx` lists models/modes/thought levels per agent. Update it when adding a new agent or changing `fallback_config_options`. If its "Last updated" date is >2 weeks old, re-run `cd scripts/agent-configs && npx tsx dump.ts` and update the doc to match. Source data: `scripts/agent-configs/resources/*.json` and hardcoded entries in `server/packages/sandbox-agent/src/router/support.rs` (`fallback_config_options`).
+- Each agent has its own doc page at `docs/agents/<name>.mdx` listing models, modes, and thought levels. Update the relevant page when changing `fallback_config_options`. To regenerate capability data, run `cd scripts/agent-configs && npx tsx dump.ts`. Source data: `scripts/agent-configs/resources/*.json` and hardcoded entries in `server/packages/sandbox-agent/src/router/support.rs` (`fallback_config_options`).
 - Some agent models are gated by subscription (e.g. Claude `opus`). The live report only shows models available to the current credentials. The static doc and JSON resource files should list all known models regardless of subscription tier.
+
+## Adding Providers
+
+When adding a new sandbox provider, update all of the following:
+
+- `sdks/typescript/src/providers/<name>.ts` — provider implementation
+- `sdks/typescript/package.json` — add `./<name>` export, peerDependencies, peerDependenciesMeta, devDependencies
+- `sdks/typescript/tsup.config.ts` — add entry point and external
+- `sdks/typescript/tests/providers.test.ts` — add test entry
+- `examples/<name>/` — create example with `src/index.ts` and `tests/<name>.test.ts`
+- `docs/deploy/<name>.mdx` — create deploy guide
+- `docs/docs.json` — add to Deploy pages navigation
+- `docs/quickstart.mdx` — add tab in "Start the sandbox" step, add credentials entry in "Passing LLM credentials" accordion
+
+## Adding Agents
+
+When adding a new agent, update all of the following:
+
+- `docs/agents/<name>.mdx` — create agent page with usage snippet and capabilities table
+- `docs/docs.json` — add to the Agents group under Agent
+- `docs/quickstart.mdx` — add tab in the "Create a session and send a prompt" CodeGroup
 
 ## Persist Packages (Deprecated)
 
