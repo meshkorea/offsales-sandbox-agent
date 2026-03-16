@@ -21,12 +21,11 @@ import type {
   TaskWorkspaceUpdateDraftInput,
 } from "@sandbox-agent/foundry-shared";
 import { getActorRuntimeContext } from "../../context.js";
-import { getOrCreateAuditLog, getTask as getTaskHandle, selfOrganization } from "../../handles.js";
+import { getOrCreateAuditLog, getOrCreateGithubData, getTask as getTaskHandle, selfOrganization } from "../../handles.js";
 import { defaultSandboxProviderId } from "../../../sandbox-config.js";
 import { expectQueueResponse } from "../../../services/queue.js";
 import { logActorWarning, resolveErrorMessage } from "../../logging.js";
 import { taskWorkflowQueueName } from "../../task/workflow/index.js";
-import { repos } from "../db/schema.js";
 import { organizationWorkflowQueueName } from "../queues.js";
 import {
   createTaskMutation,
@@ -44,8 +43,9 @@ function assertOrganization(c: { state: { organizationId: string } }, organizati
 }
 
 async function requireRepoExists(c: any, repoId: string): Promise<void> {
-  const repoRow = await c.db.select({ repoId: repos.repoId }).from(repos).where(eq(repos.repoId, repoId)).get();
-  if (!repoRow) {
+  const githubData = await getOrCreateGithubData(c, c.state.organizationId);
+  const repo = await githubData.getRepository({ repoId });
+  if (!repo) {
     throw new Error(`Unknown repo: ${repoId}`);
   }
 }

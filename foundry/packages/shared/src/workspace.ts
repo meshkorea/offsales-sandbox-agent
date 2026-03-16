@@ -174,12 +174,27 @@ export interface OrganizationGithubSummary {
   totalRepositoryCount: number;
 }
 
+export interface WorkspaceOpenPullRequest {
+  repoId: string;
+  repoFullName: string;
+  number: number;
+  title: string;
+  status: string;
+  state: string;
+  url: string;
+  headRefName: string;
+  baseRefName: string;
+  authorLogin: string | null;
+  isDraft: boolean;
+}
+
 /** Organization-level snapshot — initial fetch for the organization topic. */
 export interface OrganizationSummarySnapshot {
   organizationId: string;
   github: OrganizationGithubSummary;
   repos: WorkspaceRepositorySummary[];
   taskSummaries: WorkspaceTaskSummary[];
+  openPullRequests?: WorkspaceOpenPullRequest[];
 }
 
 export interface WorkspaceSession extends WorkspaceSessionSummary {

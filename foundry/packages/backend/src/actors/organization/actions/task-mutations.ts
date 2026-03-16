@@ -17,7 +17,7 @@ import { deriveFallbackTitle, resolveCreateFlowDecision } from "../../../service
 import { expectQueueResponse } from "../../../services/queue.js";
 import { isActorNotFoundError, logActorWarning, resolveErrorMessage } from "../../logging.js";
 import { defaultSandboxProviderId } from "../../../sandbox-config.js";
-import { taskIndex, taskSummaries, repos } from "../db/schema.js";
+import { taskIndex, taskSummaries } from "../db/schema.js";
 import { refreshOrganizationSnapshotMutation } from "../actions.js";
 
 interface CreateTaskCommand {
@@ -120,11 +120,6 @@ async function listGitHubBranches(c: any, repoId: string): Promise<Array<{ branc
 }
 
 async function resolveRepositoryRemoteUrl(c: any, repoId: string): Promise<string> {
-  const repoRow = await c.db.select({ remoteUrl: repos.remoteUrl }).from(repos).where(eq(repos.repoId, repoId)).get();
-  if (repoRow?.remoteUrl) {
-    return repoRow.remoteUrl;
-  }
-
   const repository = await resolveGitHubRepository(c, repoId);
   const remoteUrl = repository?.cloneUrl?.trim();
   if (!remoteUrl) {

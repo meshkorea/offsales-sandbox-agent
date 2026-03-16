@@ -1,5 +1,4 @@
 import { eq, count as sqlCount, and } from "drizzle-orm";
-import { Loop } from "rivetkit/workflow";
 import { DEFAULT_WORKSPACE_MODEL_ID } from "@sandbox-agent/foundry-shared";
 import { logActorWarning, resolveErrorMessage } from "../logging.js";
 import { authUsers, sessionState, userProfiles, userTaskState } from "./db/schema.js";
@@ -26,8 +25,15 @@ export function userWorkflowQueueName(name: UserQueueName): UserQueueName {
 async function createAuthRecordMutation(c: any, input: { model: string; data: Record<string, unknown> }) {
   const table = tableFor(input.model);
   const persisted = persistInput(input.model, input.data);
-  await c.db.insert(table).values(persisted as any).run();
-  const row = await c.db.select().from(table).where(eq(columnFor(input.model, table, "id"), input.data.id as any)).get();
+  await c.db
+    .insert(table)
+    .values(persisted as any)
+    .run();
+  const row = await c.db
+    .select()
+    .from(table)
+    .where(eq(columnFor(input.model, table, "id"), input.data.id as any))
+    .get();
   return materializeRow(input.model, row);
 }
 
@@ -37,7 +43,11 @@ async function updateAuthRecordMutation(c: any, input: { model: string; where: a
   if (!predicate) {
     throw new Error("updateAuthRecord requires a where clause");
   }
-  await c.db.update(table).set(persistPatch(input.model, input.update) as any).where(predicate).run();
+  await c.db
+    .update(table)
+    .set(persistPatch(input.model, input.update) as any)
+    .where(predicate)
+    .run();
   return materializeRow(input.model, await c.db.select().from(table).where(predicate).get());
 }
 
@@ -47,7 +57,11 @@ async function updateManyAuthRecordsMutation(c: any, input: { model: string; whe
   if (!predicate) {
     throw new Error("updateManyAuthRecords requires a where clause");
   }
-  await c.db.update(table).set(persistPatch(input.model, input.update) as any).where(predicate).run();
+  await c.db
+    .update(table)
+    .set(persistPatch(input.model, input.update) as any)
+    .where(predicate)
+    .run();
   const row = await c.db.select({ value: sqlCount() }).from(table).where(predicate).get();
   return row?.value ?? 0;
 }
@@ -222,60 +236,46 @@ async function deleteTaskStateMutation(c: any, input: { taskId: string; sessionI
   await c.db.delete(userTaskState).where(eq(userTaskState.taskId, input.taskId)).run();
 }
 
-export async function runUserWorkflow(ctx: any): Promise<void> {
-  await ctx.loop("user-command-loop", async (loopCtx: any) => {
-    const msg = await loopCtx.queue.next("next-user-command", {
-      names: [...USER_QUEUE_NAMES],
-      completable: true,
-    });
-    if (!msg) {
-      return Loop.continue(undefined);
-    }
+const COMMAND_HANDLERS: Record<string, (c: any, body: any) => Promise<any>> = {
+  "user.command.auth.create": (c, body) => createAuthRecordMutation(c, body),
+  "user.command.auth.update": (c, body) => updateAuthRecordMutation(c, body),
+  "user.command.auth.update_many": (c, body) => updateManyAuthRecordsMutation(c, body),
+  "user.command.auth.delete": async (c, body) => {
+    await deleteAuthRecordMutation(c, body);
+    return { ok: true };
+  },
+  "user.command.auth.delete_many": (c, body) => deleteManyAuthRecordsMutation(c, body),
+  "user.command.profile.upsert": (c, body) => upsertUserProfileMutation(c, body),
+  "user.command.session_state.upsert": (c, body) => upsertSessionStateMutation(c, body),
+  "user.command.task_state.upsert": (c, body) => upsertTaskStateMutation(c, body),
+  "user.command.task_state.delete": async (c, body) => {
+    await deleteTaskStateMutation(c, body);
+    return { ok: true };
+  },
+};
 
+/**
+ * Plain run handler (no workflow engine). Drains the queue using `c.queue.iter()`
+ * with completable messages.
+ */
+export async function runUserCommandLoop(c: any): Promise<void> {
+  for await (const msg of c.queue.iter({ names: [...USER_QUEUE_NAMES], completable: true })) {
     try {
-      let result: unknown;
-      switch (msg.name) {
-        case "user.command.auth.create":
-          result = await loopCtx.step({ name: "user-auth-create", timeout: 60_000, run: async () => createAuthRecordMutation(loopCtx, msg.body) });
-          break;
-        case "user.command.auth.update":
-          result = await loopCtx.step({ name: "user-auth-update", timeout: 60_000, run: async () => updateAuthRecordMutation(loopCtx, msg.body) });
-          break;
-        case "user.command.auth.update_many":
-          result = await loopCtx.step({ name: "user-auth-update-many", timeout: 60_000, run: async () => updateManyAuthRecordsMutation(loopCtx, msg.body) });
-          break;
-        case "user.command.auth.delete":
-          result = await loopCtx.step({ name: "user-auth-delete", timeout: 60_000, run: async () => deleteAuthRecordMutation(loopCtx, msg.body) });
-          break;
-        case "user.command.auth.delete_many":
-          result = await loopCtx.step({ name: "user-auth-delete-many", timeout: 60_000, run: async () => deleteManyAuthRecordsMutation(loopCtx, msg.body) });
-          break;
-        case "user.command.profile.upsert":
-          result = await loopCtx.step({ name: "user-profile-upsert", timeout: 60_000, run: async () => upsertUserProfileMutation(loopCtx, msg.body) });
-          break;
-        case "user.command.session_state.upsert":
-          result = await loopCtx.step({ name: "user-session-state-upsert", timeout: 60_000, run: async () => upsertSessionStateMutation(loopCtx, msg.body) });
-          break;
-        case "user.command.task_state.upsert":
-          result = await loopCtx.step({ name: "user-task-state-upsert", timeout: 60_000, run: async () => upsertTaskStateMutation(loopCtx, msg.body) });
-          break;
-        case "user.command.task_state.delete":
-          result = await loopCtx.step({ name: "user-task-state-delete", timeout: 60_000, run: async () => deleteTaskStateMutation(loopCtx, msg.body) });
-          break;
-        default:
-          return Loop.continue(undefined);
+      const handler = COMMAND_HANDLERS[msg.name];
+      if (handler) {
+        const result = await handler(c, msg.body);
+        await msg.complete(result);
+      } else {
+        logActorWarning("user", "unknown queue message", { queueName: msg.name });
+        await msg.complete({ error: `Unknown command: ${msg.name}` });
       }
-
-      await msg.complete(result);
     } catch (error) {
       const message = resolveErrorMessage(error);
-      logActorWarning("user", "user workflow command failed", {
+      logActorWarning("user", "user command failed", {
         queueName: msg.name,
         error: message,
       });
       await msg.complete({ error: message }).catch(() => {});
     }
-
-    return Loop.continue(undefined);
-  });
+  }
 }

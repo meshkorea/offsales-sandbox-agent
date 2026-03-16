@@ -183,6 +183,7 @@ export interface BackendClientOptions {
   endpoint: string;
   defaultOrganizationId?: string;
   mode?: "remote" | "mock";
+  encoding?: "json" | "cbor" | "bare";
 }
 
 export interface BackendClient {
@@ -413,7 +414,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
   const endpoints = deriveBackendEndpoints(options.endpoint);
   const rivetApiEndpoint = endpoints.rivetEndpoint;
   const appApiEndpoint = endpoints.appEndpoint;
-  const client = createClient({ endpoint: rivetApiEndpoint }) as unknown as RivetClient;
+  const client = createClient({ endpoint: rivetApiEndpoint, encoding: options.encoding }) as unknown as RivetClient;
   const workspaceSubscriptions = new Map<
     string,
     {
@@ -514,10 +515,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
         const sandboxes = detail.sandboxes as Array<(typeof detail.sandboxes)[number] & { sandboxActorId?: string }>;
         const sandbox = sandboxes.find(
           (sb) =>
-            sb.sandboxId === sandboxId &&
-            sb.sandboxProviderId === sandboxProviderId &&
-            typeof sb.sandboxActorId === "string" &&
-            sb.sandboxActorId.length > 0,
+            sb.sandboxId === sandboxId && sb.sandboxProviderId === sandboxProviderId && typeof sb.sandboxActorId === "string" && sb.sandboxActorId.length > 0,
         );
         if (sandbox?.sandboxActorId) {
           return (client as any).taskSandbox.getForId(sandbox.sandboxActorId);
@@ -582,12 +580,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     return (await task(organizationId, repoId, taskIdValue)).getTaskDetail(await getAuthSessionInput());
   };
 
-  const getSessionDetailWithAuth = async (
-    organizationId: string,
-    repoId: string,
-    taskIdValue: string,
-    sessionId: string,
-  ): Promise<WorkspaceSessionDetail> => {
+  const getSessionDetailWithAuth = async (organizationId: string, repoId: string, taskIdValue: string, sessionId: string): Promise<WorkspaceSessionDetail> => {
     return (await task(organizationId, repoId, taskIdValue)).getSessionDetail(await withAuthSessionInput({ sessionId }));
   };
 
@@ -596,67 +589,67 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
     const summary = await (await organization(organizationId)).getOrganizationSummary({ organizationId });
     const resolvedTasks = await Promise.all(
       summary.taskSummaries.map(async (taskSummary) => {
-          let detail;
-          try {
-            const taskHandle = await task(organizationId, taskSummary.repoId, taskSummary.id);
-            detail = await taskHandle.getTaskDetail(authSessionInput);
-          } catch (error) {
-            if (isActorNotFoundError(error)) {
-              return null;
-            }
-            throw error;
+        let detail;
+        try {
+          const taskHandle = await task(organizationId, taskSummary.repoId, taskSummary.id);
+          detail = await taskHandle.getTaskDetail(authSessionInput);
+        } catch (error) {
+          if (isActorNotFoundError(error)) {
+            return null;
           }
-          const sessionDetails = await Promise.all(
-            detail.sessionsSummary.map(async (session) => {
-              try {
-                const full = await (await task(organizationId, detail.repoId, detail.id)).getSessionDetail({
-                  sessionId: session.id,
-                  ...(authSessionInput ?? {}),
-                });
-                return [session.id, full] as const;
-              } catch (error) {
-                if (isActorNotFoundError(error)) {
-                  return null;
-                }
-                throw error;
+          throw error;
+        }
+        const sessionDetails = await Promise.all(
+          detail.sessionsSummary.map(async (session) => {
+            try {
+              const full = await (await task(organizationId, detail.repoId, detail.id)).getSessionDetail({
+                sessionId: session.id,
+                ...(authSessionInput ?? {}),
+              });
+              return [session.id, full] as const;
+            } catch (error) {
+              if (isActorNotFoundError(error)) {
+                return null;
               }
-            }),
-          );
-          const sessionDetailsById = new Map(sessionDetails.filter((entry): entry is readonly [string, WorkspaceSessionDetail] => entry !== null));
-          return {
-            id: detail.id,
-            repoId: detail.repoId,
-            title: detail.title,
-            status: detail.status,
-            repoName: detail.repoName,
-            updatedAtMs: detail.updatedAtMs,
-            branch: detail.branch,
-            pullRequest: detail.pullRequest,
-            activeSessionId: detail.activeSessionId ?? null,
-            sessions: detail.sessionsSummary.map((session) => {
-              const full = sessionDetailsById.get(session.id);
-              return {
-                id: session.id,
-                sessionId: session.sessionId,
-                sessionName: session.sessionName,
-                agent: session.agent,
-                model: session.model,
-                status: session.status,
-                thinkingSinceMs: session.thinkingSinceMs,
-                unread: session.unread,
-                created: session.created,
-                draft: full?.draft ?? { text: "", attachments: [], updatedAtMs: null },
-                transcript: full?.transcript ?? [],
-              };
-            }),
-            fileChanges: detail.fileChanges,
-            diffs: detail.diffs,
-            fileTree: detail.fileTree,
-            minutesUsed: detail.minutesUsed,
-            activeSandboxId: detail.activeSandboxId ?? null,
-          };
-        }),
-      );
+              throw error;
+            }
+          }),
+        );
+        const sessionDetailsById = new Map(sessionDetails.filter((entry): entry is readonly [string, WorkspaceSessionDetail] => entry !== null));
+        return {
+          id: detail.id,
+          repoId: detail.repoId,
+          title: detail.title,
+          status: detail.status,
+          repoName: detail.repoName,
+          updatedAtMs: detail.updatedAtMs,
+          branch: detail.branch,
+          pullRequest: detail.pullRequest,
+          activeSessionId: detail.activeSessionId ?? null,
+          sessions: detail.sessionsSummary.map((session) => {
+            const full = sessionDetailsById.get(session.id);
+            return {
+              id: session.id,
+              sessionId: session.sessionId,
+              sessionName: session.sessionName,
+              agent: session.agent,
+              model: session.model,
+              status: session.status,
+              thinkingSinceMs: session.thinkingSinceMs,
+              unread: session.unread,
+              created: session.created,
+              draft: full?.draft ?? { text: "", attachments: [], updatedAtMs: null },
+              transcript: full?.transcript ?? [],
+            };
+          }),
+          fileChanges: detail.fileChanges,
+          diffs: detail.diffs,
+          fileTree: detail.fileTree,
+          minutesUsed: detail.minutesUsed,
+          activeSandboxId: detail.activeSandboxId ?? null,
+        };
+      }),
+    );
     const tasks = resolvedTasks.filter((task): task is Exclude<(typeof resolvedTasks)[number], null> => task !== null);
 
     const repositories = summary.repos
@@ -1205,11 +1198,7 @@ export function createBackendClient(options: BackendClientOptions): BackendClien
       return await withSandboxHandle(organizationId, sandboxProviderId, sandboxId, async (handle) => handle.sandboxAgentConnection());
     },
 
-    async getSandboxWorkspaceModelGroups(
-      organizationId: string,
-      sandboxProviderId: SandboxProviderId,
-      sandboxId: string,
-    ): Promise<WorkspaceModelGroup[]> {
+    async getSandboxWorkspaceModelGroups(organizationId: string, sandboxProviderId: SandboxProviderId, sandboxId: string): Promise<WorkspaceModelGroup[]> {
       return await withSandboxHandle(organizationId, sandboxProviderId, sandboxId, async (handle) => handle.listWorkspaceModelGroups());
     },
 

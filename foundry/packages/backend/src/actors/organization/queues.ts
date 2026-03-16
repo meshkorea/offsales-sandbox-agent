@@ -18,8 +18,6 @@ export const ORGANIZATION_QUEUE_NAMES = [
   "organization.command.better_auth.verification.update_many",
   "organization.command.better_auth.verification.delete",
   "organization.command.better_auth.verification.delete_many",
-  "organization.command.github.repository_projection.apply",
-  "organization.command.github.data_projection.apply",
   "organization.command.github.sync_progress.apply",
   "organization.command.github.webhook_receipt.record",
   "organization.command.github.organization_shell.sync_from_github",

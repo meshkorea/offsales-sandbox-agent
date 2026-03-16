@@ -29,7 +29,6 @@ Children push updates **up** to their direct coordinator only. Coordinators broa
 OrganizationActor (coordinator for tasks + auth users)
 │
 │  Index tables:
-│  ├─ repos              → Repository catalog (GitHub sync)
 │  ├─ taskIndex          → TaskActor index (taskId → repoId + branchName)
 │  ├─ taskSummaries      → TaskActor materialized sidebar projection
 │  ├─ authSessionIndex   → UserActor index (session token → userId)

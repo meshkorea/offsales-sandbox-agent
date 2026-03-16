@@ -5,17 +5,6 @@ import { DEFAULT_WORKSPACE_MODEL_ID } from "@sandbox-agent/foundry-shared";
 // SQLite is per organization actor instance, so no organizationId column needed.
 
 /**
- * Repository catalog. Rows are created/removed when repos are added/removed
- * from the organization via GitHub sync.
- */
-export const repos = sqliteTable("repos", {
-  repoId: text("repo_id").notNull().primaryKey(),
-  remoteUrl: text("remote_url").notNull(),
-  createdAt: integer("created_at").notNull(),
-  updatedAt: integer("updated_at").notNull(),
-});
-
-/**
  * Coordinator index of TaskActor instances.
  * The organization actor is the direct coordinator for tasks (not a per-repo
  * actor) because the sidebar needs to query all tasks across all repos on

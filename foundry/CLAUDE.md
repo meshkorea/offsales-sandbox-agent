@@ -56,6 +56,8 @@ Use `pnpm` workspaces and Turborepo.
   - mock frontend changes: `just foundry-mock` or restart with `just foundry-mock-down && just foundry-mock`
   - local frontend-only work outside Docker: restart `pnpm --filter @sandbox-agent/foundry-frontend dev` or `just foundry-dev-mock` as appropriate
 - The backend does **not** hot reload. Bun's `--hot` flag causes the server to re-bind on a different port (e.g. 6421 instead of 6420), breaking all client connections while the container still exposes the original port. After backend code changes, restart the backend container: `just foundry-dev-down && just foundry-dev`.
+- The dev server has debug logging enabled by default (`RIVET_LOG_LEVEL=debug`, `FOUNDRY_LOG_LEVEL=debug`) via `compose.dev.yaml`. Error stacks and timestamps are also enabled.
+- The frontend client uses JSON encoding for RivetKit in development (`import.meta.env.DEV`) for easier debugging. Production uses the default encoding.
 
 ## Railway Logs
 
@@ -77,9 +79,10 @@ Use `pnpm` workspaces and Turborepo.
 - Keep frontend route/state coverage current in code and tests; there is no separate page-inventory doc to maintain.
 - If Foundry uses a shared component from `@sandbox-agent/react`, make changes in `sdks/react` instead of copying or forking that component into Foundry.
 - When changing shared React components in `sdks/react` for Foundry, verify they still work in the Sandbox Agent Inspector before finishing.
-- When making UI changes, verify the live flow with `agent-browser`, take screenshots of the updated UI, and offer to open those screenshots in Preview when you finish.
+- When making UI changes, verify the live flow with the Chrome DevTools MCP or `agent-browser`, take screenshots of the updated UI, and offer to open those screenshots in Preview when you finish.
 - When asked for screenshots, capture all relevant affected screens and modal states, not just a single viewport. Include empty, populated, success, and blocked/error states when they are part of the changed flow.
 - If a screenshot catches a transition frame, blank modal, or otherwise misleading state, retake it before reporting it.
+- When verifying UI in the browser, attempt to sign in by navigating to `/signin` and clicking "Continue with GitHub". If the browser lands on the GitHub login page (github.com/login) and you don't have credentials, stop and ask the user to complete the sign-in. Do not assume the session is invalid just because you see the Foundry sign-in page — always attempt the OAuth flow first.
 
 ## Realtime Data Architecture
 

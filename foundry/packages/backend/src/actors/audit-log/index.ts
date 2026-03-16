@@ -1,11 +1,10 @@
 // @ts-nocheck
 import { and, desc, eq } from "drizzle-orm";
 import { actor, queue } from "rivetkit";
-import { workflow } from "rivetkit/workflow";
 import type { AuditLogEvent } from "@sandbox-agent/foundry-shared";
 import { auditLogDb } from "./db/db.js";
 import { events } from "./db/schema.js";
-import { AUDIT_LOG_QUEUE_NAMES, runAuditLogWorkflow } from "./workflow.js";
+import { AUDIT_LOG_QUEUE_NAMES, runAuditLogCommandLoop } from "./workflow.js";
 
 export interface AuditLogInput {
   organizationId: string;
@@ -82,5 +81,5 @@ export const auditLog = actor({
       }));
     },
   },
-  run: workflow(runAuditLogWorkflow),
+  run: runAuditLogCommandLoop,
 });

@@ -1,10 +1,9 @@
 import { actor, queue } from "rivetkit";
-import { workflow } from "rivetkit/workflow";
 import type { TaskRecord } from "@sandbox-agent/foundry-shared";
 import { taskDb } from "./db/db.js";
 import { getCurrentRecord } from "./workflow/common.js";
 import { getSessionDetail, getTaskDetail, getTaskSummary } from "./workspace.js";
-import { TASK_QUEUE_NAMES, runTaskWorkflow } from "./workflow/index.js";
+import { TASK_QUEUE_NAMES, runTaskCommandLoop } from "./workflow/index.js";
 
 export interface TaskInput {
   organizationId: string;
@@ -42,7 +41,7 @@ export const task = actor({
       return await getSessionDetail(c, input.sessionId, input.authSessionId);
     },
   },
-  run: workflow(runTaskWorkflow),
+  run: runTaskCommandLoop,
 });
 
 export { TASK_QUEUE_NAMES };

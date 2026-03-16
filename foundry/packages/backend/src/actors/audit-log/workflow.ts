@@ -1,13 +1,13 @@
 // @ts-nocheck
-import { Loop } from "rivetkit/workflow";
+import { logActorWarning, resolveErrorMessage } from "../logging.js";
 import { events } from "./db/schema.js";
 import type { AppendAuditLogCommand } from "./index.js";
 
 export const AUDIT_LOG_QUEUE_NAMES = ["auditLog.command.append"] as const;
 
-async function appendAuditLogRow(loopCtx: any, body: AppendAuditLogCommand): Promise<void> {
+async function appendAuditLogRow(c: any, body: AppendAuditLogCommand): Promise<void> {
   const now = Date.now();
-  await loopCtx.db
+  await c.db
     .insert(events)
     .values({
       repoId: body.repoId ?? null,
@@ -20,21 +20,19 @@ async function appendAuditLogRow(loopCtx: any, body: AppendAuditLogCommand): Pro
     .run();
 }
 
-export async function runAuditLogWorkflow(ctx: any): Promise<void> {
-  await ctx.loop("audit-log-command-loop", async (loopCtx: any) => {
-    const msg = await loopCtx.queue.next("next-audit-log-command", {
-      names: [...AUDIT_LOG_QUEUE_NAMES],
-      completable: true,
-    });
-    if (!msg) {
-      return Loop.continue(undefined);
+export async function runAuditLogCommandLoop(c: any): Promise<void> {
+  for await (const msg of c.queue.iter({ names: [...AUDIT_LOG_QUEUE_NAMES], completable: true })) {
+    try {
+      if (msg.name === "auditLog.command.append") {
+        await appendAuditLogRow(c, msg.body as AppendAuditLogCommand);
+        await msg.complete({ ok: true });
+        continue;
+      }
+      await msg.complete({ error: `Unknown command: ${msg.name}` });
+    } catch (error) {
+      const message = resolveErrorMessage(error);
+      logActorWarning("auditLog", "audit-log command failed", { queueName: msg.name, error: message });
+      await msg.complete({ error: message }).catch(() => {});
     }
-
-    if (msg.name === "auditLog.command.append") {
-      await loopCtx.step("append-audit-log-row", async () => appendAuditLogRow(loopCtx, msg.body as AppendAuditLogCommand));
-      await msg.complete({ ok: true });
-    }
-
-    return Loop.continue(undefined);
-  });
+  }
 }

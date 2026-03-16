@@ -506,6 +506,7 @@ export const Sidebar = memo(function Sidebar({
                 return (
                   <div
                     key={item.key}
+                    data-index={virtualItem.index}
                     data-repository-idx={repositoryIndex}
                     ref={(node) => {
                       if (node) {
@@ -663,6 +664,7 @@ export const Sidebar = memo(function Sidebar({
                 return (
                   <div
                     key={item.key}
+                    data-index={virtualItem.index}
                     data-task-idx={taskIndex}
                     data-task-repository-id={repository.id}
                     ref={(node) => {
@@ -775,6 +777,7 @@ export const Sidebar = memo(function Sidebar({
                 return (
                   <div
                     key={item.key}
+                    data-index={virtualItem.index}
                     data-task-idx={taskCount}
                     data-task-repository-id={repository.id}
                     ref={(node) => {
@@ -812,6 +815,7 @@ export const Sidebar = memo(function Sidebar({
                 return (
                   <div
                     key={item.key}
+                    data-index={virtualItem.index}
                     data-repository-idx={item.repositoryCount}
                     ref={(node) => {
                       if (node) {

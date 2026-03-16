@@ -1,9 +1,8 @@
 import { actor, queue } from "rivetkit";
-import { workflow } from "rivetkit/workflow";
 import { userDb } from "./db/db.js";
 import { betterAuthActions } from "./actions/better-auth.js";
 import { userActions } from "./actions/user.js";
-import { USER_QUEUE_NAMES, runUserWorkflow } from "./workflow.js";
+import { USER_QUEUE_NAMES, runUserCommandLoop } from "./workflow.js";
 
 export const user = actor({
   db: userDb,
@@ -20,5 +19,5 @@ export const user = actor({
     ...betterAuthActions,
     ...userActions,
   },
-  run: workflow(runUserWorkflow),
+  run: runUserCommandLoop,
 });

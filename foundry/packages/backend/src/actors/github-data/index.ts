@@ -1,7 +1,6 @@
 // @ts-nocheck
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { actor, queue } from "rivetkit";
-import { workflow } from "rivetkit/workflow";
 import type { FoundryOrganization } from "@sandbox-agent/foundry-shared";
 import { getActorRuntimeContext } from "../context.js";
 import { getOrCreateOrganization, getTask } from "../handles.js";
@@ -12,7 +11,7 @@ import { organizationWorkflowQueueName } from "../organization/queues.js";
 import { taskWorkflowQueueName } from "../task/workflow/index.js";
 import { githubDataDb } from "./db/db.js";
 import { githubBranches, githubMembers, githubMeta, githubPullRequests, githubRepositories } from "./db/schema.js";
-import { GITHUB_DATA_QUEUE_NAMES, runGithubDataWorkflow } from "./workflow.js";
+import { GITHUB_DATA_QUEUE_NAMES, runGithubDataCommandLoop } from "./workflow.js";
 
 const META_ROW_ID = 1;
 const SYNC_REPOSITORY_BATCH_SIZE = 10;
@@ -701,21 +700,6 @@ export async function fullSyncSetup(c: any, input: FullSyncInput = {}): Promise<
 
   await upsertRepositories(c, repositories, startedAt, syncGeneration);
 
-  const organization = await getOrCreateOrganization(c, c.state.organizationId);
-  await sendOrganizationCommand(organization, "organization.command.github.data_projection.apply", {
-    connectedAccount: context.connectedAccount,
-    installationStatus: context.installationStatus,
-    installationId: context.installationId,
-    syncStatus: "syncing",
-    lastSyncLabel: totalRepositoryCount > 0 ? `Imported ${totalRepositoryCount} repositories` : "No repositories available",
-    lastSyncAt: currentMeta.lastSyncAt,
-    syncGeneration,
-    syncPhase: totalRepositoryCount > 0 ? "syncing_branches" : null,
-    processedRepositoryCount: 0,
-    totalRepositoryCount,
-    repositories,
-  });
-
   return {
     syncGeneration,
     startedAt,
@@ -784,7 +768,7 @@ export async function fullSyncMembers(c: any, config: FullSyncConfig): Promise<v
  * Returns true when all batches have been processed.
  */
 export async function fullSyncPullRequestBatch(c: any, config: FullSyncConfig, batchIndex: number): Promise<boolean> {
-  const repos = readRepositoriesFromDb(c);
+  const repos = await readRepositoriesFromDb(c);
   const batches = chunkItems(repos, SYNC_REPOSITORY_BATCH_SIZE);
   if (batchIndex >= batches.length) return true;
 
@@ -816,22 +800,6 @@ export async function fullSyncFinalize(c: any, config: FullSyncConfig): Promise<
   await sweepBranches(c, config.syncGeneration);
   await sweepPullRequests(c, config.syncGeneration);
   await sweepRepositories(c, config.syncGeneration);
-
-  const repos = readRepositoriesFromDb(c);
-  const organization = await getOrCreateOrganization(c, c.state.organizationId);
-  await sendOrganizationCommand(organization, "organization.command.github.data_projection.apply", {
-    connectedAccount: config.connectedAccount,
-    installationStatus: config.installationStatus,
-    installationId: config.installationId,
-    syncStatus: "synced",
-    lastSyncLabel: config.totalRepositoryCount > 0 ? `Synced ${config.totalRepositoryCount} repositories` : "No repositories available",
-    lastSyncAt: config.startedAt,
-    syncGeneration: config.syncGeneration,
-    syncPhase: null,
-    processedRepositoryCount: config.totalRepositoryCount,
-    totalRepositoryCount: config.totalRepositoryCount,
-    repositories: repos,
-  });
 
   await writeMeta(c, {
     connectedAccount: config.connectedAccount,
@@ -908,7 +876,7 @@ export const githubData = actor({
   createState: (_c, input: GithubDataInput) => ({
     organizationId: input.organizationId,
   }),
-  run: workflow(runGithubDataWorkflow),
+  run: runGithubDataCommandLoop,
   actions: {
     async getSummary(c) {
       const repositories = await c.db.select().from(githubRepositories).all();
@@ -947,6 +915,15 @@ export const githubData = actor({
         private: Boolean(row.private),
         defaultBranch: row.defaultBranch,
       };
+    },
+
+    async listOpenPullRequests(c) {
+      const rows = await c.db
+        .select()
+        .from(githubPullRequests)
+        .where(inArray(githubPullRequests.state, ["OPEN", "DRAFT"]))
+        .all();
+      return rows.map((row) => pullRequestSummaryFromRow(row));
     },
 
     async listBranchesForRepository(c, input: { repoId: string }) {
@@ -1015,11 +992,6 @@ export async function reloadRepositoryMutation(c: any, input: { repoId: string }
     updatedAt,
   );
 
-  const organization = await getOrCreateOrganization(c, c.state.organizationId);
-  await sendOrganizationCommand(organization, "organization.command.github.repository_projection.apply", {
-    repoId: input.repoId,
-    remoteUrl: repository.cloneUrl,
-  });
   return {
     repoId: input.repoId,
     fullName: repository.fullName,
@@ -1049,20 +1021,6 @@ export async function clearStateMutation(c: any, input: ClearStateInput) {
     totalRepositoryCount: 0,
   });
 
-  const organization = await getOrCreateOrganization(c, c.state.organizationId);
-  await sendOrganizationCommand(organization, "organization.command.github.data_projection.apply", {
-    connectedAccount: input.connectedAccount,
-    installationStatus: input.installationStatus,
-    installationId: input.installationId,
-    syncStatus: "pending",
-    lastSyncLabel: input.label,
-    lastSyncAt: null,
-    syncGeneration: currentMeta.syncGeneration,
-    syncPhase: null,
-    processedRepositoryCount: 0,
-    totalRepositoryCount: 0,
-    repositories: [],
-  });
   await emitPullRequestChangeEvents(c, beforeRows, []);
 }
 
@@ -1148,12 +1106,6 @@ export async function handlePullRequestWebhookMutation(c: any, input: PullReques
     syncPhase: null,
     processedRepositoryCount: 0,
     totalRepositoryCount: 0,
-  });
-
-  const organization = await getOrCreateOrganization(c, c.state.organizationId);
-  await sendOrganizationCommand(organization, "organization.command.github.repository_projection.apply", {
-    repoId,
-    remoteUrl: input.repository.cloneUrl,
   });
 
   const afterRows = await readAllPullRequestRows(c);

@@ -207,15 +207,38 @@ function sessionStateMessage(tab: Task["sessions"][number] | null | undefined): 
   return null;
 }
 
-function groupRepositories(repos: Array<{ id: string; label: string }>, tasks: Task[]) {
+function groupRepositories(
+  repos: Array<{ id: string; label: string }>,
+  tasks: Task[],
+  openPullRequests?: Array<{
+    repoId: string;
+    repoFullName: string;
+    number: number;
+    title: string;
+    state: string;
+    url: string;
+    headRefName: string;
+    authorLogin: string | null;
+    isDraft: boolean;
+  }>,
+) {
   return repos
     .map((repo) => ({
       id: repo.id,
       label: repo.label,
       updatedAtMs: tasks.filter((task) => task.repoId === repo.id).reduce((latest, task) => Math.max(latest, task.updatedAtMs), 0),
       tasks: tasks.filter((task) => task.repoId === repo.id).sort((left, right) => right.updatedAtMs - left.updatedAtMs),
+      pullRequests: (openPullRequests ?? []).filter((pr) => pr.repoId === repo.id),
     }))
-    .filter((repo) => repo.tasks.length > 0);
+    .sort((a, b) => {
+      // Repos with tasks first, then repos with PRs, then alphabetical
+      const aHasActivity = a.tasks.length > 0 || a.pullRequests.length > 0;
+      const bHasActivity = b.tasks.length > 0 || b.pullRequests.length > 0;
+      if (aHasActivity && !bHasActivity) return -1;
+      if (!aHasActivity && bHasActivity) return 1;
+      if (a.updatedAtMs !== b.updatedAtMs) return b.updatedAtMs - a.updatedAtMs;
+      return a.label.localeCompare(b.label);
+    });
 }
 
 interface WorkspaceActions {
@@ -1378,7 +1401,8 @@ export function MockLayout({ organizationId, selectedTaskId, selectedSessionId }
     );
     return hydratedTasks.sort((left, right) => right.updatedAtMs - left.updatedAtMs);
   }, [selectedTaskSummary, selectedSessionId, sessionState.data, taskState.data, taskSummaries, organizationId]);
-  const rawRepositories = useMemo(() => groupRepositories(organizationRepos, tasks), [tasks, organizationRepos]);
+  const openPullRequests = organizationState.data?.openPullRequests ?? [];
+  const rawRepositories = useMemo(() => groupRepositories(organizationRepos, tasks, openPullRequests), [tasks, organizationRepos, openPullRequests]);
   const appSnapshot = useMockAppSnapshot();
   const currentUser = activeMockUser(appSnapshot);
   const activeOrg = activeMockOrganization(appSnapshot);

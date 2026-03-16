@@ -1,9 +1,8 @@
 import { actor, queue } from "rivetkit";
-import { workflow } from "rivetkit/workflow";
 import { organizationDb } from "./db/db.js";
 import { organizationActions } from "./actions.js";
 import { ORGANIZATION_QUEUE_NAMES } from "./queues.js";
-import { runOrganizationWorkflow } from "./workflow.js";
+import { runOrganizationCommandLoop } from "./workflow.js";
 
 export const organization = actor({
   db: organizationDb,
@@ -17,5 +16,5 @@ export const organization = actor({
     organizationId,
   }),
   actions: organizationActions,
-  run: workflow(runOrganizationWorkflow),
+  run: runOrganizationCommandLoop,
 });

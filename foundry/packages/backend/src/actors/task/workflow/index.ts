@@ -1,4 +1,3 @@
-import { Loop } from "rivetkit/workflow";
 import { logActorWarning, resolveErrorMessage } from "../../logging.js";
 import { getCurrentRecord } from "./common.js";
 import { initBootstrapDbActivity, initCompleteActivity, initEnqueueProvisionActivity, initFailedActivity } from "./init.js";
@@ -38,16 +37,14 @@ export { TASK_QUEUE_NAMES, taskWorkflowQueueName } from "./queue.js";
 
 type TaskQueueName = (typeof TASK_QUEUE_NAMES)[number];
 
-type WorkflowHandler = (loopCtx: any, msg: { name: TaskQueueName; body: any; complete: (response: unknown) => Promise<void> }) => Promise<void>;
+type CommandHandler = (c: any, msg: { name: TaskQueueName; body: any; complete: (response: unknown) => Promise<void> }) => Promise<void>;
 
-const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
-  "task.command.initialize": async (loopCtx, msg) => {
+const commandHandlers: Record<TaskQueueName, CommandHandler> = {
+  "task.command.initialize": async (c, msg) => {
     const body = msg.body;
-
-    await loopCtx.step("init-bootstrap-db", async () => initBootstrapDbActivity(loopCtx, body));
-    await loopCtx.step("init-enqueue-provision", async () => initEnqueueProvisionActivity(loopCtx, body));
-    await loopCtx.removed("init-dispatch-provision-v2", "step");
-    const currentRecord = await loopCtx.step("init-read-current-record", async () => getCurrentRecord(loopCtx));
+    await initBootstrapDbActivity(c, body);
+    await initEnqueueProvisionActivity(c, body);
+    const currentRecord = await getCurrentRecord(c);
     try {
       await msg.complete(currentRecord);
     } catch (error) {
@@ -57,23 +54,12 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
     }
   },
 
-  "task.command.provision": async (loopCtx, msg) => {
-    await loopCtx.removed("init-failed", "step");
-    await loopCtx.removed("init-failed-v2", "step");
+  "task.command.provision": async (c, msg) => {
     try {
-      await loopCtx.removed("init-ensure-name", "step");
-      await loopCtx.removed("init-assert-name", "step");
-      await loopCtx.removed("init-create-sandbox", "step");
-      await loopCtx.removed("init-ensure-agent", "step");
-      await loopCtx.removed("init-start-sandbox-instance", "step");
-      await loopCtx.removed("init-expose-sandbox", "step");
-      await loopCtx.removed("init-create-session", "step");
-      await loopCtx.removed("init-write-db", "step");
-      await loopCtx.removed("init-start-status-sync", "step");
-      await loopCtx.step("init-complete", async () => initCompleteActivity(loopCtx, msg.body));
+      await initCompleteActivity(c, msg.body);
       await msg.complete({ ok: true });
     } catch (error) {
-      await loopCtx.step("init-failed-v3", async () => initFailedActivity(loopCtx, error, msg.body));
+      await initFailedActivity(c, error, msg.body);
       await msg.complete({
         ok: false,
         error: resolveErrorMessage(error),
@@ -81,79 +67,67 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
     }
   },
 
-  "task.command.attach": async (loopCtx, msg) => {
-    await loopCtx.step("handle-attach", async () => handleAttachActivity(loopCtx, msg));
+  "task.command.attach": async (c, msg) => {
+    await handleAttachActivity(c, msg);
   },
 
-  "task.command.switch": async (loopCtx, msg) => {
-    await loopCtx.step("handle-switch", async () => handleSwitchActivity(loopCtx, msg));
+  "task.command.switch": async (c, msg) => {
+    await handleSwitchActivity(c, msg);
   },
 
-  "task.command.push": async (loopCtx, msg) => {
-    await loopCtx.step("handle-push", async () => handlePushActivity(loopCtx, msg));
+  "task.command.push": async (c, msg) => {
+    await handlePushActivity(c, msg);
   },
 
-  "task.command.sync": async (loopCtx, msg) => {
-    await loopCtx.step("handle-sync", async () => handleSimpleCommandActivity(loopCtx, msg, "task.sync"));
+  "task.command.sync": async (c, msg) => {
+    await handleSimpleCommandActivity(c, msg, "task.sync");
   },
 
-  "task.command.merge": async (loopCtx, msg) => {
-    await loopCtx.step("handle-merge", async () => handleSimpleCommandActivity(loopCtx, msg, "task.merge"));
+  "task.command.merge": async (c, msg) => {
+    await handleSimpleCommandActivity(c, msg, "task.merge");
   },
 
-  "task.command.archive": async (loopCtx, msg) => {
-    await loopCtx.step("handle-archive", async () => handleArchiveActivity(loopCtx, msg));
+  "task.command.archive": async (c, msg) => {
+    await handleArchiveActivity(c, msg);
   },
 
-  "task.command.kill": async (loopCtx, msg) => {
-    await loopCtx.step("kill-destroy-sandbox", async () => killDestroySandboxActivity(loopCtx));
-    await loopCtx.step("kill-write-db", async () => killWriteDbActivity(loopCtx, msg));
+  "task.command.kill": async (c, msg) => {
+    await killDestroySandboxActivity(c);
+    await killWriteDbActivity(c, msg);
   },
 
-  "task.command.get": async (loopCtx, msg) => {
-    await loopCtx.step("handle-get", async () => handleGetActivity(loopCtx, msg));
+  "task.command.get": async (c, msg) => {
+    await handleGetActivity(c, msg);
   },
 
-  "task.command.pull_request.sync": async (loopCtx, msg) => {
-    await loopCtx.step("task-pull-request-sync", async () => syncTaskPullRequest(loopCtx, msg.body?.pullRequest ?? null));
+  "task.command.pull_request.sync": async (c, msg) => {
+    await syncTaskPullRequest(c, msg.body?.pullRequest ?? null);
     await msg.complete({ ok: true });
   },
 
-  "task.command.workspace.mark_unread": async (loopCtx, msg) => {
-    await loopCtx.step("workspace-mark-unread", async () => markWorkspaceUnread(loopCtx, msg.body?.authSessionId));
+  "task.command.workspace.mark_unread": async (c, msg) => {
+    await markWorkspaceUnread(c, msg.body?.authSessionId);
     await msg.complete({ ok: true });
   },
 
-  "task.command.workspace.rename_task": async (loopCtx, msg) => {
-    await loopCtx.step("workspace-rename-task", async () => renameWorkspaceTask(loopCtx, msg.body.value));
+  "task.command.workspace.rename_task": async (c, msg) => {
+    await renameWorkspaceTask(c, msg.body.value);
     await msg.complete({ ok: true });
   },
 
-  "task.command.workspace.create_session": async (loopCtx, msg) => {
+  "task.command.workspace.create_session": async (c, msg) => {
     try {
-      const created = await loopCtx.step({
-        name: "workspace-create-session",
-        timeout: 5 * 60_000,
-        run: async () => createWorkspaceSession(loopCtx, msg.body?.model, msg.body?.authSessionId),
-      });
+      const created = await createWorkspaceSession(c, msg.body?.model, msg.body?.authSessionId);
       await msg.complete(created);
     } catch (error) {
       await msg.complete({ error: resolveErrorMessage(error) });
     }
   },
 
-  "task.command.workspace.create_session_and_send": async (loopCtx, msg) => {
+  "task.command.workspace.create_session_and_send": async (c, msg) => {
     try {
-      const created = await loopCtx.step({
-        name: "workspace-create-session-for-send",
-        timeout: 5 * 60_000,
-        run: async () => createWorkspaceSession(loopCtx, msg.body?.model, msg.body?.authSessionId),
-      });
-      await loopCtx.step({
-        name: "workspace-send-initial-message",
-        timeout: 5 * 60_000,
-        run: async () => sendWorkspaceMessage(loopCtx, created.sessionId, msg.body.text, [], msg.body?.authSessionId),
-      });
+      const created = await createWorkspaceSession(c, msg.body?.model, msg.body?.authSessionId);
+      await sendWorkspaceMessage(c, created.sessionId, msg.body.text, [], msg.body?.authSessionId);
     } catch (error) {
       logActorWarning("task.workflow", "create_session_and_send failed", {
         error: resolveErrorMessage(error),
@@ -162,135 +136,102 @@ const commandHandlers: Record<TaskQueueName, WorkflowHandler> = {
     await msg.complete({ ok: true });
   },
 
-  "task.command.workspace.ensure_session": async (loopCtx, msg) => {
-    await loopCtx.step({
-      name: "workspace-ensure-session",
-      timeout: 5 * 60_000,
-      run: async () => ensureWorkspaceSession(loopCtx, msg.body.sessionId, msg.body?.model, msg.body?.authSessionId),
-    });
+  "task.command.workspace.ensure_session": async (c, msg) => {
+    await ensureWorkspaceSession(c, msg.body.sessionId, msg.body?.model, msg.body?.authSessionId);
     await msg.complete({ ok: true });
   },
 
-  "task.command.workspace.rename_session": async (loopCtx, msg) => {
-    await loopCtx.step("workspace-rename-session", async () => renameWorkspaceSession(loopCtx, msg.body.sessionId, msg.body.title));
+  "task.command.workspace.rename_session": async (c, msg) => {
+    await renameWorkspaceSession(c, msg.body.sessionId, msg.body.title);
     await msg.complete({ ok: true });
   },
 
-  "task.command.workspace.select_session": async (loopCtx, msg) => {
-    await loopCtx.step("workspace-select-session", async () => selectWorkspaceSession(loopCtx, msg.body.sessionId, msg.body?.authSessionId));
+  "task.command.workspace.select_session": async (c, msg) => {
+    await selectWorkspaceSession(c, msg.body.sessionId, msg.body?.authSessionId);
     await msg.complete({ ok: true });
   },
 
-  "task.command.workspace.set_session_unread": async (loopCtx, msg) => {
-    await loopCtx.step("workspace-set-session-unread", async () => setWorkspaceSessionUnread(loopCtx, msg.body.sessionId, msg.body.unread, msg.body?.authSessionId));
+  "task.command.workspace.set_session_unread": async (c, msg) => {
+    await setWorkspaceSessionUnread(c, msg.body.sessionId, msg.body.unread, msg.body?.authSessionId);
     await msg.complete({ ok: true });
   },
 
-  "task.command.workspace.update_draft": async (loopCtx, msg) => {
-    await loopCtx.step("workspace-update-draft", async () => updateWorkspaceDraft(loopCtx, msg.body.sessionId, msg.body.text, msg.body.attachments, msg.body?.authSessionId));
+  "task.command.workspace.update_draft": async (c, msg) => {
+    await updateWorkspaceDraft(c, msg.body.sessionId, msg.body.text, msg.body.attachments, msg.body?.authSessionId);
     await msg.complete({ ok: true });
   },
 
-  "task.command.workspace.change_model": async (loopCtx, msg) => {
-    await loopCtx.step("workspace-change-model", async () => changeWorkspaceModel(loopCtx, msg.body.sessionId, msg.body.model, msg.body?.authSessionId));
+  "task.command.workspace.change_model": async (c, msg) => {
+    await changeWorkspaceModel(c, msg.body.sessionId, msg.body.model, msg.body?.authSessionId);
     await msg.complete({ ok: true });
   },
 
-  "task.command.workspace.send_message": async (loopCtx, msg) => {
+  "task.command.workspace.send_message": async (c, msg) => {
     try {
-      await loopCtx.step({
-        name: "workspace-send-message",
-        timeout: 10 * 60_000,
-        run: async () => sendWorkspaceMessage(loopCtx, msg.body.sessionId, msg.body.text, msg.body.attachments, msg.body?.authSessionId),
-      });
+      await sendWorkspaceMessage(c, msg.body.sessionId, msg.body.text, msg.body.attachments, msg.body?.authSessionId);
       await msg.complete({ ok: true });
     } catch (error) {
       await msg.complete({ error: resolveErrorMessage(error) });
     }
   },
 
-  "task.command.workspace.stop_session": async (loopCtx, msg) => {
-    await loopCtx.step({
-      name: "workspace-stop-session",
-      timeout: 5 * 60_000,
-      run: async () => stopWorkspaceSession(loopCtx, msg.body.sessionId),
-    });
+  "task.command.workspace.stop_session": async (c, msg) => {
+    await stopWorkspaceSession(c, msg.body.sessionId);
     await msg.complete({ ok: true });
   },
 
-  "task.command.workspace.sync_session_status": async (loopCtx, msg) => {
-    await loopCtx.step("workspace-sync-session-status", async () => syncWorkspaceSessionStatus(loopCtx, msg.body.sessionId, msg.body.status, msg.body.at));
+  "task.command.workspace.sync_session_status": async (c, msg) => {
+    await syncWorkspaceSessionStatus(c, msg.body.sessionId, msg.body.status, msg.body.at);
     await msg.complete({ ok: true });
   },
 
-  "task.command.workspace.refresh_derived": async (loopCtx, msg) => {
-    await loopCtx.step({
-      name: "workspace-refresh-derived",
-      timeout: 5 * 60_000,
-      run: async () => refreshWorkspaceDerivedState(loopCtx),
-    });
+  "task.command.workspace.refresh_derived": async (c, msg) => {
+    await refreshWorkspaceDerivedState(c);
     await msg.complete({ ok: true });
   },
 
-  "task.command.workspace.refresh_session_transcript": async (loopCtx, msg) => {
-    await loopCtx.step({
-      name: "workspace-refresh-session-transcript",
-      timeout: 60_000,
-      run: async () => refreshWorkspaceSessionTranscript(loopCtx, msg.body.sessionId),
-    });
+  "task.command.workspace.refresh_session_transcript": async (c, msg) => {
+    await refreshWorkspaceSessionTranscript(c, msg.body.sessionId);
     await msg.complete({ ok: true });
   },
 
-  "task.command.workspace.close_session": async (loopCtx, msg) => {
-    await loopCtx.step({
-      name: "workspace-close-session",
-      timeout: 5 * 60_000,
-      run: async () => closeWorkspaceSession(loopCtx, msg.body.sessionId, msg.body?.authSessionId),
-    });
+  "task.command.workspace.close_session": async (c, msg) => {
+    await closeWorkspaceSession(c, msg.body.sessionId, msg.body?.authSessionId);
     await msg.complete({ ok: true });
   },
 
-  "task.command.workspace.publish_pr": async (loopCtx, msg) => {
-    await loopCtx.step({
-      name: "workspace-publish-pr",
-      timeout: 10 * 60_000,
-      run: async () => publishWorkspacePr(loopCtx),
-    });
+  "task.command.workspace.publish_pr": async (c, msg) => {
+    await publishWorkspacePr(c);
     await msg.complete({ ok: true });
   },
 
-  "task.command.workspace.revert_file": async (loopCtx, msg) => {
-    await loopCtx.step({
-      name: "workspace-revert-file",
-      timeout: 5 * 60_000,
-      run: async () => revertWorkspaceFile(loopCtx, msg.body.path),
-    });
+  "task.command.workspace.revert_file": async (c, msg) => {
+    await revertWorkspaceFile(c, msg.body.path);
     await msg.complete({ ok: true });
   },
 };
 
-export async function runTaskWorkflow(ctx: any): Promise<void> {
-  await ctx.loop("task-command-loop", async (loopCtx: any) => {
-    const msg = await loopCtx.queue.next("next-command", {
-      names: [...TASK_QUEUE_NAMES],
-      completable: true,
-    });
-    if (!msg) {
-      return Loop.continue(undefined);
-    }
+/**
+ * Plain run handler (no workflow engine). Drains the queue using `c.queue.iter()`
+ * with completable messages.
+ */
+export async function runTaskCommandLoop(c: any): Promise<void> {
+  for await (const msg of c.queue.iter({ names: [...TASK_QUEUE_NAMES], completable: true })) {
     const handler = commandHandlers[msg.name as TaskQueueName];
     if (handler) {
       try {
-        await handler(loopCtx, msg);
+        await handler(c, msg);
       } catch (error) {
         const message = resolveErrorMessage(error);
-        logActorWarning("task.workflow", "task workflow command failed", {
+        logActorWarning("task.workflow", "task command failed", {
           queueName: msg.name,
           error: message,
         });
         await msg.complete({ error: message }).catch(() => {});
       }
+    } else {
+      logActorWarning("task.workflow", "unknown queue message", { queueName: msg.name });
+      await msg.complete({ error: `Unknown command: ${msg.name}` });
     }
-    return Loop.continue(undefined);
-  });
+  }
 }

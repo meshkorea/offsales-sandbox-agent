@@ -19,7 +19,7 @@ import { getBetterAuthService } from "../../services/better-auth.js";
 import { expectQueueResponse } from "../../services/queue.js";
 import { repoIdFromRemote, repoLabelFromRemote } from "../../services/repo.js";
 import { logger } from "../../logging.js";
-import { invoices, organizationMembers, organizationProfile, repos, seatAssignments, stripeLookup } from "./db/schema.js";
+import { invoices, organizationMembers, organizationProfile, seatAssignments, stripeLookup } from "./db/schema.js";
 import { APP_SHELL_ORGANIZATION_ID } from "./constants.js";
 import { organizationWorkflowQueueName } from "./queues.js";
 
@@ -575,8 +575,13 @@ async function listOrganizationInvoices(c: any): Promise<FoundryBillingState["in
 
 async function listOrganizationRepoCatalog(c: any): Promise<string[]> {
   assertOrganizationShell(c);
-  const rows = await c.db.select({ remoteUrl: repos.remoteUrl }).from(repos).orderBy(desc(repos.updatedAt)).all();
-  return rows.map((row) => repoLabelFromRemote(row.remoteUrl)).sort((left, right) => left.localeCompare(right));
+  try {
+    const githubData = await getOrCreateGithubData(c, c.state.organizationId);
+    const rows = await githubData.listRepositories({});
+    return rows.map((row: any) => repoLabelFromRemote(row.cloneUrl)).sort((a: string, b: string) => a.localeCompare(b));
+  } catch {
+    return [];
+  }
 }
 
 export async function buildOrganizationState(c: any) {

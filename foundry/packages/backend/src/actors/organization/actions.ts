@@ -10,8 +10,8 @@ import type {
   OrganizationUseInput,
 } from "@sandbox-agent/foundry-shared";
 import { logActorWarning, resolveErrorMessage } from "../logging.js";
-import { repoIdFromRemote } from "../../services/repo.js";
-import { organizationProfile, repos, taskSummaries } from "./db/schema.js";
+import { getOrCreateGithubData } from "../handles.js";
+import { organizationProfile, taskSummaries } from "./db/schema.js";
 import { organizationAppActions } from "./actions/app.js";
 import { organizationBetterAuthActions } from "./actions/better-auth.js";
 import { organizationOnboardingActions } from "./actions/onboarding.js";
@@ -45,18 +45,6 @@ function repoLabelFromRemote(remoteUrl: string): string {
   return remoteUrl;
 }
 
-function buildRepoSummary(repoRow: { repoId: string; remoteUrl: string; updatedAt: number }, taskRows: WorkspaceTaskSummary[]): WorkspaceRepositorySummary {
-  const repoTasks = taskRows.filter((task) => task.repoId === repoRow.repoId);
-  const latestActivityMs = repoTasks.reduce((latest, task) => Math.max(latest, task.updatedAtMs), repoRow.updatedAt);
-
-  return {
-    id: repoRow.repoId,
-    label: repoLabelFromRemote(repoRow.remoteUrl),
-    taskCount: repoTasks.length,
-    latestActivityMs,
-  };
-}
-
 function buildGithubSummary(profile: any, importedRepoCount: number): OrganizationGithubSummary {
   return {
     connectedAccount: profile?.githubConnectedAccount ?? "",
@@ -81,18 +69,19 @@ function buildGithubSummary(profile: any, importedRepoCount: number): Organizati
  */
 async function getOrganizationSummarySnapshot(c: any): Promise<OrganizationSummarySnapshot> {
   const profile = await c.db.select().from(organizationProfile).where(eq(organizationProfile.id, ORGANIZATION_PROFILE_ROW_ID)).get();
-  const repoRows = await c.db
-    .select({
-      repoId: repos.repoId,
-      remoteUrl: repos.remoteUrl,
-      updatedAt: repos.updatedAt,
-    })
-    .from(repos)
-    .orderBy(desc(repos.updatedAt))
-    .all();
+
+  // Fetch repos + open PRs from github-data actor (single actor, not fan-out)
+  let repoRows: Array<{ repoId: string; fullName: string; cloneUrl: string; private: boolean; defaultBranch: string }> = [];
+  let openPullRequests: any[] = [];
+  try {
+    const githubData = await getOrCreateGithubData(c, c.state.organizationId);
+    [repoRows, openPullRequests] = await Promise.all([githubData.listRepositories({}), githubData.listOpenPullRequests({})]);
+  } catch {
+    // github-data actor may not exist yet
+  }
 
   const summaryRows = await c.db.select().from(taskSummaries).orderBy(desc(taskSummaries.updatedAtMs)).all();
-  const summaries: WorkspaceTaskSummary[] = summaryRows.map((row) => ({
+  const summaries = summaryRows.map((row) => ({
     id: row.taskId,
     repoId: row.repoId,
     title: row.title,
@@ -123,8 +112,20 @@ async function getOrganizationSummarySnapshot(c: any): Promise<OrganizationSumma
   return {
     organizationId: c.state.organizationId,
     github: buildGithubSummary(profile, repoRows.length),
-    repos: repoRows.map((row) => buildRepoSummary(row, summaries)).sort((left, right) => right.latestActivityMs - left.latestActivityMs),
+    repos: repoRows
+      .map((repo) => {
+        const repoTasks = summaries.filter((t) => t.repoId === repo.repoId);
+        const latestTaskMs = repoTasks.reduce((latest, t) => Math.max(latest, t.updatedAtMs), 0);
+        return {
+          id: repo.repoId,
+          label: repoLabelFromRemote(repo.cloneUrl),
+          taskCount: repoTasks.length,
+          latestActivityMs: latestTaskMs || Date.now(),
+        };
+      })
+      .sort((a, b) => b.latestActivityMs - a.latestActivityMs),
     taskSummaries: summaries,
+    openPullRequests,
   };
 }
 
@@ -149,25 +150,19 @@ export const organizationActions = {
 
   async listRepos(c: any, input: OrganizationUseInput): Promise<RepoRecord[]> {
     assertOrganization(c, input.organizationId);
-
-    const rows = await c.db
-      .select({
-        repoId: repos.repoId,
-        remoteUrl: repos.remoteUrl,
-        createdAt: repos.createdAt,
-        updatedAt: repos.updatedAt,
-      })
-      .from(repos)
-      .orderBy(desc(repos.updatedAt))
-      .all();
-
-    return rows.map((row) => ({
-      organizationId: c.state.organizationId,
-      repoId: row.repoId,
-      remoteUrl: row.remoteUrl,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    }));
+    try {
+      const githubData = await getOrCreateGithubData(c, c.state.organizationId);
+      const rows = await githubData.listRepositories({});
+      return rows.map((row: any) => ({
+        organizationId: c.state.organizationId,
+        repoId: row.repoId,
+        remoteUrl: row.cloneUrl,
+        createdAt: row.updatedAt ?? Date.now(),
+        updatedAt: row.updatedAt ?? Date.now(),
+      }));
+    } catch {
+      return [];
+    }
   },
 
   async getOrganizationSummary(c: any, input: OrganizationUseInput): Promise<OrganizationSummarySnapshot> {
@@ -175,103 +170,6 @@ export const organizationActions = {
     return await getOrganizationSummarySnapshot(c);
   },
 };
-
-export async function applyGithubRepositoryProjectionMutation(c: any, input: { repoId: string; remoteUrl: string }): Promise<void> {
-  const now = Date.now();
-  await c.db
-    .insert(repos)
-    .values({
-      repoId: input.repoId,
-      remoteUrl: input.remoteUrl,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: repos.repoId,
-      set: {
-        remoteUrl: input.remoteUrl,
-        updatedAt: now,
-      },
-    })
-    .run();
-  await refreshOrganizationSnapshotMutation(c);
-}
-
-export async function applyGithubDataProjectionMutation(
-  c: any,
-  input: {
-    connectedAccount: string;
-    installationStatus: string;
-    installationId: number | null;
-    syncStatus: string;
-    lastSyncLabel: string;
-    lastSyncAt: number | null;
-    syncGeneration: number;
-    syncPhase: string | null;
-    processedRepositoryCount: number;
-    totalRepositoryCount: number;
-    repositories: Array<{ fullName: string; cloneUrl: string; private: boolean }>;
-  },
-): Promise<void> {
-  const existingRepos = await c.db.select({ repoId: repos.repoId }).from(repos).all();
-  const nextRepoIds = new Set<string>();
-  const now = Date.now();
-
-  const profile = await c.db
-    .select({ id: organizationProfile.id })
-    .from(organizationProfile)
-    .where(eq(organizationProfile.id, ORGANIZATION_PROFILE_ROW_ID))
-    .get();
-  if (profile) {
-    await c.db
-      .update(organizationProfile)
-      .set({
-        githubConnectedAccount: input.connectedAccount,
-        githubInstallationStatus: input.installationStatus,
-        githubSyncStatus: input.syncStatus,
-        githubInstallationId: input.installationId,
-        githubLastSyncLabel: input.lastSyncLabel,
-        githubLastSyncAt: input.lastSyncAt,
-        githubSyncGeneration: input.syncGeneration,
-        githubSyncPhase: input.syncPhase,
-        githubProcessedRepositoryCount: input.processedRepositoryCount,
-        githubTotalRepositoryCount: input.totalRepositoryCount,
-        updatedAt: now,
-      })
-      .where(eq(organizationProfile.id, ORGANIZATION_PROFILE_ROW_ID))
-      .run();
-  }
-
-  for (const repository of input.repositories) {
-    const repoId = repoIdFromRemote(repository.cloneUrl);
-    nextRepoIds.add(repoId);
-    await c.db
-      .insert(repos)
-      .values({
-        repoId,
-        remoteUrl: repository.cloneUrl,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: repos.repoId,
-        set: {
-          remoteUrl: repository.cloneUrl,
-          updatedAt: now,
-        },
-      })
-      .run();
-  }
-
-  for (const repo of existingRepos) {
-    if (nextRepoIds.has(repo.repoId)) {
-      continue;
-    }
-    await c.db.delete(repos).where(eq(repos.repoId, repo.repoId)).run();
-  }
-
-  await refreshOrganizationSnapshotMutation(c);
-}
 
 export async function applyGithubSyncProgressMutation(
   c: any,
