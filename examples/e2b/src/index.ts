@@ -1,34 +1,78 @@
-import { Sandbox } from "@e2b/code-interpreter";
+import { Sandbox, Template, defaultBuildLogger } from "@e2b/code-interpreter";
 import { SandboxAgent } from "sandbox-agent";
-import { detectAgent, buildInspectorUrl, generateInstallCommand } from "@sandbox-agent/example-shared";
+import {
+  SANDBOX_AGENT_IMAGE,
+  SANDBOX_AGENT_INSTALL_VERSION,
+  buildCredentialEnv,
+  buildInspectorUrl,
+  detectAgent,
+  getPreinstallComponents,
+} from "@sandbox-agent/example-shared";
 
-const envs: Record<string, string> = {};
-if (process.env.ANTHROPIC_API_KEY) envs.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-if (process.env.OPENAI_API_KEY) envs.OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const envs = buildCredentialEnv();
+const agent = detectAgent();
+const components = getPreinstallComponents(agent);
+const componentSuffix = components.length > 0 ? components.join("-") : "base";
+const baseImage = process.env.SANDBOX_AGENT_E2B_IMAGE ?? SANDBOX_AGENT_IMAGE;
+const templateName = process.env.SANDBOX_AGENT_E2B_TEMPLATE ?? `sandbox-agent-${SANDBOX_AGENT_INSTALL_VERSION.replaceAll(".", "-")}-${componentSuffix}`;
 
-console.log("Creating E2B sandbox...");
-const sandbox = await Sandbox.create({ allowInternetAccess: true, envs });
+async function ensureTemplate(name: string): Promise<string> {
+  if (await Template.exists(name)) {
+    return name;
+  }
+  return buildTemplate(name);
+}
 
-const run = async (cmd: string) => {
-  const result = await sandbox.commands.run(cmd);
-  if (result.exitCode !== 0) throw new Error(`Command failed: ${cmd}\n${result.stderr}`);
-  return result;
-};
+async function buildTemplate(name: string): Promise<string> {
+  console.log(`Building E2B template ${name} from ${baseImage}...`);
 
-console.log("Installing sandbox-agent...");
-await run(generateInstallCommand({ components: ["claude", "codex"] }));
+  let templateBuilder = Template().fromImage(baseImage);
+  if (components.includes("codex")) {
+    templateBuilder = templateBuilder.setUser("root").aptInstall("npm").setUser("user");
+  }
+  for (const component of components) {
+    templateBuilder = templateBuilder.runCmd(`sandbox-agent install-agent ${component}`);
+  }
+  const template = templateBuilder;
 
-console.log("Starting server...");
-await sandbox.commands.run("sandbox-agent server --no-token --host 0.0.0.0 --port 3000", { background: true, timeoutMs: 0 });
+  await Template.build(template, name, {
+    onBuildLogs: defaultBuildLogger(),
+  });
+
+  return name;
+}
+
+function isMissingTemplateError(error: unknown): boolean {
+  return error instanceof Error && /template '.*' not found/.test(error.message);
+}
+
+const resolvedTemplate = await ensureTemplate(templateName);
+
+console.log(`Creating E2B sandbox from template ${resolvedTemplate}...`);
+let sandbox;
+try {
+  sandbox = await Sandbox.create(resolvedTemplate, { allowInternetAccess: true, envs });
+} catch (error) {
+  if (!process.env.SANDBOX_AGENT_E2B_TEMPLATE && isMissingTemplateError(error)) {
+    const fallbackTemplate = `${templateName}-${Date.now()}`;
+    console.log(`Template ${resolvedTemplate} is stale; rebuilding as ${fallbackTemplate}...`);
+    sandbox = await Sandbox.create(await buildTemplate(fallbackTemplate), { allowInternetAccess: true, envs });
+  } else {
+    throw error;
+  }
+}
 
 const baseUrl = `https://${sandbox.getHost(3000)}`;
+const token = sandbox.trafficAccessToken;
+
+await sandbox.commands.run("sandbox-agent server --no-token --host 0.0.0.0 --port 3000", { background: true });
 
 console.log("Connecting to server...");
-const client = await SandboxAgent.connect({ baseUrl });
-const session = await client.createSession({ agent: detectAgent(), sessionInit: { cwd: "/home/user", mcpServers: [] } });
+const client = await SandboxAgent.connect({ baseUrl, token });
+const session = await client.createSession({ agent, sessionInit: { cwd: "/home/user", mcpServers: [] } });
 const sessionId = session.id;
 
-console.log(`  UI: ${buildInspectorUrl({ baseUrl, sessionId })}`);
+console.log(`  UI: ${buildInspectorUrl({ baseUrl, token, sessionId })}`);
 console.log("  Press Ctrl+C to stop.");
 
 const keepAlive = setInterval(() => {}, 60_000);

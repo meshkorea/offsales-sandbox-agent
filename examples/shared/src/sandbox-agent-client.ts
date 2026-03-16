@@ -4,8 +4,20 @@
  */
 
 export const SANDBOX_AGENT_INSTALL_VERSION = "0.3.1";
+export const SANDBOX_AGENT_IMAGE = `rivetdev/sandbox-agent:${SANDBOX_AGENT_INSTALL_VERSION}`;
 
 export type SandboxAgentComponent = "claude" | "codex" | "opencode" | "amp";
+
+const DIRECT_CREDENTIAL_KEYS = [
+  "ANTHROPIC_API_KEY",
+  "CLAUDE_API_KEY",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "ANTHROPIC_AUTH_TOKEN",
+  "OPENAI_API_KEY",
+  "CODEX_API_KEY",
+  "CEREBRAS_API_KEY",
+  "OPENCODE_API_KEY",
+] as const;
 
 export function generateInstallCommand({
   version = SANDBOX_AGENT_INSTALL_VERSION,
@@ -20,6 +32,45 @@ export function generateInstallCommand({
     `curl -fsSL https://releases.rivet.dev/sandbox-agent/${version}/install.sh | sh`,
     ...uniqueComponents.map((component) => `sandbox-agent install-agent ${component}`),
   ].join(" && ");
+}
+
+export function getPreinstallComponents(agent: string): SandboxAgentComponent[] {
+  return ["claude", "codex", "opencode", "amp"].includes(agent) ? [agent as SandboxAgentComponent] : [];
+}
+
+export function generateBaseImageDockerfile({
+  image = SANDBOX_AGENT_IMAGE,
+  components = [],
+}: {
+  image?: string;
+  components?: SandboxAgentComponent[];
+} = {}): string {
+  const uniqueComponents = [...new Set(components)];
+  const lines = [`FROM ${image}`];
+
+  if (uniqueComponents.includes("codex")) {
+    lines.push("USER root");
+    lines.push("RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y npm && rm -rf /var/lib/apt/lists/*");
+    lines.push("USER sandbox");
+  }
+
+  lines.push("WORKDIR /home/sandbox");
+  for (const component of uniqueComponents) {
+    lines.push(`RUN sandbox-agent install-agent ${component}`);
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
+export function buildCredentialEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const key of DIRECT_CREDENTIAL_KEYS) {
+    const value = process.env[key];
+    if (value) {
+      env[key] = value;
+    }
+  }
+  return env;
 }
 
 function normalizeBaseUrl(baseUrl: string): string {
