@@ -25,6 +25,7 @@ RUN apt-get update -qq && \
       openbox \
       xdotool \
       imagemagick \
+      ffmpeg \
       x11-xserver-utils \
       dbus-x11 \
       xauth \

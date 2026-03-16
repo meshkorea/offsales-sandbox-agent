@@ -24,6 +24,10 @@ import {
 } from "acp-http-client";
 import type { SandboxAgentSpawnHandle, SandboxAgentSpawnOptions } from "./spawn.ts";
 import {
+  DesktopStreamSession,
+  type DesktopStreamConnectOptions,
+} from "./desktop-stream.ts";
+import {
   type AcpServerListResponse,
   type AgentInfo,
   type AgentInstallRequest,
@@ -31,17 +35,26 @@ import {
   type AgentListResponse,
   type DesktopActionResponse,
   type DesktopDisplayInfoResponse,
+  type DesktopKeyboardDownRequest,
   type DesktopKeyboardPressRequest,
   type DesktopKeyboardTypeRequest,
   type DesktopMouseClickRequest,
+  type DesktopMouseDownRequest,
   type DesktopMouseDragRequest,
   type DesktopMouseMoveRequest,
   type DesktopMousePositionResponse,
   type DesktopMouseScrollRequest,
+  type DesktopMouseUpRequest,
+  type DesktopKeyboardUpRequest,
+  type DesktopRecordingInfo,
+  type DesktopRecordingListResponse,
+  type DesktopRecordingStartRequest,
   type DesktopRegionScreenshotQuery,
   type DesktopScreenshotQuery,
   type DesktopStartRequest,
   type DesktopStatusResponse,
+  type DesktopStreamStatusResponse,
+  type DesktopWindowListResponse,
   type FsActionResponse,
   type FsDeleteQuery,
   type FsEntriesQuery,
@@ -66,7 +79,9 @@ import {
   type ProcessInfo,
   type ProcessInputRequest,
   type ProcessInputResponse,
+  type ProcessListQuery,
   type ProcessListResponse,
+  type ProcessOwner,
   type ProcessLogEntry,
   type ProcessLogsQuery,
   type ProcessLogsResponse,
@@ -201,6 +216,7 @@ export interface ProcessTerminalConnectOptions extends ProcessTerminalWebSocketU
 }
 
 export type ProcessTerminalSessionOptions = ProcessTerminalConnectOptions;
+export type DesktopStreamSessionOptions = DesktopStreamConnectOptions;
 
 export class SandboxAgentError extends Error {
   readonly status: number;
@@ -1431,7 +1447,7 @@ export class SandboxAgent {
   async takeDesktopScreenshot(query: DesktopScreenshotQuery = {}): Promise<Uint8Array> {
     const response = await this.requestRaw("GET", `${API_PREFIX}/desktop/screenshot`, {
       query,
-      accept: "image/png",
+      accept: "image/*",
     });
     const buffer = await response.arrayBuffer();
     return new Uint8Array(buffer);
@@ -1440,7 +1456,7 @@ export class SandboxAgent {
   async takeDesktopRegionScreenshot(query: DesktopRegionScreenshotQuery): Promise<Uint8Array> {
     const response = await this.requestRaw("GET", `${API_PREFIX}/desktop/screenshot/region`, {
       query,
-      accept: "image/png",
+      accept: "image/*",
     });
     const buffer = await response.arrayBuffer();
     return new Uint8Array(buffer);
@@ -1458,6 +1474,18 @@ export class SandboxAgent {
 
   async clickDesktop(request: DesktopMouseClickRequest): Promise<DesktopMousePositionResponse> {
     return this.requestJson("POST", `${API_PREFIX}/desktop/mouse/click`, {
+      body: request,
+    });
+  }
+
+  async mouseDownDesktop(request: DesktopMouseDownRequest): Promise<DesktopMousePositionResponse> {
+    return this.requestJson("POST", `${API_PREFIX}/desktop/mouse/down`, {
+      body: request,
+    });
+  }
+
+  async mouseUpDesktop(request: DesktopMouseUpRequest): Promise<DesktopMousePositionResponse> {
+    return this.requestJson("POST", `${API_PREFIX}/desktop/mouse/up`, {
       body: request,
     });
   }
@@ -1484,6 +1512,66 @@ export class SandboxAgent {
     return this.requestJson("POST", `${API_PREFIX}/desktop/keyboard/press`, {
       body: request,
     });
+  }
+
+  async keyDownDesktop(request: DesktopKeyboardDownRequest): Promise<DesktopActionResponse> {
+    return this.requestJson("POST", `${API_PREFIX}/desktop/keyboard/down`, {
+      body: request,
+    });
+  }
+
+  async keyUpDesktop(request: DesktopKeyboardUpRequest): Promise<DesktopActionResponse> {
+    return this.requestJson("POST", `${API_PREFIX}/desktop/keyboard/up`, {
+      body: request,
+    });
+  }
+
+  async listDesktopWindows(): Promise<DesktopWindowListResponse> {
+    return this.requestJson("GET", `${API_PREFIX}/desktop/windows`);
+  }
+
+  async startDesktopRecording(
+    request: DesktopRecordingStartRequest = {},
+  ): Promise<DesktopRecordingInfo> {
+    return this.requestJson("POST", `${API_PREFIX}/desktop/recording/start`, {
+      body: request,
+    });
+  }
+
+  async stopDesktopRecording(): Promise<DesktopRecordingInfo> {
+    return this.requestJson("POST", `${API_PREFIX}/desktop/recording/stop`);
+  }
+
+  async listDesktopRecordings(): Promise<DesktopRecordingListResponse> {
+    return this.requestJson("GET", `${API_PREFIX}/desktop/recordings`);
+  }
+
+  async getDesktopRecording(id: string): Promise<DesktopRecordingInfo> {
+    return this.requestJson("GET", `${API_PREFIX}/desktop/recordings/${encodeURIComponent(id)}`);
+  }
+
+  async downloadDesktopRecording(id: string): Promise<Uint8Array> {
+    const response = await this.requestRaw(
+      "GET",
+      `${API_PREFIX}/desktop/recordings/${encodeURIComponent(id)}/download`,
+      {
+        accept: "video/mp4",
+      },
+    );
+    const buffer = await response.arrayBuffer();
+    return new Uint8Array(buffer);
+  }
+
+  async deleteDesktopRecording(id: string): Promise<void> {
+    await this.requestRaw("DELETE", `${API_PREFIX}/desktop/recordings/${encodeURIComponent(id)}`);
+  }
+
+  async startDesktopStream(): Promise<DesktopStreamStatusResponse> {
+    return this.requestJson("POST", `${API_PREFIX}/desktop/stream/start`);
+  }
+
+  async stopDesktopStream(): Promise<DesktopStreamStatusResponse> {
+    return this.requestJson("POST", `${API_PREFIX}/desktop/stream/stop`);
   }
 
   async listAgents(options?: AgentQueryOptions): Promise<AgentListResponse> {
@@ -1618,8 +1706,10 @@ export class SandboxAgent {
     });
   }
 
-  async listProcesses(): Promise<ProcessListResponse> {
-    return this.requestJson("GET", `${API_PREFIX}/processes`);
+  async listProcesses(query?: ProcessListQuery): Promise<ProcessListResponse> {
+    return this.requestJson("GET", `${API_PREFIX}/processes`, {
+      query,
+    });
   }
 
   async getProcess(id: string): Promise<ProcessInfo> {
@@ -1705,6 +1795,32 @@ export class SandboxAgent {
 
   connectProcessTerminal(id: string, options: ProcessTerminalSessionOptions = {}): ProcessTerminalSession {
     return new ProcessTerminalSession(this.connectProcessTerminalWebSocket(id, options));
+  }
+
+  buildDesktopStreamWebSocketUrl(options: ProcessTerminalWebSocketUrlOptions = {}): string {
+    return toWebSocketUrl(
+      this.buildUrl(`${API_PREFIX}/desktop/stream/ws`, {
+        access_token: options.accessToken ?? this.token,
+      }),
+    );
+  }
+
+  connectDesktopStreamWebSocket(options: DesktopStreamConnectOptions = {}): WebSocket {
+    const WebSocketCtor = options.WebSocket ?? globalThis.WebSocket;
+    if (!WebSocketCtor) {
+      throw new Error("WebSocket API is not available; provide a WebSocket implementation.");
+    }
+
+    return new WebSocketCtor(
+      this.buildDesktopStreamWebSocketUrl({
+        accessToken: options.accessToken,
+      }),
+      options.protocols,
+    );
+  }
+
+  connectDesktopStream(options: DesktopStreamSessionOptions = {}): DesktopStreamSession {
+    return new DesktopStreamSession(this.connectDesktopStreamWebSocket(options));
   }
 
   private async getLiveConnection(agent: string): Promise<LiveAcpConnection> {

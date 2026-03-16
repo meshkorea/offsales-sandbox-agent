@@ -2,6 +2,7 @@ use super::*;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use futures::{SinkExt, StreamExt};
+use serial_test::serial;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -275,6 +276,92 @@ async fn v1_process_tty_input_and_logs() {
     )
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+#[serial]
+async fn v1_processes_owner_filter_separates_user_and_desktop_processes() {
+    let test_app = TestApp::new(AuthConfig::disabled());
+
+    let (status, _, body) = send_request(
+        &test_app.app,
+        Method::POST,
+        "/v1/processes",
+        Some(json!({
+            "command": "sh",
+            "args": ["-lc", "sleep 30"],
+            "tty": false,
+            "interactive": false
+        })),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let user_process_id = parse_json(&body)["id"]
+        .as_str()
+        .expect("process id")
+        .to_string();
+
+    let (status, _, body) = send_request(
+        &test_app.app,
+        Method::POST,
+        "/v1/desktop/start",
+        Some(json!({
+            "width": 1024,
+            "height": 768
+        })),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(parse_json(&body)["state"], "active");
+
+    let (status, _, body) = send_request(
+        &test_app.app,
+        Method::GET,
+        "/v1/processes?owner=user",
+        None,
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let user_processes = parse_json(&body)["processes"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(user_processes.iter().any(|process| process["id"] == user_process_id));
+    assert!(user_processes.iter().all(|process| process["owner"] == "user"));
+
+    let (status, _, body) = send_request(
+        &test_app.app,
+        Method::GET,
+        "/v1/processes?owner=desktop",
+        None,
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let desktop_processes = parse_json(&body)["processes"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(desktop_processes.len() >= 2);
+    assert!(desktop_processes.iter().all(|process| process["owner"] == "desktop"));
+
+    let (status, _, _) = send_request(
+        &test_app.app,
+        Method::POST,
+        &format!("/v1/processes/{user_process_id}/kill"),
+        None,
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _, body) =
+        send_request(&test_app.app, Method::POST, "/v1/desktop/stop", None, &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(parse_json(&body)["state"], "inactive");
 }
 
 #[tokio::test]

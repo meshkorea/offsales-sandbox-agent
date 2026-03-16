@@ -8,15 +8,26 @@ use std::time::Duration;
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 
+use sandbox_agent_error::SandboxError;
+
+use crate::desktop_recording::{DesktopRecordingContext, DesktopRecordingManager};
 use crate::desktop_errors::DesktopProblem;
 use crate::desktop_install::desktop_platform_support_message;
+use crate::desktop_streaming::DesktopStreamingManager;
 use crate::desktop_types::{
     DesktopActionResponse, DesktopDisplayInfoResponse, DesktopErrorInfo,
-    DesktopKeyboardPressRequest, DesktopKeyboardTypeRequest, DesktopMouseButton,
-    DesktopMouseClickRequest, DesktopMouseDragRequest, DesktopMouseMoveRequest,
-    DesktopMousePositionResponse, DesktopMouseScrollRequest, DesktopProcessInfo,
-    DesktopRegionScreenshotQuery, DesktopResolution, DesktopStartRequest, DesktopState,
-    DesktopStatusResponse,
+    DesktopKeyModifiers, DesktopKeyboardDownRequest, DesktopKeyboardPressRequest,
+    DesktopKeyboardTypeRequest, DesktopKeyboardUpRequest, DesktopMouseButton,
+    DesktopMouseClickRequest, DesktopMouseDownRequest, DesktopMouseDragRequest,
+    DesktopMouseMoveRequest, DesktopMousePositionResponse, DesktopMouseScrollRequest,
+    DesktopMouseUpRequest, DesktopProcessInfo, DesktopRecordingInfo,
+    DesktopRecordingListResponse, DesktopRecordingStartRequest, DesktopRegionScreenshotQuery,
+    DesktopResolution, DesktopScreenshotFormat, DesktopScreenshotQuery, DesktopStartRequest,
+    DesktopState, DesktopStatusResponse, DesktopStreamStatusResponse, DesktopWindowInfo,
+    DesktopWindowListResponse,
+};
+use crate::process_runtime::{
+    ProcessOwner, ProcessRuntime, ProcessStartSpec, ProcessStatus, RestartPolicy,
 };
 
 const DEFAULT_WIDTH: u32 = 1440;
@@ -28,10 +39,16 @@ const SCREENSHOT_TIMEOUT: Duration = Duration::from_secs(10);
 const INPUT_TIMEOUT: Duration = Duration::from_secs(5);
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(15);
 const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
+const JPEG_SIGNATURE: &[u8] = b"\xff\xd8\xff";
+const WEBP_RIFF_SIGNATURE: &[u8] = b"RIFF";
+const WEBP_WEBP_SIGNATURE: &[u8] = b"WEBP";
 
 #[derive(Debug, Clone)]
 pub struct DesktopRuntime {
     config: DesktopRuntimeConfig,
+    process_runtime: Arc<ProcessRuntime>,
+    recording_manager: DesktopRecordingManager,
+    streaming_manager: DesktopStreamingManager,
     inner: Arc<Mutex<DesktopRuntimeStateData>>,
 }
 
@@ -54,16 +71,17 @@ struct DesktopRuntimeStateData {
     install_command: Option<String>,
     runtime_log_path: PathBuf,
     environment: HashMap<String, String>,
-    xvfb: Option<ManagedDesktopChild>,
-    openbox: Option<ManagedDesktopChild>,
+    xvfb: Option<ManagedDesktopProcess>,
+    openbox: Option<ManagedDesktopProcess>,
     dbus_pid: Option<u32>,
 }
 
 #[derive(Debug)]
-struct ManagedDesktopChild {
+struct ManagedDesktopProcess {
     name: &'static str,
-    child: Child,
-    log_path: PathBuf,
+    process_id: String,
+    pid: Option<u32>,
+    running: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -71,6 +89,51 @@ struct DesktopReadyContext {
     display: String,
     environment: HashMap<String, String>,
     resolution: DesktopResolution,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesktopScreenshotData {
+    pub bytes: Vec<u8>,
+    pub content_type: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct DesktopScreenshotOptions {
+    format: DesktopScreenshotFormat,
+    quality: u8,
+    scale: f32,
+}
+
+impl Default for DesktopScreenshotOptions {
+    fn default() -> Self {
+        Self {
+            format: DesktopScreenshotFormat::Png,
+            quality: 85,
+            scale: 1.0,
+        }
+    }
+}
+
+impl DesktopScreenshotOptions {
+    fn content_type(self) -> &'static str {
+        match self.format {
+            DesktopScreenshotFormat::Png => "image/png",
+            DesktopScreenshotFormat::Jpeg => "image/jpeg",
+            DesktopScreenshotFormat::Webp => "image/webp",
+        }
+    }
+
+    fn output_arg(self) -> &'static str {
+        match self.format {
+            DesktopScreenshotFormat::Png => "png:-",
+            DesktopScreenshotFormat::Jpeg => "jpeg:-",
+            DesktopScreenshotFormat::Webp => "webp:-",
+        }
+    }
+
+    fn needs_convert(self) -> bool {
+        self.format != DesktopScreenshotFormat::Png || (self.scale - 1.0).abs() > f32::EPSILON
+    }
 }
 
 impl Default for DesktopRuntimeConfig {
@@ -100,13 +163,18 @@ impl Default for DesktopRuntimeConfig {
 }
 
 impl DesktopRuntime {
-    pub fn new() -> Self {
-        Self::with_config(DesktopRuntimeConfig::default())
+    pub fn new(process_runtime: Arc<ProcessRuntime>) -> Self {
+        Self::with_config(process_runtime, DesktopRuntimeConfig::default())
     }
 
-    pub fn with_config(config: DesktopRuntimeConfig) -> Self {
+    pub fn with_config(process_runtime: Arc<ProcessRuntime>, config: DesktopRuntimeConfig) -> Self {
         let runtime_log_path = config.state_dir.join("desktop-runtime.log");
+        let recording_manager =
+            DesktopRecordingManager::new(process_runtime.clone(), config.state_dir.clone());
         Self {
+            process_runtime,
+            recording_manager,
+            streaming_manager: DesktopStreamingManager::new(),
             inner: Arc::new(Mutex::new(DesktopRuntimeStateData {
                 state: DesktopState::Inactive,
                 display_num: config.display_num,
@@ -217,7 +285,11 @@ impl DesktopRuntime {
         };
         state.resolution = Some(display_info.resolution.clone());
 
-        if let Err(problem) = self.capture_screenshot_locked(&state, None).await {
+        let screenshot_options = DesktopScreenshotOptions::default();
+        if let Err(problem) = self
+            .capture_screenshot_locked(&state, None, &screenshot_options)
+            .await
+        {
             return Err(self.fail_start_locked(&mut state, problem).await);
         }
 
@@ -248,6 +320,8 @@ impl DesktopRuntime {
 
         state.state = DesktopState::Stopping;
         self.write_runtime_log_locked(&state, "stopping desktop runtime");
+        let _ = self.recording_manager.stop().await;
+        let _ = self.streaming_manager.stop().await;
 
         self.stop_openbox_locked(&mut state).await;
         self.stop_xvfb_locked(&mut state).await;
@@ -269,22 +343,38 @@ impl DesktopRuntime {
         let _ = self.stop().await;
     }
 
-    pub async fn screenshot(&self) -> Result<Vec<u8>, DesktopProblem> {
+    pub async fn screenshot(
+        &self,
+        query: DesktopScreenshotQuery,
+    ) -> Result<DesktopScreenshotData, DesktopProblem> {
+        let options = screenshot_options(query.format, query.quality, query.scale)?;
         let mut state = self.inner.lock().await;
         let ready = self.ensure_ready_locked(&mut state).await?;
-        self.capture_screenshot_locked(&state, Some(&ready)).await
+        let bytes = self
+            .capture_screenshot_locked(&state, Some(&ready), &options)
+            .await?;
+        Ok(DesktopScreenshotData {
+            bytes,
+            content_type: options.content_type(),
+        })
     }
 
     pub async fn screenshot_region(
         &self,
         query: DesktopRegionScreenshotQuery,
-    ) -> Result<Vec<u8>, DesktopProblem> {
+    ) -> Result<DesktopScreenshotData, DesktopProblem> {
         validate_region(&query)?;
+        let options = screenshot_options(query.format, query.quality, query.scale)?;
         let mut state = self.inner.lock().await;
         let ready = self.ensure_ready_locked(&mut state).await?;
         let crop = format!("{}x{}+{}+{}", query.width, query.height, query.x, query.y);
-        self.capture_screenshot_with_crop_locked(&state, &ready, &crop)
-            .await
+        let bytes = self
+            .capture_screenshot_with_crop_locked(&state, &ready, &crop, &options)
+            .await?;
+        Ok(DesktopScreenshotData {
+            bytes,
+            content_type: options.content_type(),
+        })
     }
 
     pub async fn mouse_position(&self) -> Result<DesktopMousePositionResponse, DesktopProblem> {
@@ -335,6 +425,32 @@ impl DesktopRuntime {
             args.push(click_count.to_string());
         }
         args.push(button.to_string());
+        self.run_input_command_locked(&state, &ready, args).await?;
+        self.mouse_position_locked(&state, &ready).await
+    }
+
+    pub async fn mouse_down(
+        &self,
+        request: DesktopMouseDownRequest,
+    ) -> Result<DesktopMousePositionResponse, DesktopProblem> {
+        let coordinates = validate_optional_coordinates(request.x, request.y)?;
+        let mut state = self.inner.lock().await;
+        let ready = self.ensure_ready_locked(&mut state).await?;
+        let button = mouse_button_code(request.button.unwrap_or(DesktopMouseButton::Left));
+        let args = mouse_button_transition_args("mousedown", coordinates, button);
+        self.run_input_command_locked(&state, &ready, args).await?;
+        self.mouse_position_locked(&state, &ready).await
+    }
+
+    pub async fn mouse_up(
+        &self,
+        request: DesktopMouseUpRequest,
+    ) -> Result<DesktopMousePositionResponse, DesktopProblem> {
+        let coordinates = validate_optional_coordinates(request.x, request.y)?;
+        let mut state = self.inner.lock().await;
+        let ready = self.ensure_ready_locked(&mut state).await?;
+        let button = mouse_button_code(request.button.unwrap_or(DesktopMouseButton::Left));
+        let args = mouse_button_transition_args("mouseup", coordinates, button);
         self.run_input_command_locked(&state, &ready, args).await?;
         self.mouse_position_locked(&state, &ready).await
     }
@@ -418,7 +534,37 @@ impl DesktopRuntime {
 
         let mut state = self.inner.lock().await;
         let ready = self.ensure_ready_locked(&mut state).await?;
-        let args = press_key_args(request.key);
+        let args = press_key_args(request.key, request.modifiers);
+        self.run_input_command_locked(&state, &ready, args).await?;
+        Ok(DesktopActionResponse { ok: true })
+    }
+
+    pub async fn key_down(
+        &self,
+        request: DesktopKeyboardDownRequest,
+    ) -> Result<DesktopActionResponse, DesktopProblem> {
+        if request.key.trim().is_empty() {
+            return Err(DesktopProblem::invalid_action("key must not be empty"));
+        }
+
+        let mut state = self.inner.lock().await;
+        let ready = self.ensure_ready_locked(&mut state).await?;
+        let args = key_transition_args("keydown", request.key);
+        self.run_input_command_locked(&state, &ready, args).await?;
+        Ok(DesktopActionResponse { ok: true })
+    }
+
+    pub async fn key_up(
+        &self,
+        request: DesktopKeyboardUpRequest,
+    ) -> Result<DesktopActionResponse, DesktopProblem> {
+        if request.key.trim().is_empty() {
+            return Err(DesktopProblem::invalid_action("key must not be empty"));
+        }
+
+        let mut state = self.inner.lock().await;
+        let ready = self.ensure_ready_locked(&mut state).await?;
+        let args = key_transition_args("keyup", request.key);
         self.run_input_command_locked(&state, &ready, args).await?;
         Ok(DesktopActionResponse { ok: true })
     }
@@ -427,6 +573,86 @@ impl DesktopRuntime {
         let mut state = self.inner.lock().await;
         let ready = self.ensure_ready_locked(&mut state).await?;
         self.query_display_info_locked(&state, &ready).await
+    }
+
+    pub async fn list_windows(&self) -> Result<DesktopWindowListResponse, DesktopProblem> {
+        let mut state = self.inner.lock().await;
+        let ready = self.ensure_ready_locked(&mut state).await?;
+        let active_window_id = self.active_window_id_locked(&state, &ready).await?;
+        let window_ids = self.window_ids_locked(&state, &ready).await?;
+        let mut windows = Vec::with_capacity(window_ids.len());
+        for window_id in window_ids {
+            let title = self.window_title_locked(&state, &ready, &window_id).await?;
+            let (x, y, width, height) = self
+                .window_geometry_locked(&state, &ready, &window_id)
+                .await?;
+            windows.push(DesktopWindowInfo {
+                id: window_id.clone(),
+                title,
+                x,
+                y,
+                width,
+                height,
+                is_active: active_window_id
+                    .as_deref()
+                    .map(|active| active == window_id)
+                    .unwrap_or(false),
+            });
+        }
+        Ok(DesktopWindowListResponse { windows })
+    }
+
+    pub async fn start_recording(
+        &self,
+        request: DesktopRecordingStartRequest,
+    ) -> Result<DesktopRecordingInfo, SandboxError> {
+        let context = self.recording_context().await?;
+        self.recording_manager.start(context, request).await
+    }
+
+    pub async fn stop_recording(&self) -> Result<DesktopRecordingInfo, SandboxError> {
+        self.recording_manager.stop().await
+    }
+
+    pub async fn list_recordings(&self) -> Result<DesktopRecordingListResponse, SandboxError> {
+        self.recording_manager.list().await
+    }
+
+    pub async fn get_recording(&self, id: &str) -> Result<DesktopRecordingInfo, SandboxError> {
+        self.recording_manager.get(id).await
+    }
+
+    pub async fn recording_download_path(&self, id: &str) -> Result<PathBuf, SandboxError> {
+        self.recording_manager.download_path(id).await
+    }
+
+    pub async fn delete_recording(&self, id: &str) -> Result<(), SandboxError> {
+        self.recording_manager.delete(id).await
+    }
+
+    pub async fn start_streaming(&self) -> DesktopStreamStatusResponse {
+        self.streaming_manager.start().await
+    }
+
+    pub async fn stop_streaming(&self) -> DesktopStreamStatusResponse {
+        self.streaming_manager.stop().await
+    }
+
+    pub async fn ensure_streaming_active(&self) -> Result<(), SandboxError> {
+        self.streaming_manager.ensure_active().await
+    }
+
+    async fn recording_context(&self) -> Result<DesktopRecordingContext, SandboxError> {
+        let mut state = self.inner.lock().await;
+        let ready = self
+            .ensure_ready_locked(&mut state)
+            .await
+            .map_err(desktop_problem_to_sandbox_error)?;
+        Ok(DesktopRecordingContext {
+            display: ready.display,
+            environment: ready.environment,
+            resolution: ready.resolution,
+        })
     }
 
     async fn ensure_ready_locked(
@@ -585,7 +811,11 @@ impl DesktopRuntime {
             }
         }
 
-        if let Err(problem) = self.capture_screenshot_locked(state, Some(&ready)).await {
+        let screenshot_options = DesktopScreenshotOptions::default();
+        if let Err(problem) = self
+            .capture_screenshot_locked(state, Some(&ready), &screenshot_options)
+            .await
+        {
             self.record_problem_locked(state, &problem);
             state.state = DesktopState::Failed;
             return;
@@ -600,13 +830,13 @@ impl DesktopRuntime {
         state: &mut DesktopRuntimeStateData,
         name: &str,
     ) -> Result<(), DesktopProblem> {
-        let process = match name {
-            "Xvfb" => state.xvfb.as_mut(),
-            "openbox" => state.openbox.as_mut(),
+        let process_id = match name {
+            "Xvfb" => state.xvfb.as_ref().map(|process| process.process_id.clone()),
+            "openbox" => state.openbox.as_ref().map(|process| process.process_id.clone()),
             _ => None,
         };
 
-        let Some(process) = process else {
+        let Some(process_id) = process_id else {
             return Err(DesktopProblem::runtime_failed(
                 format!("{name} is not running"),
                 state.install_command.clone(),
@@ -614,18 +844,82 @@ impl DesktopRuntime {
             ));
         };
 
-        match process.child.try_wait() {
-            Ok(None) => Ok(()),
-            Ok(Some(status)) => Err(DesktopProblem::runtime_failed(
-                format!("{name} exited with status {status}"),
+        let snapshot = self
+            .process_runtime
+            .snapshot(&process_id)
+            .await
+            .map_err(|err| {
+                DesktopProblem::runtime_failed(
+                    format!("failed to inspect {name}: {err}"),
+                    state.install_command.clone(),
+                    self.processes_locked(state),
+                )
+            })?;
+
+        if let Some(process) = match name {
+            "Xvfb" => state.xvfb.as_mut(),
+            "openbox" => state.openbox.as_mut(),
+            _ => None,
+        } {
+            process.pid = snapshot.pid;
+            process.running = snapshot.status == ProcessStatus::Running;
+        }
+
+        if snapshot.status == ProcessStatus::Running {
+            return Ok(());
+        }
+
+        self.write_runtime_log_locked(state, &format!("{name} exited; attempting restart"));
+        match name {
+            "Xvfb" => {
+                let resolution = state.resolution.clone().ok_or_else(|| {
+                    DesktopProblem::runtime_failed(
+                        "desktop resolution missing during Xvfb restart",
+                        state.install_command.clone(),
+                        self.processes_locked(state),
+                    )
+                })?;
+                state.xvfb = None;
+                self.start_xvfb_locked(state, &resolution).await?;
+            }
+            "openbox" => {
+                state.openbox = None;
+                self.start_openbox_locked(state).await?;
+            }
+            _ => {}
+        }
+
+        let restarted_snapshot = self
+            .process_runtime
+            .snapshot(match name {
+                "Xvfb" => state
+                    .xvfb
+                    .as_ref()
+                    .map(|process| process.process_id.as_str())
+                    .unwrap_or_default(),
+                "openbox" => state
+                    .openbox
+                    .as_ref()
+                    .map(|process| process.process_id.as_str())
+                    .unwrap_or_default(),
+                _ => "",
+            })
+            .await
+            .map_err(|err| {
+                DesktopProblem::runtime_failed(
+                    format!("failed to inspect restarted {name}: {err}"),
+                    state.install_command.clone(),
+                    self.processes_locked(state),
+                )
+            })?;
+        if restarted_snapshot.status == ProcessStatus::Running {
+            Ok(())
+        } else {
+            Err(DesktopProblem::runtime_failed(
+                format!("{name} exited with status {:?}", snapshot.exit_code),
                 state.install_command.clone(),
                 self.processes_locked(state),
-            )),
-            Err(err) => Err(DesktopProblem::runtime_failed(
-                format!("failed to inspect {name}: {err}"),
-                state.install_command.clone(),
-                self.processes_locked(state),
-            )),
+            ))
         }
     }
 
@@ -698,10 +992,32 @@ impl DesktopRuntime {
             "-nolisten".to_string(),
             "tcp".to_string(),
         ];
-        let log_path = self.config.state_dir.join("desktop-xvfb.log");
-        let child =
-            self.spawn_logged_process("Xvfb", "Xvfb", &args, &state.environment, &log_path)?;
-        state.xvfb = Some(child);
+        let snapshot = self
+            .process_runtime
+            .start_process(ProcessStartSpec {
+                command: "Xvfb".to_string(),
+                args,
+                cwd: None,
+                env: state.environment.clone(),
+                tty: false,
+                interactive: false,
+                owner: ProcessOwner::Desktop,
+                restart_policy: Some(RestartPolicy::Always),
+            })
+            .await
+            .map_err(|err| {
+                DesktopProblem::runtime_failed(
+                    format!("failed to start Xvfb: {err}"),
+                    None,
+                    self.processes_locked(state),
+                )
+            })?;
+        state.xvfb = Some(ManagedDesktopProcess {
+            name: "Xvfb",
+            process_id: snapshot.id,
+            pid: snapshot.pid,
+            running: snapshot.status == ProcessStatus::Running,
+        });
         Ok(())
     }
 
@@ -709,24 +1025,76 @@ impl DesktopRuntime {
         &self,
         state: &mut DesktopRuntimeStateData,
     ) -> Result<(), DesktopProblem> {
-        let log_path = self.config.state_dir.join("desktop-openbox.log");
-        let child =
-            self.spawn_logged_process("openbox", "openbox", &[], &state.environment, &log_path)?;
-        state.openbox = Some(child);
+        let snapshot = self
+            .process_runtime
+            .start_process(ProcessStartSpec {
+                command: "openbox".to_string(),
+                args: Vec::new(),
+                cwd: None,
+                env: state.environment.clone(),
+                tty: false,
+                interactive: false,
+                owner: ProcessOwner::Desktop,
+                restart_policy: Some(RestartPolicy::Always),
+            })
+            .await
+            .map_err(|err| {
+                DesktopProblem::runtime_failed(
+                    format!("failed to start openbox: {err}"),
+                    None,
+                    self.processes_locked(state),
+                )
+            })?;
+        state.openbox = Some(ManagedDesktopProcess {
+            name: "openbox",
+            process_id: snapshot.id,
+            pid: snapshot.pid,
+            running: snapshot.status == ProcessStatus::Running,
+        });
         Ok(())
     }
 
     async fn stop_xvfb_locked(&self, state: &mut DesktopRuntimeStateData) {
-        if let Some(mut child) = state.xvfb.take() {
+        if let Some(process) = state.xvfb.take() {
             self.write_runtime_log_locked(state, "stopping Xvfb");
-            let _ = terminate_child(&mut child.child).await;
+            let _ = self
+                .process_runtime
+                .stop_process(&process.process_id, Some(2_000))
+                .await;
+            if self
+                .process_runtime
+                .snapshot(&process.process_id)
+                .await
+                .ok()
+                .is_some_and(|snapshot| snapshot.status == ProcessStatus::Running)
+            {
+                let _ = self
+                    .process_runtime
+                    .kill_process(&process.process_id, Some(1_000))
+                    .await;
+            }
         }
     }
 
     async fn stop_openbox_locked(&self, state: &mut DesktopRuntimeStateData) {
-        if let Some(mut child) = state.openbox.take() {
+        if let Some(process) = state.openbox.take() {
             self.write_runtime_log_locked(state, "stopping openbox");
-            let _ = terminate_child(&mut child.child).await;
+            let _ = self
+                .process_runtime
+                .stop_process(&process.process_id, Some(2_000))
+                .await;
+            if self
+                .process_runtime
+                .snapshot(&process.process_id)
+                .await
+                .ok()
+                .is_some_and(|snapshot| snapshot.status == ProcessStatus::Running)
+            {
+                let _ = self
+                    .process_runtime
+                    .kill_process(&process.process_id, Some(1_000))
+                    .await;
+            }
         }
     }
 
@@ -761,10 +1129,11 @@ impl DesktopRuntime {
         &self,
         state: &DesktopRuntimeStateData,
         ready: Option<&DesktopReadyContext>,
+        options: &DesktopScreenshotOptions,
     ) -> Result<Vec<u8>, DesktopProblem> {
         match ready {
             Some(ready) => {
-                self.capture_screenshot_with_crop_locked(state, ready, "")
+                self.capture_screenshot_with_crop_locked(state, ready, "", options)
                     .await
             }
             None => {
@@ -780,7 +1149,7 @@ impl DesktopRuntime {
                         dpi: Some(DEFAULT_DPI),
                     }),
                 };
-                self.capture_screenshot_with_crop_locked(state, &ready, "")
+                self.capture_screenshot_with_crop_locked(state, &ready, "", options)
                     .await
             }
         }
@@ -791,6 +1160,7 @@ impl DesktopRuntime {
         state: &DesktopRuntimeStateData,
         ready: &DesktopReadyContext,
         crop: &str,
+        options: &DesktopScreenshotOptions,
     ) -> Result<Vec<u8>, DesktopProblem> {
         let mut args = vec!["-window".to_string(), "root".to_string()];
         if !crop.is_empty() {
@@ -816,10 +1186,158 @@ impl DesktopRuntime {
                 self.processes_locked(state),
             ));
         }
-        validate_png(&output.stdout).map_err(|message| {
+        let bytes = maybe_convert_screenshot(output.stdout, options, &ready.environment)
+            .await
+            .map_err(|message| {
+                DesktopProblem::screenshot_failed(message, self.processes_locked(state))
+            })?;
+        validate_image_bytes(&bytes, options.format).map_err(|message| {
             DesktopProblem::screenshot_failed(message, self.processes_locked(state))
         })?;
-        Ok(output.stdout)
+        Ok(bytes)
+    }
+
+    async fn active_window_id_locked(
+        &self,
+        state: &DesktopRuntimeStateData,
+        ready: &DesktopReadyContext,
+    ) -> Result<Option<String>, DesktopProblem> {
+        let args = vec!["getactivewindow".to_string()];
+        let output = run_command_output("xdotool", &args, &ready.environment, INPUT_TIMEOUT)
+            .await
+            .map_err(|err| {
+                DesktopProblem::runtime_failed(
+                    format!("failed to query active window: {err}"),
+                    state.install_command.clone(),
+                    self.processes_locked(state),
+                )
+            })?;
+        if !output.status.success() {
+            if output.status.code() == Some(1) && output.stdout.is_empty() {
+                return Ok(None);
+            }
+            return Err(DesktopProblem::runtime_failed(
+                format!(
+                    "active window query failed: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ),
+                state.install_command.clone(),
+                self.processes_locked(state),
+            ));
+        }
+        let window_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if window_id.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(window_id))
+        }
+    }
+
+    async fn window_ids_locked(
+        &self,
+        state: &DesktopRuntimeStateData,
+        ready: &DesktopReadyContext,
+    ) -> Result<Vec<String>, DesktopProblem> {
+        let args = vec![
+            "search".to_string(),
+            "--onlyvisible".to_string(),
+            "--name".to_string(),
+            "".to_string(),
+        ];
+        let output = run_command_output("xdotool", &args, &ready.environment, INPUT_TIMEOUT)
+            .await
+            .map_err(|err| {
+                DesktopProblem::runtime_failed(
+                    format!("failed to list desktop windows: {err}"),
+                    state.install_command.clone(),
+                    self.processes_locked(state),
+                )
+            })?;
+        if !output.status.success() {
+            if output.status.code() == Some(1) && output.stdout.is_empty() {
+                return Ok(Vec::new());
+            }
+            return Err(DesktopProblem::runtime_failed(
+                format!(
+                    "desktop window listing failed: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ),
+                state.install_command.clone(),
+                self.processes_locked(state),
+            ));
+        }
+        Ok(String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(ToString::to_string)
+            .collect())
+    }
+
+    async fn window_title_locked(
+        &self,
+        state: &DesktopRuntimeStateData,
+        ready: &DesktopReadyContext,
+        window_id: &str,
+    ) -> Result<String, DesktopProblem> {
+        let args = vec!["getwindowname".to_string(), window_id.to_string()];
+        let output = run_command_output("xdotool", &args, &ready.environment, INPUT_TIMEOUT)
+            .await
+            .map_err(|err| {
+                DesktopProblem::runtime_failed(
+                    format!("failed to query window title: {err}"),
+                    state.install_command.clone(),
+                    self.processes_locked(state),
+                )
+            })?;
+        if !output.status.success() {
+            return Err(DesktopProblem::runtime_failed(
+                format!(
+                    "window title query failed: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ),
+                state.install_command.clone(),
+                self.processes_locked(state),
+            ));
+        }
+        Ok(String::from_utf8_lossy(&output.stdout)
+            .trim_end()
+            .to_string())
+    }
+
+    async fn window_geometry_locked(
+        &self,
+        state: &DesktopRuntimeStateData,
+        ready: &DesktopReadyContext,
+        window_id: &str,
+    ) -> Result<(i32, i32, u32, u32), DesktopProblem> {
+        let args = vec!["getwindowgeometry".to_string(), window_id.to_string()];
+        let output = run_command_output("xdotool", &args, &ready.environment, INPUT_TIMEOUT)
+            .await
+            .map_err(|err| {
+                DesktopProblem::runtime_failed(
+                    format!("failed to query window geometry: {err}"),
+                    state.install_command.clone(),
+                    self.processes_locked(state),
+                )
+            })?;
+        if !output.status.success() {
+            return Err(DesktopProblem::runtime_failed(
+                format!(
+                    "window geometry query failed: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ),
+                state.install_command.clone(),
+                self.processes_locked(state),
+            ));
+        }
+        parse_window_geometry(&output.stdout).map_err(|message| {
+            DesktopProblem::runtime_failed(
+                message,
+                state.install_command.clone(),
+                self.processes_locked(state),
+            )
+        })
     }
 
     async fn mouse_position_locked(
@@ -987,71 +1505,6 @@ impl DesktopRuntime {
         Ok(environment)
     }
 
-    fn spawn_logged_process(
-        &self,
-        name: &'static str,
-        command: &str,
-        args: &[String],
-        environment: &HashMap<String, String>,
-        log_path: &Path,
-    ) -> Result<ManagedDesktopChild, DesktopProblem> {
-        if let Some(parent) = log_path.parent() {
-            fs::create_dir_all(parent).map_err(|err| {
-                DesktopProblem::runtime_failed(
-                    format!("failed to create desktop log directory: {err}"),
-                    None,
-                    Vec::new(),
-                )
-            })?;
-        }
-
-        let stdout = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(log_path)
-            .map_err(|err| {
-                DesktopProblem::runtime_failed(
-                    format!(
-                        "failed to open desktop log file {}: {err}",
-                        log_path.display()
-                    ),
-                    None,
-                    Vec::new(),
-                )
-            })?;
-        let stderr = stdout.try_clone().map_err(|err| {
-            DesktopProblem::runtime_failed(
-                format!(
-                    "failed to clone desktop log file {}: {err}",
-                    log_path.display()
-                ),
-                None,
-                Vec::new(),
-            )
-        })?;
-
-        let mut child = Command::new(command);
-        child.args(args);
-        child.envs(environment);
-        child.stdin(Stdio::null());
-        child.stdout(Stdio::from(stdout));
-        child.stderr(Stdio::from(stderr));
-
-        let child = child.spawn().map_err(|err| {
-            DesktopProblem::runtime_failed(
-                format!("failed to spawn {name}: {err}"),
-                None,
-                Vec::new(),
-            )
-        })?;
-
-        Ok(ManagedDesktopChild {
-            name,
-            child,
-            log_path: log_path.to_path_buf(),
-        })
-    }
-
     async fn wait_for_socket(&self, display_num: i32) -> Result<(), DesktopProblem> {
         let socket = socket_path(display_num);
         let parent = socket
@@ -1091,20 +1544,20 @@ impl DesktopRuntime {
 
     fn processes_locked(&self, state: &DesktopRuntimeStateData) -> Vec<DesktopProcessInfo> {
         let mut processes = Vec::new();
-        if let Some(child) = state.xvfb.as_ref() {
+        if let Some(process) = state.xvfb.as_ref() {
             processes.push(DesktopProcessInfo {
-                name: child.name.to_string(),
-                pid: child.child.id(),
-                running: child_is_running(&child.child),
-                log_path: Some(child.log_path.to_string_lossy().to_string()),
+                name: process.name.to_string(),
+                pid: process.pid,
+                running: process.running,
+                log_path: None,
             });
         }
-        if let Some(child) = state.openbox.as_ref() {
+        if let Some(process) = state.openbox.as_ref() {
             processes.push(DesktopProcessInfo {
-                name: child.name.to_string(),
-                pid: child.child.id(),
-                running: child_is_running(&child.child),
-                log_path: Some(child.log_path.to_string_lossy().to_string()),
+                name: process.name.to_string(),
+                pid: process.pid,
+                running: process.running,
+                log_path: None,
             });
         }
         if let Some(pid) = state.dbus_pid {
@@ -1157,6 +1610,12 @@ impl DesktopRuntime {
     }
 }
 
+fn desktop_problem_to_sandbox_error(problem: DesktopProblem) -> SandboxError {
+    SandboxError::Conflict {
+        message: problem.to_error_info().message,
+    }
+}
+
 fn default_state_dir() -> PathBuf {
     if let Ok(value) = std::env::var("XDG_STATE_HOME") {
         return PathBuf::from(value).join("sandbox-agent").join("desktop");
@@ -1192,12 +1651,37 @@ async fn run_command_output(
     environment: &HashMap<String, String>,
     timeout: Duration,
 ) -> Result<Output, String> {
-    use tokio::io::AsyncReadExt;
+    run_command_output_with_optional_stdin(command, args, environment, timeout, None).await
+}
+
+async fn run_command_output_with_stdin(
+    command: &str,
+    args: &[String],
+    environment: &HashMap<String, String>,
+    timeout: Duration,
+    stdin_bytes: Vec<u8>,
+) -> Result<Output, String> {
+    run_command_output_with_optional_stdin(command, args, environment, timeout, Some(stdin_bytes))
+        .await
+}
+
+async fn run_command_output_with_optional_stdin(
+    command: &str,
+    args: &[String],
+    environment: &HashMap<String, String>,
+    timeout: Duration,
+    stdin_bytes: Option<Vec<u8>>,
+) -> Result<Output, String> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let mut child = Command::new(command);
     child.args(args);
     child.envs(environment);
-    child.stdin(Stdio::null());
+    child.stdin(if stdin_bytes.is_some() {
+        Stdio::piped()
+    } else {
+        Stdio::null()
+    });
     child.stdout(Stdio::piped());
     child.stderr(Stdio::piped());
 
@@ -1210,6 +1694,19 @@ async fn run_command_output(
         .stderr
         .take()
         .ok_or_else(|| "failed to capture child stderr".to_string())?;
+
+    let stdin_task = if let Some(bytes) = stdin_bytes {
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "failed to capture child stdin".to_string())?;
+        Some(tokio::spawn(async move {
+            stdin.write_all(&bytes).await?;
+            stdin.shutdown().await
+        }))
+    } else {
+        None
+    };
 
     let stdout_task = tokio::spawn(async move {
         let mut stdout = stdout;
@@ -1226,11 +1723,21 @@ async fn run_command_output(
         Ok(result) => result.map_err(|err| err.to_string())?,
         Err(_) => {
             terminate_child(&mut child).await?;
+            if let Some(stdin_task) = stdin_task {
+                let _ = stdin_task.await;
+            }
             let _ = stdout_task.await;
             let _ = stderr_task.await;
             return Err(format!("command timed out after {}s", timeout.as_secs()));
         }
     };
+
+    if let Some(stdin_task) = stdin_task {
+        stdin_task
+            .await
+            .map_err(|err| err.to_string())?
+            .map_err(|err| err.to_string())?;
+    }
 
     let stdout = stdout_task
         .await
@@ -1257,10 +1764,6 @@ async fn terminate_child(child: &mut Child) -> Result<(), String> {
     Ok(())
 }
 
-fn child_is_running(child: &Child) -> bool {
-    child.id().is_some()
-}
-
 fn process_exists(pid: u32) -> bool {
     #[cfg(unix)]
     unsafe {
@@ -1272,13 +1775,6 @@ fn process_exists(pid: u32) -> bool {
         let _ = pid;
         false
     }
-}
-
-fn validate_png(bytes: &[u8]) -> Result<(), String> {
-    if bytes.len() < PNG_SIGNATURE.len() || &bytes[..PNG_SIGNATURE.len()] != PNG_SIGNATURE {
-        return Err("desktop screenshot did not return PNG bytes".to_string());
-    }
-    Ok(())
 }
 
 fn parse_xrandr_resolution(bytes: &[u8]) -> Result<DesktopResolution, String> {
@@ -1346,8 +1842,138 @@ fn type_text_args(text: String, delay_ms: u32) -> Vec<String> {
     ]
 }
 
-fn press_key_args(key: String) -> Vec<String> {
-    vec!["key".to_string(), "--".to_string(), key]
+fn press_key_args(key: String, modifiers: Option<DesktopKeyModifiers>) -> Vec<String> {
+    vec![
+        "key".to_string(),
+        "--".to_string(),
+        key_with_modifiers(key, modifiers),
+    ]
+}
+
+fn key_transition_args(command: &str, key: String) -> Vec<String> {
+    vec![command.to_string(), "--".to_string(), key]
+}
+
+fn key_with_modifiers(key: String, modifiers: Option<DesktopKeyModifiers>) -> String {
+    let Some(modifiers) = modifiers else {
+        return key;
+    };
+
+    let mut parts = Vec::new();
+    if modifiers.ctrl == Some(true) {
+        parts.push("ctrl");
+    }
+    if modifiers.shift == Some(true) {
+        parts.push("shift");
+    }
+    if modifiers.alt == Some(true) {
+        parts.push("alt");
+    }
+    if modifiers.cmd == Some(true) {
+        parts.push("super");
+    }
+    parts.push(key.as_str());
+    parts.join("+")
+}
+
+fn mouse_button_transition_args(
+    command: &str,
+    coordinates: Option<(i32, i32)>,
+    button: u8,
+) -> Vec<String> {
+    let mut args = Vec::new();
+    if let Some((x, y)) = coordinates {
+        args.push("mousemove".to_string());
+        args.push(x.to_string());
+        args.push(y.to_string());
+    }
+    args.push(command.to_string());
+    args.push(button.to_string());
+    args
+}
+
+fn screenshot_options(
+    format: Option<DesktopScreenshotFormat>,
+    quality: Option<u8>,
+    scale: Option<f32>,
+) -> Result<DesktopScreenshotOptions, DesktopProblem> {
+    let quality = quality.unwrap_or(85);
+    if !(1..=100).contains(&quality) {
+        return Err(DesktopProblem::invalid_action(
+            "quality must be between 1 and 100",
+        ));
+    }
+
+    let scale = scale.unwrap_or(1.0);
+    if !(0.1..=1.0).contains(&scale) {
+        return Err(DesktopProblem::invalid_action(
+            "scale must be between 0.1 and 1.0",
+        ));
+    }
+
+    Ok(DesktopScreenshotOptions {
+        format: format.unwrap_or(DesktopScreenshotFormat::Png),
+        quality,
+        scale,
+    })
+}
+
+async fn maybe_convert_screenshot(
+    bytes: Vec<u8>,
+    options: &DesktopScreenshotOptions,
+    environment: &HashMap<String, String>,
+) -> Result<Vec<u8>, String> {
+    if !options.needs_convert() {
+        return Ok(bytes);
+    }
+
+    let mut args = vec!["png:-".to_string()];
+    if (options.scale - 1.0).abs() > f32::EPSILON {
+        args.push("-resize".to_string());
+        args.push(format!("{:.2}%", options.scale * 100.0));
+    }
+    if options.format != DesktopScreenshotFormat::Png {
+        args.push("-quality".to_string());
+        args.push(options.quality.to_string());
+    }
+    args.push(options.output_arg().to_string());
+
+    let output =
+        run_command_output_with_stdin("convert", &args, environment, SCREENSHOT_TIMEOUT, bytes)
+            .await?;
+    if !output.status.success() {
+        return Err(format!(
+            "desktop screenshot conversion failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(output.stdout)
+}
+
+fn validate_image_bytes(bytes: &[u8], format: DesktopScreenshotFormat) -> Result<(), String> {
+    match format {
+        DesktopScreenshotFormat::Png => {
+            if bytes.len() < PNG_SIGNATURE.len() || &bytes[..PNG_SIGNATURE.len()] != PNG_SIGNATURE {
+                return Err("desktop screenshot did not return PNG bytes".to_string());
+            }
+        }
+        DesktopScreenshotFormat::Jpeg => {
+            if bytes.len() < JPEG_SIGNATURE.len()
+                || &bytes[..JPEG_SIGNATURE.len()] != JPEG_SIGNATURE
+            {
+                return Err("desktop screenshot did not return JPEG bytes".to_string());
+            }
+        }
+        DesktopScreenshotFormat::Webp => {
+            if bytes.len() < 12
+                || &bytes[..WEBP_RIFF_SIGNATURE.len()] != WEBP_RIFF_SIGNATURE
+                || &bytes[8..12] != WEBP_WEBP_SIGNATURE
+            {
+                return Err("desktop screenshot did not return WebP bytes".to_string());
+            }
+        }
+    }
+    Ok(())
 }
 
 fn validate_start_request(width: u32, height: u32, dpi: u32) -> Result<(), DesktopProblem> {
@@ -1372,6 +1998,22 @@ fn validate_region(query: &DesktopRegionScreenshotQuery) -> Result<(), DesktopPr
         ));
     }
     Ok(())
+}
+
+fn validate_optional_coordinates(
+    x: Option<i32>,
+    y: Option<i32>,
+) -> Result<Option<(i32, i32)>, DesktopProblem> {
+    match (x, y) {
+        (Some(x), Some(y)) => {
+            validate_coordinates(x, y)?;
+            Ok(Some((x, y)))
+        }
+        (None, None) => Ok(None),
+        _ => Err(DesktopProblem::invalid_action(
+            "x and y must both be provided when setting coordinates",
+        )),
+    }
 }
 
 fn validate_coordinates(x: i32, y: i32) -> Result<(), DesktopProblem> {
@@ -1414,6 +2056,50 @@ fn append_scroll_clicks(
     args.push(button.to_string());
 }
 
+fn parse_window_geometry(bytes: &[u8]) -> Result<(i32, i32, u32, u32), String> {
+    let text = String::from_utf8_lossy(bytes);
+    let mut position = None;
+    let mut geometry = None;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if let Some(value) = trimmed.strip_prefix("Position:") {
+            let coordinate_text = value
+                .trim()
+                .split_whitespace()
+                .next()
+                .ok_or_else(|| "unable to parse window position".to_string())?;
+            let (x, y) = coordinate_text
+                .split_once(',')
+                .ok_or_else(|| "unable to parse window position".to_string())?;
+            let x = x
+                .parse::<i32>()
+                .map_err(|_| "failed to parse window x coordinate".to_string())?;
+            let y = y
+                .parse::<i32>()
+                .map_err(|_| "failed to parse window y coordinate".to_string())?;
+            position = Some((x, y));
+        }
+        if let Some(value) = trimmed.strip_prefix("Geometry:") {
+            let (width, height) = value
+                .trim()
+                .split_once('x')
+                .ok_or_else(|| "unable to parse window geometry".to_string())?;
+            let width = width
+                .parse::<u32>()
+                .map_err(|_| "failed to parse window width".to_string())?;
+            let height = height
+                .parse::<u32>()
+                .map_err(|_| "failed to parse window height".to_string())?;
+            geometry = Some((width, height));
+        }
+    }
+
+    match (position, geometry) {
+        (Some((x, y)), Some((width, height))) => Ok((x, y, width, height)),
+        _ => Err("unable to parse xdotool window geometry".to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1438,7 +2124,8 @@ mod tests {
 
     #[test]
     fn png_validation_rejects_non_png_bytes() {
-        let error = validate_png(b"not png").expect_err("validation should fail");
+        let error = validate_image_bytes(b"not png", DesktopScreenshotFormat::Png)
+            .expect_err("validation should fail");
         assert!(error.contains("PNG"));
     }
 
@@ -1450,8 +2137,22 @@ mod tests {
 
     #[test]
     fn press_key_args_insert_double_dash_before_user_key() {
-        let args = press_key_args("--help".to_string());
+        let args = press_key_args("--help".to_string(), None);
         assert_eq!(args, vec!["key", "--", "--help"]);
+    }
+
+    #[test]
+    fn press_key_args_builds_key_sequence_from_modifiers() {
+        let args = press_key_args(
+            "a".to_string(),
+            Some(DesktopKeyModifiers {
+                ctrl: Some(true),
+                shift: Some(true),
+                alt: Some(false),
+                cmd: None,
+            }),
+        );
+        assert_eq!(args, vec!["key", "--", "ctrl+shift+a"]);
     }
 
     #[test]
@@ -1463,6 +2164,13 @@ mod tests {
             args,
             vec!["click", "--repeat", "2", "5", "click", "--repeat", "3", "6"]
         );
+    }
+
+    #[test]
+    fn parse_window_geometry_reads_xdotool_output() {
+        let bytes = b"Window 123\n  Position: 400,300 (screen: 0)\n  Geometry: 1440x900\n";
+        let parsed = parse_window_geometry(bytes).expect("parse geometry");
+        assert_eq!(parsed, (400, 300, 1440, 900));
     }
 
     #[cfg(unix)]

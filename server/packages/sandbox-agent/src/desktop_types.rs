@@ -1,6 +1,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -62,7 +62,7 @@ pub struct DesktopStatusResponse {
     pub runtime_log_path: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema, IntoParams, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct DesktopStartRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -73,17 +73,38 @@ pub struct DesktopStartRequest {
     pub dpi: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema, IntoParams, Default)]
 #[serde(rename_all = "camelCase")]
-pub struct DesktopScreenshotQuery {}
+pub struct DesktopScreenshotQuery {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<DesktopScreenshotFormat>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale: Option<f32>,
+}
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DesktopScreenshotFormat {
+    Png,
+    Jpeg,
+    Webp,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct DesktopRegionScreenshotQuery {
     pub x: i32,
     pub y: i32,
     pub width: u32,
     pub height: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<DesktopScreenshotFormat>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema, PartialEq, Eq)]
@@ -125,6 +146,28 @@ pub struct DesktopMouseClickRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct DesktopMouseDownRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub x: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub y: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub button: Option<DesktopMouseButton>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopMouseUpRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub x: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub y: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub button: Option<DesktopMouseButton>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct DesktopMouseDragRequest {
     pub start_x: i32,
     pub start_y: i32,
@@ -157,6 +200,33 @@ pub struct DesktopKeyboardTypeRequest {
 #[serde(rename_all = "camelCase")]
 pub struct DesktopKeyboardPressRequest {
     pub key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modifiers: Option<DesktopKeyModifiers>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopKeyModifiers {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ctrl: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shift: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alt: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cmd: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopKeyboardDownRequest {
+    pub key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopKeyboardUpRequest {
+    pub key: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema, PartialEq, Eq)]
@@ -170,4 +240,63 @@ pub struct DesktopActionResponse {
 pub struct DesktopDisplayInfoResponse {
     pub display: String,
     pub resolution: DesktopResolution,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopWindowInfo {
+    pub id: String,
+    pub title: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub is_active: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopWindowListResponse {
+    pub windows: Vec<DesktopWindowInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopRecordingStartRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fps: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DesktopRecordingStatus {
+    Recording,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopRecordingInfo {
+    pub id: String,
+    pub status: DesktopRecordingStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub process_id: Option<String>,
+    pub file_name: String,
+    pub bytes: u64,
+    pub started_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopRecordingListResponse {
+    pub recordings: Vec<DesktopRecordingInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopStreamStatusResponse {
+    pub active: bool,
 }

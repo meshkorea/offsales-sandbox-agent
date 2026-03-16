@@ -34,15 +34,16 @@ use tar::Archive;
 use tokio_stream::wrappers::BroadcastStream;
 use tower_http::trace::TraceLayer;
 use tracing::Span;
-use utoipa::{Modify, OpenApi, ToSchema};
+use utoipa::{IntoParams, Modify, OpenApi, ToSchema};
 
 use crate::acp_proxy_runtime::{AcpProxyRuntime, ProxyPostOutcome};
 use crate::desktop_errors::DesktopProblem;
 use crate::desktop_runtime::DesktopRuntime;
 use crate::desktop_types::*;
 use crate::process_runtime::{
-    decode_input_bytes, ProcessLogFilter, ProcessLogFilterStream, ProcessRuntime,
-    ProcessRuntimeConfig, ProcessSnapshot, ProcessStartSpec, ProcessStatus, ProcessStream, RunSpec,
+    decode_input_bytes, ProcessLogFilter, ProcessLogFilterStream, ProcessOwner as RuntimeProcessOwner,
+    ProcessRuntime, ProcessRuntimeConfig, ProcessSnapshot, ProcessStartSpec, ProcessStatus,
+    ProcessStream, RunSpec,
 };
 use crate::ui;
 
@@ -115,7 +116,7 @@ impl AppState {
             },
         ));
         let process_runtime = Arc::new(ProcessRuntime::new());
-        let desktop_runtime = Arc::new(DesktopRuntime::new());
+        let desktop_runtime = Arc::new(DesktopRuntime::new(process_runtime.clone()));
         Self {
             auth,
             agent_manager,
@@ -196,6 +197,8 @@ pub fn build_router_with_state(shared: Arc<AppState>) -> (Router, Arc<AppState>)
         )
         .route("/desktop/mouse/move", post(post_v1_desktop_mouse_move))
         .route("/desktop/mouse/click", post(post_v1_desktop_mouse_click))
+        .route("/desktop/mouse/down", post(post_v1_desktop_mouse_down))
+        .route("/desktop/mouse/up", post(post_v1_desktop_mouse_up))
         .route("/desktop/mouse/drag", post(post_v1_desktop_mouse_drag))
         .route("/desktop/mouse/scroll", post(post_v1_desktop_mouse_scroll))
         .route(
@@ -206,7 +209,33 @@ pub fn build_router_with_state(shared: Arc<AppState>) -> (Router, Arc<AppState>)
             "/desktop/keyboard/press",
             post(post_v1_desktop_keyboard_press),
         )
+        .route(
+            "/desktop/keyboard/down",
+            post(post_v1_desktop_keyboard_down),
+        )
+        .route("/desktop/keyboard/up", post(post_v1_desktop_keyboard_up))
         .route("/desktop/display/info", get(get_v1_desktop_display_info))
+        .route("/desktop/windows", get(get_v1_desktop_windows))
+        .route(
+            "/desktop/recording/start",
+            post(post_v1_desktop_recording_start),
+        )
+        .route(
+            "/desktop/recording/stop",
+            post(post_v1_desktop_recording_stop),
+        )
+        .route("/desktop/recordings", get(get_v1_desktop_recordings))
+        .route(
+            "/desktop/recordings/:id",
+            get(get_v1_desktop_recording).delete(delete_v1_desktop_recording),
+        )
+        .route(
+            "/desktop/recordings/:id/download",
+            get(get_v1_desktop_recording_download),
+        )
+        .route("/desktop/stream/start", post(post_v1_desktop_stream_start))
+        .route("/desktop/stream/stop", post(post_v1_desktop_stream_stop))
+        .route("/desktop/stream/ws", get(get_v1_desktop_stream_ws))
         .route("/agents", get(get_v1_agents))
         .route("/agents/:agent", get(get_v1_agent))
         .route("/agents/:agent/install", post(post_v1_agent_install))
@@ -366,11 +395,25 @@ pub async fn shutdown_servers(state: &Arc<AppState>) {
         get_v1_desktop_mouse_position,
         post_v1_desktop_mouse_move,
         post_v1_desktop_mouse_click,
+        post_v1_desktop_mouse_down,
+        post_v1_desktop_mouse_up,
         post_v1_desktop_mouse_drag,
         post_v1_desktop_mouse_scroll,
         post_v1_desktop_keyboard_type,
         post_v1_desktop_keyboard_press,
+        post_v1_desktop_keyboard_down,
+        post_v1_desktop_keyboard_up,
         get_v1_desktop_display_info,
+        get_v1_desktop_windows,
+        post_v1_desktop_recording_start,
+        post_v1_desktop_recording_stop,
+        get_v1_desktop_recordings,
+        get_v1_desktop_recording,
+        get_v1_desktop_recording_download,
+        delete_v1_desktop_recording,
+        post_v1_desktop_stream_start,
+        post_v1_desktop_stream_stop,
+        get_v1_desktop_stream_ws,
         get_v1_agents,
         get_v1_agent,
         post_v1_agent_install,
@@ -416,17 +459,30 @@ pub async fn shutdown_servers(state: &Arc<AppState>) {
             DesktopStatusResponse,
             DesktopStartRequest,
             DesktopScreenshotQuery,
+            DesktopScreenshotFormat,
             DesktopRegionScreenshotQuery,
             DesktopMousePositionResponse,
             DesktopMouseButton,
             DesktopMouseMoveRequest,
             DesktopMouseClickRequest,
+            DesktopMouseDownRequest,
+            DesktopMouseUpRequest,
             DesktopMouseDragRequest,
             DesktopMouseScrollRequest,
             DesktopKeyboardTypeRequest,
             DesktopKeyboardPressRequest,
+            DesktopKeyModifiers,
+            DesktopKeyboardDownRequest,
+            DesktopKeyboardUpRequest,
             DesktopActionResponse,
             DesktopDisplayInfoResponse,
+            DesktopWindowInfo,
+            DesktopWindowListResponse,
+            DesktopRecordingStartRequest,
+            DesktopRecordingStatus,
+            DesktopRecordingInfo,
+            DesktopRecordingListResponse,
+            DesktopStreamStatusResponse,
             ServerStatus,
             ServerStatusInfo,
             AgentCapabilities,
@@ -448,12 +504,14 @@ pub async fn shutdown_servers(state: &Arc<AppState>) {
             FsActionResponse,
             FsUploadBatchResponse,
             ProcessConfig,
+            ProcessOwner,
             ProcessCreateRequest,
             ProcessRunRequest,
             ProcessRunResponse,
             ProcessState,
             ProcessInfo,
             ProcessListResponse,
+            ProcessListQuery,
             ProcessLogsStream,
             ProcessLogsQuery,
             ProcessLogEntry,
@@ -616,40 +674,42 @@ async fn post_v1_desktop_stop(
 /// Capture a full desktop screenshot.
 ///
 /// Performs a health-gated full-frame screenshot of the managed desktop and
-/// returns PNG bytes.
+/// returns the requested image bytes.
 #[utoipa::path(
     get,
     path = "/v1/desktop/screenshot",
     tag = "v1",
+    params(DesktopScreenshotQuery),
     responses(
-        (status = 200, description = "Desktop screenshot as PNG bytes"),
+        (status = 200, description = "Desktop screenshot as image bytes"),
+        (status = 400, description = "Invalid screenshot query", body = ProblemDetails),
         (status = 409, description = "Desktop runtime is not ready", body = ProblemDetails),
         (status = 502, description = "Desktop runtime health or screenshot capture failed", body = ProblemDetails)
     )
 )]
 async fn get_v1_desktop_screenshot(
     State(state): State<Arc<AppState>>,
+    Query(query): Query<DesktopScreenshotQuery>,
 ) -> Result<Response, ApiError> {
-    let bytes = state.desktop_runtime().screenshot().await?;
-    Ok(([(header::CONTENT_TYPE, "image/png")], Bytes::from(bytes)).into_response())
+    let screenshot = state.desktop_runtime().screenshot(query).await?;
+    Ok((
+        [(header::CONTENT_TYPE, screenshot.content_type)],
+        Bytes::from(screenshot.bytes),
+    )
+        .into_response())
 }
 
 /// Capture a desktop screenshot region.
 ///
 /// Performs a health-gated screenshot crop against the managed desktop and
-/// returns the requested PNG region bytes.
+/// returns the requested region image bytes.
 #[utoipa::path(
     get,
     path = "/v1/desktop/screenshot/region",
     tag = "v1",
-    params(
-        ("x" = i32, Query, description = "Region x coordinate"),
-        ("y" = i32, Query, description = "Region y coordinate"),
-        ("width" = u32, Query, description = "Region width"),
-        ("height" = u32, Query, description = "Region height")
-    ),
+    params(DesktopRegionScreenshotQuery),
     responses(
-        (status = 200, description = "Desktop screenshot region as PNG bytes"),
+        (status = 200, description = "Desktop screenshot region as image bytes"),
         (status = 400, description = "Invalid screenshot region", body = ProblemDetails),
         (status = 409, description = "Desktop runtime is not ready", body = ProblemDetails),
         (status = 502, description = "Desktop runtime health or screenshot capture failed", body = ProblemDetails)
@@ -659,8 +719,12 @@ async fn get_v1_desktop_screenshot_region(
     State(state): State<Arc<AppState>>,
     Query(query): Query<DesktopRegionScreenshotQuery>,
 ) -> Result<Response, ApiError> {
-    let bytes = state.desktop_runtime().screenshot_region(query).await?;
-    Ok(([(header::CONTENT_TYPE, "image/png")], Bytes::from(bytes)).into_response())
+    let screenshot = state.desktop_runtime().screenshot_region(query).await?;
+    Ok((
+        [(header::CONTENT_TYPE, screenshot.content_type)],
+        Bytes::from(screenshot.bytes),
+    )
+        .into_response())
 }
 
 /// Get the current desktop mouse position.
@@ -728,6 +792,54 @@ async fn post_v1_desktop_mouse_click(
     Json(body): Json<DesktopMouseClickRequest>,
 ) -> Result<Json<DesktopMousePositionResponse>, ApiError> {
     let position = state.desktop_runtime().click_mouse(body).await?;
+    Ok(Json(position))
+}
+
+/// Press and hold a desktop mouse button.
+///
+/// Performs a health-gated optional pointer move followed by `xdotool mousedown`
+/// and returns the resulting mouse position.
+#[utoipa::path(
+    post,
+    path = "/v1/desktop/mouse/down",
+    tag = "v1",
+    request_body = DesktopMouseDownRequest,
+    responses(
+        (status = 200, description = "Desktop mouse position after button press", body = DesktopMousePositionResponse),
+        (status = 400, description = "Invalid mouse down request", body = ProblemDetails),
+        (status = 409, description = "Desktop runtime is not ready", body = ProblemDetails),
+        (status = 502, description = "Desktop runtime health or input failed", body = ProblemDetails)
+    )
+)]
+async fn post_v1_desktop_mouse_down(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<DesktopMouseDownRequest>,
+) -> Result<Json<DesktopMousePositionResponse>, ApiError> {
+    let position = state.desktop_runtime().mouse_down(body).await?;
+    Ok(Json(position))
+}
+
+/// Release a desktop mouse button.
+///
+/// Performs a health-gated optional pointer move followed by `xdotool mouseup`
+/// and returns the resulting mouse position.
+#[utoipa::path(
+    post,
+    path = "/v1/desktop/mouse/up",
+    tag = "v1",
+    request_body = DesktopMouseUpRequest,
+    responses(
+        (status = 200, description = "Desktop mouse position after button release", body = DesktopMousePositionResponse),
+        (status = 400, description = "Invalid mouse up request", body = ProblemDetails),
+        (status = 409, description = "Desktop runtime is not ready", body = ProblemDetails),
+        (status = 502, description = "Desktop runtime health or input failed", body = ProblemDetails)
+    )
+)]
+async fn post_v1_desktop_mouse_up(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<DesktopMouseUpRequest>,
+) -> Result<Json<DesktopMousePositionResponse>, ApiError> {
+    let position = state.desktop_runtime().mouse_up(body).await?;
     Ok(Json(position))
 }
 
@@ -827,6 +939,54 @@ async fn post_v1_desktop_keyboard_press(
     Ok(Json(response))
 }
 
+/// Press and hold a desktop keyboard key.
+///
+/// Performs a health-gated `xdotool keydown` operation against the managed
+/// desktop.
+#[utoipa::path(
+    post,
+    path = "/v1/desktop/keyboard/down",
+    tag = "v1",
+    request_body = DesktopKeyboardDownRequest,
+    responses(
+        (status = 200, description = "Desktop keyboard action result", body = DesktopActionResponse),
+        (status = 400, description = "Invalid keyboard down request", body = ProblemDetails),
+        (status = 409, description = "Desktop runtime is not ready", body = ProblemDetails),
+        (status = 502, description = "Desktop runtime health or input failed", body = ProblemDetails)
+    )
+)]
+async fn post_v1_desktop_keyboard_down(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<DesktopKeyboardDownRequest>,
+) -> Result<Json<DesktopActionResponse>, ApiError> {
+    let response = state.desktop_runtime().key_down(body).await?;
+    Ok(Json(response))
+}
+
+/// Release a desktop keyboard key.
+///
+/// Performs a health-gated `xdotool keyup` operation against the managed
+/// desktop.
+#[utoipa::path(
+    post,
+    path = "/v1/desktop/keyboard/up",
+    tag = "v1",
+    request_body = DesktopKeyboardUpRequest,
+    responses(
+        (status = 200, description = "Desktop keyboard action result", body = DesktopActionResponse),
+        (status = 400, description = "Invalid keyboard up request", body = ProblemDetails),
+        (status = 409, description = "Desktop runtime is not ready", body = ProblemDetails),
+        (status = 502, description = "Desktop runtime health or input failed", body = ProblemDetails)
+    )
+)]
+async fn post_v1_desktop_keyboard_up(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<DesktopKeyboardUpRequest>,
+) -> Result<Json<DesktopActionResponse>, ApiError> {
+    let response = state.desktop_runtime().key_up(body).await?;
+    Ok(Json(response))
+}
+
 /// Get desktop display information.
 ///
 /// Performs a health-gated display query against the managed desktop and
@@ -846,6 +1006,225 @@ async fn get_v1_desktop_display_info(
 ) -> Result<Json<DesktopDisplayInfoResponse>, ApiError> {
     let info = state.desktop_runtime().display_info().await?;
     Ok(Json(info))
+}
+
+/// List visible desktop windows.
+///
+/// Performs a health-gated visible-window enumeration against the managed
+/// desktop and returns the current window metadata.
+#[utoipa::path(
+    get,
+    path = "/v1/desktop/windows",
+    tag = "v1",
+    responses(
+        (status = 200, description = "Visible desktop windows", body = DesktopWindowListResponse),
+        (status = 409, description = "Desktop runtime is not ready", body = ProblemDetails),
+        (status = 503, description = "Desktop runtime health or window query failed", body = ProblemDetails)
+    )
+)]
+async fn get_v1_desktop_windows(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<DesktopWindowListResponse>, ApiError> {
+    let windows = state.desktop_runtime().list_windows().await?;
+    Ok(Json(windows))
+}
+
+/// Start desktop recording.
+///
+/// Starts an ffmpeg x11grab recording against the managed desktop and returns
+/// the created recording metadata.
+#[utoipa::path(
+    post,
+    path = "/v1/desktop/recording/start",
+    tag = "v1",
+    request_body = DesktopRecordingStartRequest,
+    responses(
+        (status = 200, description = "Desktop recording started", body = DesktopRecordingInfo),
+        (status = 409, description = "Desktop runtime is not ready or a recording is already active", body = ProblemDetails),
+        (status = 502, description = "Desktop recording failed", body = ProblemDetails)
+    )
+)]
+async fn post_v1_desktop_recording_start(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<DesktopRecordingStartRequest>,
+) -> Result<Json<DesktopRecordingInfo>, ApiError> {
+    let recording = state.desktop_runtime().start_recording(body).await?;
+    Ok(Json(recording))
+}
+
+/// Stop desktop recording.
+///
+/// Stops the active desktop recording and returns the finalized recording
+/// metadata.
+#[utoipa::path(
+    post,
+    path = "/v1/desktop/recording/stop",
+    tag = "v1",
+    responses(
+        (status = 200, description = "Desktop recording stopped", body = DesktopRecordingInfo),
+        (status = 409, description = "No active desktop recording", body = ProblemDetails),
+        (status = 502, description = "Desktop recording stop failed", body = ProblemDetails)
+    )
+)]
+async fn post_v1_desktop_recording_stop(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<DesktopRecordingInfo>, ApiError> {
+    let recording = state.desktop_runtime().stop_recording().await?;
+    Ok(Json(recording))
+}
+
+/// List desktop recordings.
+///
+/// Returns the current desktop recording catalog.
+#[utoipa::path(
+    get,
+    path = "/v1/desktop/recordings",
+    tag = "v1",
+    responses(
+        (status = 200, description = "Desktop recordings", body = DesktopRecordingListResponse),
+        (status = 502, description = "Desktop recordings query failed", body = ProblemDetails)
+    )
+)]
+async fn get_v1_desktop_recordings(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<DesktopRecordingListResponse>, ApiError> {
+    let recordings = state.desktop_runtime().list_recordings().await?;
+    Ok(Json(recordings))
+}
+
+/// Get desktop recording metadata.
+///
+/// Returns metadata for a single desktop recording.
+#[utoipa::path(
+    get,
+    path = "/v1/desktop/recordings/{id}",
+    tag = "v1",
+    params(
+        ("id" = String, Path, description = "Desktop recording ID")
+    ),
+    responses(
+        (status = 200, description = "Desktop recording metadata", body = DesktopRecordingInfo),
+        (status = 404, description = "Unknown desktop recording", body = ProblemDetails)
+    )
+)]
+async fn get_v1_desktop_recording(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<DesktopRecordingInfo>, ApiError> {
+    let recording = state.desktop_runtime().get_recording(&id).await?;
+    Ok(Json(recording))
+}
+
+/// Download a desktop recording.
+///
+/// Serves the recorded MP4 bytes for a completed desktop recording.
+#[utoipa::path(
+    get,
+    path = "/v1/desktop/recordings/{id}/download",
+    tag = "v1",
+    params(
+        ("id" = String, Path, description = "Desktop recording ID")
+    ),
+    responses(
+        (status = 200, description = "Desktop recording as MP4 bytes"),
+        (status = 404, description = "Unknown desktop recording", body = ProblemDetails)
+    )
+)]
+async fn get_v1_desktop_recording_download(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Response, ApiError> {
+    let path = state.desktop_runtime().recording_download_path(&id).await?;
+    let bytes = tokio::fs::read(&path).await.map_err(|err| SandboxError::StreamError {
+        message: format!("failed to read desktop recording {}: {err}", path.display()),
+    })?;
+    Ok(([(header::CONTENT_TYPE, "video/mp4")], Bytes::from(bytes)).into_response())
+}
+
+/// Delete a desktop recording.
+///
+/// Removes a completed desktop recording and its file from disk.
+#[utoipa::path(
+    delete,
+    path = "/v1/desktop/recordings/{id}",
+    tag = "v1",
+    params(
+        ("id" = String, Path, description = "Desktop recording ID")
+    ),
+    responses(
+        (status = 204, description = "Desktop recording deleted"),
+        (status = 404, description = "Unknown desktop recording", body = ProblemDetails),
+        (status = 409, description = "Desktop recording is still active", body = ProblemDetails)
+    )
+)]
+async fn delete_v1_desktop_recording(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    state.desktop_runtime().delete_recording(&id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Start desktop streaming.
+///
+/// Enables desktop websocket streaming for the managed desktop.
+#[utoipa::path(
+    post,
+    path = "/v1/desktop/stream/start",
+    tag = "v1",
+    responses(
+        (status = 200, description = "Desktop streaming started", body = DesktopStreamStatusResponse)
+    )
+)]
+async fn post_v1_desktop_stream_start(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<DesktopStreamStatusResponse>, ApiError> {
+    Ok(Json(state.desktop_runtime().start_streaming().await))
+}
+
+/// Stop desktop streaming.
+///
+/// Disables desktop websocket streaming for the managed desktop.
+#[utoipa::path(
+    post,
+    path = "/v1/desktop/stream/stop",
+    tag = "v1",
+    responses(
+        (status = 200, description = "Desktop streaming stopped", body = DesktopStreamStatusResponse)
+    )
+)]
+async fn post_v1_desktop_stream_stop(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<DesktopStreamStatusResponse>, ApiError> {
+    Ok(Json(state.desktop_runtime().stop_streaming().await))
+}
+
+/// Open a desktop websocket streaming session.
+///
+/// Upgrades the connection to a websocket that streams JPEG desktop frames and
+/// accepts mouse and keyboard control frames.
+#[utoipa::path(
+    get,
+    path = "/v1/desktop/stream/ws",
+    tag = "v1",
+    params(
+        ("access_token" = Option<String>, Query, description = "Bearer token alternative for WS auth")
+    ),
+    responses(
+        (status = 101, description = "WebSocket upgraded"),
+        (status = 409, description = "Desktop runtime or streaming session is not ready", body = ProblemDetails),
+        (status = 502, description = "Desktop stream failed", body = ProblemDetails)
+    )
+)]
+async fn get_v1_desktop_stream_ws(
+    State(state): State<Arc<AppState>>,
+    Query(_query): Query<ProcessWsQuery>,
+    ws: WebSocketUpgrade,
+) -> Result<Response, ApiError> {
+    state.desktop_runtime().ensure_streaming_active().await?;
+    Ok(ws
+        .on_upgrade(move |socket| desktop_stream_ws_session(socket, state.desktop_runtime()))
+        .into_response())
 }
 
 #[utoipa::path(
@@ -1610,6 +1989,8 @@ async fn post_v1_processes(
             env: body.env.into_iter().collect(),
             tty: body.tty,
             interactive: body.interactive,
+            owner: RuntimeProcessOwner::User,
+            restart_policy: None,
         })
         .await?;
 
@@ -1670,6 +2051,7 @@ async fn post_v1_processes_run(
     get,
     path = "/v1/processes",
     tag = "v1",
+    params(ProcessListQuery),
     responses(
         (status = 200, description = "List processes", body = ProcessListResponse),
         (status = 501, description = "Process API unsupported on this platform", body = ProblemDetails)
@@ -1677,12 +2059,16 @@ async fn post_v1_processes_run(
 )]
 async fn get_v1_processes(
     State(state): State<Arc<AppState>>,
+    Query(query): Query<ProcessListQuery>,
 ) -> Result<Json<ProcessListResponse>, ApiError> {
     if !process_api_supported() {
         return Err(process_api_not_supported().into());
     }
 
-    let snapshots = state.process_runtime().list_processes().await;
+    let snapshots = state
+        .process_runtime()
+        .list_processes(query.owner.map(into_runtime_process_owner))
+        .await;
     Ok(Json(ProcessListResponse {
         processes: snapshots.into_iter().map(map_process_snapshot).collect(),
     }))
@@ -2063,6 +2449,46 @@ enum TerminalClientFrame {
     Close,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+enum DesktopStreamClientFrame {
+    MoveMouse {
+        x: i32,
+        y: i32,
+    },
+    MouseDown {
+        #[serde(default)]
+        x: Option<i32>,
+        #[serde(default)]
+        y: Option<i32>,
+        #[serde(default)]
+        button: Option<DesktopMouseButton>,
+    },
+    MouseUp {
+        #[serde(default)]
+        x: Option<i32>,
+        #[serde(default)]
+        y: Option<i32>,
+        #[serde(default)]
+        button: Option<DesktopMouseButton>,
+    },
+    Scroll {
+        x: i32,
+        y: i32,
+        #[serde(default)]
+        delta_x: Option<i32>,
+        #[serde(default)]
+        delta_y: Option<i32>,
+    },
+    KeyDown {
+        key: String,
+    },
+    KeyUp {
+        key: String,
+    },
+    Close,
+}
+
 async fn process_terminal_ws_session(
     mut socket: WebSocket,
     runtime: Arc<ProcessRuntime>,
@@ -2166,6 +2592,133 @@ async fn process_terminal_ws_session(
                             }),
                         )
                         .await;
+                        let _ = socket.close().await;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+async fn desktop_stream_ws_session(mut socket: WebSocket, desktop_runtime: Arc<DesktopRuntime>) {
+    let display_info = match desktop_runtime.display_info().await {
+        Ok(info) => info,
+        Err(err) => {
+            let _ = send_ws_error(&mut socket, &err.to_error_info().message).await;
+            let _ = socket.close().await;
+            return;
+        }
+    };
+
+    if send_ws_json(
+        &mut socket,
+        json!({
+            "type": "ready",
+            "width": display_info.resolution.width,
+            "height": display_info.resolution.height,
+        }),
+    )
+    .await
+    .is_err()
+    {
+        return;
+    }
+
+    let mut frame_tick = tokio::time::interval(Duration::from_millis(100));
+
+    loop {
+        tokio::select! {
+            ws_in = socket.recv() => {
+                match ws_in {
+                    Some(Ok(Message::Text(text))) => {
+                        match serde_json::from_str::<DesktopStreamClientFrame>(&text) {
+                            Ok(DesktopStreamClientFrame::MoveMouse { x, y }) => {
+                                if let Err(err) = desktop_runtime
+                                    .move_mouse(DesktopMouseMoveRequest { x, y })
+                                    .await
+                                {
+                                    let _ = send_ws_error(&mut socket, &err.to_error_info().message).await;
+                                }
+                            }
+                            Ok(DesktopStreamClientFrame::MouseDown { x, y, button }) => {
+                                if let Err(err) = desktop_runtime
+                                    .mouse_down(DesktopMouseDownRequest { x, y, button })
+                                    .await
+                                {
+                                    let _ = send_ws_error(&mut socket, &err.to_error_info().message).await;
+                                }
+                            }
+                            Ok(DesktopStreamClientFrame::MouseUp { x, y, button }) => {
+                                if let Err(err) = desktop_runtime
+                                    .mouse_up(DesktopMouseUpRequest { x, y, button })
+                                    .await
+                                {
+                                    let _ = send_ws_error(&mut socket, &err.to_error_info().message).await;
+                                }
+                            }
+                            Ok(DesktopStreamClientFrame::Scroll { x, y, delta_x, delta_y }) => {
+                                if let Err(err) = desktop_runtime
+                                    .scroll_mouse(DesktopMouseScrollRequest {
+                                        x,
+                                        y,
+                                        delta_x,
+                                        delta_y,
+                                    })
+                                    .await
+                                {
+                                    let _ = send_ws_error(&mut socket, &err.to_error_info().message).await;
+                                }
+                            }
+                            Ok(DesktopStreamClientFrame::KeyDown { key }) => {
+                                if let Err(err) = desktop_runtime
+                                    .key_down(DesktopKeyboardDownRequest { key })
+                                    .await
+                                {
+                                    let _ = send_ws_error(&mut socket, &err.to_error_info().message).await;
+                                }
+                            }
+                            Ok(DesktopStreamClientFrame::KeyUp { key }) => {
+                                if let Err(err) = desktop_runtime
+                                    .key_up(DesktopKeyboardUpRequest { key })
+                                    .await
+                                {
+                                    let _ = send_ws_error(&mut socket, &err.to_error_info().message).await;
+                                }
+                            }
+                            Ok(DesktopStreamClientFrame::Close) => {
+                                let _ = socket.close().await;
+                                break;
+                            }
+                            Err(err) => {
+                                let _ = send_ws_error(&mut socket, &format!("invalid desktop stream frame: {err}")).await;
+                            }
+                        }
+                    }
+                    Some(Ok(Message::Ping(payload))) => {
+                        let _ = socket.send(Message::Pong(payload)).await;
+                    }
+                    Some(Ok(Message::Close(_))) | None => break,
+                    Some(Ok(Message::Binary(_))) | Some(Ok(Message::Pong(_))) => {}
+                    Some(Err(_)) => break,
+                }
+            }
+            _ = frame_tick.tick() => {
+                let frame = desktop_runtime
+                    .screenshot(DesktopScreenshotQuery {
+                        format: Some(DesktopScreenshotFormat::Jpeg),
+                        quality: Some(60),
+                        scale: Some(1.0),
+                    })
+                    .await;
+                match frame {
+                    Ok(frame) => {
+                        if socket.send(Message::Binary(frame.bytes.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(err) => {
+                        let _ = send_ws_error(&mut socket, &err.to_error_info().message).await;
                         let _ = socket.close().await;
                         break;
                     }
@@ -2543,6 +3096,14 @@ fn into_runtime_process_config(config: ProcessConfig) -> ProcessRuntimeConfig {
     }
 }
 
+fn into_runtime_process_owner(owner: ProcessOwner) -> RuntimeProcessOwner {
+    match owner {
+        ProcessOwner::User => RuntimeProcessOwner::User,
+        ProcessOwner::Desktop => RuntimeProcessOwner::Desktop,
+        ProcessOwner::System => RuntimeProcessOwner::System,
+    }
+}
+
 fn map_process_snapshot(snapshot: ProcessSnapshot) -> ProcessInfo {
     ProcessInfo {
         id: snapshot.id,
@@ -2551,6 +3112,11 @@ fn map_process_snapshot(snapshot: ProcessSnapshot) -> ProcessInfo {
         cwd: snapshot.cwd,
         tty: snapshot.tty,
         interactive: snapshot.interactive,
+        owner: match snapshot.owner {
+            RuntimeProcessOwner::User => ProcessOwner::User,
+            RuntimeProcessOwner::Desktop => ProcessOwner::Desktop,
+            RuntimeProcessOwner::System => ProcessOwner::System,
+        },
         status: match snapshot.status {
             ProcessStatus::Running => ProcessState::Running,
             ProcessStatus::Exited => ProcessState::Exited,
