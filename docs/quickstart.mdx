@@ -212,6 +212,8 @@ icon: "rocket"
   </Step>
 
   <Step title="Install agents (optional)">
+    Supported agent IDs: `claude`, `codex`, `opencode`, `amp`, `pi`, `cursor`, `mock`.
+
     To preinstall agents:
 
     ```bash
@@ -219,6 +221,8 @@ icon: "rocket"
     sandbox-agent install-agent codex
     sandbox-agent install-agent opencode
     sandbox-agent install-agent amp
+    sandbox-agent install-agent pi
+    sandbox-agent install-agent cursor
     ```
 
     If agents are not installed up front, they are lazily installed when creating a session.
