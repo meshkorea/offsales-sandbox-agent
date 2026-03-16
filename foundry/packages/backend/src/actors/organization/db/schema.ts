@@ -1,18 +1,56 @@
 import { check, integer, sqliteTable, text } from "rivetkit/db/drizzle";
 import { sql } from "drizzle-orm";
+import { DEFAULT_WORKSPACE_MODEL_ID } from "@sandbox-agent/foundry-shared";
 
 // SQLite is per organization actor instance, so no organizationId column needed.
 
 /**
- * Coordinator index of RepositoryActor instances.
- * The organization actor is the coordinator for repositories.
- * Rows are created/removed when repos are added/removed from the organization.
+ * Repository catalog. Rows are created/removed when repos are added/removed
+ * from the organization via GitHub sync.
  */
 export const repos = sqliteTable("repos", {
   repoId: text("repo_id").notNull().primaryKey(),
   remoteUrl: text("remote_url").notNull(),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
+});
+
+/**
+ * Coordinator index of TaskActor instances.
+ * The organization actor is the direct coordinator for tasks (not a per-repo
+ * actor) because the sidebar needs to query all tasks across all repos on
+ * every snapshot. With many repos, fanning out to N repo actors on the hot
+ * read path is too expensive — owning the index here keeps that a single
+ * local table scan. Each row maps a taskId to its repo and immutable branch
+ * name. Used for branch conflict checking (scoped by repoId) and
+ * task-by-branch lookups.
+ */
+export const taskIndex = sqliteTable("task_index", {
+  taskId: text("task_id").notNull().primaryKey(),
+  repoId: text("repo_id").notNull(),
+  branchName: text("branch_name"),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+/**
+ * Organization-owned materialized task summary projection.
+ * Task actors push summary updates directly to the organization coordinator,
+ * which keeps this table local for fast list/lookups without fan-out.
+ * Same rationale as taskIndex: the sidebar repeatedly reads all tasks across
+ * all repos, so the org must own the materialized view to avoid O(repos)
+ * actor fan-out on the hot read path.
+ */
+export const taskSummaries = sqliteTable("task_summaries", {
+  taskId: text("task_id").notNull().primaryKey(),
+  repoId: text("repo_id").notNull(),
+  title: text("title").notNull(),
+  status: text("status").notNull(),
+  repoName: text("repo_name").notNull(),
+  updatedAtMs: integer("updated_at_ms").notNull(),
+  branch: text("branch"),
+  pullRequestJson: text("pull_request_json"),
+  sessionsSummaryJson: text("sessions_summary_json").notNull().default("[]"),
 });
 
 export const organizationProfile = sqliteTable(
@@ -25,6 +63,7 @@ export const organizationProfile = sqliteTable(
     githubAccountType: text("github_account_type").notNull(),
     displayName: text("display_name").notNull(),
     slug: text("slug").notNull(),
+    defaultModel: text("default_model").notNull().default(DEFAULT_WORKSPACE_MODEL_ID),
     primaryDomain: text("primary_domain").notNull(),
     autoImportRepos: integer("auto_import_repos").notNull(),
     repoImportStatus: text("repo_import_status").notNull(),

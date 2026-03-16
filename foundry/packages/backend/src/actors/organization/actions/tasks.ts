@@ -21,14 +21,21 @@ import type {
   TaskWorkspaceUpdateDraftInput,
 } from "@sandbox-agent/foundry-shared";
 import { getActorRuntimeContext } from "../../context.js";
-import { getOrCreateAuditLog, getOrCreateRepository, getTask as getTaskHandle, selfOrganization } from "../../handles.js";
+import { getOrCreateAuditLog, getTask as getTaskHandle, selfOrganization } from "../../handles.js";
 import { defaultSandboxProviderId } from "../../../sandbox-config.js";
 import { expectQueueResponse } from "../../../services/queue.js";
 import { logActorWarning, resolveErrorMessage } from "../../logging.js";
-import { repositoryWorkflowQueueName } from "../../repository/workflow.js";
 import { taskWorkflowQueueName } from "../../task/workflow/index.js";
 import { repos } from "../db/schema.js";
 import { organizationWorkflowQueueName } from "../queues.js";
+import {
+  createTaskMutation,
+  getRepoOverviewFromOrg,
+  getRepositoryMetadataFromOrg,
+  findTaskForBranch,
+  listTaskSummariesForRepo,
+  listAllTaskSummaries,
+} from "./task-mutations.js";
 
 function assertOrganization(c: { state: { organizationId: string } }, organizationId: string): void {
   if (organizationId !== c.state.organizationId) {
@@ -36,38 +43,15 @@ function assertOrganization(c: { state: { organizationId: string } }, organizati
   }
 }
 
-async function requireRepositoryForTask(c: any, repoId: string) {
+async function requireRepoExists(c: any, repoId: string): Promise<void> {
   const repoRow = await c.db.select({ repoId: repos.repoId }).from(repos).where(eq(repos.repoId, repoId)).get();
   if (!repoRow) {
     throw new Error(`Unknown repo: ${repoId}`);
   }
-  return await getOrCreateRepository(c, c.state.organizationId, repoId);
 }
 
 async function requireWorkspaceTask(c: any, repoId: string, taskId: string) {
   return getTaskHandle(c, c.state.organizationId, repoId, taskId);
-}
-
-async function collectAllTaskSummaries(c: any): Promise<TaskSummary[]> {
-  const repoRows = await c.db.select({ repoId: repos.repoId, remoteUrl: repos.remoteUrl }).from(repos).orderBy(desc(repos.updatedAt)).all();
-
-  const all: TaskSummary[] = [];
-  for (const row of repoRows) {
-    try {
-      const repository = await getOrCreateRepository(c, c.state.organizationId, row.repoId);
-      const snapshot = await repository.listTaskSummaries({ includeArchived: true });
-      all.push(...snapshot);
-    } catch (error) {
-      logActorWarning("organization", "failed collecting tasks for repo", {
-        organizationId: c.state.organizationId,
-        repoId: row.repoId,
-        error: resolveErrorMessage(error),
-      });
-    }
-  }
-
-  all.sort((a, b) => b.updatedAt - a.updatedAt);
-  return all;
 }
 
 interface GetTaskInput {
@@ -85,40 +69,52 @@ interface RepoOverviewInput {
   repoId: string;
 }
 
-export async function createTaskMutation(c: any, input: CreateTaskInput): Promise<TaskRecord> {
-  assertOrganization(c, input.organizationId);
-
-  const { config } = getActorRuntimeContext();
-  const sandboxProviderId = input.sandboxProviderId ?? defaultSandboxProviderId(config);
-  await requireRepositoryForTask(c, input.repoId);
-
-  const repository = await getOrCreateRepository(c, c.state.organizationId, input.repoId);
-  return expectQueueResponse<TaskRecord>(
-    await repository.send(
-      repositoryWorkflowQueueName("repository.command.createTask"),
-      {
-        task: input.task,
-        sandboxProviderId,
-        explicitTitle: input.explicitTitle ?? null,
-        explicitBranchName: input.explicitBranchName ?? null,
-        onBranch: input.onBranch ?? null,
-      },
-      {
-        wait: true,
-        timeout: 10_000,
-      },
-    ),
-  );
-}
+export { createTaskMutation };
 
 export const organizationTaskActions = {
   async createTask(c: any, input: CreateTaskInput): Promise<TaskRecord> {
+    assertOrganization(c, input.organizationId);
+    const { config } = getActorRuntimeContext();
+    const sandboxProviderId = input.sandboxProviderId ?? defaultSandboxProviderId(config);
+    await requireRepoExists(c, input.repoId);
+
     const self = selfOrganization(c);
     return expectQueueResponse<TaskRecord>(
-      await self.send(organizationWorkflowQueueName("organization.command.createTask"), input, {
-        wait: true,
-        timeout: 10_000,
-      }),
+      await self.send(
+        organizationWorkflowQueueName("organization.command.createTask"),
+        {
+          repoId: input.repoId,
+          task: input.task,
+          sandboxProviderId,
+          explicitTitle: input.explicitTitle ?? null,
+          explicitBranchName: input.explicitBranchName ?? null,
+          onBranch: input.onBranch ?? null,
+        },
+        {
+          wait: true,
+          timeout: 10_000,
+        },
+      ),
+    );
+  },
+
+  async materializeTask(c: any, input: { organizationId: string; repoId: string; virtualTaskId: string }): Promise<TaskRecord> {
+    assertOrganization(c, input.organizationId);
+    const { config } = getActorRuntimeContext();
+    const self = selfOrganization(c);
+    return expectQueueResponse<TaskRecord>(
+      await self.send(
+        organizationWorkflowQueueName("organization.command.materializeTask"),
+        {
+          repoId: input.repoId,
+          task: input.virtualTaskId,
+          sandboxProviderId: defaultSandboxProviderId(config),
+          explicitTitle: null,
+          explicitBranchName: null,
+          onBranch: null,
+        },
+        { wait: true, timeout: 10_000 },
+      ),
     );
   },
 
@@ -275,23 +271,22 @@ export const organizationTaskActions = {
 
   async getRepoOverview(c: any, input: RepoOverviewInput): Promise<RepoOverview> {
     assertOrganization(c, input.organizationId);
-    const repository = await requireRepositoryForTask(c, input.repoId);
-    return await repository.getRepoOverview({});
+    await requireRepoExists(c, input.repoId);
+    return await getRepoOverviewFromOrg(c, input.repoId);
   },
 
   async listTasks(c: any, input: ListTasksInput): Promise<TaskSummary[]> {
     assertOrganization(c, input.organizationId);
 
     if (input.repoId) {
-      const repository = await requireRepositoryForTask(c, input.repoId);
-      return await repository.listTaskSummaries({ includeArchived: true });
+      return await listTaskSummariesForRepo(c, input.repoId, true);
     }
 
-    return await collectAllTaskSummaries(c);
+    return await listAllTaskSummaries(c, true);
   },
 
   async switchTask(c: any, input: { repoId: string; taskId: string }): Promise<SwitchResult> {
-    await requireRepositoryForTask(c, input.repoId);
+    await requireRepoExists(c, input.repoId);
     const h = getTaskHandle(c, c.state.organizationId, input.repoId, input.taskId);
     const record = await h.get();
     const switched = await expectQueueResponse<{ switchTarget: string }>(
@@ -309,41 +304,24 @@ export const organizationTaskActions = {
   async auditLog(c: any, input: HistoryQueryInput): Promise<AuditLogEvent[]> {
     assertOrganization(c, input.organizationId);
 
-    const limit = input.limit ?? 20;
-    const repoRows = await c.db.select({ repoId: repos.repoId }).from(repos).orderBy(desc(repos.updatedAt)).all();
-    const allEvents: AuditLogEvent[] = [];
-
-    for (const row of repoRows) {
-      try {
-        const auditLog = await getOrCreateAuditLog(c, c.state.organizationId, row.repoId);
-        const items = await auditLog.list({
-          branch: input.branch,
-          taskId: input.taskId,
-          limit,
-        });
-        allEvents.push(...items);
-      } catch (error) {
-        logActorWarning("organization", "audit log lookup failed for repo", {
-          organizationId: c.state.organizationId,
-          repoId: row.repoId,
-          error: resolveErrorMessage(error),
-        });
-      }
-    }
-
-    allEvents.sort((a, b) => b.createdAt - a.createdAt);
-    return allEvents.slice(0, limit);
+    const auditLog = await getOrCreateAuditLog(c, c.state.organizationId);
+    return await auditLog.list({
+      repoId: input.repoId,
+      branch: input.branch,
+      taskId: input.taskId,
+      limit: input.limit ?? 20,
+    });
   },
 
   async getTask(c: any, input: GetTaskInput): Promise<TaskRecord> {
     assertOrganization(c, input.organizationId);
-    await requireRepositoryForTask(c, input.repoId);
+    await requireRepoExists(c, input.repoId);
     return await getTaskHandle(c, c.state.organizationId, input.repoId, input.taskId).get();
   },
 
   async attachTask(c: any, input: TaskProxyActionInput): Promise<{ target: string; sessionId: string | null }> {
     assertOrganization(c, input.organizationId);
-    await requireRepositoryForTask(c, input.repoId);
+    await requireRepoExists(c, input.repoId);
     const h = getTaskHandle(c, c.state.organizationId, input.repoId, input.taskId);
     return await expectQueueResponse<{ target: string; sessionId: string | null }>(
       await h.send(taskWorkflowQueueName("task.command.attach"), { reason: input.reason }, { wait: true, timeout: 10_000 }),
@@ -352,36 +330,44 @@ export const organizationTaskActions = {
 
   async pushTask(c: any, input: TaskProxyActionInput): Promise<void> {
     assertOrganization(c, input.organizationId);
-    await requireRepositoryForTask(c, input.repoId);
+    await requireRepoExists(c, input.repoId);
     const h = getTaskHandle(c, c.state.organizationId, input.repoId, input.taskId);
     await h.send(taskWorkflowQueueName("task.command.push"), { reason: input.reason }, { wait: false });
   },
 
   async syncTask(c: any, input: TaskProxyActionInput): Promise<void> {
     assertOrganization(c, input.organizationId);
-    await requireRepositoryForTask(c, input.repoId);
+    await requireRepoExists(c, input.repoId);
     const h = getTaskHandle(c, c.state.organizationId, input.repoId, input.taskId);
     await h.send(taskWorkflowQueueName("task.command.sync"), { reason: input.reason }, { wait: false });
   },
 
   async mergeTask(c: any, input: TaskProxyActionInput): Promise<void> {
     assertOrganization(c, input.organizationId);
-    await requireRepositoryForTask(c, input.repoId);
+    await requireRepoExists(c, input.repoId);
     const h = getTaskHandle(c, c.state.organizationId, input.repoId, input.taskId);
     await h.send(taskWorkflowQueueName("task.command.merge"), { reason: input.reason }, { wait: false });
   },
 
   async archiveTask(c: any, input: TaskProxyActionInput): Promise<void> {
     assertOrganization(c, input.organizationId);
-    await requireRepositoryForTask(c, input.repoId);
+    await requireRepoExists(c, input.repoId);
     const h = getTaskHandle(c, c.state.organizationId, input.repoId, input.taskId);
     await h.send(taskWorkflowQueueName("task.command.archive"), { reason: input.reason }, { wait: false });
   },
 
   async killTask(c: any, input: TaskProxyActionInput): Promise<void> {
     assertOrganization(c, input.organizationId);
-    await requireRepositoryForTask(c, input.repoId);
+    await requireRepoExists(c, input.repoId);
     const h = getTaskHandle(c, c.state.organizationId, input.repoId, input.taskId);
     await h.send(taskWorkflowQueueName("task.command.kill"), { reason: input.reason }, { wait: false });
+  },
+
+  async getRepositoryMetadata(c: any, input: { repoId: string }): Promise<{ defaultBranch: string | null; fullName: string | null; remoteUrl: string }> {
+    return await getRepositoryMetadataFromOrg(c, input.repoId);
+  },
+
+  async findTaskForBranch(c: any, input: { repoId: string; branchName: string }): Promise<{ taskId: string | null }> {
+    return await findTaskForBranch(c, input.repoId, input.branchName);
   },
 };

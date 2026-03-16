@@ -80,7 +80,10 @@ function sanitizeActiveSessionId(task: Task, sessionId: string | null | undefine
   return openDiffs.length > 0 ? diffTabId(openDiffs[openDiffs.length - 1]!) : lastAgentSessionId;
 }
 
-type GithubStatusView = Pick<FoundryOrganization["github"], "connectedAccount" | "installationStatus" | "syncStatus" | "importedRepoCount" | "lastSyncLabel"> & {
+type GithubStatusView = Pick<
+  FoundryOrganization["github"],
+  "connectedAccount" | "installationStatus" | "syncStatus" | "importedRepoCount" | "lastSyncLabel"
+> & {
   syncPhase?: string | null;
   processedRepositoryCount?: number;
   totalRepositoryCount?: number;
@@ -1912,7 +1915,7 @@ export function MockLayout({ organizationId, selectedTaskId, selectedSessionId }
                         <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 600 }}>Syncing with GitHub</h2>
                         <p style={{ margin: 0, opacity: 0.75 }}>
                           {liveGithub.lastSyncLabel || `Importing repos from @${liveGithub.connectedAccount || "GitHub"}...`}
-                          {liveGithub.totalRepositoryCount > 0 && (
+                          {(liveGithub.totalRepositoryCount ?? 0) > 0 && (
                             <>
                               {" "}
                               {liveGithub.syncPhase === "syncing_repositories"

@@ -173,6 +173,7 @@ export type StarSandboxAgentRepoResult = z.infer<typeof StarSandboxAgentRepoResu
 
 export const HistoryQueryInputSchema = z.object({
   organizationId: OrganizationIdSchema,
+  repoId: z.string().min(1).optional(),
   limit: z.number().int().positive().max(500).optional(),
   branch: z.string().min(1).optional(),
   taskId: z.string().min(1).optional(),

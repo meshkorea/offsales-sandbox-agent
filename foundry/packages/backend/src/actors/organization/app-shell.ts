@@ -147,9 +147,7 @@ async function sendOrganizationCommand<TResponse>(
   name: Parameters<typeof organizationWorkflowQueueName>[0],
   body: unknown,
 ): Promise<TResponse> {
-  return expectQueueResponse<TResponse>(
-    await organization.send(organizationWorkflowQueueName(name), body, { wait: true, timeout: 60_000 }),
-  );
+  return expectQueueResponse<TResponse>(await organization.send(organizationWorkflowQueueName(name), body, { wait: true, timeout: 60_000 }));
 }
 
 export async function getOrganizationState(organization: any) {
@@ -1129,7 +1127,6 @@ export const organizationAppActions = {
     );
     return { ok: true };
   },
-
 };
 
 export async function syncOrganizationShellFromGithubMutation(
@@ -1188,6 +1185,7 @@ export async function syncOrganizationShellFromGithubMutation(
       githubAccountType: input.githubAccountType,
       displayName: input.displayName,
       slug,
+      defaultModel: existing?.defaultModel ?? DEFAULT_WORKSPACE_MODEL_ID,
       primaryDomain: existing?.primaryDomain ?? (input.kind === "personal" ? "personal" : `${slug}.github`),
       autoImportRepos: existing?.autoImportRepos ?? 1,
       repoImportStatus: existing?.repoImportStatus ?? "not_started",
@@ -1260,6 +1258,28 @@ export async function syncOrganizationShellFromGithubMutation(
       },
     })
     .run();
+
+  // Auto-trigger github-data sync when the org has a connected installation
+  // but hasn't synced yet. This handles the common case where a personal
+  // account or an org with an existing GitHub App installation signs in for
+  // the first time on a fresh DB — the installation webhook already fired
+  // before the org actor existed, so we kick off the sync here instead.
+  const needsInitialSync = installationStatus === "connected" && syncStatus === "pending";
+  if (needsInitialSync) {
+    const githubData = await getOrCreateGithubData(c, organizationId);
+    await githubData.send(
+      githubDataWorkflowQueueName("githubData.command.syncRepos"),
+      {
+        connectedAccount: input.githubLogin,
+        installationStatus: "connected",
+        installationId: input.installationId,
+        githubLogin: input.githubLogin,
+        kind: input.kind,
+        label: "Initial repository sync...",
+      },
+      { wait: false },
+    );
+  }
 
   return { organizationId };
 }

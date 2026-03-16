@@ -99,7 +99,7 @@ Do not use polling (`refetchInterval`), empty "go re-fetch" broadcast events, or
 - **Organization actor** materializes sidebar-level data in its own SQLite: repo catalog, task summaries (title, status, branch, PR, updatedAt), repo summaries (overview/branch state), and session summaries (id, name, status, unread, model — no transcript). Task actors push summary changes to the organization actor when they mutate. The organization actor broadcasts the updated entity to connected clients. `getOrganizationSummary` reads from local tables only — no fan-out to child actors.
 - **Task actor** materializes its own detail state (session summaries, sandbox info, diffs, file tree). `getTaskDetail` reads from the task actor's own SQLite. The task actor broadcasts updates directly to clients connected to it.
 - **Session data** lives on the task actor but is a separate subscription topic. The task topic includes `sessions_summary` (list without content). The `session` topic provides full transcript and draft state. Clients subscribe to the `session` topic for whichever session is active, and filter `sessionUpdated` events by session ID (ignoring events for other sessions on the same actor).
-- The expensive fan-out (querying every repository/task actor) only exists as a background reconciliation/rebuild path, never on the hot read path.
+- There is no fan-out on the read path. The organization actor owns all task summaries locally.
 
 ### Subscription manager
 
@@ -240,11 +240,11 @@ All `wait: true` sends must have an explicit `timeout`. Maximum timeout for any 
 
 ### Task creation: resolve metadata before creating the actor
 
-When creating a task, all deterministic metadata (title, branch name) must be resolved synchronously in the parent actor (repository) *before* the task actor is created. The task actor must never be created with null `branchName` or `title`.
+When creating a task, all deterministic metadata (title, branch name) must be resolved synchronously in the organization actor *before* the task actor is created. The task actor must never be created with null `branchName` or `title`.
 
 - Title is derived from the task description via `deriveFallbackTitle()` — pure string manipulation, no external I/O.
 - Branch name is derived from the title via `sanitizeBranchName()` + conflict checking against the repository's task index.
-- The repository actor already has the task index and GitHub-backed default branch metadata. Resolve the branch name there without local git fetches.
+- The organization actor owns the task index and reads GitHub-backed default branch metadata from the github-data actor. Resolve the branch name there without local git fetches.
 - Do not defer naming to a background provision workflow. Do not poll for names to become available.
 - The `onBranch` path (attaching to an existing branch) and the new-task path should both produce a fully-named task record on return.
 - Actor handle policy:

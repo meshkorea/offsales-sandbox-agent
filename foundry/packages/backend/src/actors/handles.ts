@@ -1,4 +1,4 @@
-import { auditLogKey, githubDataKey, organizationKey, repositoryKey, taskKey, taskSandboxKey, userKey } from "./keys.js";
+import { auditLogKey, githubDataKey, organizationKey, taskKey, taskSandboxKey, userKey } from "./keys.js";
 
 export function actorClient(c: any) {
   return c.client();
@@ -20,19 +20,6 @@ export function getUser(c: any, userId: string) {
   return actorClient(c).user.get(userKey(userId));
 }
 
-export async function getOrCreateRepository(c: any, organizationId: string, repoId: string) {
-  return await actorClient(c).repository.getOrCreate(repositoryKey(organizationId, repoId), {
-    createWithInput: {
-      organizationId,
-      repoId,
-    },
-  });
-}
-
-export function getRepository(c: any, organizationId: string, repoId: string) {
-  return actorClient(c).repository.get(repositoryKey(organizationId, repoId));
-}
-
 export function getTask(c: any, organizationId: string, repoId: string, taskId: string) {
   return actorClient(c).task.get(taskKey(organizationId, repoId, taskId));
 }
@@ -43,11 +30,10 @@ export async function getOrCreateTask(c: any, organizationId: string, repoId: st
   });
 }
 
-export async function getOrCreateAuditLog(c: any, organizationId: string, repoId: string) {
-  return await actorClient(c).auditLog.getOrCreate(auditLogKey(organizationId, repoId), {
+export async function getOrCreateAuditLog(c: any, organizationId: string) {
+  return await actorClient(c).auditLog.getOrCreate(auditLogKey(organizationId), {
     createWithInput: {
       organizationId,
-      repoId,
     },
   });
 }
@@ -84,10 +70,6 @@ export function selfTask(c: any) {
 
 export function selfOrganization(c: any) {
   return actorClient(c).organization.getForId(c.actorId);
-}
-
-export function selfRepository(c: any) {
-  return actorClient(c).repository.getForId(c.actorId);
 }
 
 export function selfUser(c: any) {

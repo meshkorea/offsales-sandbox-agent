@@ -9,18 +9,15 @@ import type {
   OrganizationSummarySnapshot,
   OrganizationUseInput,
 } from "@sandbox-agent/foundry-shared";
-import { getOrCreateRepository } from "../handles.js";
 import { logActorWarning, resolveErrorMessage } from "../logging.js";
 import { repoIdFromRemote } from "../../services/repo.js";
-import { organizationProfile, repos } from "./db/schema.js";
+import { organizationProfile, repos, taskSummaries } from "./db/schema.js";
 import { organizationAppActions } from "./actions/app.js";
 import { organizationBetterAuthActions } from "./actions/better-auth.js";
 import { organizationOnboardingActions } from "./actions/onboarding.js";
 import { organizationGithubActions } from "./actions/github.js";
 import { organizationShellActions } from "./actions/organization.js";
 import { organizationTaskActions } from "./actions/tasks.js";
-
-export { createTaskMutation } from "./actions/tasks.js";
 
 interface OrganizationState {
   organizationId: string;
@@ -78,9 +75,9 @@ function buildGithubSummary(profile: any, importedRepoCount: number): Organizati
 }
 
 /**
- * Reads the organization sidebar snapshot by fanning out one level to the
- * repository coordinators. Task summaries are repository-owned; organization
- * only aggregates them.
+ * Reads the organization sidebar snapshot from local tables only — no fan-out
+ * to child actors. Task summaries are organization-owned and updated via push
+ * from task actors.
  */
 async function getOrganizationSummarySnapshot(c: any): Promise<OrganizationSummarySnapshot> {
   const profile = await c.db.select().from(organizationProfile).where(eq(organizationProfile.id, ORGANIZATION_PROFILE_ROW_ID)).get();
@@ -93,20 +90,35 @@ async function getOrganizationSummarySnapshot(c: any): Promise<OrganizationSumma
     .from(repos)
     .orderBy(desc(repos.updatedAt))
     .all();
-  const summaries: WorkspaceTaskSummary[] = [];
-  for (const row of repoRows) {
-    try {
-      const repository = await getOrCreateRepository(c, c.state.organizationId, row.repoId);
-      summaries.push(...(await repository.listWorkspaceTaskSummaries({})));
-    } catch (error) {
-      logActorWarning("organization", "failed reading repository task projection", {
-        organizationId: c.state.organizationId,
-        repoId: row.repoId,
-        error: resolveErrorMessage(error),
-      });
-    }
-  }
-  summaries.sort((left, right) => right.updatedAtMs - left.updatedAtMs);
+
+  const summaryRows = await c.db.select().from(taskSummaries).orderBy(desc(taskSummaries.updatedAtMs)).all();
+  const summaries: WorkspaceTaskSummary[] = summaryRows.map((row) => ({
+    id: row.taskId,
+    repoId: row.repoId,
+    title: row.title,
+    status: row.status,
+    repoName: row.repoName,
+    updatedAtMs: row.updatedAtMs,
+    branch: row.branch ?? null,
+    pullRequest: row.pullRequestJson
+      ? (() => {
+          try {
+            return JSON.parse(row.pullRequestJson);
+          } catch {
+            return null;
+          }
+        })()
+      : null,
+    sessionsSummary: row.sessionsSummaryJson
+      ? (() => {
+          try {
+            return JSON.parse(row.sessionsSummaryJson);
+          } catch {
+            return [];
+          }
+        })()
+      : [],
+  }));
 
   return {
     organizationId: c.state.organizationId,

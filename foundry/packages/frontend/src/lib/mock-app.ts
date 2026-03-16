@@ -53,6 +53,7 @@ const remoteAppClient: FoundryAppClient = {
     await backendClient.signInWithGithub();
   },
   async signOut(): Promise<void> {
+    window.localStorage.removeItem(REMOTE_APP_SESSION_STORAGE_KEY);
     await backendClient.signOutApp();
   },
   async skipStarterRepo(): Promise<void> {
@@ -100,6 +101,14 @@ export function useMockAppSnapshot(): FoundryAppSnapshot {
     const app = useSubscription(subscriptionManager, "app", {});
     if (app.status !== "loading") {
       firstSnapshotDelivered = true;
+      // Persist session sentinel so isAppSnapshotBootstrapping can show a loading
+      // screen instead of flashing /signin on the next page load / HMR reload.
+      const snapshot = app.data ?? EMPTY_APP_SNAPSHOT;
+      if (snapshot.auth.status === "signed_in") {
+        window.localStorage.setItem(REMOTE_APP_SESSION_STORAGE_KEY, "1");
+      } else {
+        window.localStorage.removeItem(REMOTE_APP_SESSION_STORAGE_KEY);
+      }
     }
     return app.data ?? EMPTY_APP_SNAPSHOT;
   }

@@ -164,6 +164,9 @@ describe("RemoteSubscriptionManager", () => {
       },
     } satisfies OrganizationEvent);
 
+    // applyEvent chains onto an internal promise — flush the microtask queue
+    await flushAsyncWork();
+
     expect(manager.getSnapshot("organization", params)?.taskSummaries[0]?.title).toBe("Updated task");
     expect(listenerA).toHaveBeenCalled();
     expect(listenerB).toHaveBeenCalled();

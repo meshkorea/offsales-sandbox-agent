@@ -10,6 +10,7 @@ async function appendAuditLogRow(loopCtx: any, body: AppendAuditLogCommand): Pro
   await loopCtx.db
     .insert(events)
     .values({
+      repoId: body.repoId ?? null,
       taskId: body.taskId ?? null,
       branchName: body.branchName ?? null,
       kind: body.kind,

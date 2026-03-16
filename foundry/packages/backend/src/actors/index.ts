@@ -3,7 +3,6 @@ import { setup } from "rivetkit";
 import { githubData } from "./github-data/index.js";
 import { task } from "./task/index.js";
 import { auditLog } from "./audit-log/index.js";
-import { repository } from "./repository/index.js";
 import { taskSandbox } from "./sandbox/index.js";
 import { organization } from "./organization/index.js";
 import { logger } from "../logging.js";
@@ -23,7 +22,6 @@ export const registry = setup({
   use: {
     user,
     organization,
-    repository,
     task,
     taskSandbox,
     auditLog,
@@ -37,6 +35,5 @@ export * from "./user/index.js";
 export * from "./github-data/index.js";
 export * from "./task/index.js";
 export * from "./keys.js";
-export * from "./repository/index.js";
 export * from "./sandbox/index.js";
 export * from "./organization/index.js";

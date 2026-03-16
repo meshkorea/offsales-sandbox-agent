@@ -308,6 +308,7 @@ export function createMockBackendClient(defaultOrganizationId = "default"): Back
       task: task.title,
       sandboxProviderId: "local",
       status: toTaskStatus(archived ? "archived" : "running", archived),
+      pullRequest: null,
       activeSandboxId: task.id,
       sandboxes: [
         {
@@ -453,6 +454,7 @@ export function createMockBackendClient(defaultOrganizationId = "default"): Back
           branchName: task.branch,
           title: task.title,
           status: task.status === "archived" ? "archived" : "running",
+          pullRequest: null,
           updatedAt: task.updatedAtMs,
         }));
     },
@@ -633,11 +635,7 @@ export function createMockBackendClient(defaultOrganizationId = "default"): Back
       return { endpoint: "mock://terminal-unavailable" };
     },
 
-    async getSandboxWorkspaceModelGroups(
-      _organizationId: string,
-      _sandboxProviderId: SandboxProviderId,
-      _sandboxId: string,
-    ): Promise<WorkspaceModelGroup[]> {
+    async getSandboxWorkspaceModelGroups(_organizationId: string, _sandboxProviderId: SandboxProviderId, _sandboxId: string): Promise<WorkspaceModelGroup[]> {
       return DEFAULT_WORKSPACE_MODEL_GROUPS;
     },
 

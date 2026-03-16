@@ -530,8 +530,7 @@ export function OrganizationDashboard({ organizationId, selectedTaskId, selected
     if (!selectedForSession || !activeSandbox?.sandboxId) {
       throw new Error("No sandbox is available for this task");
     }
-    const preferredAgent =
-      selectedSessionSummary?.agent === "Claude" ? "claude" : selectedSessionSummary?.agent === "Codex" ? "codex" : undefined;
+    const preferredAgent = selectedSessionSummary?.agent === "Claude" ? "claude" : selectedSessionSummary?.agent === "Codex" ? "codex" : undefined;
     return backendClient.createSandboxSession({
       organizationId,
       sandboxProviderId: activeSandbox.sandboxProviderId,
@@ -1114,7 +1113,7 @@ export function OrganizationDashboard({ organizationId, selectedTaskId, selected
                     {selectedForSession ? (
                       <HeaderStatusPill
                         status={deriveHeaderStatus(
-                          taskRuntimeStatus ?? selectedForSession.status,
+                          taskStatus ?? selectedForSession.status,
                           selectedSessionSummary?.status ?? null,
                           selectedSessionSummary?.errorMessage ?? null,
                           Boolean(activeSandbox?.sandboxId),
@@ -1242,7 +1241,9 @@ export function OrganizationDashboard({ organizationId, selectedTaskId, selected
                             <ParagraphSmall marginTop="0" marginBottom="0" color="contentSecondary">
                               {shouldUseTaskStateEmptyState
                                 ? taskStateSummary
-                                : (isPendingProvision ? "The task is still provisioning." : "The session is being created.")}
+                                : isPendingProvision
+                                  ? "The task is still provisioning."
+                                  : "The session is being created."}
                             </ParagraphSmall>
                           </div>
                         ) : null}
@@ -1456,7 +1457,7 @@ export function OrganizationDashboard({ organizationId, selectedTaskId, selected
                       gap: theme.sizing.scale300,
                     })}
                   >
-                    <MetaRow label="State" value={taskRuntimeStatus ?? "-"} mono />
+                    <MetaRow label="State" value={taskStatus ?? "-"} mono />
                     <MetaRow label="State detail" value={taskStatusState.detail} />
                     <MetaRow label="Task" value={selectedForSession.id} mono />
                     <MetaRow label="Sandbox" value={selectedForSession.activeSandboxId ?? "-"} mono />
@@ -1501,7 +1502,7 @@ export function OrganizationDashboard({ organizationId, selectedTaskId, selected
                   </div>
                 </section>
 
-                {taskRuntimeStatus === "error" ? (
+                {taskStatus === "error" ? (
                   <div
                     className={css({
                       padding: "12px",

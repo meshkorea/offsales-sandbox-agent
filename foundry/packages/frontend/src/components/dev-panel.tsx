@@ -470,9 +470,7 @@ export const DevPanel = memo(function DevPanel({ organizationId, snapshot, organ
                 />
                 <span className={css({ color: t.textPrimary, flex: 1 })}>Sync</span>
                 <span className={`${mono} ${css({ color: syncStatusColor(liveGithub.syncStatus, t) })}`}>{liveGithub.syncStatus}</span>
-                {liveGithub.lastSyncAt != null && (
-                  <span className={`${mono} ${css({ color: t.textTertiary })}`}>{timeAgo(liveGithub.lastSyncAt)}</span>
-                )}
+                {liveGithub.lastSyncAt != null && <span className={`${mono} ${css({ color: t.textTertiary })}`}>{timeAgo(liveGithub.lastSyncAt)}</span>}
               </div>
               <div className={css({ display: "flex", alignItems: "center", gap: "6px" })}>
                 <span
@@ -496,17 +494,14 @@ export const DevPanel = memo(function DevPanel({ organizationId, snapshot, organ
               <div className={css({ display: "flex", gap: "10px", marginTop: "2px" })}>
                 <Stat label="imported" value={liveGithub.importedRepoCount} t={t} css={css} />
                 <Stat label="catalog" value={organization?.repoCatalog.length ?? repos.length} t={t} css={css} />
-                <Stat label="target" value={liveGithub.totalRepositoryCount} t={t} css={css} />
+                <Stat label="target" value={liveGithub.totalRepositoryCount ?? 0} t={t} css={css} />
               </div>
-              {liveGithub.connectedAccount && (
-                <div className={`${mono} ${css({ color: t.textMuted, marginTop: "1px" })}`}>@{liveGithub.connectedAccount}</div>
-              )}
-              {liveGithub.lastSyncLabel && (
-                <div className={`${mono} ${css({ color: t.textMuted })}`}>last sync: {liveGithub.lastSyncLabel}</div>
-              )}
+              {liveGithub.connectedAccount && <div className={`${mono} ${css({ color: t.textMuted, marginTop: "1px" })}`}>@{liveGithub.connectedAccount}</div>}
+              {liveGithub.lastSyncLabel && <div className={`${mono} ${css({ color: t.textMuted })}`}>last sync: {liveGithub.lastSyncLabel}</div>}
               {liveGithub.syncPhase && (
                 <div className={`${mono} ${css({ color: t.textTertiary })}`}>
-                  phase: {liveGithub.syncPhase.replace(/^syncing_/, "").replace(/_/g, " ")} ({liveGithub.processedRepositoryCount}/{liveGithub.totalRepositoryCount})
+                  phase: {liveGithub.syncPhase.replace(/^syncing_/, "").replace(/_/g, " ")} ({liveGithub.processedRepositoryCount}/
+                  {liveGithub.totalRepositoryCount})
                 </div>
               )}
             </div>

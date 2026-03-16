@@ -1,15 +1,20 @@
 // @ts-nocheck
 import { Loop } from "rivetkit/workflow";
 import { logActorWarning, resolveErrorMessage } from "../logging.js";
-import type { CreateTaskInput } from "@sandbox-agent/foundry-shared";
 import {
   applyGithubDataProjectionMutation,
   applyGithubRepositoryProjectionMutation,
   applyGithubSyncProgressMutation,
-  createTaskMutation,
   recordGithubWebhookReceiptMutation,
   refreshOrganizationSnapshotMutation,
 } from "./actions.js";
+import {
+  applyTaskSummaryUpdateMutation,
+  createTaskMutation,
+  refreshTaskSummaryForBranchMutation,
+  registerTaskBranchMutation,
+  removeTaskSummaryMutation,
+} from "./actions/task-mutations.js";
 import {
   betterAuthCreateVerificationMutation,
   betterAuthDeleteAccountIndexMutation,
@@ -52,9 +57,59 @@ export async function runOrganizationWorkflow(ctx: any): Promise<void> {
         const result = await loopCtx.step({
           name: "organization-create-task",
           timeout: 5 * 60_000,
-          run: async () => createTaskMutation(loopCtx, msg.body as CreateTaskInput),
+          run: async () => createTaskMutation(loopCtx, msg.body),
         });
         await msg.complete(result);
+        return Loop.continue(undefined);
+      }
+
+      if (msg.name === "organization.command.materializeTask") {
+        const result = await loopCtx.step({
+          name: "organization-materialize-task",
+          timeout: 5 * 60_000,
+          run: async () => createTaskMutation(loopCtx, msg.body),
+        });
+        await msg.complete(result);
+        return Loop.continue(undefined);
+      }
+
+      if (msg.name === "organization.command.registerTaskBranch") {
+        const result = await loopCtx.step({
+          name: "organization-register-task-branch",
+          timeout: 60_000,
+          run: async () => registerTaskBranchMutation(loopCtx, msg.body),
+        });
+        await msg.complete(result);
+        return Loop.continue(undefined);
+      }
+
+      if (msg.name === "organization.command.applyTaskSummaryUpdate") {
+        await loopCtx.step({
+          name: "organization-apply-task-summary-update",
+          timeout: 30_000,
+          run: async () => applyTaskSummaryUpdateMutation(loopCtx, msg.body),
+        });
+        await msg.complete({ ok: true });
+        return Loop.continue(undefined);
+      }
+
+      if (msg.name === "organization.command.removeTaskSummary") {
+        await loopCtx.step({
+          name: "organization-remove-task-summary",
+          timeout: 30_000,
+          run: async () => removeTaskSummaryMutation(loopCtx, msg.body),
+        });
+        await msg.complete({ ok: true });
+        return Loop.continue(undefined);
+      }
+
+      if (msg.name === "organization.command.refreshTaskSummaryForBranch") {
+        await loopCtx.step({
+          name: "organization-refresh-task-summary-for-branch",
+          timeout: 60_000,
+          run: async () => refreshTaskSummaryForBranchMutation(loopCtx, msg.body),
+        });
+        await msg.complete({ ok: true });
         return Loop.continue(undefined);
       }
 

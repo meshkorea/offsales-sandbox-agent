@@ -1,5 +1,10 @@
 export const ORGANIZATION_QUEUE_NAMES = [
   "organization.command.createTask",
+  "organization.command.materializeTask",
+  "organization.command.registerTaskBranch",
+  "organization.command.applyTaskSummaryUpdate",
+  "organization.command.removeTaskSummary",
+  "organization.command.refreshTaskSummaryForBranch",
   "organization.command.snapshot.broadcast",
   "organization.command.syncGithubSession",
   "organization.command.better_auth.session_index.upsert",

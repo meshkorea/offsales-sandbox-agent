@@ -12,8 +12,8 @@ const journal = {
     },
     {
       idx: 1,
-      when: 1773907201000,
-      tag: "0001_github_sync_progress",
+      when: 1773840000000,
+      tag: "0001_add_auth_and_task_tables",
       breakpoints: true,
     },
   ],
@@ -61,7 +61,7 @@ CREATE TABLE \`organization_members\` (
 );
 --> statement-breakpoint
 CREATE TABLE \`organization_profile\` (
-	\`id\` integer PRIMARY KEY NOT NULL,
+	\`id\` text PRIMARY KEY NOT NULL,
 	\`kind\` text NOT NULL,
 	\`github_account_id\` text NOT NULL,
 	\`github_login\` text NOT NULL,
@@ -69,6 +69,7 @@ CREATE TABLE \`organization_profile\` (
 	\`display_name\` text NOT NULL,
 	\`slug\` text NOT NULL,
 	\`primary_domain\` text NOT NULL,
+	\`default_model\` text NOT NULL,
 	\`auto_import_repos\` integer NOT NULL,
 	\`repo_import_status\` text NOT NULL,
 	\`github_connected_account\` text NOT NULL,
@@ -79,6 +80,10 @@ CREATE TABLE \`organization_profile\` (
 	\`github_last_sync_at\` integer,
 	\`github_last_webhook_at\` integer,
 	\`github_last_webhook_event\` text,
+	\`github_sync_generation\` integer NOT NULL,
+	\`github_sync_phase\` text,
+	\`github_processed_repository_count\` integer NOT NULL,
+	\`github_total_repository_count\` integer NOT NULL,
 	\`stripe_customer_id\` text,
 	\`stripe_subscription_id\` text,
 	\`stripe_price_id\` text,
@@ -89,8 +94,7 @@ CREATE TABLE \`organization_profile\` (
 	\`billing_renewal_at\` text,
 	\`billing_payment_method_label\` text NOT NULL,
 	\`created_at\` integer NOT NULL,
-	\`updated_at\` integer NOT NULL,
-	CONSTRAINT \`organization_profile_singleton_id_check\` CHECK(\`id\` = 1)
+	\`updated_at\` integer NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE \`repos\` (
@@ -111,13 +115,56 @@ CREATE TABLE \`stripe_lookup\` (
 	\`updated_at\` integer NOT NULL
 );
 `,
-    m0001: `ALTER TABLE \`organization_profile\` ADD \`github_sync_generation\` integer NOT NULL DEFAULT 0;
+    m0001: `CREATE TABLE \`auth_session_index\` (
+	\`session_id\` text PRIMARY KEY NOT NULL,
+	\`session_token\` text NOT NULL,
+	\`user_id\` text NOT NULL,
+	\`created_at\` integer NOT NULL,
+	\`updated_at\` integer NOT NULL
+);
 --> statement-breakpoint
-ALTER TABLE \`organization_profile\` ADD \`github_sync_phase\` text;
+CREATE TABLE \`auth_email_index\` (
+	\`email\` text PRIMARY KEY NOT NULL,
+	\`user_id\` text NOT NULL,
+	\`updated_at\` integer NOT NULL
+);
 --> statement-breakpoint
-ALTER TABLE \`organization_profile\` ADD \`github_processed_repository_count\` integer NOT NULL DEFAULT 0;
+CREATE TABLE \`auth_account_index\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`provider_id\` text NOT NULL,
+	\`account_id\` text NOT NULL,
+	\`user_id\` text NOT NULL,
+	\`updated_at\` integer NOT NULL
+);
 --> statement-breakpoint
-ALTER TABLE \`organization_profile\` ADD \`github_total_repository_count\` integer NOT NULL DEFAULT 0;
+CREATE TABLE \`auth_verification\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`identifier\` text NOT NULL,
+	\`value\` text NOT NULL,
+	\`expires_at\` integer NOT NULL,
+	\`created_at\` integer NOT NULL,
+	\`updated_at\` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE \`task_index\` (
+	\`task_id\` text PRIMARY KEY NOT NULL,
+	\`repo_id\` text NOT NULL,
+	\`branch_name\` text,
+	\`created_at\` integer NOT NULL,
+	\`updated_at\` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE \`task_summaries\` (
+	\`task_id\` text PRIMARY KEY NOT NULL,
+	\`repo_id\` text NOT NULL,
+	\`title\` text NOT NULL,
+	\`status\` text NOT NULL,
+	\`repo_name\` text NOT NULL,
+	\`updated_at_ms\` integer NOT NULL,
+	\`branch\` text,
+	\`pull_request_json\` text,
+	\`sessions_summary_json\` text DEFAULT '[]' NOT NULL
+);
 `,
   } as const,
 };

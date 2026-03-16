@@ -10,6 +10,12 @@ const journal = {
       tag: "0000_fluffy_kid_colt",
       breakpoints: true,
     },
+    {
+      idx: 1,
+      when: 1773376223816,
+      tag: "0001_add_repo_id",
+      breakpoints: true,
+    },
   ],
 } as const;
 
@@ -24,6 +30,8 @@ export default {
 	\`payload_json\` text NOT NULL,
 	\`created_at\` integer NOT NULL
 );
+`,
+    m0001: `ALTER TABLE \`events\` ADD COLUMN \`repo_id\` text;
 `,
   } as const,
 };

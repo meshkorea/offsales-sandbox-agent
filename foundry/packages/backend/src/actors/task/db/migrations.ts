@@ -23,6 +23,7 @@ export default {
 	\`task\` text NOT NULL,
 	\`sandbox_provider_id\` text NOT NULL,
 	\`status\` text NOT NULL,
+	\`pull_request_json\` text,
 	\`created_at\` integer NOT NULL,
 	\`updated_at\` integer NOT NULL,
 	CONSTRAINT "task_singleton_id_check" CHECK("task"."id" = 1)
@@ -45,7 +46,6 @@ CREATE TABLE \`task_sandboxes\` (
 	\`sandbox_actor_id\` text,
 	\`switch_target\` text NOT NULL,
 	\`cwd\` text,
-	\`status_message\` text,
 	\`created_at\` integer NOT NULL,
 	\`updated_at\` integer NOT NULL
 );

@@ -5,13 +5,12 @@
 Keep the backend actor tree aligned with this shape unless we explicitly decide to change it:
 
 ```text
-OrganizationActor
-├─ AuditLogActor(organization-scoped global feed)
+OrganizationActor (direct coordinator for tasks)
+├─ AuditLogActor (organization-scoped global feed)
 ├─ GithubDataActor
-├─ RepositoryActor(repo)
-│  └─ TaskActor(task)
-│     ├─ taskSessions      → session metadata/transcripts
-│     └─ taskSandboxes     → sandbox instance index
+├─ TaskActor(task)
+│  ├─ taskSessions      → session metadata/transcripts
+│  └─ taskSandboxes     → sandbox instance index
 └─ SandboxInstanceActor(sandboxProviderId, sandboxId) × N
 ```
 
@@ -27,27 +26,23 @@ Children push updates **up** to their direct coordinator only. Coordinators broa
 ### Coordinator hierarchy and index tables
 
 ```text
-OrganizationActor (coordinator for repos + auth users)
+OrganizationActor (coordinator for tasks + auth users)
 │
 │  Index tables:
-│  ├─ repos              → RepositoryActor index (repo catalog)
+│  ├─ repos              → Repository catalog (GitHub sync)
+│  ├─ taskIndex          → TaskActor index (taskId → repoId + branchName)
+│  ├─ taskSummaries      → TaskActor materialized sidebar projection
 │  ├─ authSessionIndex   → UserActor index (session token → userId)
 │  ├─ authEmailIndex     → UserActor index (email → userId)
 │  └─ authAccountIndex   → UserActor index (OAuth account → userId)
 │
-├─ RepositoryActor (coordinator for tasks)
+├─ TaskActor (coordinator for sessions + sandboxes)
 │  │
 │  │  Index tables:
-│  │  ├─ taskIndex       → TaskActor index (taskId → branchName)
-│  │  └─ tasks           → TaskActor materialized sidebar projection
+│  │  ├─ taskWorkspaceSessions → Session index (session metadata + transcript)
+│  │  └─ taskSandboxes         → SandboxInstanceActor index (sandbox history)
 │  │
-│  └─ TaskActor (coordinator for sessions + sandboxes)
-│     │
-│     │  Index tables:
-│     │  ├─ taskWorkspaceSessions → Session index (session metadata + transcript)
-│     │  └─ taskSandboxes         → SandboxInstanceActor index (sandbox history)
-│     │
-│     └─ SandboxInstanceActor (leaf)
+│  └─ SandboxInstanceActor (leaf)
 │
 ├─ AuditLogActor (organization-scoped audit log, not a coordinator)
 └─ GithubDataActor (GitHub API cache, not a coordinator)
@@ -57,9 +52,8 @@ When adding a new index table, annotate it in the schema file with a doc comment
 
 ## Ownership Rules
 
-- `OrganizationActor` is the organization coordinator and lookup/index owner.
+- `OrganizationActor` is the organization coordinator, direct coordinator for tasks, and lookup/index owner. It owns the task index, task summaries, and repo catalog.
 - `AuditLogActor` is organization-scoped. There is one organization-level audit log feed.
-- `RepositoryActor` is the repo coordinator and owns repo-local caches/indexes.
 - `TaskActor` is one branch. Treat `1 task = 1 branch` once branch assignment is finalized.
 - `TaskActor` can have many sessions.
 - `TaskActor` can reference many sandbox instances historically, but should have only one active sandbox/session at a time.
@@ -69,9 +63,46 @@ When adding a new index table, annotate it in the schema file with a doc comment
 - The backend stores no local git state. No clones, no refs, no working trees, and no git-spice. Repository metadata comes from GitHub API data and webhook events. Any working-tree git operation runs inside a sandbox via `executeInSandbox()`.
 - When a backend request path must aggregate multiple independent actor calls or reads, prefer bounded parallelism over sequential fan-out when correctness permits. Do not serialize independent work by default.
 - Only a coordinator creates/destroys its children. Do not create child actors from outside the coordinator.
-- Children push state changes up to their direct coordinator only — never skip levels (e.g., task pushes to repo, not directly to org, unless org is the direct coordinator for that index).
+- Children push state changes up to their direct coordinator only. Task actors push summary updates directly to the organization actor.
 - Read paths must use the coordinator's local index tables. Do not fan out to child actors on the hot read path.
 - Never build "enriched" read actions that chain through multiple actors (e.g., coordinator → child actor → sibling actor). If data from multiple actors is needed for a read, it should already be materialized in the coordinator's index tables via push updates. If it's not there, fix the write path to push it — do not add a fan-out read path.
+
+## Drizzle Migration Maintenance
+
+After changing any actor's `db/schema.ts`, you **must** regenerate the corresponding migration so the runtime creates the tables that match the schema. Forgetting this step causes `no such table` errors at runtime.
+
+1. **Generate a new drizzle migration.** Run from `packages/backend`:
+   ```bash
+   npx drizzle-kit generate --config=./src/actors/<actor>/db/drizzle.config.ts
+   ```
+   If the interactive prompt is unavailable (e.g. in a non-TTY), manually create a new `.sql` file under `./src/actors/<actor>/db/drizzle/` and add the corresponding entry to `meta/_journal.json`.
+
+2. **Regenerate the compiled `migrations.ts`.** Run from the foundry root:
+   ```bash
+   npx tsx packages/backend/src/actors/_scripts/generate-actor-migrations.ts
+   ```
+
+3. **Verify insert/upsert calls.** Every column with `.notNull()` (and no `.default(...)`) must be provided a value in all `insert()` and `onConflictDoUpdate()` calls. Missing a NOT NULL column causes a runtime constraint violation, not a type error.
+
+4. **Nuke RivetKit state in dev** after migration changes to start fresh:
+   ```bash
+   docker compose -f compose.dev.yaml down
+   docker volume rm foundry_foundry_rivetkit_storage
+   docker compose -f compose.dev.yaml up -d
+   ```
+
+Actors with drizzle migrations: `organization`, `audit-log`, `task`. Other actors (`user`, `github-data`) use inline migrations without drizzle.
+
+## Workflow Step Nesting — FORBIDDEN
+
+**Never call `c.step()` / `ctx.step()` from inside another step's `run` callback.** RivetKit workflow steps cannot be nested. Doing so causes the runtime error: *"Cannot start a new workflow entry while another is in progress."*
+
+This means:
+- Functions called from within a step `run` callback must NOT use `c.step()`, `c.loop()`, `c.sleep()`, or `c.queue.next()`.
+- If a mutation function needs to be called both from a step and standalone, it must only do plain DB/API work — no workflow primitives. The workflow step wrapping belongs in the workflow file, not in the mutation.
+- Helper wrappers that conditionally call `c.step()` (like a `runSyncStep` pattern) are dangerous — if the caller is already inside a step, the nested `c.step()` will crash at runtime with no compile-time warning.
+
+**Rule of thumb:** Workflow primitives (`step`, `loop`, `sleep`, `queue.next`) may only appear at the top level of a workflow function or inside a `loop` callback — never inside a step's `run`.
 
 ## SQLite Constraints
 
@@ -91,6 +122,45 @@ Do not store per-user preferences, selections, or ephemeral UI state on shared a
 ## Audit Log Maintenance
 
 Every new action or command handler that represents a user-visible or workflow-significant event must append to the audit log actor. The audit log must remain a comprehensive record of significant operations.
+
+## Debugging Actors
+
+### RivetKit Inspector UI
+
+The RivetKit inspector UI at `http://localhost:6420/ui/` is the most reliable way to debug actor state in local development. The inspector HTTP API (`/inspector/workflow-history`) has a known bug where it returns empty `{}` even when the workflow has entries — always cross-check with the UI.
+
+**Useful inspector URL pattern:**
+```
+http://localhost:6420/ui/?u=http%3A%2F%2F127.0.0.1%3A6420&ns=default&r=default&n=[%22<actor-name>%22]&actorId=<actor-id>&tab=<tab>
+```
+
+Tabs: `workflow`, `database`, `state`, `queue`, `connections`, `metadata`.
+
+**To find actor IDs:**
+```bash
+curl -s 'http://127.0.0.1:6420/actors?name=organization'
+```
+
+**To query actor DB via bun (inside container):**
+```bash
+docker compose -f compose.dev.yaml exec -T backend bun -e '
+  var Database = require("bun:sqlite");
+  var db = new Database("/root/.local/share/foundry/rivetkit/databases/<actor-id>.db", { readonly: true });
+  console.log(JSON.stringify(db.query("SELECT name FROM sqlite_master WHERE type=?").all("table")));
+'
+```
+
+**To call actor actions via inspector:**
+```bash
+curl -s -X POST 'http://127.0.0.1:6420/gateway/<actor-id>/inspector/action/<actionName>' \
+  -H 'Content-Type: application/json' -d '{"args":[{}]}'
+```
+
+### Known inspector API bugs
+
+- `GET /inspector/workflow-history` may return `{"history":{}}` even when workflow has run. Use the UI's Workflow tab instead.
+- `GET /inspector/queue` is reliable for checking pending messages.
+- `GET /inspector/state` is reliable for checking actor state.
 
 ## Maintenance
 

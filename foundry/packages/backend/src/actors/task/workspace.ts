@@ -2,16 +2,21 @@
 import { randomUUID } from "node:crypto";
 import { basename, dirname } from "node:path";
 import { asc, eq } from "drizzle-orm";
-import { DEFAULT_WORKSPACE_MODEL_GROUPS, DEFAULT_WORKSPACE_MODEL_ID, workspaceAgentForModel, workspaceSandboxAgentIdForModel } from "@sandbox-agent/foundry-shared";
+import {
+  DEFAULT_WORKSPACE_MODEL_GROUPS,
+  DEFAULT_WORKSPACE_MODEL_ID,
+  workspaceAgentForModel,
+  workspaceSandboxAgentIdForModel,
+} from "@sandbox-agent/foundry-shared";
 import { getActorRuntimeContext } from "../context.js";
-import { getOrCreateRepository, getOrCreateTaskSandbox, getOrCreateUser, getTaskSandbox, selfTask } from "../handles.js";
+import { getOrCreateOrganization, getOrCreateTaskSandbox, getOrCreateUser, getTaskSandbox, selfTask } from "../handles.js";
 import { SANDBOX_REPO_CWD } from "../sandbox/index.js";
 import { resolveSandboxProviderId } from "../../sandbox-config.js";
 import { getBetterAuthService } from "../../services/better-auth.js";
 import { expectQueueResponse } from "../../services/queue.js";
 import { resolveOrganizationGithubAuth } from "../../services/github-auth.js";
 import { githubRepoFullNameFromRemote } from "../../services/repo.js";
-import { repositoryWorkflowQueueName } from "../repository/workflow.js";
+import { organizationWorkflowQueueName } from "../organization/queues.js";
 import { userWorkflowQueueName } from "../user/workflow.js";
 import { task as taskTable, taskRuntime, taskSandboxes, taskWorkspaceSessions } from "./db/schema.js";
 import { getCurrentRecord } from "./workflow/common.js";
@@ -66,8 +71,8 @@ function repoLabelFromRemote(remoteUrl: string): string {
 }
 
 async function getRepositoryMetadata(c: any): Promise<{ defaultBranch: string | null; fullName: string | null; remoteUrl: string }> {
-  const repository = await getOrCreateRepository(c, c.state.organizationId, c.state.repoId);
-  return await repository.getRepositoryMetadata({});
+  const organization = await getOrCreateOrganization(c, c.state.organizationId);
+  return await organization.getRepositoryMetadata({ repoId: c.state.repoId });
 }
 
 function parseDraftAttachments(value: string | null | undefined): Array<any> {
@@ -970,10 +975,10 @@ export async function getSessionDetail(c: any, sessionId: string, authSessionId?
  * - Broadcast full detail/session payloads down to direct task subscribers.
  */
 export async function broadcastTaskUpdate(c: any, options?: { sessionId?: string }): Promise<void> {
-  const repository = await getOrCreateRepository(c, c.state.organizationId, c.state.repoId);
+  const organization = await getOrCreateOrganization(c, c.state.organizationId);
   await expectQueueResponse<{ ok: true }>(
-    await repository.send(
-      repositoryWorkflowQueueName("repository.command.applyTaskSummaryUpdate"),
+    await organization.send(
+      organizationWorkflowQueueName("organization.command.applyTaskSummaryUpdate"),
       { taskSummary: await buildTaskSummary(c) },
       { wait: true, timeout: 10_000 },
     ),
