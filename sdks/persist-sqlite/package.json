@@ -1,7 +1,7 @@
 {
   "name": "@sandbox-agent/persist-sqlite",
   "version": "0.3.2",
-  "description": "SQLite persistence driver for the Sandbox Agent TypeScript SDK",
+  "description": "SQLite persistence driver for the Sandbox Agent TypeScript SDK (DEPRECATED)",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

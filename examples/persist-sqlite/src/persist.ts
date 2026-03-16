@@ -18,7 +18,7 @@ export class SQLiteSessionPersistDriver implements SessionPersistDriver {
   async getSession(id: string): Promise<SessionRecord | undefined> {
     const row = this.db
       .prepare(
-        `SELECT id, agent, agent_session_id, last_connection_id, created_at, destroyed_at, sandbox_id, session_init_json
+        `SELECT id, agent, agent_session_id, last_connection_id, created_at, destroyed_at, sandbox_id, session_init_json, config_options_json, modes_json
          FROM sessions WHERE id = ?`,
       )
       .get(id) as SessionRow | undefined;
@@ -36,7 +36,7 @@ export class SQLiteSessionPersistDriver implements SessionPersistDriver {
 
     const rows = this.db
       .prepare(
-        `SELECT id, agent, agent_session_id, last_connection_id, created_at, destroyed_at, sandbox_id, session_init_json
+        `SELECT id, agent, agent_session_id, last_connection_id, created_at, destroyed_at, sandbox_id, session_init_json, config_options_json, modes_json
          FROM sessions
          ORDER BY created_at ASC, id ASC
          LIMIT ? OFFSET ?`,
@@ -56,8 +56,8 @@ export class SQLiteSessionPersistDriver implements SessionPersistDriver {
     this.db
       .prepare(
         `INSERT INTO sessions (
-          id, agent, agent_session_id, last_connection_id, created_at, destroyed_at, sandbox_id, session_init_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          id, agent, agent_session_id, last_connection_id, created_at, destroyed_at, sandbox_id, session_init_json, config_options_json, modes_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           agent = excluded.agent,
           agent_session_id = excluded.agent_session_id,
@@ -65,7 +65,9 @@ export class SQLiteSessionPersistDriver implements SessionPersistDriver {
           created_at = excluded.created_at,
           destroyed_at = excluded.destroyed_at,
           sandbox_id = excluded.sandbox_id,
-          session_init_json = excluded.session_init_json`,
+          session_init_json = excluded.session_init_json,
+          config_options_json = excluded.config_options_json,
+          modes_json = excluded.modes_json`,
       )
       .run(
         session.id,
@@ -76,6 +78,8 @@ export class SQLiteSessionPersistDriver implements SessionPersistDriver {
         session.destroyedAt ?? null,
         session.sandboxId ?? null,
         session.sessionInit ? JSON.stringify(session.sessionInit) : null,
+        session.configOptions ? JSON.stringify(session.configOptions) : null,
+        session.modes !== undefined ? JSON.stringify(session.modes) : null,
       );
   }
 
@@ -134,13 +138,21 @@ export class SQLiteSessionPersistDriver implements SessionPersistDriver {
         created_at INTEGER NOT NULL,
         destroyed_at INTEGER,
         sandbox_id TEXT,
-        session_init_json TEXT
+        session_init_json TEXT,
+        config_options_json TEXT,
+        modes_json TEXT
       )
     `);
 
     const sessionColumns = this.db.prepare(`PRAGMA table_info(sessions)`).all() as TableInfoRow[];
     if (!sessionColumns.some((column) => column.name === "sandbox_id")) {
       this.db.exec(`ALTER TABLE sessions ADD COLUMN sandbox_id TEXT`);
+    }
+    if (!sessionColumns.some((column) => column.name === "config_options_json")) {
+      this.db.exec(`ALTER TABLE sessions ADD COLUMN config_options_json TEXT`);
+    }
+    if (!sessionColumns.some((column) => column.name === "modes_json")) {
+      this.db.exec(`ALTER TABLE sessions ADD COLUMN modes_json TEXT`);
     }
 
     this.ensureEventsTable();
@@ -233,6 +245,8 @@ type SessionRow = {
   destroyed_at: number | null;
   sandbox_id: string | null;
   session_init_json: string | null;
+  config_options_json: string | null;
+  modes_json: string | null;
 };
 
 type EventRow = {
@@ -260,6 +274,8 @@ function decodeSessionRow(row: SessionRow): SessionRecord {
     destroyedAt: row.destroyed_at ?? undefined,
     sandboxId: row.sandbox_id ?? undefined,
     sessionInit: row.session_init_json ? (JSON.parse(row.session_init_json) as SessionRecord["sessionInit"]) : undefined,
+    configOptions: row.config_options_json ? (JSON.parse(row.config_options_json) as SessionRecord["configOptions"]) : undefined,
+    modes: row.modes_json ? (JSON.parse(row.modes_json) as SessionRecord["modes"]) : undefined,
   };
 }
 

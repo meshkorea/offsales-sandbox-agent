@@ -22,16 +22,13 @@ Use [actor keys](https://rivet.dev/docs/actors/keys) to map each workspace to on
 import { actor, setup } from "rivetkit";
 import { SandboxAgent, type SessionPersistDriver, type SessionRecord, type SessionEvent, type ListPageRequest, type ListPage, type ListEventsRequest } from "sandbox-agent";
 
-// Inline Rivet persist driver — copy into your project.
-// See https://github.com/nichochar/sandbox-agent/tree/main/examples/persist-rivet
-interface ActorContextLike { state: Record<string, unknown>; }
 interface RivetPersistData { sessions: Record<string, SessionRecord>; events: Record<string, SessionEvent[]>; }
 type RivetPersistState = { _sandboxAgentPersist: RivetPersistData };
 
 class RivetSessionPersistDriver implements SessionPersistDriver {
   private readonly stateKey: string;
-  private readonly ctx: ActorContextLike;
-  constructor(ctx: ActorContextLike, options: { stateKey?: string } = {}) {
+  private readonly ctx: { state: Record<string, unknown> };
+  constructor(ctx: { state: Record<string, unknown> }, options: { stateKey?: string } = {}) {
     this.ctx = ctx;
     this.stateKey = options.stateKey ?? "_sandboxAgentPersist";
     if (!this.ctx.state[this.stateKey]) {
@@ -146,5 +143,5 @@ await conn.prompt({
 ## Notes
 
 - Keep sandbox calls actor-only. Browser clients should not call Sandbox Agent directly.
-- Inline the Rivet persist driver (shown above) so session history persists in actor state.
+- Copy the Rivet persist driver from the example above into your project so session history persists in actor state.
 - For client connection patterns, see [Rivet JavaScript client](https://rivet.dev/docs/clients/javascript).

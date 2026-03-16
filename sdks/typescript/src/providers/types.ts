@@ -21,8 +21,11 @@ export interface SandboxProvider {
   getFetch?(sandboxId: string): Promise<typeof globalThis.fetch>;
 
   /**
-   * Optional hook invoked before reconnecting to an existing sandbox.
-   * Useful for providers where the sandbox-agent process may need to be restarted.
+   * Ensure the sandbox-agent server process is running inside the sandbox.
+   * Called during health-wait after consecutive failures, and before
+   * reconnecting to an existing sandbox. Implementations should be
+   * idempotent — if the server is already running, this should be a no-op
+   * (e.g. the duplicate process exits on port conflict).
    */
-  wake?(sandboxId: string): Promise<void>;
+  ensureServer?(sandboxId: string): Promise<void>;
 }

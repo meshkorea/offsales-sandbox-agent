@@ -37,7 +37,7 @@ export class PostgresSessionPersistDriver implements SessionPersistDriver {
     await this.ready();
 
     const result = await this.pool.query<SessionRow>(
-      `SELECT id, agent, agent_session_id, last_connection_id, created_at, destroyed_at, sandbox_id, session_init_json
+      `SELECT id, agent, agent_session_id, last_connection_id, created_at, destroyed_at, sandbox_id, session_init_json, config_options_json, modes_json
        FROM ${this.table("sessions")}
        WHERE id = $1`,
       [id],
@@ -57,7 +57,7 @@ export class PostgresSessionPersistDriver implements SessionPersistDriver {
     const limit = normalizeLimit(request.limit);
 
     const rowsResult = await this.pool.query<SessionRow>(
-      `SELECT id, agent, agent_session_id, last_connection_id, created_at, destroyed_at, sandbox_id, session_init_json
+      `SELECT id, agent, agent_session_id, last_connection_id, created_at, destroyed_at, sandbox_id, session_init_json, config_options_json, modes_json
        FROM ${this.table("sessions")}
        ORDER BY created_at ASC, id ASC
        LIMIT $1 OFFSET $2`,
@@ -79,8 +79,8 @@ export class PostgresSessionPersistDriver implements SessionPersistDriver {
 
     await this.pool.query(
       `INSERT INTO ${this.table("sessions")} (
-        id, agent, agent_session_id, last_connection_id, created_at, destroyed_at, sandbox_id, session_init_json
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        id, agent, agent_session_id, last_connection_id, created_at, destroyed_at, sandbox_id, session_init_json, config_options_json, modes_json
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       ON CONFLICT(id) DO UPDATE SET
         agent = EXCLUDED.agent,
         agent_session_id = EXCLUDED.agent_session_id,
@@ -88,7 +88,9 @@ export class PostgresSessionPersistDriver implements SessionPersistDriver {
         created_at = EXCLUDED.created_at,
         destroyed_at = EXCLUDED.destroyed_at,
         sandbox_id = EXCLUDED.sandbox_id,
-        session_init_json = EXCLUDED.session_init_json`,
+        session_init_json = EXCLUDED.session_init_json,
+        config_options_json = EXCLUDED.config_options_json,
+        modes_json = EXCLUDED.modes_json`,
       [
         session.id,
         session.agent,
@@ -97,7 +99,9 @@ export class PostgresSessionPersistDriver implements SessionPersistDriver {
         session.createdAt,
         session.destroyedAt ?? null,
         session.sandboxId ?? null,
-        session.sessionInit ?? null,
+        session.sessionInit ? JSON.stringify(session.sessionInit) : null,
+        session.configOptions ? JSON.stringify(session.configOptions) : null,
+        session.modes !== undefined ? JSON.stringify(session.modes) : null,
       ],
     );
   }
@@ -174,13 +178,25 @@ export class PostgresSessionPersistDriver implements SessionPersistDriver {
         created_at BIGINT NOT NULL,
         destroyed_at BIGINT,
         sandbox_id TEXT,
-        session_init_json JSONB
+        session_init_json JSONB,
+        config_options_json JSONB,
+        modes_json JSONB
       )
     `);
 
     await this.pool.query(`
       ALTER TABLE ${this.table("sessions")}
       ADD COLUMN IF NOT EXISTS sandbox_id TEXT
+    `);
+
+    await this.pool.query(`
+      ALTER TABLE ${this.table("sessions")}
+      ADD COLUMN IF NOT EXISTS config_options_json JSONB
+    `);
+
+    await this.pool.query(`
+      ALTER TABLE ${this.table("sessions")}
+      ADD COLUMN IF NOT EXISTS modes_json JSONB
     `);
 
     await this.pool.query(`
@@ -238,6 +254,8 @@ type SessionRow = {
   destroyed_at: string | number | null;
   sandbox_id: string | null;
   session_init_json: unknown | null;
+  config_options_json: unknown | null;
+  modes_json: unknown | null;
 };
 
 type EventRow = {
@@ -260,6 +278,8 @@ function decodeSessionRow(row: SessionRow): SessionRecord {
     destroyedAt: row.destroyed_at === null ? undefined : parseInteger(row.destroyed_at),
     sandboxId: row.sandbox_id ?? undefined,
     sessionInit: row.session_init_json ? (row.session_init_json as SessionRecord["sessionInit"]) : undefined,
+    configOptions: row.config_options_json ? (row.config_options_json as SessionRecord["configOptions"]) : undefined,
+    modes: row.modes_json ? (row.modes_json as SessionRecord["modes"]) : undefined,
   };
 }
 

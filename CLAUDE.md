@@ -46,6 +46,18 @@
 - `docs/agent-capabilities.mdx` lists models/modes/thought levels per agent. Update it when adding a new agent or changing `fallback_config_options`. If its "Last updated" date is >2 weeks old, re-run `cd scripts/agent-configs && npx tsx dump.ts` and update the doc to match. Source data: `scripts/agent-configs/resources/*.json` and hardcoded entries in `server/packages/sandbox-agent/src/router/support.rs` (`fallback_config_options`).
 - Some agent models are gated by subscription (e.g. Claude `opus`). The live report only shows models available to the current credentials. The static doc and JSON resource files should list all known models regardless of subscription tier.
 
+## Persist Packages (Deprecated)
+
+- The `@sandbox-agent/persist-*` npm packages (`persist-sqlite`, `persist-postgres`, `persist-indexeddb`, `persist-rivet`) are deprecated stubs. They still publish to npm but throw a deprecation error at import time.
+- Driver implementations now live inline in examples and consuming packages:
+  - SQLite: `examples/persist-sqlite/src/persist.ts`
+  - Postgres: `examples/persist-postgres/src/persist.ts`
+  - IndexedDB: `frontend/packages/inspector/src/persist-indexeddb.ts`
+  - Rivet: inlined in `docs/multiplayer.mdx`
+  - In-memory: built into the main `sandbox-agent` SDK (`InMemorySessionPersistDriver`)
+- Docs (`docs/session-persistence.mdx`) link to the example implementations on GitHub instead of referencing the packages.
+- Do not re-add `@sandbox-agent/persist-*` as dependencies anywhere. New persist drivers should be copied into the consuming project directly.
+
 ## Install Version References
 
 - Channel policy:

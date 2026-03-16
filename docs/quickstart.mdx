@@ -23,112 +23,177 @@ icon: "rocket"
   </Step>
 
   <Step title="Start the sandbox">
-    `SandboxAgent.start()` provisions a sandbox, starts a lightweight [Sandbox Agent server](/architecture) inside it, and connects your SDK client. Pass your LLM API keys so the agent can reach its provider.
+    `SandboxAgent.start()` provisions a sandbox, starts a lightweight [Sandbox Agent server](/architecture) inside it, and connects your SDK client.
 
-    <CodeGroup>
-      ```typescript Local
-      import { SandboxAgent } from "sandbox-agent";
-      import { local } from "sandbox-agent/local";
+    <Tabs>
+      <Tab title="Local">
+        ```bash
+        npm install sandbox-agent@0.3.x
+        ```
 
-      // Runs on your machine. Inherits process.env automatically.
-      const sdk = await SandboxAgent.start({
-        sandbox: local(),
-      });
-      ```
+        ```typescript
+        import { SandboxAgent } from "sandbox-agent";
+        import { local } from "sandbox-agent/local";
 
-      ```typescript E2B
-      import { SandboxAgent } from "sandbox-agent";
-      import { e2b } from "sandbox-agent/e2b";
+        // Runs on your machine. Inherits process.env automatically.
+        const client = await SandboxAgent.start({
+          sandbox: local(),
+        });
+        ```
 
-      const sdk = await SandboxAgent.start({
-        sandbox: e2b({
-          create: {
-            // Pass whichever keys your agent needs
-            envs: {
-              ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-              OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-            },
-          },
-        }),
-      });
-      ```
+        See [Local deploy guide](/deploy/local)
 
-      ```typescript Daytona
-      import { SandboxAgent } from "sandbox-agent";
-      import { daytona } from "sandbox-agent/daytona";
+        <Accordion title="Passing LLM credentials">
+          Local inherits `process.env` automatically, so no extra config is needed if your environment variables are already set.
+        </Accordion>
+      </Tab>
 
-      const sdk = await SandboxAgent.start({
-        sandbox: daytona({
-          create: {
-            envVars: {
-              ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-              OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-            },
-          },
-        }),
-      });
-      ```
+      <Tab title="E2B">
+        ```bash
+        npm install sandbox-agent@0.3.x @e2b/code-interpreter
+        ```
 
-      ```typescript Vercel
-      import { SandboxAgent } from "sandbox-agent";
-      import { vercel } from "sandbox-agent/vercel";
+        ```typescript
+        import { SandboxAgent } from "sandbox-agent";
+        import { e2b } from "sandbox-agent/e2b";
 
-      const sdk = await SandboxAgent.start({
-        sandbox: vercel({
-          create: {
-            runtime: "node24",
-            env: {
-              ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-              OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-            },
-          },
-        }),
-      });
-      ```
+        // Provisions a cloud sandbox on E2B, installs the server, and connects.
+        const client = await SandboxAgent.start({
+          sandbox: e2b(),
+        });
+        ```
 
-      ```typescript Modal
-      import { SandboxAgent } from "sandbox-agent";
-      import { modal } from "sandbox-agent/modal";
+        See [E2B deploy guide](/deploy/e2b)
 
-      const sdk = await SandboxAgent.start({
-        sandbox: modal({
-          create: {
-            // Pass whichever keys your agent needs
-            secrets: {
-              ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-              OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-            },
-          },
-        }),
-      });
-      ```
+        <Accordion title="Passing LLM credentials">
+          ```typescript
+          e2b({ create: { envs: { ANTHROPIC_API_KEY: "..." } } })
+          ```
+        </Accordion>
+      </Tab>
 
-      ```typescript Cloudflare
-      import { SandboxAgent } from "sandbox-agent";
-      import { cloudflare } from "sandbox-agent/cloudflare";
+      <Tab title="Daytona">
+        ```bash
+        npm install sandbox-agent@0.3.x @daytonaio/sdk
+        ```
 
-      const sdk = await SandboxAgent.start({
-        sandbox: cloudflare({ sdk: cfSandboxClient }),
-      });
-      ```
+        ```typescript
+        import { SandboxAgent } from "sandbox-agent";
+        import { daytona } from "sandbox-agent/daytona";
 
-      ```typescript Docker
-      import { SandboxAgent } from "sandbox-agent";
-      import { docker } from "sandbox-agent/docker";
+        // Provisions a Daytona workspace with the server pre-installed.
+        const client = await SandboxAgent.start({
+          sandbox: daytona(),
+        });
+        ```
 
-      // Good for testing. Not security-hardened like cloud sandboxes.
-      const sdk = await SandboxAgent.start({
-        sandbox: docker({
-          env: [
-            `ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY}`,
-            `OPENAI_API_KEY=${process.env.OPENAI_API_KEY}`,
-          ],
-        }),
-      });
-      ```
-    </CodeGroup>
+        See [Daytona deploy guide](/deploy/daytona)
 
-    Each provider handles provisioning, server installation, and networking. Install the provider's peer dependency (e.g. `@e2b/code-interpreter`, `dockerode`) in your project. See the [Deploy](/deploy/local) guides for full setup details. For multi-tenant billing, per-user keys, and gateway options, see [LLM Credentials](/llm-credentials).
+        <Accordion title="Passing LLM credentials">
+          ```typescript
+          daytona({ create: { envVars: { ANTHROPIC_API_KEY: "..." } } })
+          ```
+        </Accordion>
+      </Tab>
+
+      <Tab title="Vercel">
+        ```bash
+        npm install sandbox-agent@0.3.x @vercel/sandbox
+        ```
+
+        ```typescript
+        import { SandboxAgent } from "sandbox-agent";
+        import { vercel } from "sandbox-agent/vercel";
+
+        // Provisions a Vercel sandbox with the server installed on boot.
+        const client = await SandboxAgent.start({
+          sandbox: vercel(),
+        });
+        ```
+
+        See [Vercel deploy guide](/deploy/vercel)
+
+        <Accordion title="Passing LLM credentials">
+          ```typescript
+          vercel({ create: { env: { ANTHROPIC_API_KEY: "..." } } })
+          ```
+        </Accordion>
+      </Tab>
+
+      <Tab title="Modal">
+        ```bash
+        npm install sandbox-agent@0.3.x modal
+        ```
+
+        ```typescript
+        import { SandboxAgent } from "sandbox-agent";
+        import { modal } from "sandbox-agent/modal";
+
+        // Builds a container image with agents pre-installed (cached after first run),
+        // starts a Modal sandbox from that image, and connects.
+        const client = await SandboxAgent.start({
+          sandbox: modal(),
+        });
+        ```
+
+        See [Modal deploy guide](/deploy/modal)
+
+        <Accordion title="Passing LLM credentials">
+          ```typescript
+          modal({ create: { secrets: { ANTHROPIC_API_KEY: "..." } } })
+          ```
+        </Accordion>
+      </Tab>
+
+      <Tab title="Cloudflare">
+        ```bash
+        npm install sandbox-agent@0.3.x @cloudflare/sandbox
+        ```
+
+        ```typescript
+        import { SandboxAgent } from "sandbox-agent";
+        import { cloudflare } from "sandbox-agent/cloudflare";
+        import { SandboxClient } from "@cloudflare/sandbox";
+
+        // Uses the Cloudflare Sandbox SDK to provision and connect.
+        // The Cloudflare SDK handles server lifecycle internally.
+        const cfSandboxClient = new SandboxClient();
+        const client = await SandboxAgent.start({
+          sandbox: cloudflare({ sdk: cfSandboxClient }),
+        });
+        ```
+
+        See [Cloudflare deploy guide](/deploy/cloudflare)
+
+        <Accordion title="Passing LLM credentials">
+          Pass credentials via the Cloudflare SDK's environment configuration. See the [Cloudflare deploy guide](/deploy/cloudflare) for details.
+        </Accordion>
+      </Tab>
+
+      <Tab title="Docker">
+        ```bash
+        npm install sandbox-agent@0.3.x dockerode get-port
+        ```
+
+        ```typescript
+        import { SandboxAgent } from "sandbox-agent";
+        import { docker } from "sandbox-agent/docker";
+
+        // Runs a Docker container locally. Good for testing.
+        const client = await SandboxAgent.start({
+          sandbox: docker(),
+        });
+        ```
+
+        See [Docker deploy guide](/deploy/docker)
+
+        <Accordion title="Passing LLM credentials">
+          ```typescript
+          docker({ env: ["ANTHROPIC_API_KEY=..."] })
+          ```
+        </Accordion>
+      </Tab>
+    </Tabs>
 
     <AccordionGroup>
       <Accordion title="Implementing a custom provider">
@@ -152,7 +217,7 @@ icon: "rocket"
           },
         };
 
-        const sdk = await SandboxAgent.start({
+        const client = await SandboxAgent.start({
           sandbox: myProvider,
         });
         ```
@@ -162,7 +227,7 @@ icon: "rocket"
         If you already have a Sandbox Agent server running, connect directly:
 
         ```typescript
-        const sdk = await SandboxAgent.connect({
+        const client = await SandboxAgent.connect({
           baseUrl: "http://127.0.0.1:2468",
         });
         ```
@@ -196,29 +261,115 @@ icon: "rocket"
   </Step>
 
   <Step title="Create a session and send a prompt">
-    ```typescript
-    const session = await sdk.createSession({
-      agent: "claude",
-    });
+    <CodeGroup>
 
-    session.onEvent((event) => {
-      console.log(event.sender, event.payload);
-    });
+      ```typescript Claude
+      const session = await client.createSession({
+        agent: "claude",
+      });
 
-    const result = await session.prompt([
-      { type: "text", text: "Summarize the repository and suggest next steps." },
-    ]);
+      session.onEvent((event) => {
+        console.log(event.sender, event.payload);
+      });
 
-    console.log(result.stopReason);
-    ```
+      const result = await session.prompt([
+        { type: "text", text: "Summarize the repository and suggest next steps." },
+      ]);
+
+      console.log(result.stopReason);
+      ```
+
+      ```typescript Codex
+      const session = await client.createSession({
+        agent: "codex",
+      });
+
+      session.onEvent((event) => {
+        console.log(event.sender, event.payload);
+      });
+
+      const result = await session.prompt([
+        { type: "text", text: "Summarize the repository and suggest next steps." },
+      ]);
+
+      console.log(result.stopReason);
+      ```
+
+      ```typescript OpenCode
+      const session = await client.createSession({
+        agent: "opencode",
+      });
+
+      session.onEvent((event) => {
+        console.log(event.sender, event.payload);
+      });
+
+      const result = await session.prompt([
+        { type: "text", text: "Summarize the repository and suggest next steps." },
+      ]);
+
+      console.log(result.stopReason);
+      ```
+
+      ```typescript Cursor
+      const session = await client.createSession({
+        agent: "cursor",
+      });
+
+      session.onEvent((event) => {
+        console.log(event.sender, event.payload);
+      });
+
+      const result = await session.prompt([
+        { type: "text", text: "Summarize the repository and suggest next steps." },
+      ]);
+
+      console.log(result.stopReason);
+      ```
+
+      ```typescript Amp
+      const session = await client.createSession({
+        agent: "amp",
+      });
+
+      session.onEvent((event) => {
+        console.log(event.sender, event.payload);
+      });
+
+      const result = await session.prompt([
+        { type: "text", text: "Summarize the repository and suggest next steps." },
+      ]);
+
+      console.log(result.stopReason);
+      ```
+
+      ```typescript Pi
+      const session = await client.createSession({
+        agent: "pi",
+      });
+
+      session.onEvent((event) => {
+        console.log(event.sender, event.payload);
+      });
+
+      const result = await session.prompt([
+        { type: "text", text: "Summarize the repository and suggest next steps." },
+      ]);
+
+      console.log(result.stopReason);
+      ```
+
+    </CodeGroup>
+
+    See [Agent Sessions](/agent-sessions) for the full sessions API.
   </Step>
 
   <Step title="Clean up">
     ```typescript
-    await sdk.destroySandbox(); // tears down the sandbox and disconnects
+    await client.destroySandbox(); // tears down the sandbox and disconnects
     ```
 
-    Use `sdk.dispose()` instead to disconnect without destroying the sandbox (for reconnecting later).
+    Use `client.dispose()` instead to disconnect without destroying the sandbox (for reconnecting later).
   </Step>
 
   <Step title="Inspect with the UI">
@@ -236,7 +387,7 @@ icon: "rocket"
 import { SandboxAgent } from "sandbox-agent";
 import { e2b } from "sandbox-agent/e2b";
 
-const sdk = await SandboxAgent.start({
+const client = await SandboxAgent.start({
   sandbox: e2b({
     create: {
       envs: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY },
@@ -245,7 +396,7 @@ const sdk = await SandboxAgent.start({
 });
 
 try {
-  const session = await sdk.createSession({ agent: "claude" });
+  const session = await client.createSession({ agent: "claude" });
 
   session.onEvent((event) => {
     console.log(`[${event.sender}]`, JSON.stringify(event.payload));
@@ -257,7 +408,7 @@ try {
 
   console.log("Done:", result.stopReason);
 } finally {
-  await sdk.destroySandbox();
+  await client.destroySandbox();
 }
 ```
 

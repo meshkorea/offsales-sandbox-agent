@@ -89,6 +89,7 @@ const HEALTH_WAIT_MIN_DELAY_MS = 500;
 const HEALTH_WAIT_MAX_DELAY_MS = 15_000;
 const HEALTH_WAIT_LOG_AFTER_MS = 5_000;
 const HEALTH_WAIT_LOG_EVERY_MS = 10_000;
+const HEALTH_WAIT_ENSURE_SERVER_AFTER_FAILURES = 3;
 
 export interface SandboxAgentHealthWaitOptions {
   timeoutMs?: number;
@@ -903,7 +904,7 @@ export class SandboxAgent {
     const createdSandbox = !existingSandbox;
 
     if (existingSandbox) {
-      await provider.wake?.(rawSandboxId);
+      await provider.ensureServer?.(rawSandboxId);
     }
 
     try {
@@ -2118,6 +2119,7 @@ export class SandboxAgent {
     let delayMs = HEALTH_WAIT_MIN_DELAY_MS;
     let nextLogAt = startedAt + HEALTH_WAIT_LOG_AFTER_MS;
     let lastError: unknown;
+    let consecutiveFailures = 0;
 
     while (!this.disposed && (deadline === undefined || Date.now() < deadline)) {
       throwIfAborted(signal);
@@ -2128,11 +2130,22 @@ export class SandboxAgent {
           return;
         }
         lastError = new Error(`Unexpected health response: ${JSON.stringify(health)}`);
+        consecutiveFailures++;
       } catch (error) {
         if (isAbortError(error)) {
           throw error;
         }
         lastError = error;
+        consecutiveFailures++;
+      }
+
+      if (consecutiveFailures >= HEALTH_WAIT_ENSURE_SERVER_AFTER_FAILURES && this.sandboxProvider?.ensureServer && this.sandboxProviderRawId) {
+        try {
+          await this.sandboxProvider.ensureServer(this.sandboxProviderRawId);
+        } catch {
+          // Best-effort; the next health check will determine if it worked.
+        }
+        consecutiveFailures = 0;
       }
 
       const now = Date.now();

@@ -66,5 +66,9 @@ export function modal(options: ModalProviderOptions = {}): SandboxProvider {
       }
       return tunnel.url;
     },
+    async ensureServer(sandboxId: string): Promise<void> {
+      const sb = await client.sandboxes.fromId(sandboxId);
+      sb.exec(["sandbox-agent", "server", "--no-token", "--host", "0.0.0.0", "--port", String(agentPort)]);
+    },
   };
 }

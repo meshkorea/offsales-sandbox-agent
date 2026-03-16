@@ -40,7 +40,11 @@ flowchart LR
 
 For the `local` provider, provisioning is a no-op and the server runs as a local subprocess.
 
-## Server endpoints
+### Server recovery
+
+If the server process stops, the SDK automatically calls the provider's `ensureServer()` after 3 consecutive health-check failures. Most built-in providers implement this. Custom providers can add `ensureServer(sandboxId)` to their `SandboxProvider` object.
+
+## Server HTTP API
 
 See the [HTTP API reference](/api-reference) for the full list of server endpoints.
 
@@ -54,6 +58,6 @@ sandbox-agent install-agent --all
 
 The `rivetdev/sandbox-agent:0.3.2-full` Docker image ships with all agents pre-installed.
 
-## Production topology
+## Production-ready agent orchestration
 
 For production deployments, see [Orchestration Architecture](/orchestration-architecture) for recommended topology, backend requirements, and session persistence patterns.

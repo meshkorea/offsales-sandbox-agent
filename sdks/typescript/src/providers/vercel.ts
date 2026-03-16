@@ -53,5 +53,13 @@ export function vercel(options: VercelProviderOptions = {}): SandboxProvider {
       const sandbox = await Sandbox.get({ sandboxId });
       return sandbox.domain(agentPort);
     },
+    async ensureServer(sandboxId: string): Promise<void> {
+      const sandbox = await Sandbox.get({ sandboxId });
+      await sandbox.runCommand({
+        cmd: "sandbox-agent",
+        args: ["server", "--no-token", "--host", "0.0.0.0", "--port", String(agentPort)],
+        detached: true,
+      });
+    },
   };
 }

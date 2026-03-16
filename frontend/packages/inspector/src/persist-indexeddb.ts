@@ -141,6 +141,8 @@ type SessionRow = {
   destroyedAt?: number;
   sandboxId?: string;
   sessionInit?: SessionRecord["sessionInit"];
+  configOptions?: SessionRecord["configOptions"];
+  modes?: SessionRecord["modes"];
 };
 
 type EventRow = {
@@ -163,6 +165,8 @@ function encodeSessionRow(session: SessionRecord): SessionRow {
     destroyedAt: session.destroyedAt,
     sandboxId: session.sandboxId,
     sessionInit: session.sessionInit,
+    configOptions: session.configOptions,
+    modes: session.modes,
   };
 }
 
@@ -176,6 +180,8 @@ function decodeSessionRow(row: SessionRow): SessionRecord {
     destroyedAt: row.destroyedAt,
     sandboxId: row.sandboxId,
     sessionInit: row.sessionInit,
+    configOptions: row.configOptions,
+    modes: row.modes,
   };
 }
 

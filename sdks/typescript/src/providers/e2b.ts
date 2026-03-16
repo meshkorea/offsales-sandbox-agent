@@ -53,5 +53,10 @@ export function e2b(options: E2BProviderOptions = {}): SandboxProvider {
       const sandbox = await Sandbox.connect(sandboxId, connectOpts as any);
       return `https://${sandbox.getHost(agentPort)}`;
     },
+    async ensureServer(sandboxId: string): Promise<void> {
+      const connectOpts = await resolveOptions(options.connect, sandboxId);
+      const sandbox = await Sandbox.connect(sandboxId, connectOpts as any);
+      await sandbox.commands.run(`sandbox-agent server --no-token --host 0.0.0.0 --port ${agentPort}`, { background: true, timeoutMs: 0 });
+    },
   };
 }

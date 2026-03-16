@@ -56,7 +56,7 @@ export function daytona(options: DaytonaProviderOptions = {}): SandboxProvider {
       const preview = await sandbox.getSignedPreviewUrl(agentPort, previewTtlSeconds);
       return typeof preview === "string" ? preview : preview.url;
     },
-    async wake(sandboxId: string): Promise<void> {
+    async ensureServer(sandboxId: string): Promise<void> {
       const sandbox = await client.get(sandboxId);
       if (!sandbox) {
         throw new Error(`daytona sandbox not found: ${sandboxId}`);

@@ -10,10 +10,18 @@ With persistence enabled, sessions can be restored after runtime/session loss. S
 
 Each driver stores:
 
-- `SessionRecord` (`id`, `agent`, `agentSessionId`, `lastConnectionId`, `createdAt`, optional `destroyedAt`, optional `sandboxId`, optional `sessionInit`)
+- `SessionRecord` (`id`, `agent`, `agentSessionId`, `lastConnectionId`, `createdAt`, optional `destroyedAt`, optional `sandboxId`, optional `sessionInit`, optional `configOptions`, optional `modes`)
 - `SessionEvent` (`id`, `eventIndex`, `sessionId`, `connectionId`, `sender`, `payload`, `createdAt`)
 
 ## Persistence drivers
+
+### Rivet
+
+Recommended for sandbox orchestration with actor state. See [Multiplayer](/multiplayer) for a full Rivet actor example with persistence in actor state.
+
+### IndexedDB (browser)
+
+Best for browser apps that should survive reloads. See the [Inspector source](https://github.com/rivet-dev/sandbox-agent/tree/main/frontend/packages/inspector/src/persist-indexeddb.ts) for a complete IndexedDB driver you can copy into your project.
 
 ### In-memory (built-in)
 
@@ -55,7 +63,7 @@ const sdk = await SandboxAgent.connect({
 });
 ```
 
-See the [full SQLite example](https://github.com/nichochar/sandbox-agent/tree/main/examples/persist-sqlite) for the complete driver implementation you can copy into your project.
+See the [full SQLite example](https://github.com/rivet-dev/sandbox-agent/tree/main/examples/persist-sqlite) for the complete driver implementation you can copy into your project.
 
 ### Postgres
 
@@ -80,15 +88,7 @@ const sdk = await SandboxAgent.connect({
 });
 ```
 
-See the [full Postgres example](https://github.com/nichochar/sandbox-agent/tree/main/examples/persist-postgres) for the complete driver implementation you can copy into your project.
-
-### IndexedDB (browser)
-
-Best for browser apps that should survive reloads. See the [Inspector source](https://github.com/nichochar/sandbox-agent/tree/main/frontend/packages/inspector/src/persist-indexeddb.ts) for a complete IndexedDB driver you can copy into your project.
-
-### Rivet
-
-Recommended for sandbox orchestration with actor state. See [Multiplayer](/multiplayer) for a full Rivet actor example with inline persistence.
+See the [full Postgres example](https://github.com/rivet-dev/sandbox-agent/tree/main/examples/persist-postgres) for the complete driver implementation you can copy into your project.
 
 ### Custom driver
 

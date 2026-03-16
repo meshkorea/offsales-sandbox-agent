@@ -49,5 +49,12 @@ export function computesdk(options: ComputeSdkProviderOptions = {}): SandboxProv
       if (!sandbox) throw new Error(`computesdk sandbox not found: ${sandboxId}`);
       return sandbox.getUrl({ port: agentPort });
     },
+    async ensureServer(sandboxId: string): Promise<void> {
+      const sandbox = await compute.sandbox.getById(sandboxId);
+      if (!sandbox) throw new Error(`computesdk sandbox not found: ${sandboxId}`);
+      await sandbox.runCommand(`sandbox-agent server --no-token --host 0.0.0.0 --port ${agentPort}`, {
+        background: true,
+      });
+    },
   };
 }
