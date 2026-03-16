@@ -8,8 +8,12 @@ import {
   type CancelNotification,
   type NewSessionRequest,
   type NewSessionResponse,
+  type PermissionOption,
+  type PermissionOptionKind,
   type PromptRequest,
   type PromptResponse,
+  type RequestPermissionRequest,
+  type RequestPermissionResponse,
   type SessionConfigOption,
   type SessionNotification,
   type SessionModeState,
@@ -78,9 +82,9 @@ const DEFAULT_BASE_URL = "http://sandbox-agent";
 const DEFAULT_REPLAY_MAX_EVENTS = 50;
 const DEFAULT_REPLAY_MAX_CHARS = 12_000;
 const EVENT_INDEX_SCAN_EVENTS_LIMIT = 500;
+const MAX_EVENT_INDEX_INSERT_RETRIES = 3;
 const SESSION_CANCEL_METHOD = "session/cancel";
-const MANUAL_CANCEL_ERROR =
-  "Manual session/cancel calls are not allowed. Use destroySession(sessionId) instead.";
+const MANUAL_CANCEL_ERROR = "Manual session/cancel calls are not allowed. Use destroySession(sessionId) instead.";
 const HEALTH_WAIT_MIN_DELAY_MS = 500;
 const HEALTH_WAIT_MAX_DELAY_MS = 15_000;
 const HEALTH_WAIT_LOG_AFTER_MS = 5_000;
@@ -142,8 +146,27 @@ export interface SessionSendOptions {
 }
 
 export type SessionEventListener = (event: SessionEvent) => void;
+export type PermissionReply = "once" | "always" | "reject";
+export type PermissionRequestListener = (request: SessionPermissionRequest) => void;
 export type ProcessLogListener = (entry: ProcessLogEntry) => void;
 export type ProcessLogFollowQuery = Omit<ProcessLogsQuery, "follow">;
+
+export interface SessionPermissionRequestOption {
+  optionId: string;
+  name: string;
+  kind: PermissionOptionKind;
+}
+
+export interface SessionPermissionRequest {
+  id: string;
+  createdAt: number;
+  sessionId: string;
+  agentSessionId: string;
+  availableReplies: PermissionReply[];
+  options: SessionPermissionRequestOption[];
+  toolCall: RequestPermissionRequest["toolCall"];
+  rawRequest: RequestPermissionRequest;
+}
 
 export interface AgentQueryOptions {
   config?: boolean;
@@ -186,9 +209,7 @@ export class UnsupportedSessionCategoryError extends Error {
   readonly availableCategories: string[];
 
   constructor(sessionId: string, category: string, availableCategories: string[]) {
-    super(
-      `Session '${sessionId}' does not support category '${category}'. Available categories: ${availableCategories.join(", ") || "(none)"}`,
-    );
+    super(`Session '${sessionId}' does not support category '${category}'. Available categories: ${availableCategories.join(", ") || "(none)"}`);
     this.name = "UnsupportedSessionCategoryError";
     this.sessionId = sessionId;
     this.category = category;
@@ -203,13 +224,7 @@ export class UnsupportedSessionValueError extends Error {
   readonly requestedValue: string;
   readonly allowedValues: string[];
 
-  constructor(
-    sessionId: string,
-    category: string,
-    configId: string,
-    requestedValue: string,
-    allowedValues: string[],
-  ) {
+  constructor(sessionId: string, category: string, configId: string, requestedValue: string, allowedValues: string[]) {
     super(
       `Session '${sessionId}' does not support value '${requestedValue}' for category '${category}' (configId='${configId}'). Allowed values: ${allowedValues.join(", ") || "(none)"}`,
     );
@@ -228,13 +243,25 @@ export class UnsupportedSessionConfigOptionError extends Error {
   readonly availableConfigIds: string[];
 
   constructor(sessionId: string, configId: string, availableConfigIds: string[]) {
-    super(
-      `Session '${sessionId}' does not expose config option '${configId}'. Available configIds: ${availableConfigIds.join(", ") || "(none)"}`,
-    );
+    super(`Session '${sessionId}' does not expose config option '${configId}'. Available configIds: ${availableConfigIds.join(", ") || "(none)"}`);
     this.name = "UnsupportedSessionConfigOptionError";
     this.sessionId = sessionId;
     this.configId = configId;
     this.availableConfigIds = availableConfigIds;
+  }
+}
+
+export class UnsupportedPermissionReplyError extends Error {
+  readonly permissionId: string;
+  readonly requestedReply: PermissionReply;
+  readonly availableReplies: PermissionReply[];
+
+  constructor(permissionId: string, requestedReply: PermissionReply, availableReplies: PermissionReply[]) {
+    super(`Permission '${permissionId}' does not support reply '${requestedReply}'. Available replies: ${availableReplies.join(", ") || "(none)"}`);
+    this.name = "UnsupportedPermissionReplyError";
+    this.permissionId = permissionId;
+    this.requestedReply = requestedReply;
+    this.availableReplies = availableReplies;
   }
 }
 
@@ -280,14 +307,14 @@ export class Session {
     return this;
   }
 
-  async send(method: string, params: Record<string, unknown> = {}, options: SessionSendOptions = {}): Promise<unknown> {
-    const updated = await this.sandbox.sendSessionMethod(this.id, method, params, options);
+  async rawSend(method: string, params: Record<string, unknown> = {}, options: SessionSendOptions = {}): Promise<unknown> {
+    const updated = await this.sandbox.rawSendSessionMethod(this.id, method, params, options);
     this.apply(updated.session.toRecord());
     return updated.response;
   }
 
   async prompt(prompt: PromptRequest["prompt"]): Promise<PromptResponse> {
-    const response = await this.send("session/prompt", { prompt });
+    const response = await this.rawSend("session/prompt", { prompt });
     return response as PromptResponse;
   }
 
@@ -327,6 +354,18 @@ export class Session {
     return this.sandbox.onSessionEvent(this.id, listener);
   }
 
+  onPermissionRequest(listener: PermissionRequestListener): () => void {
+    return this.sandbox.onPermissionRequest(this.id, listener);
+  }
+
+  async respondPermission(permissionId: string, reply: PermissionReply): Promise<void> {
+    await this.sandbox.respondPermission(permissionId, reply);
+  }
+
+  async rawRespondPermission(permissionId: string, response: RequestPermissionResponse): Promise<void> {
+    await this.sandbox.rawRespondPermission(permissionId, response);
+  }
+
   toRecord(): SessionRecord {
     return { ...this.record };
   }
@@ -355,22 +394,30 @@ export class LiveAcpConnection {
     direction: AcpEnvelopeDirection,
     localSessionId: string | null,
   ) => void;
+  private readonly onPermissionRequest: (
+    connection: LiveAcpConnection,
+    localSessionId: string,
+    agentSessionId: string,
+    request: RequestPermissionRequest,
+  ) => Promise<RequestPermissionResponse>;
 
   private constructor(
     agent: string,
     connectionId: string,
     acp: AcpHttpClient,
-    onObservedEnvelope: (
+    onObservedEnvelope: (connection: LiveAcpConnection, envelope: AnyMessage, direction: AcpEnvelopeDirection, localSessionId: string | null) => void,
+    onPermissionRequest: (
       connection: LiveAcpConnection,
-      envelope: AnyMessage,
-      direction: AcpEnvelopeDirection,
-      localSessionId: string | null,
-    ) => void,
+      localSessionId: string,
+      agentSessionId: string,
+      request: RequestPermissionRequest,
+    ) => Promise<RequestPermissionResponse>,
   ) {
     this.agent = agent;
     this.connectionId = connectionId;
     this.acp = acp;
     this.onObservedEnvelope = onObservedEnvelope;
+    this.onPermissionRequest = onPermissionRequest;
   }
 
   static async create(options: {
@@ -380,12 +427,13 @@ export class LiveAcpConnection {
     headers?: HeadersInit;
     agent: string;
     serverId: string;
-    onObservedEnvelope: (
+    onObservedEnvelope: (connection: LiveAcpConnection, envelope: AnyMessage, direction: AcpEnvelopeDirection, localSessionId: string | null) => void;
+    onPermissionRequest: (
       connection: LiveAcpConnection,
-      envelope: AnyMessage,
-      direction: AcpEnvelopeDirection,
-      localSessionId: string | null,
-    ) => void;
+      localSessionId: string,
+      agentSessionId: string,
+      request: RequestPermissionRequest,
+    ) => Promise<RequestPermissionResponse>;
   }): Promise<LiveAcpConnection> {
     const connectionId = randomId();
 
@@ -400,6 +448,12 @@ export class LiveAcpConnection {
         bootstrapQuery: { agent: options.agent },
       },
       client: {
+        requestPermission: async (request: RequestPermissionRequest) => {
+          if (!live) {
+            return cancelledPermissionResponse();
+          }
+          return live.handlePermissionRequest(request);
+        },
         sessionUpdate: async (_notification: SessionNotification) => {
           // Session updates are observed via envelope persistence.
         },
@@ -416,7 +470,7 @@ export class LiveAcpConnection {
       },
     });
 
-    live = new LiveAcpConnection(options.agent, connectionId, acp, options.onObservedEnvelope);
+    live = new LiveAcpConnection(options.agent, connectionId, acp, options.onObservedEnvelope, options.onPermissionRequest);
 
     const initResult = await acp.initialize({
       protocolVersion: PROTOCOL_VERSION,
@@ -459,10 +513,7 @@ export class LiveAcpConnection {
     this.pendingReplayByLocalSessionId.set(localSessionId, replayText);
   }
 
-  async createRemoteSession(
-    localSessionId: string,
-    sessionInit: Omit<NewSessionRequest, "_meta">,
-  ): Promise<NewSessionResponse> {
+  async createRemoteSession(localSessionId: string, sessionInit: Omit<NewSessionRequest, "_meta">): Promise<NewSessionResponse> {
     const createStartedAt = Date.now();
     this.pendingNewSessionLocals.push(localSessionId);
 
@@ -484,12 +535,7 @@ export class LiveAcpConnection {
     }
   }
 
-  async sendSessionMethod(
-    localSessionId: string,
-    method: string,
-    params: Record<string, unknown>,
-    options: SessionSendOptions,
-  ): Promise<unknown> {
+  async sendSessionMethod(localSessionId: string, method: string, params: Record<string, unknown>, options: SessionSendOptions): Promise<unknown> {
     const agentSessionId = this.sessionByLocalId.get(localSessionId);
     if (!agentSessionId) {
       throw new Error(`session '${localSessionId}' is not bound to live ACP connection '${this.connectionId}'`);
@@ -548,6 +594,16 @@ export class LiveAcpConnection {
       code: typeof params.code === "number" ? params.code : null,
     };
     this.lastAdapterExitAt = Date.now();
+  }
+
+  private async handlePermissionRequest(request: RequestPermissionRequest): Promise<RequestPermissionResponse> {
+    const agentSessionId = request.sessionId;
+    const localSessionId = this.localByAgentSessionId.get(agentSessionId);
+    if (!localSessionId) {
+      return cancelledPermissionResponse();
+    }
+
+    return this.onPermissionRequest(this, localSessionId, agentSessionId, clonePermissionRequest(request));
   }
 
   private resolveSessionId(envelope: AnyMessage, direction: AcpEnvelopeDirection): string | null {
@@ -782,8 +838,11 @@ export class SandboxAgent {
   private readonly pendingLiveConnections = new Map<string, Promise<LiveAcpConnection>>();
   private readonly sessionHandles = new Map<string, Session>();
   private readonly eventListeners = new Map<string, Set<SessionEventListener>>();
+  private readonly permissionListeners = new Map<string, Set<PermissionRequestListener>>();
+  private readonly pendingPermissionRequests = new Map<string, PendingPermissionRequestState>();
   private readonly nextSessionEventIndexBySession = new Map<string, number>();
   private readonly seedSessionEventIndexBySession = new Map<string, Promise<void>>();
+  private readonly pendingObservedEnvelopePersistenceBySession = new Map<string, Promise<void>>();
 
   constructor(options: SandboxAgentConnectOptions) {
     const baseUrl = options.baseUrl?.trim();
@@ -840,10 +899,16 @@ export class SandboxAgent {
     this.disposed = true;
     this.healthWaitAbortController.abort(createAbortError("SandboxAgent was disposed."));
 
+    for (const [permissionId, pending] of this.pendingPermissionRequests) {
+      this.pendingPermissionRequests.delete(permissionId);
+      pending.resolve(cancelledPermissionResponse());
+    }
+
     const connections = [...this.liveConnections.values()];
     this.liveConnections.clear();
     const pending = [...this.pendingLiveConnections.values()];
     this.pendingLiveConnections.clear();
+    this.pendingObservedEnvelopePersistenceBySession.clear();
 
     const pendingSettled = await Promise.allSettled(pending);
     for (const item of pendingSettled) {
@@ -907,7 +972,6 @@ export class SandboxAgent {
     };
 
     await this.persist.updateSession(record);
-    this.nextSessionEventIndexBySession.set(record.id, 1);
     live.bindSession(record.id, record.agentSessionId);
     let session = this.upsertSessionHandle(record);
 
@@ -984,6 +1048,8 @@ export class SandboxAgent {
   }
 
   async destroySession(id: string): Promise<Session> {
+    this.cancelPendingPermissionsForSession(id);
+
     try {
       await this.sendSessionMethodInternal(id, SESSION_CANCEL_METHOD, {}, {}, true);
     } catch {
@@ -1000,10 +1066,7 @@ export class SandboxAgent {
     return this.upsertSessionHandle(updated);
   }
 
-  async setSessionMode(
-    sessionId: string,
-    modeId: string,
-  ): Promise<{ session: Session; response: SetSessionModeResponse | void }> {
+  async setSessionMode(sessionId: string, modeId: string): Promise<{ session: Session; response: SetSessionModeResponse | void }> {
     const mode = modeId.trim();
     if (!mode) {
       throw new Error("setSessionMode requires a non-empty modeId");
@@ -1016,13 +1079,10 @@ export class SandboxAgent {
     }
 
     try {
-      return (await this.sendSessionMethodInternal(
-        sessionId,
-        "session/set_mode",
-        { modeId: mode },
-        {},
-        false,
-      )) as { session: Session; response: SetSessionModeResponse | void };
+      return (await this.sendSessionMethodInternal(sessionId, "session/set_mode", { modeId: mode }, {}, false)) as {
+        session: Session;
+        response: SetSessionModeResponse | void;
+      };
     } catch (error) {
       if (!(error instanceof AcpRpcError) || error.code !== -32601) {
         throw error;
@@ -1031,11 +1091,7 @@ export class SandboxAgent {
     }
   }
 
-  async setSessionConfigOption(
-    sessionId: string,
-    configId: string,
-    value: string,
-  ): Promise<{ session: Session; response: SetSessionConfigOptionResponse }> {
+  async setSessionConfigOption(sessionId: string, configId: string, value: string): Promise<{ session: Session; response: SetSessionConfigOptionResponse }> {
     const resolvedConfigId = configId.trim();
     if (!resolvedConfigId) {
       throw new Error("setSessionConfigOption requires a non-empty configId");
@@ -1057,13 +1113,7 @@ export class SandboxAgent {
 
     const allowedValues = extractConfigValues(option);
     if (allowedValues.length > 0 && !allowedValues.includes(resolvedValue)) {
-      throw new UnsupportedSessionValueError(
-        sessionId,
-        option.category ?? "uncategorized",
-        option.id,
-        resolvedValue,
-        allowedValues,
-      );
+      throw new UnsupportedSessionValueError(sessionId, option.category ?? "uncategorized", option.id, resolvedValue, allowedValues);
     }
 
     return (await this.sendSessionMethodInternal(
@@ -1078,17 +1128,11 @@ export class SandboxAgent {
     )) as { session: Session; response: SetSessionConfigOptionResponse };
   }
 
-  async setSessionModel(
-    sessionId: string,
-    model: string,
-  ): Promise<{ session: Session; response: SetSessionConfigOptionResponse }> {
+  async setSessionModel(sessionId: string, model: string): Promise<{ session: Session; response: SetSessionConfigOptionResponse }> {
     return this.setSessionCategoryValue(sessionId, "model", model);
   }
 
-  async setSessionThoughtLevel(
-    sessionId: string,
-    thoughtLevel: string,
-  ): Promise<{ session: Session; response: SetSessionConfigOptionResponse }> {
+  async setSessionThoughtLevel(sessionId: string, thoughtLevel: string): Promise<{ session: Session; response: SetSessionConfigOptionResponse }> {
     return this.setSessionCategoryValue(sessionId, "thought_level", thoughtLevel);
   }
 
@@ -1100,7 +1144,26 @@ export class SandboxAgent {
 
   async getSessionModes(sessionId: string): Promise<SessionModeState | null> {
     const record = await this.requireSessionRecord(sessionId);
-    return cloneModes(record.modes);
+    if (record.modes && record.modes.availableModes.length > 0) {
+      return cloneModes(record.modes);
+    }
+
+    const hydrated = await this.hydrateSessionConfigOptions(record.id, record);
+    if (hydrated.modes && hydrated.modes.availableModes.length > 0) {
+      return cloneModes(hydrated.modes);
+    }
+
+    const derived = deriveModesFromConfigOptions(hydrated.configOptions);
+    if (!derived) {
+      return cloneModes(hydrated.modes);
+    }
+
+    const updated: SessionRecord = {
+      ...hydrated,
+      modes: derived,
+    };
+    await this.persist.updateSession(updated);
+    return cloneModes(derived);
   }
 
   private async setSessionCategoryValue(
@@ -1122,13 +1185,7 @@ export class SandboxAgent {
 
     const allowedValues = extractConfigValues(option);
     if (allowedValues.length > 0 && !allowedValues.includes(resolvedValue)) {
-      throw new UnsupportedSessionValueError(
-        sessionId,
-        category,
-        option.id,
-        resolvedValue,
-        allowedValues,
-      );
+      throw new UnsupportedSessionValueError(sessionId, category, option.id, resolvedValue, allowedValues);
     }
 
     return this.setSessionConfigOption(sessionId, option.id, resolvedValue);
@@ -1140,22 +1197,32 @@ export class SandboxAgent {
     }
 
     const info = await this.getAgent(snapshot.agent, { config: true });
-    const configOptions = normalizeSessionConfigOptions(info.configOptions) ?? [];
+    let configOptions = normalizeSessionConfigOptions(info.configOptions) ?? [];
     // Re-read the record from persistence so we merge against the latest
     // state, not a stale snapshot captured before the network await.
     const record = await this.persist.getSession(sessionId);
     if (!record) {
       return { ...snapshot, configOptions };
     }
+
+    const currentModeId = record.modes?.currentModeId;
+    if (currentModeId) {
+      const modeOption = findConfigOptionByCategory(configOptions, "mode");
+      if (modeOption) {
+        configOptions = applyConfigOptionValue(configOptions, modeOption.id, currentModeId) ?? configOptions;
+      }
+    }
+
     const updated: SessionRecord = {
       ...record,
       configOptions,
+      modes: deriveModesFromConfigOptions(configOptions) ?? record.modes,
     };
     await this.persist.updateSession(updated);
     return updated;
   }
 
-  async sendSessionMethod(
+  async rawSendSessionMethod(
     sessionId: string,
     method: string,
     params: Record<string, unknown>,
@@ -1196,12 +1263,7 @@ export class SandboxAgent {
     };
   }
 
-  private async persistSessionStateFromMethod(
-    sessionId: string,
-    method: string,
-    params: Record<string, unknown>,
-    response: unknown,
-  ): Promise<void> {
+  private async persistSessionStateFromMethod(sessionId: string, method: string, params: Record<string, unknown>, response: unknown): Promise<void> {
     // Re-read the record from persistence so we merge against the latest
     // state, not a stale snapshot captured before the RPC await.
     const record = await this.persist.getSession(sessionId);
@@ -1290,6 +1352,47 @@ export class SandboxAgent {
     };
   }
 
+  onPermissionRequest(sessionId: string, listener: PermissionRequestListener): () => void {
+    const listeners = this.permissionListeners.get(sessionId) ?? new Set<PermissionRequestListener>();
+    listeners.add(listener);
+    this.permissionListeners.set(sessionId, listeners);
+
+    return () => {
+      const set = this.permissionListeners.get(sessionId);
+      if (!set) {
+        return;
+      }
+      set.delete(listener);
+      if (set.size === 0) {
+        this.permissionListeners.delete(sessionId);
+      }
+    };
+  }
+
+  async respondPermission(permissionId: string, reply: PermissionReply): Promise<void> {
+    const pending = this.pendingPermissionRequests.get(permissionId);
+    if (!pending) {
+      throw new Error(`permission '${permissionId}' not found`);
+    }
+
+    let response: RequestPermissionResponse;
+    try {
+      response = permissionReplyToResponse(permissionId, pending.request, reply);
+    } catch (error) {
+      pending.reject(error instanceof Error ? error : new Error(String(error)));
+      this.pendingPermissionRequests.delete(permissionId);
+      throw error;
+    }
+    this.resolvePendingPermission(permissionId, response);
+  }
+
+  async rawRespondPermission(permissionId: string, response: RequestPermissionResponse): Promise<void> {
+    if (!this.pendingPermissionRequests.has(permissionId)) {
+      throw new Error(`permission '${permissionId}' not found`);
+    }
+    this.resolvePendingPermission(permissionId, clonePermissionResponse(response));
+  }
+
   async getHealth(): Promise<HealthResponse> {
     return this.requestHealth();
   }
@@ -1301,9 +1404,22 @@ export class SandboxAgent {
   }
 
   async getAgent(agent: string, options?: AgentQueryOptions): Promise<AgentInfo> {
-    return this.requestJson("GET", `${API_PREFIX}/agents/${encodeURIComponent(agent)}`, {
-      query: toAgentQuery(options),
-    });
+    try {
+      return await this.requestJson("GET", `${API_PREFIX}/agents/${encodeURIComponent(agent)}`, {
+        query: toAgentQuery(options),
+      });
+    } catch (error) {
+      if (!(error instanceof SandboxAgentError) || error.status !== 404) {
+        throw error;
+      }
+
+      const listed = await this.listAgents(options);
+      const match = listed.agents.find((entry) => entry.id === agent);
+      if (match) {
+        return match;
+      }
+      throw error;
+    }
   }
 
   async installAgent(agent: string, request: AgentInstallRequest = {}): Promise<AgentInstallResponse> {
@@ -1443,21 +1559,13 @@ export class SandboxAgent {
     });
   }
 
-  async followProcessLogs(
-    id: string,
-    listener: ProcessLogListener,
-    query: ProcessLogFollowQuery = {},
-  ): Promise<ProcessLogSubscription> {
+  async followProcessLogs(id: string, listener: ProcessLogListener, query: ProcessLogFollowQuery = {}): Promise<ProcessLogSubscription> {
     const abortController = new AbortController();
-    const response = await this.requestRaw(
-      "GET",
-      `${API_PREFIX}/processes/${encodeURIComponent(id)}/logs`,
-      {
-        query: { ...query, follow: true },
-        accept: "text/event-stream",
-        signal: abortController.signal,
-      },
-    );
+    const response = await this.requestRaw("GET", `${API_PREFIX}/processes/${encodeURIComponent(id)}/logs`, {
+      query: { ...query, follow: true },
+      accept: "text/event-stream",
+      signal: abortController.signal,
+    });
 
     if (!response.body) {
       abortController.abort();
@@ -1478,23 +1586,13 @@ export class SandboxAgent {
     });
   }
 
-  async resizeProcessTerminal(
-    id: string,
-    request: ProcessTerminalResizeRequest,
-  ): Promise<ProcessTerminalResizeResponse> {
-    return this.requestJson(
-      "POST",
-      `${API_PREFIX}/processes/${encodeURIComponent(id)}/terminal/resize`,
-      {
-        body: request,
-      },
-    );
+  async resizeProcessTerminal(id: string, request: ProcessTerminalResizeRequest): Promise<ProcessTerminalResizeResponse> {
+    return this.requestJson("POST", `${API_PREFIX}/processes/${encodeURIComponent(id)}/terminal/resize`, {
+      body: request,
+    });
   }
 
-  buildProcessTerminalWebSocketUrl(
-    id: string,
-    options: ProcessTerminalWebSocketUrlOptions = {},
-  ): string {
+  buildProcessTerminalWebSocketUrl(id: string, options: ProcessTerminalWebSocketUrlOptions = {}): string {
     return toWebSocketUrl(
       this.buildUrl(`${API_PREFIX}/processes/${encodeURIComponent(id)}/terminal/ws`, {
         access_token: options.accessToken ?? this.token,
@@ -1502,10 +1600,7 @@ export class SandboxAgent {
     );
   }
 
-  connectProcessTerminalWebSocket(
-    id: string,
-    options: ProcessTerminalConnectOptions = {},
-  ): WebSocket {
+  connectProcessTerminalWebSocket(id: string, options: ProcessTerminalConnectOptions = {}): WebSocket {
     const WebSocketCtor = options.WebSocket ?? globalThis.WebSocket;
     if (!WebSocketCtor) {
       throw new Error("WebSocket API is not available; provide a WebSocket implementation.");
@@ -1519,10 +1614,7 @@ export class SandboxAgent {
     );
   }
 
-  connectProcessTerminal(
-    id: string,
-    options: ProcessTerminalSessionOptions = {},
-  ): ProcessTerminalSession {
+  connectProcessTerminal(id: string, options: ProcessTerminalSessionOptions = {}): ProcessTerminalSession {
     return new ProcessTerminalSession(this.connectProcessTerminalWebSocket(id, options));
   }
 
@@ -1549,8 +1641,12 @@ export class SandboxAgent {
         agent,
         serverId,
         onObservedEnvelope: (connection, envelope, direction, localSessionId) => {
-          void this.persistObservedEnvelope(connection, envelope, direction, localSessionId);
+          void this.enqueueObservedEnvelopePersistence(connection, envelope, direction, localSessionId).catch((error) => {
+            console.error("Failed to persist observed sandbox-agent envelope", error);
+          });
         },
+        onPermissionRequest: async (connection, localSessionId, agentSessionId, request) =>
+          this.enqueuePermissionRequest(connection, localSessionId, agentSessionId, request),
       });
 
       const raced = this.liveConnections.get(agent);
@@ -1583,17 +1679,32 @@ export class SandboxAgent {
       return;
     }
 
-    const event: SessionEvent = {
-      id: randomId(),
-      eventIndex: await this.allocateSessionEventIndex(localSessionId),
-      sessionId: localSessionId,
-      createdAt: nowMs(),
-      connectionId: connection.connectionId,
-      sender: direction === "outbound" ? "client" : "agent",
-      payload: cloneEnvelope(envelope),
-    };
+    let event: SessionEvent | null = null;
+    for (let attempt = 0; attempt < MAX_EVENT_INDEX_INSERT_RETRIES; attempt += 1) {
+      event = {
+        id: randomId(),
+        eventIndex: await this.allocateSessionEventIndex(localSessionId),
+        sessionId: localSessionId,
+        createdAt: nowMs(),
+        connectionId: connection.connectionId,
+        sender: direction === "outbound" ? "client" : "agent",
+        payload: cloneEnvelope(envelope),
+      };
 
-    await this.persist.insertEvent(event);
+      try {
+        await this.persist.insertEvent(event);
+        break;
+      } catch (error) {
+        if (!isSessionEventIndexConflict(error) || attempt === MAX_EVENT_INDEX_INSERT_RETRIES - 1) {
+          throw error;
+        }
+      }
+    }
+
+    if (!event) {
+      return;
+    }
+
     await this.persistSessionStateFromEvent(localSessionId, envelope, direction);
 
     const listeners = this.eventListeners.get(localSessionId);
@@ -1606,11 +1717,35 @@ export class SandboxAgent {
     }
   }
 
-  private async persistSessionStateFromEvent(
-    sessionId: string,
+  private async enqueueObservedEnvelopePersistence(
+    connection: LiveAcpConnection,
     envelope: AnyMessage,
     direction: AcpEnvelopeDirection,
+    localSessionId: string | null,
   ): Promise<void> {
+    if (!localSessionId) {
+      return;
+    }
+
+    const previous = this.pendingObservedEnvelopePersistenceBySession.get(localSessionId) ?? Promise.resolve();
+    const current = previous
+      .catch(() => {
+        // Keep later envelope persistence moving even if an earlier write failed.
+      })
+      .then(() => this.persistObservedEnvelope(connection, envelope, direction, localSessionId));
+
+    this.pendingObservedEnvelopePersistenceBySession.set(localSessionId, current);
+
+    try {
+      await current;
+    } finally {
+      if (this.pendingObservedEnvelopePersistenceBySession.get(localSessionId) === current) {
+        this.pendingObservedEnvelopePersistenceBySession.delete(localSessionId);
+      }
+    }
+  }
+
+  private async persistSessionStateFromEvent(sessionId: string, envelope: AnyMessage, direction: AcpEnvelopeDirection): Promise<void> {
     if (direction !== "inbound") {
       return;
     }
@@ -1753,6 +1888,69 @@ export class SandboxAgent {
     return record;
   }
 
+  private async enqueuePermissionRequest(
+    _connection: LiveAcpConnection,
+    localSessionId: string,
+    agentSessionId: string,
+    request: RequestPermissionRequest,
+  ): Promise<RequestPermissionResponse> {
+    const listeners = this.permissionListeners.get(localSessionId);
+    if (!listeners || listeners.size === 0) {
+      return cancelledPermissionResponse();
+    }
+
+    const pendingId = randomId();
+    const permissionRequest: SessionPermissionRequest = {
+      id: pendingId,
+      createdAt: nowMs(),
+      sessionId: localSessionId,
+      agentSessionId,
+      availableReplies: availablePermissionReplies(request.options),
+      options: request.options.map(clonePermissionOption),
+      toolCall: clonePermissionToolCall(request.toolCall),
+      rawRequest: clonePermissionRequest(request),
+    };
+
+    return await new Promise<RequestPermissionResponse>((resolve, reject) => {
+      this.pendingPermissionRequests.set(pendingId, {
+        id: pendingId,
+        sessionId: localSessionId,
+        request: clonePermissionRequest(request),
+        resolve,
+        reject,
+      });
+
+      try {
+        for (const listener of listeners) {
+          listener(permissionRequest);
+        }
+      } catch (error) {
+        this.pendingPermissionRequests.delete(pendingId);
+        reject(error);
+      }
+    });
+  }
+
+  private resolvePendingPermission(permissionId: string, response: RequestPermissionResponse): void {
+    const pending = this.pendingPermissionRequests.get(permissionId);
+    if (!pending) {
+      throw new Error(`permission '${permissionId}' not found`);
+    }
+
+    this.pendingPermissionRequests.delete(permissionId);
+    pending.resolve(response);
+  }
+
+  private cancelPendingPermissionsForSession(sessionId: string): void {
+    for (const [permissionId, pending] of this.pendingPermissionRequests) {
+      if (pending.sessionId !== sessionId) {
+        continue;
+      }
+      this.pendingPermissionRequests.delete(permissionId);
+      pending.resolve(cancelledPermissionResponse());
+    }
+  }
+
   private async requestJson<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
     const response = await this.requestRaw(method, path, {
       query: options.query,
@@ -1835,12 +2033,9 @@ export class SandboxAgent {
   }
 
   private async runHealthWait(): Promise<void> {
-    const signal = this.healthWait.enabled
-      ? anyAbortSignal([this.healthWait.signal, this.healthWaitAbortController.signal])
-      : undefined;
+    const signal = this.healthWait.enabled ? anyAbortSignal([this.healthWait.signal, this.healthWaitAbortController.signal]) : undefined;
     const startedAt = Date.now();
-    const deadline =
-      typeof this.healthWait.timeoutMs === "number" ? startedAt + this.healthWait.timeoutMs : undefined;
+    const deadline = typeof this.healthWait.timeoutMs === "number" ? startedAt + this.healthWait.timeoutMs : undefined;
 
     let delayMs = HEALTH_WAIT_MIN_DELAY_MS;
     let nextLogAt = startedAt + HEALTH_WAIT_LOG_AFTER_MS;
@@ -1865,9 +2060,7 @@ export class SandboxAgent {
       const now = Date.now();
       if (now >= nextLogAt) {
         const details = formatHealthWaitError(lastError);
-        console.warn(
-          `sandbox-agent at ${this.baseUrl} is not healthy after ${now - startedAt}ms; still waiting (${details})`,
-        );
+        console.warn(`sandbox-agent at ${this.baseUrl} is not healthy after ${now - startedAt}ms; still waiting (${details})`);
         nextLogAt = now + HEALTH_WAIT_LOG_EVERY_MS;
       }
 
@@ -1879,9 +2072,7 @@ export class SandboxAgent {
       return;
     }
 
-    throw new Error(
-      `Timed out waiting for sandbox-agent health after ${this.healthWait.timeoutMs}ms (${formatHealthWaitError(lastError)})`,
-    );
+    throw new Error(`Timed out waiting for sandbox-agent health after ${this.healthWait.timeoutMs}ms (${formatHealthWaitError(lastError)})`);
   }
 
   private buildHeaders(extra?: HeadersInit): Headers {
@@ -1922,6 +2113,22 @@ export class SandboxAgent {
   }
 }
 
+function isSessionEventIndexConflict(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return /UNIQUE constraint failed: .*session_id, .*event_index/.test(error.message);
+}
+
+type PendingPermissionRequestState = {
+  id: string;
+  sessionId: string;
+  request: RequestPermissionRequest;
+  resolve: (response: RequestPermissionResponse) => void;
+  reject: (reason?: unknown) => void;
+};
+
 type QueryValue = string | number | boolean | null | undefined;
 
 type RequestOptions = {
@@ -1935,9 +2142,7 @@ type RequestOptions = {
   skipReadyWait?: boolean;
 };
 
-type NormalizedHealthWaitOptions =
-  | { enabled: false; timeoutMs?: undefined; signal?: undefined }
-  | { enabled: true; timeoutMs?: number; signal?: AbortSignal };
+type NormalizedHealthWaitOptions = { enabled: false; timeoutMs?: undefined; signal?: undefined } | { enabled: true; timeoutMs?: number; signal?: AbortSignal };
 
 function parseProcessTerminalServerFrame(payload: string): ProcessTerminalServerFrame | null {
   try {
@@ -1950,12 +2155,7 @@ function parseProcessTerminalServerFrame(payload: string): ProcessTerminalServer
       return parsed as ProcessTerminalServerFrame;
     }
 
-    if (
-      parsed.type === "exit" &&
-      (parsed.exitCode === undefined ||
-        parsed.exitCode === null ||
-        typeof parsed.exitCode === "number")
-    ) {
+    if (parsed.type === "exit" && (parsed.exitCode === undefined || parsed.exitCode === null || typeof parsed.exitCode === "number")) {
       return parsed as ProcessTerminalServerFrame;
     }
 
@@ -1969,9 +2169,7 @@ function parseProcessTerminalServerFrame(payload: string): ProcessTerminalServer
   return null;
 }
 
-function encodeTerminalInput(
-  data: string | ArrayBuffer | ArrayBufferView,
-): { data: string; encoding?: "base64" } {
+function encodeTerminalInput(data: string | ArrayBuffer | ArrayBufferView): { data: string; encoding?: "base64" } {
   if (typeof data === "string") {
     return { data };
   }
@@ -2032,12 +2230,7 @@ async function autoAuthenticate(acp: AcpHttpClient, methods: AuthMethod[]): Prom
   // Only attempt env-var-based methods that the server process can satisfy
   // automatically.  Interactive methods (e.g. "claude-login") cannot be
   // fulfilled programmatically and must be skipped.
-  const envBased = methods.find(
-    (m) =>
-      m.id === "codex-api-key" ||
-      m.id === "openai-api-key" ||
-      m.id === "anthropic-api-key",
-  );
+  const envBased = methods.find((m) => m.id === "codex-api-key" || m.id === "openai-api-key" || m.id === "anthropic-api-key");
 
   if (!envBased) {
     return;
@@ -2062,9 +2255,7 @@ function toAgentQuery(options: AgentQueryOptions | undefined): Record<string, Qu
   };
 }
 
-function normalizeSessionInit(
-  value: Omit<NewSessionRequest, "_meta"> | undefined,
-): Omit<NewSessionRequest, "_meta"> {
+function normalizeSessionInit(value: Omit<NewSessionRequest, "_meta"> | undefined): Omit<NewSessionRequest, "_meta"> {
   if (!value) {
     return {
       cwd: defaultCwd(),
@@ -2100,8 +2291,7 @@ function buildReplayText(events: SessionEvent[], maxChars: number): string | nul
     return null;
   }
 
-  const prefix =
-    "Previous session history is replayed below as JSON-RPC envelopes. Use it as context before responding to the latest user prompt.\n";
+  const prefix = "Previous session history is replayed below as JSON-RPC envelopes. Use it as context before responding to the latest user prompt.\n";
   let text = prefix;
 
   for (const event of events) {
@@ -2166,6 +2356,26 @@ function cloneEnvelope(envelope: AnyMessage): AnyMessage {
   return JSON.parse(JSON.stringify(envelope)) as AnyMessage;
 }
 
+function clonePermissionRequest(request: RequestPermissionRequest): RequestPermissionRequest {
+  return JSON.parse(JSON.stringify(request)) as RequestPermissionRequest;
+}
+
+function clonePermissionResponse(response: RequestPermissionResponse): RequestPermissionResponse {
+  return JSON.parse(JSON.stringify(response)) as RequestPermissionResponse;
+}
+
+function clonePermissionOption(option: PermissionOption): SessionPermissionRequestOption {
+  return {
+    optionId: option.optionId,
+    name: option.name,
+    kind: option.kind,
+  };
+}
+
+function clonePermissionToolCall(toolCall: RequestPermissionRequest["toolCall"]): RequestPermissionRequest["toolCall"] {
+  return JSON.parse(JSON.stringify(toolCall)) as RequestPermissionRequest["toolCall"];
+}
+
 function isRecord(value: unknown): value is Record<string, any> {
   return typeof value === "object" && value !== null;
 }
@@ -2195,10 +2405,7 @@ function normalizePositiveInt(value: number | undefined, fallback: number): numb
   return Math.floor(value as number);
 }
 
-function normalizeHealthWaitOptions(
-  value: boolean | SandboxAgentHealthWaitOptions | undefined,
-  signal: AbortSignal | undefined,
-): NormalizedHealthWaitOptions {
+function normalizeHealthWaitOptions(value: boolean | SandboxAgentHealthWaitOptions | undefined, signal: AbortSignal | undefined): NormalizedHealthWaitOptions {
   if (value === false) {
     return { enabled: false };
   }
@@ -2207,10 +2414,7 @@ function normalizeHealthWaitOptions(
     return { enabled: true, signal };
   }
 
-  const timeoutMs =
-    typeof value.timeoutMs === "number" && Number.isFinite(value.timeoutMs) && value.timeoutMs > 0
-      ? Math.floor(value.timeoutMs)
-      : undefined;
+  const timeoutMs = typeof value.timeoutMs === "number" && Number.isFinite(value.timeoutMs) && value.timeoutMs > 0 ? Math.floor(value.timeoutMs) : undefined;
 
   return {
     enabled: true,
@@ -2264,17 +2468,11 @@ function extractConfigOptionsFromSetResponse(response: unknown): SessionConfigOp
   return normalizeSessionConfigOptions(response.configOptions);
 }
 
-function findConfigOptionByCategory(
-  options: SessionConfigOption[],
-  category: string,
-): SessionConfigOption | undefined {
+function findConfigOptionByCategory(options: SessionConfigOption[], category: string): SessionConfigOption | undefined {
   return options.find((option) => option.category === category);
 }
 
-function findConfigOptionById(
-  options: SessionConfigOption[],
-  configId: string,
-): SessionConfigOption | undefined {
+function findConfigOptionById(options: SessionConfigOption[], configId: string): SessionConfigOption | undefined {
   return options.find((option) => option.id === configId);
 }
 
@@ -2309,15 +2507,34 @@ function extractKnownModeIds(modes: SessionModeState | null | undefined): string
   if (!modes || !Array.isArray(modes.availableModes)) {
     return [];
   }
-  return modes.availableModes
-    .map((mode) => (typeof mode.id === "string" ? mode.id : null))
-    .filter((value): value is string => !!value);
+  return modes.availableModes.map((mode) => (typeof mode.id === "string" ? mode.id : null)).filter((value): value is string => !!value);
 }
 
-function applyCurrentMode(
-  modes: SessionModeState | null | undefined,
-  currentModeId: string,
-): SessionModeState | null {
+function deriveModesFromConfigOptions(configOptions: SessionConfigOption[] | undefined): SessionModeState | null {
+  if (!configOptions || configOptions.length === 0) {
+    return null;
+  }
+
+  const modeOption = findConfigOptionByCategory(configOptions, "mode");
+  if (!modeOption || !Array.isArray(modeOption.options)) {
+    return null;
+  }
+
+  const availableModes = modeOption.options
+    .flatMap((entry) => flattenConfigOptions(entry))
+    .map((entry) => ({
+      id: entry.value,
+      name: entry.name,
+      description: entry.description ?? null,
+    }));
+
+  return {
+    currentModeId: typeof modeOption.currentValue === "string" && modeOption.currentValue.length > 0 ? modeOption.currentValue : (availableModes[0]?.id ?? ""),
+    availableModes,
+  };
+}
+
+function applyCurrentMode(modes: SessionModeState | null | undefined, currentModeId: string): SessionModeState | null {
   if (modes && Array.isArray(modes.availableModes)) {
     return {
       ...modes,
@@ -2330,11 +2547,7 @@ function applyCurrentMode(
   };
 }
 
-function applyConfigOptionValue(
-  configOptions: SessionConfigOption[],
-  configId: string,
-  value: string,
-): SessionConfigOption[] | null {
+function applyConfigOptionValue(configOptions: SessionConfigOption[], configId: string, value: string): SessionConfigOption[] | null {
   const idx = configOptions.findIndex((o) => o.id === configId);
   if (idx === -1) {
     return null;
@@ -2342,6 +2555,25 @@ function applyConfigOptionValue(
   const updated = cloneConfigOptions(configOptions) ?? [];
   updated[idx] = { ...updated[idx]!, currentValue: value };
   return updated;
+}
+
+function flattenConfigOptions(entry: unknown): Array<{ value: string; name: string; description?: string }> {
+  if (!isRecord(entry)) {
+    return [];
+  }
+  if (typeof entry.value === "string" && typeof entry.name === "string") {
+    return [
+      {
+        value: entry.value,
+        name: entry.name,
+        description: typeof entry.description === "string" ? entry.description : undefined,
+      },
+    ];
+  }
+  if (!Array.isArray(entry.options)) {
+    return [];
+  }
+  return entry.options.flatMap((nested) => flattenConfigOptions(nested));
 }
 
 function envelopeSessionUpdate(message: AnyMessage): Record<string, unknown> | null {
@@ -2368,13 +2600,50 @@ function cloneModes(value: SessionModeState | null | undefined): SessionModeStat
   return JSON.parse(JSON.stringify(value)) as SessionModeState;
 }
 
+function availablePermissionReplies(options: PermissionOption[]): PermissionReply[] {
+  const replies = new Set<PermissionReply>();
+  for (const option of options) {
+    if (option.kind === "allow_once") {
+      replies.add("once");
+    } else if (option.kind === "allow_always") {
+      replies.add("always");
+    } else if (option.kind === "reject_once" || option.kind === "reject_always") {
+      replies.add("reject");
+    }
+  }
+  return [...replies];
+}
+
+function permissionReplyToResponse(permissionId: string, request: RequestPermissionRequest, reply: PermissionReply): RequestPermissionResponse {
+  const preferredKinds: PermissionOptionKind[] =
+    reply === "once" ? ["allow_once"] : reply === "always" ? ["allow_always", "allow_once"] : ["reject_once", "reject_always"];
+
+  const selected = preferredKinds
+    .map((kind) => request.options.find((option) => option.kind === kind))
+    .find((option): option is PermissionOption => Boolean(option));
+
+  if (!selected) {
+    throw new UnsupportedPermissionReplyError(permissionId, reply, availablePermissionReplies(request.options));
+  }
+
+  return {
+    outcome: {
+      outcome: "selected",
+      optionId: selected.optionId,
+    },
+  };
+}
+
+function cancelledPermissionResponse(): RequestPermissionResponse {
+  return {
+    outcome: {
+      outcome: "cancelled",
+    },
+  };
+}
+
 function isSessionConfigOption(value: unknown): value is SessionConfigOption {
-  return (
-    isRecord(value) &&
-    typeof value.id === "string" &&
-    typeof value.name === "string" &&
-    typeof value.type === "string"
-  );
+  return isRecord(value) && typeof value.id === "string" && typeof value.name === "string" && typeof value.type === "string";
 }
 
 function toTitleCase(input: string): string {
@@ -2474,11 +2743,7 @@ async function waitForAbortable<T>(promise: Promise<T>, signal: AbortSignal | un
   });
 }
 
-async function consumeProcessLogSse(
-  body: ReadableStream<Uint8Array>,
-  listener: ProcessLogListener,
-  signal: AbortSignal,
-): Promise<void> {
+async function consumeProcessLogSse(body: ReadableStream<Uint8Array>, listener: ProcessLogListener, signal: AbortSignal): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";

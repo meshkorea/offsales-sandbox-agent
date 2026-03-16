@@ -93,101 +93,97 @@ install-release:
     cargo install --path gigacode
 
 # =============================================================================
-# Factory
+# Foundry
 # =============================================================================
 
-[group('factory')]
-factory-deps:
+[group('foundry')]
+foundry-deps:
 	pnpm install
 
-[group('factory')]
-factory-install:
+[group('foundry')]
+foundry-install:
 	pnpm install
 	pnpm -w build
 
-[group('factory')]
-factory-typecheck:
+[group('foundry')]
+foundry-typecheck:
 	pnpm -w typecheck
 
-[group('factory')]
-factory-build:
+[group('foundry')]
+foundry-build:
 	pnpm -w build
 
-[group('factory')]
-factory-test:
+[group('foundry')]
+foundry-test:
 	pnpm -w test
 
-[group('factory')]
-factory-check:
+[group('foundry')]
+foundry-check:
 	pnpm -w typecheck
 	pnpm -w build
 	pnpm -w test
 
-[group('factory')]
-factory-dev:
+[group('foundry')]
+foundry-dev:
 	pnpm install
-	mkdir -p factory/.openhandoff/logs
-	HF_DOCKER_UID="$(id -u)" HF_DOCKER_GID="$(id -g)" docker compose -f factory/compose.dev.yaml up --build --force-recreate -d
+	mkdir -p foundry/.foundry/logs
+	HF_DOCKER_UID="$(id -u)" HF_DOCKER_GID="$(id -g)" docker compose --env-file .env -f foundry/compose.dev.yaml up --build --force-recreate -d
 
-[group('factory')]
-factory-preview:
+[group('foundry')]
+foundry-preview:
 	pnpm install
-	mkdir -p factory/.openhandoff/logs
-	HF_DOCKER_UID="$(id -u)" HF_DOCKER_GID="$(id -g)" docker compose -f factory/compose.preview.yaml up --build --force-recreate -d
+	mkdir -p foundry/.foundry/logs
+	HF_DOCKER_UID="$(id -u)" HF_DOCKER_GID="$(id -g)" docker compose --env-file .env -f foundry/compose.preview.yaml up --build --force-recreate -d
 
-[group('factory')]
-factory-frontend-dev host='127.0.0.1' port='4173' backend='http://127.0.0.1:7741/api/rivet':
+[group('foundry')]
+foundry-frontend-dev host='127.0.0.1' port='4173' backend='http://127.0.0.1:7741/api/rivet':
 	pnpm install
-	VITE_HF_BACKEND_ENDPOINT="{{backend}}" pnpm --filter @openhandoff/frontend dev -- --host {{host}} --port {{port}}
+	VITE_HF_BACKEND_ENDPOINT="{{backend}}" pnpm --filter @sandbox-agent/foundry-frontend dev -- --host {{host}} --port {{port}}
 
-[group('factory')]
-factory-dev-mock host='127.0.0.1' port='4173':
+[group('foundry')]
+foundry-dev-mock host='127.0.0.1' port='4174':
 	pnpm install
-	OPENHANDOFF_FRONTEND_CLIENT_MODE=mock pnpm --filter @openhandoff/frontend dev -- --host {{host}} --port {{port}}
+	FOUNDRY_FRONTEND_CLIENT_MODE=mock pnpm --filter @sandbox-agent/foundry-frontend dev -- --host {{host}} --port {{port}}
 
-[group('factory')]
-factory-dev-turbo:
-	pnpm exec turbo run dev --parallel --filter=@openhandoff/*
-
-[group('factory')]
-factory-dev-down:
-	docker compose -f factory/compose.dev.yaml down
-
-[group('factory')]
-factory-dev-logs:
-	docker compose -f factory/compose.dev.yaml logs -f --tail=200
-
-[group('factory')]
-factory-preview-down:
-	docker compose -f factory/compose.preview.yaml down
-
-[group('factory')]
-factory-preview-logs:
-	docker compose -f factory/compose.preview.yaml logs -f --tail=200
-
-[group('factory')]
-factory-format:
-	prettier --write factory
-
-[group('factory')]
-factory-backend-start host='127.0.0.1' port='7741':
+[group('foundry')]
+foundry-mock:
 	pnpm install
-	pnpm --filter @openhandoff/backend build
-	pnpm --filter @openhandoff/backend start -- --host {{host}} --port {{port}}
+	mkdir -p foundry/.foundry/logs
+	docker compose -f foundry/compose.mock.yaml up --build --force-recreate -d
 
-[group('factory')]
-factory-hf *ARGS:
-	@echo "CLI package is disabled in this repo; use frontend workflows instead." >&2
-	@exit 1
+[group('foundry')]
+foundry-mock-down:
+	docker compose -f foundry/compose.mock.yaml down
 
-[group('factory')]
-factory-docker-build tag='openhandoff:local':
-	docker build -f factory/Dockerfile -t {{tag}} .
+[group('foundry')]
+foundry-mock-logs:
+	docker compose -f foundry/compose.mock.yaml logs -f --tail=200
 
-[group('factory')]
-factory-railway-up:
-	npx -y @railway/cli up --detach
+[group('foundry')]
+foundry-dev-turbo:
+	pnpm exec turbo run dev --parallel --filter=@sandbox-agent/foundry-*
 
-[group('factory')]
-factory-railway-status:
-	npx -y @railway/cli status --json
+[group('foundry')]
+foundry-dev-down:
+	docker compose --env-file .env -f foundry/compose.dev.yaml down
+
+[group('foundry')]
+foundry-dev-logs:
+	docker compose --env-file .env -f foundry/compose.dev.yaml logs -f --tail=200
+
+[group('foundry')]
+foundry-preview-down:
+	docker compose --env-file .env -f foundry/compose.preview.yaml down
+
+[group('foundry')]
+foundry-preview-logs:
+	docker compose --env-file .env -f foundry/compose.preview.yaml logs -f --tail=200
+
+[group('foundry')]
+foundry-format:
+	prettier --write foundry
+
+[group('foundry')]
+foundry-docker-build tag='foundry:local':
+	docker build -f foundry/docker/backend.Dockerfile -t {{tag}} .
+

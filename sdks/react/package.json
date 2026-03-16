@@ -1,6 +1,6 @@
 {
   "name": "@sandbox-agent/react",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "description": "React components for Sandbox Agent frontend integrations",
   "license": "Apache-2.0",
   "repository": {
@@ -28,6 +28,7 @@
     "sandbox-agent": "^0.2.2"
   },
   "dependencies": {
+    "@tanstack/react-virtual": "^3.13.22",
     "ghostty-web": "^0.4.0"
   },
   "devDependencies": {

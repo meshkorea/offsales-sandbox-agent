@@ -3,13 +3,13 @@ import { useState } from "react";
 import { SandboxAgentError } from "sandbox-agent";
 import type { ProcessRunResponse, SandboxAgent } from "sandbox-agent";
 
-const parseArgs = (value: string): string[] => value.split("\n").map((part) => part.trim()).filter(Boolean);
+const parseArgs = (value: string): string[] =>
+  value
+    .split("\n")
+    .map((part) => part.trim())
+    .filter(Boolean);
 
-const ProcessRunTab = ({
-  getClient,
-}: {
-  getClient: () => SandboxAgent;
-}) => {
+const ProcessRunTab = ({ getClient }: { getClient: () => SandboxAgent }) => {
   const [command, setCommand] = useState("");
   const [argsText, setArgsText] = useState("");
   const [cwd, setCwd] = useState("");
@@ -91,11 +91,7 @@ const ProcessRunTab = ({
           />
         </div>
 
-        <button
-          className="process-advanced-toggle"
-          onClick={() => setShowAdvanced((prev) => !prev)}
-          type="button"
-        >
+        <button className="process-advanced-toggle" onClick={() => setShowAdvanced((prev) => !prev)} type="button">
           {showAdvanced ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
           Advanced
         </button>

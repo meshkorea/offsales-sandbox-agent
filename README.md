@@ -118,7 +118,6 @@ const agents = await client.listAgents();
 await client.createSession("demo", {
   agent: "codex",
   agentMode: "default",
-  permissionMode: "plan",
 });
 
 await client.postMessage("demo", { message: "Hello from the SDK." });
@@ -128,9 +127,7 @@ for await (const event of client.streamEvents("demo", { offset: 0 })) {
 }
 ```
 
-`permissionMode: "acceptEdits"` passes through to Claude, auto-approves file changes for Codex, and is treated as `default` for other agents.
-
-[SDK documentation](https://sandboxagent.dev/docs/sdks/typescript) — [Building a Chat UI](https://sandboxagent.dev/docs/building-chat-ui) — [Managing Sessions](https://sandboxagent.dev/docs/manage-sessions)
+[SDK documentation](https://sandboxagent.dev/docs/sdks/typescript) — [Managing Sessions](https://sandboxagent.dev/docs/manage-sessions)
 
 ### HTTP Server
 
@@ -146,10 +143,7 @@ sandbox-agent server --token "$SANDBOX_TOKEN" --host 127.0.0.1 --port 2468
 Optional: preinstall agent binaries (no server required; they will be installed lazily on first use if you skip this):
 
 ```bash
-sandbox-agent install-agent claude
-sandbox-agent install-agent codex
-sandbox-agent install-agent opencode
-sandbox-agent install-agent amp
+sandbox-agent install-agent --all
 ```
 
 To disable auth locally:
@@ -283,7 +277,7 @@ Coding agents expect interactive terminals with proper TTY handling. SSH with pi
 - **Storage of sessions on disk**: Sessions are already stored by the respective coding agents on disk. It's assumed that the consumer is streaming data from this machine to an external storage, such as Postgres, ClickHouse, or Rivet.
 - **Direct LLM wrappers**: Use the [Vercel AI SDK](https://ai-sdk.dev/docs/introduction) if you want to implement your own agent from scratch.
 - **Git Repo Management**: Just use git commands or the features provided by your sandbox provider of choice.
-- **Sandbox Provider API**: Sandbox providers have many nuanced differences in their API, it does not make sense for us to try to provide a custom layer. Instead, we opt to provide guides that let you integrate this project with sandbox providers.
+- **Sandbox Provider API**: Sandbox providers have many nuanced differences in their API, it does not make sense for us to try to provide a custom layer. Instead, we opt to provide guides that let you integrate this repository with sandbox providers.
 
 ## Roadmap
 

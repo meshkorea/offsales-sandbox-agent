@@ -6,10 +6,10 @@ import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const EXAMPLE_IMAGE = "sandbox-agent-examples:latest";
-const EXAMPLE_IMAGE_DEV = "sandbox-agent-examples-dev:latest";
-const DOCKERFILE_DIR = path.resolve(__dirname, "..");
-const REPO_ROOT = path.resolve(DOCKERFILE_DIR, "../..");
+const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
+
+/** Pre-built Docker image with all agents installed. */
+export const FULL_IMAGE = "rivetdev/sandbox-agent:0.3.1-full";
 
 export interface DockerSandboxOptions {
   /** Container port used by sandbox-agent inside Docker. */
@@ -18,7 +18,7 @@ export interface DockerSandboxOptions {
   hostPort?: number;
   /** Additional shell commands to run before starting sandbox-agent. */
   setupCommands?: string[];
-  /** Docker image to use. Defaults to the pre-built sandbox-agent-examples image. */
+  /** Docker image to use. Defaults to the pre-built full image. */
   image?: string;
 }
 
@@ -40,7 +40,7 @@ const DIRECT_CREDENTIAL_KEYS = [
 
 function stripShellQuotes(value: string): string {
   const trimmed = value.trim();
-  if (trimmed.length >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
+  if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
     return trimmed.slice(1, -1);
   }
   if (trimmed.length >= 2 && trimmed.startsWith("'") && trimmed.endsWith("'")) {
@@ -107,11 +107,7 @@ function collectCredentialEnv(): Record<string, string> {
   const merged: Record<string, string> = {};
   let extracted: Record<string, string> = {};
   try {
-    const output = execFileSync(
-      "sandbox-agent",
-      ["credentials", "extract-env"],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-    );
+    const output = execFileSync("sandbox-agent", ["credentials", "extract-env"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     extracted = parseExtractedCredentials(output);
   } catch {
     // Fall back to direct env vars if extraction is unavailable.
@@ -132,43 +128,34 @@ function shellSingleQuotedLiteral(value: string): string {
 }
 
 function stripAnsi(value: string): string {
-  return value.replace(
-    /[\u001B\u009B][[\]()#;?]*(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007|(?:\d{1,4}(?:;\d{0,4})*)?[0-9A-ORZcf-nqry=><])/g,
-    "",
-  );
+  return value.replace(/[\u001B\u009B][[\]()#;?]*(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007|(?:\d{1,4}(?:;\d{0,4})*)?[0-9A-ORZcf-nqry=><])/g, "");
 }
 
-async function ensureExampleImage(_docker: Docker): Promise<string> {
-  const dev = !!process.env.SANDBOX_AGENT_DEV;
-  const imageName = dev ? EXAMPLE_IMAGE_DEV : EXAMPLE_IMAGE;
-
-  if (dev) {
-    console.log("  Building sandbox image from source (may take a while, only runs once)...");
+async function ensureImage(docker: Docker, image: string): Promise<void> {
+  if (process.env.SANDBOX_AGENT_DEV) {
+    console.log("  Building sandbox image from source (may take a while)...");
     try {
-      execFileSync("docker", [
-        "build", "-t", imageName,
-        "-f", path.join(DOCKERFILE_DIR, "Dockerfile.dev"),
-        REPO_ROOT,
-      ], {
+      execFileSync("docker", ["build", "-t", image, "-f", path.join(REPO_ROOT, "docker/runtime/Dockerfile.full"), REPO_ROOT], {
         stdio: ["ignore", "ignore", "pipe"],
       });
     } catch (err: unknown) {
       const stderr = err instanceof Error && "stderr" in err ? String((err as { stderr: unknown }).stderr) : "";
       throw new Error(`Failed to build sandbox image: ${stderr}`);
     }
-  } else {
-    console.log("  Building sandbox image (may take a while, only runs once)...");
-    try {
-      execFileSync("docker", ["build", "-t", imageName, DOCKERFILE_DIR], {
-        stdio: ["ignore", "ignore", "pipe"],
-      });
-    } catch (err: unknown) {
-      const stderr = err instanceof Error && "stderr" in err ? String((err as { stderr: unknown }).stderr) : "";
-      throw new Error(`Failed to build sandbox image: ${stderr}`);
-    }
+    return;
   }
 
-  return imageName;
+  try {
+    await docker.getImage(image).inspect();
+  } catch {
+    console.log(`  Pulling ${image}...`);
+    await new Promise<void>((resolve, reject) => {
+      docker.pull(image, (err: Error | null, stream: NodeJS.ReadableStream) => {
+        if (err) return reject(err);
+        docker.modem.followProgress(stream, (err: Error | null) => (err ? reject(err) : resolve()));
+      });
+    });
+  }
 }
 
 /**
@@ -177,8 +164,7 @@ async function ensureExampleImage(_docker: Docker): Promise<string> {
  */
 export async function startDockerSandbox(opts: DockerSandboxOptions): Promise<DockerSandbox> {
   const { port, hostPort } = opts;
-  const useCustomImage = !!opts.image;
-  let image = opts.image ?? EXAMPLE_IMAGE;
+  const image = opts.image ?? FULL_IMAGE;
   // TODO: Replace setupCommands shell bootstrapping with native sandbox-agent exec API once available.
   const setupCommands = [...(opts.setupCommands ?? [])];
   const credentialEnv = collectCredentialEnv();
@@ -208,35 +194,15 @@ export async function startDockerSandbox(opts: DockerSandboxOptions): Promise<Do
 
   const docker = new Docker({ socketPath: "/var/run/docker.sock" });
 
-  if (useCustomImage) {
-    try {
-      await docker.getImage(image).inspect();
-    } catch {
-      console.log(`  Pulling ${image}...`);
-      await new Promise<void>((resolve, reject) => {
-        docker.pull(image, (err: Error | null, stream: NodeJS.ReadableStream) => {
-          if (err) return reject(err);
-          docker.modem.followProgress(stream, (err: Error | null) => (err ? reject(err) : resolve()));
-        });
-      });
-    }
-  } else {
-    image = await ensureExampleImage(docker);
-  }
+  await ensureImage(docker, image);
 
-  const bootCommands = [
-    ...setupCommands,
-    `sandbox-agent server --no-token --host 0.0.0.0 --port ${port}`,
-  ];
+  const bootCommands = [...setupCommands, `sandbox-agent server --no-token --host 0.0.0.0 --port ${port}`];
 
   const container = await docker.createContainer({
     Image: image,
-    WorkingDir: "/root",
+    WorkingDir: "/home/sandbox",
     Cmd: ["sh", "-c", bootCommands.join(" && ")],
-    Env: [
-      ...Object.entries(credentialEnv).map(([key, value]) => `${key}=${value}`),
-      ...Object.entries(bootstrapEnv).map(([key, value]) => `${key}=${value}`),
-    ],
+    Env: [...Object.entries(credentialEnv).map(([key, value]) => `${key}=${value}`), ...Object.entries(bootstrapEnv).map(([key, value]) => `${key}=${value}`)],
     ExposedPorts: { [`${port}/tcp`]: {} },
     HostConfig: {
       AutoRemove: true,
@@ -246,12 +212,12 @@ export async function startDockerSandbox(opts: DockerSandboxOptions): Promise<Do
   await container.start();
 
   const logChunks: string[] = [];
-  const startupLogs = await container.logs({
+  const startupLogs = (await container.logs({
     follow: true,
     stdout: true,
     stderr: true,
     since: 0,
-  }) as NodeJS.ReadableStream;
+  })) as NodeJS.ReadableStream;
   const stdoutStream = new PassThrough();
   const stderrStream = new PassThrough();
   stdoutStream.on("data", (chunk) => {
@@ -263,7 +229,9 @@ export async function startDockerSandbox(opts: DockerSandboxOptions): Promise<Do
   docker.modem.demuxStream(startupLogs, stdoutStream, stderrStream);
   const stopStartupLogs = () => {
     const stream = startupLogs as NodeJS.ReadableStream & { destroy?: () => void };
-    try { stream.destroy?.(); } catch {}
+    try {
+      stream.destroy?.();
+    } catch {}
   };
 
   const inspect = await container.inspect();
@@ -279,8 +247,12 @@ export async function startDockerSandbox(opts: DockerSandboxOptions): Promise<Do
 
   const cleanup = async () => {
     stopStartupLogs();
-    try { await container.stop({ t: 5 }); } catch {}
-    try { await container.remove({ force: true }); } catch {}
+    try {
+      await container.stop({ t: 5 });
+    } catch {}
+    try {
+      await container.remove({ force: true });
+    } catch {}
     process.exit(0);
   };
   process.once("SIGINT", cleanup);

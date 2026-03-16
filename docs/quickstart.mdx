@@ -61,9 +61,11 @@ icon: "rocket"
 
       <Tab title="Docker">
         ```bash
-        docker run -e ANTHROPIC_API_KEY="sk-ant-..." \
+        docker run -p 2468:2468 \
+          -e ANTHROPIC_API_KEY="sk-ant-..." \
           -e OPENAI_API_KEY="sk-..." \
-          your-image
+          rivetdev/sandbox-agent:0.3.1-full \
+          server --no-token --host 0.0.0.0 --port 2468
         ```
       </Tab>
     </Tabs>
@@ -74,6 +76,9 @@ icon: "rocket"
       </Accordion>
       <Accordion title="Testing without API keys">
         Use the `mock` agent for SDK and integration testing without provider credentials.
+      </Accordion>
+      <Accordion title="Multi-tenant and per-user billing">
+        For per-tenant token tracking, budget enforcement, or usage-based billing, see [LLM Credentials](/llm-credentials) for gateway options like OpenRouter, LiteLLM, and Portkey.
       </Accordion>
     </AccordionGroup>
   </Step>
@@ -217,12 +222,7 @@ icon: "rocket"
     To preinstall agents:
 
     ```bash
-    sandbox-agent install-agent claude
-    sandbox-agent install-agent codex
-    sandbox-agent install-agent opencode
-    sandbox-agent install-agent amp
-    sandbox-agent install-agent pi
-    sandbox-agent install-agent cursor
+    sandbox-agent install-agent --all
     ```
 
     If agents are not installed up front, they are lazily installed when creating a session.

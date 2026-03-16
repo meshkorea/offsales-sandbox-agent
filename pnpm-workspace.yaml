@@ -1,7 +1,8 @@
 packages:
   - "frontend/packages/*"
-  - "factory/packages/*"
-  - "!factory/packages/cli"
+  - "foundry/packages/*"
+  - "!foundry/packages/cli"
+  - "!foundry/packages/desktop"
   - "sdks/*"
   - "sdks/cli"
   - "sdks/cli/platforms/*"
@@ -11,3 +12,4 @@ packages:
   - "scripts/release"
   - "scripts/sandbox-testing"
   - "examples/*"
+  - "server/packages/sandbox-agent/tests/opencode-compat"

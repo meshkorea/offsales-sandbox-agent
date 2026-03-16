@@ -10,7 +10,7 @@
     "license": {
       "name": "Apache-2.0"
     },
-    "version": "0.3.0"
+    "version": "0.3.2"
   },
   "servers": [
     {
@@ -20,9 +20,7 @@
   "paths": {
     "/v1/acp": {
       "get": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "operationId": "get_v1_acp_servers",
         "responses": {
           "200": {
@@ -40,9 +38,7 @@
     },
     "/v1/acp/{server_id}": {
       "get": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "operationId": "get_v1_acp",
         "parameters": [
           {
@@ -92,9 +88,7 @@
         }
       },
       "post": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "operationId": "post_v1_acp",
         "parameters": [
           {
@@ -204,9 +198,7 @@
         }
       },
       "delete": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "operationId": "delete_v1_acp",
         "parameters": [
           {
@@ -228,9 +220,7 @@
     },
     "/v1/agents": {
       "get": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "operationId": "get_v1_agents",
         "parameters": [
           {
@@ -280,9 +270,7 @@
     },
     "/v1/agents/{agent}": {
       "get": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "operationId": "get_v1_agent",
         "parameters": [
           {
@@ -351,9 +339,7 @@
     },
     "/v1/agents/{agent}/install": {
       "post": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "operationId": "post_v1_agent_install",
         "parameters": [
           {
@@ -412,9 +398,7 @@
     },
     "/v1/config/mcp": {
       "get": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "operationId": "get_v1_config_mcp",
         "parameters": [
           {
@@ -460,9 +444,7 @@
         }
       },
       "put": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "operationId": "put_v1_config_mcp",
         "parameters": [
           {
@@ -501,9 +483,7 @@
         }
       },
       "delete": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "operationId": "delete_v1_config_mcp",
         "parameters": [
           {
@@ -534,9 +514,7 @@
     },
     "/v1/config/skills": {
       "get": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "operationId": "get_v1_config_skills",
         "parameters": [
           {
@@ -582,9 +560,7 @@
         }
       },
       "put": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "operationId": "put_v1_config_skills",
         "parameters": [
           {
@@ -623,9 +599,7 @@
         }
       },
       "delete": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "operationId": "delete_v1_config_skills",
         "parameters": [
           {
@@ -656,9 +630,7 @@
     },
     "/v1/fs/entries": {
       "get": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "operationId": "get_v1_fs_entries",
         "parameters": [
           {
@@ -691,9 +663,7 @@
     },
     "/v1/fs/entry": {
       "delete": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "operationId": "delete_v1_fs_entry",
         "parameters": [
           {
@@ -732,9 +702,7 @@
     },
     "/v1/fs/file": {
       "get": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "operationId": "get_v1_fs_file",
         "parameters": [
           {
@@ -754,9 +722,7 @@
         }
       },
       "put": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "operationId": "put_v1_fs_file",
         "parameters": [
           {
@@ -796,9 +762,7 @@
     },
     "/v1/fs/mkdir": {
       "post": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "operationId": "post_v1_fs_mkdir",
         "parameters": [
           {
@@ -827,9 +791,7 @@
     },
     "/v1/fs/move": {
       "post": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "operationId": "post_v1_fs_move",
         "requestBody": {
           "content": {
@@ -857,9 +819,7 @@
     },
     "/v1/fs/stat": {
       "get": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "operationId": "get_v1_fs_stat",
         "parameters": [
           {
@@ -888,9 +848,7 @@
     },
     "/v1/fs/upload-batch": {
       "post": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "operationId": "post_v1_fs_upload_batch",
         "parameters": [
           {
@@ -931,9 +889,7 @@
     },
     "/v1/health": {
       "get": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "operationId": "get_v1_health",
         "responses": {
           "200": {
@@ -951,9 +907,7 @@
     },
     "/v1/processes": {
       "get": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "summary": "List all managed processes.",
         "description": "Returns a list of all processes (running and exited) currently tracked\nby the runtime, sorted by process ID.",
         "operationId": "get_v1_processes",
@@ -981,9 +935,7 @@
         }
       },
       "post": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "summary": "Create a long-lived managed process.",
         "description": "Spawns a new process with the given command and arguments. Supports both\npipe-based and PTY (tty) modes. Returns the process descriptor on success.",
         "operationId": "post_v1_processes",
@@ -1043,9 +995,7 @@
     },
     "/v1/processes/config": {
       "get": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "summary": "Get process runtime configuration.",
         "description": "Returns the current runtime configuration for the process management API,\nincluding limits for concurrency, timeouts, and buffer sizes.",
         "operationId": "get_v1_processes_config",
@@ -1073,9 +1023,7 @@
         }
       },
       "post": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "summary": "Update process runtime configuration.",
         "description": "Replaces the runtime configuration for the process management API.\nValidates that all values are non-zero and clamps default timeout to max.",
         "operationId": "post_v1_processes_config",
@@ -1125,9 +1073,7 @@
     },
     "/v1/processes/run": {
       "post": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "summary": "Run a one-shot command.",
         "description": "Executes a command to completion and returns its stdout, stderr, exit code,\nand duration. Supports configurable timeout and output size limits.",
         "operationId": "post_v1_processes_run",
@@ -1177,9 +1123,7 @@
     },
     "/v1/processes/{id}": {
       "get": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "summary": "Get a single process by ID.",
         "description": "Returns the current state of a managed process including its status,\nPID, exit code, and creation/exit timestamps.",
         "operationId": "get_v1_process",
@@ -1228,9 +1172,7 @@
         }
       },
       "delete": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "summary": "Delete a process record.",
         "description": "Removes a stopped process from the runtime. Returns 409 if the process\nis still running; stop or kill it first.",
         "operationId": "delete_v1_process",
@@ -1284,9 +1226,7 @@
     },
     "/v1/processes/{id}/input": {
       "post": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "summary": "Write input to a process.",
         "description": "Sends data to a process's stdin (pipe mode) or PTY writer (tty mode).\nData can be encoded as base64, utf8, or text. Returns 413 if the decoded\npayload exceeds the configured `maxInputBytesPerRequest` limit.",
         "operationId": "post_v1_process_input",
@@ -1367,9 +1307,7 @@
     },
     "/v1/processes/{id}/kill": {
       "post": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "summary": "Send SIGKILL to a process.",
         "description": "Sends SIGKILL to the process and optionally waits up to `waitMs`\nmilliseconds for the process to exit before returning.",
         "operationId": "post_v1_process_kill",
@@ -1432,9 +1370,7 @@
     },
     "/v1/processes/{id}/logs": {
       "get": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "summary": "Fetch process logs.",
         "description": "Returns buffered log entries for a process. Supports filtering by stream\ntype, tail count, and sequence-based resumption. When `follow=true`,\nreturns an SSE stream that replays buffered entries then streams live output.",
         "operationId": "get_v1_process_logs",
@@ -1532,9 +1468,7 @@
     },
     "/v1/processes/{id}/stop": {
       "post": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "summary": "Send SIGTERM to a process.",
         "description": "Sends SIGTERM to the process and optionally waits up to `waitMs`\nmilliseconds for the process to exit before returning.",
         "operationId": "post_v1_process_stop",
@@ -1597,9 +1531,7 @@
     },
     "/v1/processes/{id}/terminal/resize": {
       "post": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "summary": "Resize a process terminal.",
         "description": "Sets the PTY window size (columns and rows) for a tty-mode process and\nsends SIGWINCH so the child process can adapt.",
         "operationId": "post_v1_process_terminal_resize",
@@ -1680,9 +1612,7 @@
     },
     "/v1/processes/{id}/terminal/ws": {
       "get": {
-        "tags": [
-          "v1"
-        ],
+        "tags": ["v1"],
         "summary": "Open an interactive WebSocket terminal session.",
         "description": "Upgrades the connection to a WebSocket for bidirectional PTY I/O. Accepts\n`access_token` query param for browser-based auth (WebSocket API cannot\nsend custom headers). Streams raw PTY output as binary frames and accepts\nJSON control frames for input, resize, and close.",
         "operationId": "get_v1_process_terminal_ws",
@@ -1759,9 +1689,7 @@
     "schemas": {
       "AcpEnvelope": {
         "type": "object",
-        "required": [
-          "jsonrpc"
-        ],
+        "required": ["jsonrpc"],
         "properties": {
           "error": {
             "nullable": true
@@ -1795,11 +1723,7 @@
       },
       "AcpServerInfo": {
         "type": "object",
-        "required": [
-          "serverId",
-          "agent",
-          "createdAtMs"
-        ],
+        "required": ["serverId", "agent", "createdAtMs"],
         "properties": {
           "agent": {
             "type": "string"
@@ -1815,9 +1739,7 @@
       },
       "AcpServerListResponse": {
         "type": "object",
-        "required": [
-          "servers"
-        ],
+        "required": ["servers"],
         "properties": {
           "servers": {
             "type": "array",
@@ -1908,12 +1830,7 @@
       },
       "AgentInfo": {
         "type": "object",
-        "required": [
-          "id",
-          "installed",
-          "credentialsAvailable",
-          "capabilities"
-        ],
+        "required": ["id", "installed", "credentialsAvailable", "capabilities"],
         "properties": {
           "capabilities": {
             "$ref": "#/components/schemas/AgentCapabilities"
@@ -1956,11 +1873,7 @@
       },
       "AgentInstallArtifact": {
         "type": "object",
-        "required": [
-          "kind",
-          "path",
-          "source"
-        ],
+        "required": ["kind", "path", "source"],
         "properties": {
           "kind": {
             "type": "string"
@@ -1996,10 +1909,7 @@
       },
       "AgentInstallResponse": {
         "type": "object",
-        "required": [
-          "already_installed",
-          "artifacts"
-        ],
+        "required": ["already_installed", "artifacts"],
         "properties": {
           "already_installed": {
             "type": "boolean"
@@ -2014,9 +1924,7 @@
       },
       "AgentListResponse": {
         "type": "object",
-        "required": [
-          "agents"
-        ],
+        "required": ["agents"],
         "properties": {
           "agents": {
             "type": "array",
@@ -2049,9 +1957,7 @@
       },
       "FsActionResponse": {
         "type": "object",
-        "required": [
-          "path"
-        ],
+        "required": ["path"],
         "properties": {
           "path": {
             "type": "string"
@@ -2060,9 +1966,7 @@
       },
       "FsDeleteQuery": {
         "type": "object",
-        "required": [
-          "path"
-        ],
+        "required": ["path"],
         "properties": {
           "path": {
             "type": "string"
@@ -2084,12 +1988,7 @@
       },
       "FsEntry": {
         "type": "object",
-        "required": [
-          "name",
-          "path",
-          "entryType",
-          "size"
-        ],
+        "required": ["name", "path", "entryType", "size"],
         "properties": {
           "entryType": {
             "$ref": "#/components/schemas/FsEntryType"
@@ -2113,17 +2012,11 @@
       },
       "FsEntryType": {
         "type": "string",
-        "enum": [
-          "file",
-          "directory"
-        ]
+        "enum": ["file", "directory"]
       },
       "FsMoveRequest": {
         "type": "object",
-        "required": [
-          "from",
-          "to"
-        ],
+        "required": ["from", "to"],
         "properties": {
           "from": {
             "type": "string"
@@ -2139,10 +2032,7 @@
       },
       "FsMoveResponse": {
         "type": "object",
-        "required": [
-          "from",
-          "to"
-        ],
+        "required": ["from", "to"],
         "properties": {
           "from": {
             "type": "string"
@@ -2154,9 +2044,7 @@
       },
       "FsPathQuery": {
         "type": "object",
-        "required": [
-          "path"
-        ],
+        "required": ["path"],
         "properties": {
           "path": {
             "type": "string"
@@ -2165,11 +2053,7 @@
       },
       "FsStat": {
         "type": "object",
-        "required": [
-          "path",
-          "entryType",
-          "size"
-        ],
+        "required": ["path", "entryType", "size"],
         "properties": {
           "entryType": {
             "$ref": "#/components/schemas/FsEntryType"
@@ -2199,10 +2083,7 @@
       },
       "FsUploadBatchResponse": {
         "type": "object",
-        "required": [
-          "paths",
-          "truncated"
-        ],
+        "required": ["paths", "truncated"],
         "properties": {
           "paths": {
             "type": "array",
@@ -2217,10 +2098,7 @@
       },
       "FsWriteResponse": {
         "type": "object",
-        "required": [
-          "path",
-          "bytesWritten"
-        ],
+        "required": ["path", "bytesWritten"],
         "properties": {
           "bytesWritten": {
             "type": "integer",
@@ -2234,9 +2112,7 @@
       },
       "HealthResponse": {
         "type": "object",
-        "required": [
-          "status"
-        ],
+        "required": ["status"],
         "properties": {
           "status": {
             "type": "string"
@@ -2245,10 +2121,7 @@
       },
       "McpConfigQuery": {
         "type": "object",
-        "required": [
-          "directory",
-          "mcpName"
-        ],
+        "required": ["directory", "mcpName"],
         "properties": {
           "directory": {
             "type": "string"
@@ -2262,10 +2135,7 @@
         "oneOf": [
           {
             "type": "object",
-            "required": [
-              "command",
-              "type"
-            ],
+            "required": ["command", "type"],
             "properties": {
               "args": {
                 "type": "array",
@@ -2299,18 +2169,13 @@
               },
               "type": {
                 "type": "string",
-                "enum": [
-                  "local"
-                ]
+                "enum": ["local"]
               }
             }
           },
           {
             "type": "object",
-            "required": [
-              "url",
-              "type"
-            ],
+            "required": ["url", "type"],
             "properties": {
               "bearerTokenEnvVar": {
                 "type": "string",
@@ -2358,9 +2223,7 @@
               },
               "type": {
                 "type": "string",
-                "enum": [
-                  "remote"
-                ]
+                "enum": ["remote"]
               },
               "url": {
                 "type": "string"
@@ -2374,11 +2237,7 @@
       },
       "ProblemDetails": {
         "type": "object",
-        "required": [
-          "type",
-          "title",
-          "status"
-        ],
+        "required": ["type", "title", "status"],
         "properties": {
           "detail": {
             "type": "string",
@@ -2404,14 +2263,7 @@
       },
       "ProcessConfig": {
         "type": "object",
-        "required": [
-          "maxConcurrentProcesses",
-          "defaultRunTimeoutMs",
-          "maxRunTimeoutMs",
-          "maxOutputBytes",
-          "maxLogBytesPerProcess",
-          "maxInputBytesPerRequest"
-        ],
+        "required": ["maxConcurrentProcesses", "defaultRunTimeoutMs", "maxRunTimeoutMs", "maxOutputBytes", "maxLogBytesPerProcess", "maxInputBytesPerRequest"],
         "properties": {
           "defaultRunTimeoutMs": {
             "type": "integer",
@@ -2443,9 +2295,7 @@
       },
       "ProcessCreateRequest": {
         "type": "object",
-        "required": [
-          "command"
-        ],
+        "required": ["command"],
         "properties": {
           "args": {
             "type": "array",
@@ -2476,15 +2326,7 @@
       },
       "ProcessInfo": {
         "type": "object",
-        "required": [
-          "id",
-          "command",
-          "args",
-          "tty",
-          "interactive",
-          "status",
-          "createdAtMs"
-        ],
+        "required": ["id", "command", "args", "tty", "interactive", "status", "createdAtMs"],
         "properties": {
           "args": {
             "type": "array",
@@ -2535,9 +2377,7 @@
       },
       "ProcessInputRequest": {
         "type": "object",
-        "required": [
-          "data"
-        ],
+        "required": ["data"],
         "properties": {
           "data": {
             "type": "string"
@@ -2550,9 +2390,7 @@
       },
       "ProcessInputResponse": {
         "type": "object",
-        "required": [
-          "bytesWritten"
-        ],
+        "required": ["bytesWritten"],
         "properties": {
           "bytesWritten": {
             "type": "integer",
@@ -2562,9 +2400,7 @@
       },
       "ProcessListResponse": {
         "type": "object",
-        "required": [
-          "processes"
-        ],
+        "required": ["processes"],
         "properties": {
           "processes": {
             "type": "array",
@@ -2576,13 +2412,7 @@
       },
       "ProcessLogEntry": {
         "type": "object",
-        "required": [
-          "sequence",
-          "stream",
-          "timestampMs",
-          "data",
-          "encoding"
-        ],
+        "required": ["sequence", "stream", "timestampMs", "data", "encoding"],
         "properties": {
           "data": {
             "type": "string"
@@ -2634,11 +2464,7 @@
       },
       "ProcessLogsResponse": {
         "type": "object",
-        "required": [
-          "processId",
-          "stream",
-          "entries"
-        ],
+        "required": ["processId", "stream", "entries"],
         "properties": {
           "entries": {
             "type": "array",
@@ -2656,18 +2482,11 @@
       },
       "ProcessLogsStream": {
         "type": "string",
-        "enum": [
-          "stdout",
-          "stderr",
-          "combined",
-          "pty"
-        ]
+        "enum": ["stdout", "stderr", "combined", "pty"]
       },
       "ProcessRunRequest": {
         "type": "object",
-        "required": [
-          "command"
-        ],
+        "required": ["command"],
         "properties": {
           "args": {
             "type": "array",
@@ -2703,14 +2522,7 @@
       },
       "ProcessRunResponse": {
         "type": "object",
-        "required": [
-          "timedOut",
-          "stdout",
-          "stderr",
-          "stdoutTruncated",
-          "stderrTruncated",
-          "durationMs"
-        ],
+        "required": ["timedOut", "stdout", "stderr", "stdoutTruncated", "stderrTruncated", "durationMs"],
         "properties": {
           "durationMs": {
             "type": "integer",
@@ -2752,17 +2564,11 @@
       },
       "ProcessState": {
         "type": "string",
-        "enum": [
-          "running",
-          "exited"
-        ]
+        "enum": ["running", "exited"]
       },
       "ProcessTerminalResizeRequest": {
         "type": "object",
-        "required": [
-          "cols",
-          "rows"
-        ],
+        "required": ["cols", "rows"],
         "properties": {
           "cols": {
             "type": "integer",
@@ -2778,10 +2584,7 @@
       },
       "ProcessTerminalResizeResponse": {
         "type": "object",
-        "required": [
-          "cols",
-          "rows"
-        ],
+        "required": ["cols", "rows"],
         "properties": {
           "cols": {
             "type": "integer",
@@ -2797,16 +2600,11 @@
       },
       "ServerStatus": {
         "type": "string",
-        "enum": [
-          "running",
-          "stopped"
-        ]
+        "enum": ["running", "stopped"]
       },
       "ServerStatusInfo": {
         "type": "object",
-        "required": [
-          "status"
-        ],
+        "required": ["status"],
         "properties": {
           "status": {
             "$ref": "#/components/schemas/ServerStatus"
@@ -2821,10 +2619,7 @@
       },
       "SkillSource": {
         "type": "object",
-        "required": [
-          "type",
-          "source"
-        ],
+        "required": ["type", "source"],
         "properties": {
           "ref": {
             "type": "string",
@@ -2851,9 +2646,7 @@
       },
       "SkillsConfig": {
         "type": "object",
-        "required": [
-          "sources"
-        ],
+        "required": ["sources"],
         "properties": {
           "sources": {
             "type": "array",
@@ -2865,10 +2658,7 @@
       },
       "SkillsConfigQuery": {
         "type": "object",
-        "required": [
-          "directory",
-          "skillName"
-        ],
+        "required": ["directory", "skillName"],
         "properties": {
           "directory": {
             "type": "string"
