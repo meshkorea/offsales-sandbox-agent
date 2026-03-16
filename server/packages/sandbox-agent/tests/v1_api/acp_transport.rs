@@ -34,6 +34,13 @@ done
 }
 
 fn write_strict_pi_agent_process(path: &Path) {
+    // This stub intentionally mirrors the strict bootstrap validation behavior
+    // observed in pi-acp:
+    // - initialize.params.protocolVersion must be numeric
+    // - session/new.params.mcpServers must be present (array)
+    //
+    // The proxy normalization layer should adapt legacy/raw client payloads so
+    // requests still succeed against this stricter contract.
     let script = r#"#!/usr/bin/env sh
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "--version" ] || [ "${1:-}" = "version" ] || [ "${1:-}" = "-V" ]; then
   echo "pi-agent-process 0.0.1"

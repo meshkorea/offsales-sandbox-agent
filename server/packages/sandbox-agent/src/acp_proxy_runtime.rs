@@ -517,6 +517,8 @@ fn normalize_payload_for_agent(agent: AgentId, payload: Value) -> Value {
         return payload;
     }
 
+    // Pi's ACP adapter is stricter than other adapters for a couple of bootstrap
+    // fields. Normalize here so older/raw ACP clients still work against Pi.
     normalize_pi_payload(payload)
 }
 
@@ -528,6 +530,8 @@ fn normalize_pi_payload(mut payload: Value) -> Value {
 
     match method {
         "initialize" => {
+            // Some clients send ACP protocolVersion as a string ("1.0"), but
+            // pi-acp expects a numeric JSON value and rejects strings.
             if let Some(protocol) = payload.pointer_mut("/params/protocolVersion") {
                 if let Some(raw) = protocol.as_str() {
                     if let Some(number) = parse_json_number(raw) {
@@ -537,6 +541,9 @@ fn normalize_pi_payload(mut payload: Value) -> Value {
             }
         }
         "session/new" => {
+            // The TypeScript SDK and opencode adapter already send mcpServers: [],
+            // but raw /v1/acp callers may omit it. pi-acp currently validates
+            // mcpServers as required, so default it here for compatibility.
             if let Some(params) = payload.get_mut("params").and_then(Value::as_object_mut) {
                 params
                     .entry("mcpServers".to_string())
