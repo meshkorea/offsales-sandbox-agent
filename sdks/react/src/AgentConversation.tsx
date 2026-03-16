@@ -18,7 +18,7 @@ export interface AgentConversationProps {
   emptyState?: ReactNode;
   transcriptClassName?: string;
   transcriptClassNames?: Partial<AgentTranscriptClassNames>;
-  scrollRef?: RefObject<HTMLDivElement>;
+  scrollRef?: RefObject<HTMLDivElement | null>;
   composerClassName?: string;
   composerClassNames?: Partial<ChatComposerClassNames>;
   transcriptProps?: Omit<AgentTranscriptProps, "entries" | "className" | "classNames" | "scrollRef">;

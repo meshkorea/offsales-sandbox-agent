@@ -1090,9 +1090,9 @@ fn write_mock_agent_process_launcher(path: &Path) -> Result<(), AgentError> {
         fs::create_dir_all(parent)?;
     }
     let script = if cfg!(windows) {
-        "@echo off\r\necho mock agent process is in-process in sandbox-agent\r\nexit /b 1\r\n"
+        "@echo off\r\nsandbox-agent mock-agent-process %*\r\n"
     } else {
-        "#!/usr/bin/env sh\necho 'mock agent process is in-process in sandbox-agent'\nexit 1\n"
+        "#!/usr/bin/env sh\nexec sandbox-agent mock-agent-process \"$@\"\n"
     };
     write_text_file(path, script)
 }

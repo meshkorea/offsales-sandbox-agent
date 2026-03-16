@@ -4,7 +4,7 @@ import type { RefObject } from "react";
 import { useEffect, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
-export function useTranscriptVirtualizer<T>(items: T[], scrollElementRef?: RefObject<HTMLDivElement>, onAtBottomChange?: (atBottom: boolean) => void) {
+export function useTranscriptVirtualizer<T>(items: T[], scrollElementRef?: RefObject<HTMLDivElement | null>, onAtBottomChange?: (atBottom: boolean) => void) {
   const isFollowingRef = useRef(true);
 
   const virtualizer = useVirtualizer({

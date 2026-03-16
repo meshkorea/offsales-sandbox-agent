@@ -84,7 +84,7 @@ export interface InspectorConversationProps {
   entries: TranscriptEntry[];
   sessionError: string | null;
   eventError?: string | null;
-  scrollRef: RefObject<HTMLDivElement>;
+  scrollRef: RefObject<HTMLDivElement | null>;
   onEventClick?: (eventId: string) => void;
   isThinking?: boolean;
   agentId?: string;

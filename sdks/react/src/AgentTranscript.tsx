@@ -98,8 +98,8 @@ export interface AgentTranscriptProps {
   entries: TranscriptEntry[];
   className?: string;
   classNames?: Partial<AgentTranscriptClassNames>;
-  endRef?: RefObject<HTMLDivElement>;
-  scrollRef?: RefObject<HTMLDivElement>;
+  endRef?: RefObject<HTMLDivElement | null>;
+  scrollRef?: RefObject<HTMLDivElement | null>;
   scrollToEntryId?: string | null;
   sessionError?: string | null;
   eventError?: string | null;

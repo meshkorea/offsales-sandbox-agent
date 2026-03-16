@@ -71,7 +71,7 @@ const ChatPanel = ({
   agents: AgentInfo[];
   agentsLoading: boolean;
   agentsError: string | null;
-  scrollRef: RefObject<HTMLDivElement>;
+  scrollRef: RefObject<HTMLDivElement | null>;
   agentLabel: string;
   modelLabel?: string | null;
   currentAgentVersion?: string | null;

@@ -1,8 +1,19 @@
 import { AgentTranscript as AgentTranscript_, type AgentTranscriptClassNames, type TranscriptEntry } from "@sandbox-agent/react";
-
-// Cast to work around React 18/19 type incompatibility between @sandbox-agent/react and foundry
-const AgentTranscript = AgentTranscript_ as unknown as (props: Record<string, unknown>) => JSX.Element;
 import { memo, useEffect, useMemo, type MutableRefObject, type RefObject } from "react";
+
+// Cast needed: tsup-generated .d.ts returns react_jsx_runtime.JSX.Element which
+// doesn't unify with the consumer's JSX.Element under Bundler moduleResolution.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const AgentTranscript = AgentTranscript_ as any as React.FC<{
+  entries: TranscriptEntry[];
+  classNames?: Partial<AgentTranscriptClassNames>;
+  scrollRef?: RefObject<HTMLDivElement | null>;
+  scrollToEntryId?: string | null;
+  virtualize?: boolean;
+  isThinking?: boolean;
+  renderMessageText?: (entry: TranscriptEntry) => React.ReactNode;
+  renderThinkingState?: () => React.ReactNode;
+}>;
 import { useStyletron } from "baseui";
 import { LabelSmall, LabelXSmall } from "baseui/typography";
 import { Copy } from "lucide-react";
@@ -156,7 +167,7 @@ export const MessageList = memo(function MessageList({
   pendingMessage,
 }: {
   session: AgentSession | null | undefined;
-  scrollRef: RefObject<HTMLDivElement>;
+  scrollRef: RefObject<HTMLDivElement | null>;
   messageRefs: MutableRefObject<Map<string, HTMLDivElement>>;
   historyEvents: HistoryEvent[];
   onSelectHistoryEvent: (event: HistoryEvent) => void;

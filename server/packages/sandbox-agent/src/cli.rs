@@ -83,6 +83,9 @@ pub enum Command {
     InstallAgent(InstallAgentArgs),
     /// Inspect locally discovered credentials.
     Credentials(CredentialsArgs),
+    /// Internal: stdio JSON-RPC echo agent for the mock agent process.
+    #[command(hide = true)]
+    MockAgentProcess,
 }
 
 #[derive(Args, Debug)]
@@ -406,6 +409,7 @@ pub fn run_command(command: &Command, cli: &CliConfig) -> Result<(), CliError> {
         Command::Daemon(subcommand) => run_daemon(&subcommand.command, cli),
         Command::InstallAgent(args) => install_agent_local(args),
         Command::Credentials(subcommand) => run_credentials(&subcommand.command),
+        Command::MockAgentProcess => run_mock_agent_process(),
     }
 }
 
@@ -927,6 +931,71 @@ fn run_credentials(command: &CredentialsCommand) -> Result<(), CliError> {
             Ok(())
         }
     }
+}
+
+fn run_mock_agent_process() -> Result<(), CliError> {
+    use std::io::BufRead;
+
+    let stdin = std::io::stdin();
+    let reader = stdin.lock();
+
+    for line in reader.lines() {
+        let line = line.map_err(|e| CliError::Server(format!("stdin read error: {}", e)))?;
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        let msg: Value = match serde_json::from_str(&line) {
+            Ok(v) => v,
+            Err(e) => {
+                let err_notification = json!({
+                    "jsonrpc": "2.0",
+                    "method": "mock/parse_error",
+                    "params": {
+                        "error": e.to_string(),
+                        "raw": line,
+                    }
+                });
+                write_stdout_line(&serde_json::to_string(&err_notification)?)?;
+                continue;
+            }
+        };
+
+        // Echo notification for every message
+        let echo = json!({
+            "jsonrpc": "2.0",
+            "method": "mock/echo",
+            "params": { "message": msg }
+        });
+        write_stdout_line(&serde_json::to_string(&echo)?)?;
+
+        let has_method = msg.get("method").and_then(|v| v.as_str()).is_some();
+        let has_id = msg.get("id").is_some();
+
+        if has_method && has_id {
+            // Request -> respond with echo result
+            let response = json!({
+                "jsonrpc": "2.0",
+                "id": msg["id"],
+                "result": { "echoed": msg }
+            });
+            write_stdout_line(&serde_json::to_string(&response)?)?;
+        } else if !has_method && has_id {
+            // Client response
+            let notification = json!({
+                "jsonrpc": "2.0",
+                "method": "mock/client_response",
+                "params": {
+                    "id": msg["id"],
+                    "result": msg.get("result").unwrap_or(&Value::Null),
+                    "error": msg.get("error").unwrap_or(&Value::Null),
+                }
+            });
+            write_stdout_line(&serde_json::to_string(&notification)?)?;
+        }
+    }
+
+    Ok(())
 }
 
 fn load_json_payload(

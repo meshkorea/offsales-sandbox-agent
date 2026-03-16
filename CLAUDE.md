@@ -93,15 +93,21 @@ When adding a new agent, update all of the following:
   - `docs/sdk-overview.mdx`
   - `docs/react-components.mdx`
   - `docs/session-persistence.mdx`
+  - `docs/architecture.mdx`
   - `docs/deploy/local.mdx`
   - `docs/deploy/cloudflare.mdx`
   - `docs/deploy/vercel.mdx`
   - `docs/deploy/daytona.mdx`
   - `docs/deploy/e2b.mdx`
   - `docs/deploy/docker.mdx`
+  - `docs/deploy/boxlite.mdx`
+  - `docs/deploy/modal.mdx`
+  - `docs/deploy/computesdk.mdx`
   - `frontend/packages/website/src/components/GetStarted.tsx`
   - `.claude/commands/post-release-testing.md`
   - `examples/cloudflare/Dockerfile`
+  - `examples/boxlite/Dockerfile`
+  - `examples/boxlite-python/Dockerfile`
   - `examples/daytona/src/index.ts`
   - `examples/shared/src/docker.ts`
   - `examples/docker/src/index.ts`
