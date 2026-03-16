@@ -1317,11 +1317,14 @@ export function MockLayout({ organizationId, selectedTaskId, selectedSessionId }
     [organizationId],
   );
   const organizationState = useSubscription(subscriptionManager, "organization", { organizationId });
-  const organizationRepos = organizationState.data?.repos ?? [];
-  const taskSummaries = organizationState.data?.taskSummaries ?? [];
+  const organizationReposData = organizationState.data?.repos;
+  const taskSummariesData = organizationState.data?.taskSummaries;
+  const openPullRequestsData = organizationState.data?.openPullRequests;
+  const organizationRepos = organizationReposData ?? [];
+  const taskSummaries = taskSummariesData ?? [];
   const selectedTaskSummary = useMemo(
     () => taskSummaries.find((task) => task.id === selectedTaskId) ?? taskSummaries[0] ?? null,
-    [selectedTaskId, taskSummaries],
+    [selectedTaskId, taskSummariesData],
   );
   const taskState = useSubscription(
     subscriptionManager,
@@ -1401,9 +1404,9 @@ export function MockLayout({ organizationId, selectedTaskId, selectedSessionId }
       summary.id === selectedTaskSummary?.id ? toTaskModel(summary, taskState.data, sessionCache) : toTaskModel(summary),
     );
     return hydratedTasks.sort((left, right) => right.updatedAtMs - left.updatedAtMs);
-  }, [selectedTaskSummary, selectedSessionId, sessionState.data, taskState.data, taskSummaries, organizationId]);
-  const openPullRequests = organizationState.data?.openPullRequests ?? [];
-  const rawRepositories = useMemo(() => groupRepositories(organizationRepos, tasks, openPullRequests), [tasks, organizationRepos, openPullRequests]);
+  }, [selectedTaskSummary, selectedSessionId, sessionState.data, taskState.data, taskSummariesData, organizationId]);
+  const openPullRequests = openPullRequestsData ?? [];
+  const rawRepositories = useMemo(() => groupRepositories(organizationRepos, tasks, openPullRequests), [tasks, organizationReposData, openPullRequestsData]);
   const appSnapshot = useMockAppSnapshot();
   const currentUser = activeMockUser(appSnapshot);
   const activeOrg = activeMockOrganization(appSnapshot);
@@ -1591,6 +1594,7 @@ export function MockLayout({ organizationId, selectedTaskId, selectedSessionId }
   }, [activeTask, lastAgentSessionIdByTask, selectedSessionId, syncRouteSession]);
 
   useEffect(() => {
+    const organizationRepos = organizationReposData ?? [];
     if (selectedNewTaskRepoId && organizationRepos.some((repo) => repo.id === selectedNewTaskRepoId)) {
       return;
     }
@@ -1600,7 +1604,7 @@ export function MockLayout({ organizationId, selectedTaskId, selectedSessionId }
     if (fallbackRepoId !== selectedNewTaskRepoId) {
       setSelectedNewTaskRepoId(fallbackRepoId);
     }
-  }, [activeTask?.repoId, selectedNewTaskRepoId, organizationRepos]);
+  }, [activeTask?.repoId, selectedNewTaskRepoId, organizationReposData]);
 
   useEffect(() => {
     if (!activeTask) {

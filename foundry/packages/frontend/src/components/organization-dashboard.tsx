@@ -335,9 +335,11 @@ export function OrganizationDashboard({ organizationId, selectedTaskId, selected
   const activeOrg = appState.data ? currentFoundryOrganization(appState.data) : null;
 
   const organizationState = useSubscription(subscriptionManager, "organization", { organizationId });
-  const repos = organizationState.data?.repos ?? [];
-  const rows = organizationState.data?.taskSummaries ?? [];
-  const selectedSummary = useMemo(() => rows.find((row) => row.id === selectedTaskId) ?? rows[0] ?? null, [rows, selectedTaskId]);
+  const reposData = organizationState.data?.repos;
+  const rowsData = organizationState.data?.taskSummaries;
+  const repos = reposData ?? [];
+  const rows = rowsData ?? [];
+  const selectedSummary = useMemo(() => rows.find((row) => row.id === selectedTaskId) ?? rows[0] ?? null, [rowsData, selectedTaskId]);
   const taskState = useSubscription(
     subscriptionManager,
     "task",
@@ -363,6 +365,7 @@ export function OrganizationDashboard({ organizationId, selectedTaskId, selected
   });
 
   useEffect(() => {
+    const repos = reposData ?? [];
     if (repoOverviewMode && selectedRepoId) {
       setCreateRepoId(selectedRepoId);
       return;
@@ -370,9 +373,11 @@ export function OrganizationDashboard({ organizationId, selectedTaskId, selected
     if (!createRepoId && repos.length > 0) {
       setCreateRepoId(repos[0]!.id);
     }
-  }, [createRepoId, repoOverviewMode, repos, selectedRepoId]);
+  }, [createRepoId, repoOverviewMode, reposData, selectedRepoId]);
 
   const repoGroups = useMemo(() => {
+    const repos = reposData ?? [];
+    const rows = rowsData ?? [];
     const byRepo = new Map<string, typeof rows>();
     for (const row of rows) {
       const bucket = byRepo.get(row.repoId);
@@ -400,7 +405,7 @@ export function OrganizationDashboard({ organizationId, selectedTaskId, selected
         }
         return a.repoLabel.localeCompare(b.repoLabel);
       });
-  }, [repos, rows]);
+  }, [reposData, rowsData]);
 
   const selectedForSession = repoOverviewMode ? null : (taskState.data ?? null);
 
@@ -413,6 +418,7 @@ export function OrganizationDashboard({ organizationId, selectedTaskId, selected
   }, [selectedForSession]);
 
   useEffect(() => {
+    const rows = rowsData ?? [];
     if (!repoOverviewMode && !selectedTaskId && rows.length > 0) {
       void navigate({
         to: "/organizations/$organizationId/tasks/$taskId",
@@ -424,14 +430,15 @@ export function OrganizationDashboard({ organizationId, selectedTaskId, selected
         replace: true,
       });
     }
-  }, [navigate, repoOverviewMode, rows, selectedTaskId, organizationId]);
+  }, [navigate, repoOverviewMode, rowsData, selectedTaskId, organizationId]);
 
   useEffect(() => {
     setActiveSessionId(null);
     setDraft("");
   }, [selectedForSession?.id]);
 
-  const sessionRows = selectedForSession?.sessionsSummary ?? [];
+  const sessionRowsData = selectedForSession?.sessionsSummary;
+  const sessionRows = sessionRowsData ?? [];
   const taskStatus = selectedForSession?.status ?? null;
   const taskStatusState = describeTaskState(taskStatus);
   const taskStateSummary = `${taskStatusState.title}. ${taskStatusState.detail}`;
@@ -450,7 +457,7 @@ export function OrganizationDashboard({ organizationId, selectedTaskId, selected
           status: session.status,
         })),
       }),
-    [activeSessionId, selectedForSession?.activeSessionId, sessionRows],
+    [activeSessionId, selectedForSession?.activeSessionId, sessionRowsData],
   );
   const resolvedSessionId = sessionSelection.sessionId;
   const staleSessionId = sessionSelection.staleSessionId;
@@ -466,7 +473,7 @@ export function OrganizationDashboard({ organizationId, selectedTaskId, selected
         }
       : null,
   );
-  const selectedSessionSummary = useMemo(() => sessionRows.find((session) => session.id === resolvedSessionId) ?? null, [resolvedSessionId, sessionRows]);
+  const selectedSessionSummary = useMemo(() => sessionRows.find((session) => session.id === resolvedSessionId) ?? null, [resolvedSessionId, sessionRowsData]);
   const isPendingProvision = selectedSessionSummary?.status === "pending_provision";
   const isPendingSessionCreate = selectedSessionSummary?.status === "pending_session_create";
   const isSessionError = selectedSessionSummary?.status === "error";
@@ -523,7 +530,7 @@ export function OrganizationDashboard({ organizationId, selectedTaskId, selected
         activeSandboxId: selectedForSession?.id === task.id ? selectedForSession.activeSandboxId : null,
       })),
     }),
-    [repos, rows, selectedForSession, organizationId],
+    [reposData, rowsData, selectedForSession, organizationId],
   );
 
   const startSessionFromTask = async (): Promise<{ id: string; status: "running" | "idle" | "error" }> => {
@@ -631,7 +638,7 @@ export function OrganizationDashboard({ organizationId, selectedTaskId, selected
     setCreateTaskOpen(true);
   };
 
-  const repoOptions = useMemo(() => repos.map((repo) => createOption({ id: repo.id, label: repo.label })), [repos]);
+  const repoOptions = useMemo(() => repos.map((repo) => createOption({ id: repo.id, label: repo.label })), [reposData]);
   const selectedRepoOption = repoOptions.find((option) => option.id === createRepoId) ?? null;
   const selectedFilterOption = useMemo(
     () => createOption(FILTER_OPTIONS.find((option) => option.id === overviewFilter) ?? FILTER_OPTIONS[0]!),
@@ -639,7 +646,7 @@ export function OrganizationDashboard({ organizationId, selectedTaskId, selected
   );
   const sessionOptions = useMemo(
     () => sessionRows.map((session) => createOption({ id: session.id, label: `${session.sessionName} (${session.status})` })),
-    [sessionRows],
+    [sessionRowsData],
   );
   const selectedSessionOption = sessionOptions.find((option) => option.id === resolvedSessionId) ?? null;
 

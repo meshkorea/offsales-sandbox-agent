@@ -205,9 +205,12 @@ const baseTaskSandbox = sandboxActor({
         create: () => ({
           template: config.sandboxProviders.e2b.template ?? "sandbox-agent-full-0.3.x",
           envs: sandboxEnvObject(),
-          // Default E2B timeout is 5 minutes which is too short for task work.
-          // Set to 1 hour. TODO: use betaCreate + autoPause instead so sandboxes
-          // pause (preserving state) rather than being killed on timeout.
+          // TEMPORARY: Default E2B timeout is 5 minutes which is too short.
+          // Set to 1 hour as a stopgap. Remove this once the E2B provider in
+          // sandbox-agent uses betaCreate + autoPause (see
+          // .context/proposal-rivetkit-sandbox-resilience.md). At that point
+          // the provider handles timeout/pause lifecycle and this override is
+          // unnecessary.
           timeoutMs: 60 * 60 * 1000,
         }),
         installAgents: ["claude", "codex"],
