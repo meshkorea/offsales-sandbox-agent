@@ -33,6 +33,12 @@
 - `docs/agent-capabilities.mdx` lists models/modes/thought levels per agent. Update it when adding a new agent or changing `fallback_config_options`. If its "Last updated" date is >2 weeks old, re-run `cd scripts/agent-configs && npx tsx dump.ts` and update the doc to match. Source data: `scripts/agent-configs/resources/*.json` and hardcoded entries in `server/packages/sandbox-agent/src/router/support.rs` (`fallback_config_options`).
 - Some agent models are gated by subscription (e.g. Claude `opus`). The live report only shows models available to the current credentials. The static doc and JSON resource files should list all known models regardless of subscription tier.
 
+## .context Directory
+
+- The `.context/` directory is gitignored and used for temporary workspace files (plans, screenshots, build stamps, etc.).
+- Never commit files from `.context/` to git.
+- Clean up temporary files (screenshots, attachments, build artifacts) from `.context/` when they are no longer needed.
+
 ## Docker Test Image
 
 - Docker-backed Rust and TypeScript tests build `docker/test-agent/Dockerfile` directly in-process and cache the image tag only in memory (`OnceLock` in Rust, module-level variable in TypeScript).

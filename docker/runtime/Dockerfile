@@ -153,7 +153,15 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     git \
-    ffmpeg && \
+    ffmpeg \
+    gstreamer1.0-tools \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad \
+    gstreamer1.0-plugins-ugly \
+    gstreamer1.0-nice \
+    gstreamer1.0-x \
+    libgstreamer1.0-0 && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy the binary from builder

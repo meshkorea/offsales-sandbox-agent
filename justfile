@@ -76,6 +76,26 @@ run-gigacode *ARGS:
 dev-docs:
 	cd docs && pnpm dlx mintlify dev --host 0.0.0.0
 
+# Start the desktop dev stack (sandbox-agent backend in Docker + inspector frontend)
+[group('server')]
+server-dev:
+	docker compose -f server/compose.dev.yaml up --build --force-recreate -d
+
+# Stop the desktop dev stack
+[group('server')]
+server-dev-down:
+	docker compose -f server/compose.dev.yaml down
+
+# Tail desktop dev stack logs
+[group('server')]
+server-dev-logs *ARGS:
+	docker compose -f server/compose.dev.yaml logs -f --tail=200 {{ ARGS }}
+
+# Rebuild and restart only the backend container
+[group('server')]
+server-dev-restart-backend:
+	docker compose -f server/compose.dev.yaml up --build --force-recreate -d backend
+
 install:
     pnpm install
     pnpm build --filter @sandbox-agent/inspector...

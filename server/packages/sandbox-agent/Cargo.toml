@@ -42,6 +42,9 @@ toml_edit.workspace = true
 tar.workspace = true
 zip.workspace = true
 tempfile = { workspace = true, optional = true }
+gstreamer = { version = "0.23", optional = true }
+gstreamer-sdp = { version = "0.23", optional = true }
+gstreamer-webrtc = { version = "0.23", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -59,3 +62,4 @@ tokio-tungstenite = "0.24"
 
 [features]
 test-utils = ["tempfile"]
+desktop-gstreamer = ["gstreamer", "gstreamer-sdp", "gstreamer-webrtc"]

@@ -3,7 +3,6 @@
  * Do not make direct changes to the file.
  */
 
-
 export interface paths {
   "/v1/acp": {
     get: operations["get_v1_acp_servers"];
@@ -225,9 +224,10 @@ export interface paths {
   };
   "/v1/desktop/stream/ws": {
     /**
-     * Open a desktop websocket streaming session.
-     * @description Upgrades the connection to a websocket that streams JPEG desktop frames and
-     * accepts mouse and keyboard control frames.
+     * Open a desktop WebRTC signaling session.
+     * @description Upgrades the connection to a WebSocket used for WebRTC signaling between
+     * the browser client and the desktop streaming process. Also accepts mouse
+     * and keyboard input frames as a fallback transport.
      */
     get: operations["get_v1_desktop_stream_ws"];
   };
@@ -633,7 +633,23 @@ export interface components {
       windows: components["schemas"]["DesktopWindowInfo"][];
     };
     /** @enum {string} */
-    ErrorType: "invalid_request" | "conflict" | "unsupported_agent" | "agent_not_installed" | "install_failed" | "agent_process_exited" | "token_invalid" | "permission_denied" | "not_acceptable" | "unsupported_media_type" | "not_found" | "session_not_found" | "session_already_exists" | "mode_not_supported" | "stream_error" | "timeout";
+    ErrorType:
+      | "invalid_request"
+      | "conflict"
+      | "unsupported_agent"
+      | "agent_not_installed"
+      | "install_failed"
+      | "agent_process_exited"
+      | "token_invalid"
+      | "permission_denied"
+      | "not_acceptable"
+      | "unsupported_media_type"
+      | "not_found"
+      | "session_not_found"
+      | "session_already_exists"
+      | "mode_not_supported"
+      | "stream_error"
+      | "timeout";
     FsActionResponse: {
       path: string;
     };
@@ -692,35 +708,37 @@ export interface components {
       directory: string;
       mcpName: string;
     };
-    McpServerConfig: ({
-      args?: string[];
-      command: string;
-      cwd?: string | null;
-      enabled?: boolean | null;
-      env?: {
-        [key: string]: string;
-      } | null;
-      /** Format: int64 */
-      timeoutMs?: number | null;
-      /** @enum {string} */
-      type: "local";
-    }) | ({
-      bearerTokenEnvVar?: string | null;
-      enabled?: boolean | null;
-      envHeaders?: {
-        [key: string]: string;
-      } | null;
-      headers?: {
-        [key: string]: string;
-      } | null;
-      oauth?: Record<string, unknown> | null | null;
-      /** Format: int64 */
-      timeoutMs?: number | null;
-      transport?: string | null;
-      /** @enum {string} */
-      type: "remote";
-      url: string;
-    });
+    McpServerConfig:
+      | {
+          args?: string[];
+          command: string;
+          cwd?: string | null;
+          enabled?: boolean | null;
+          env?: {
+            [key: string]: string;
+          } | null;
+          /** Format: int64 */
+          timeoutMs?: number | null;
+          /** @enum {string} */
+          type: "local";
+        }
+      | {
+          bearerTokenEnvVar?: string | null;
+          enabled?: boolean | null;
+          envHeaders?: {
+            [key: string]: string;
+          } | null;
+          headers?: {
+            [key: string]: string;
+          } | null;
+          oauth?: Record<string, unknown> | null | null;
+          /** Format: int64 */
+          timeoutMs?: number | null;
+          transport?: string | null;
+          /** @enum {string} */
+          type: "remote";
+          url: string;
+        };
     ProblemDetails: {
       detail?: string | null;
       instance?: string | null;
@@ -880,7 +898,6 @@ export type $defs = Record<string, never>;
 export type external = Record<string, never>;
 
 export interface operations {
-
   get_v1_acp_servers: {
     responses: {
       /** @description Active ACP server instances */
@@ -2002,9 +2019,10 @@ export interface operations {
     };
   };
   /**
-   * Open a desktop websocket streaming session.
-   * @description Upgrades the connection to a websocket that streams JPEG desktop frames and
-   * accepts mouse and keyboard control frames.
+   * Open a desktop WebRTC signaling session.
+   * @description Upgrades the connection to a WebSocket used for WebRTC signaling between
+   * the browser client and the desktop streaming process. Also accepts mouse
+   * and keyboard input frames as a fallback transport.
    */
   get_v1_desktop_stream_ws: {
     parameters: {

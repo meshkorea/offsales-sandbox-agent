@@ -4,6 +4,7 @@ mod acp_proxy_runtime;
 pub mod cli;
 pub mod daemon;
 mod desktop_errors;
+mod desktop_gstreamer;
 mod desktop_install;
 mod desktop_recording;
 mod desktop_runtime;

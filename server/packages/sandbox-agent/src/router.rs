@@ -41,9 +41,9 @@ use crate::desktop_errors::DesktopProblem;
 use crate::desktop_runtime::DesktopRuntime;
 use crate::desktop_types::*;
 use crate::process_runtime::{
-    decode_input_bytes, ProcessLogFilter, ProcessLogFilterStream, ProcessOwner as RuntimeProcessOwner,
-    ProcessRuntime, ProcessRuntimeConfig, ProcessSnapshot, ProcessStartSpec, ProcessStatus,
-    ProcessStream, RunSpec,
+    decode_input_bytes, ProcessLogFilter, ProcessLogFilterStream,
+    ProcessOwner as RuntimeProcessOwner, ProcessRuntime, ProcessRuntimeConfig, ProcessSnapshot,
+    ProcessStartSpec, ProcessStatus, ProcessStream, RunSpec,
 };
 use crate::ui;
 
@@ -235,7 +235,7 @@ pub fn build_router_with_state(shared: Arc<AppState>) -> (Router, Arc<AppState>)
         )
         .route("/desktop/stream/start", post(post_v1_desktop_stream_start))
         .route("/desktop/stream/stop", post(post_v1_desktop_stream_stop))
-        .route("/desktop/stream/ws", get(get_v1_desktop_stream_ws))
+        .route("/desktop/stream/signaling", get(get_v1_desktop_stream_ws))
         .route("/agents", get(get_v1_agents))
         .route("/agents/:agent", get(get_v1_agent))
         .route("/agents/:agent/install", post(post_v1_agent_install))
@@ -1135,9 +1135,11 @@ async fn get_v1_desktop_recording_download(
     Path(id): Path<String>,
 ) -> Result<Response, ApiError> {
     let path = state.desktop_runtime().recording_download_path(&id).await?;
-    let bytes = tokio::fs::read(&path).await.map_err(|err| SandboxError::StreamError {
-        message: format!("failed to read desktop recording {}: {err}", path.display()),
-    })?;
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|err| SandboxError::StreamError {
+            message: format!("failed to read desktop recording {}: {err}", path.display()),
+        })?;
     Ok(([(header::CONTENT_TYPE, "video/mp4")], Bytes::from(bytes)).into_response())
 }
 
@@ -1179,7 +1181,7 @@ async fn delete_v1_desktop_recording(
 async fn post_v1_desktop_stream_start(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<DesktopStreamStatusResponse>, ApiError> {
-    Ok(Json(state.desktop_runtime().start_streaming().await))
+    Ok(Json(state.desktop_runtime().start_streaming().await?))
 }
 
 /// Stop desktop streaming.
@@ -1199,13 +1201,14 @@ async fn post_v1_desktop_stream_stop(
     Ok(Json(state.desktop_runtime().stop_streaming().await))
 }
 
-/// Open a desktop websocket streaming session.
+/// Open a desktop WebRTC signaling session.
 ///
-/// Upgrades the connection to a websocket that streams JPEG desktop frames and
-/// accepts mouse and keyboard control frames.
+/// Upgrades the connection to a WebSocket used for WebRTC signaling between
+/// the browser client and the desktop streaming process. Also accepts mouse
+/// and keyboard input frames as a fallback transport.
 #[utoipa::path(
     get,
-    path = "/v1/desktop/stream/ws",
+    path = "/v1/desktop/stream/signaling",
     tag = "v1",
     params(
         ("access_token" = Option<String>, Query, description = "Bearer token alternative for WS auth")
@@ -2449,46 +2452,6 @@ enum TerminalClientFrame {
     Close,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-enum DesktopStreamClientFrame {
-    MoveMouse {
-        x: i32,
-        y: i32,
-    },
-    MouseDown {
-        #[serde(default)]
-        x: Option<i32>,
-        #[serde(default)]
-        y: Option<i32>,
-        #[serde(default)]
-        button: Option<DesktopMouseButton>,
-    },
-    MouseUp {
-        #[serde(default)]
-        x: Option<i32>,
-        #[serde(default)]
-        y: Option<i32>,
-        #[serde(default)]
-        button: Option<DesktopMouseButton>,
-    },
-    Scroll {
-        x: i32,
-        y: i32,
-        #[serde(default)]
-        delta_x: Option<i32>,
-        #[serde(default)]
-        delta_y: Option<i32>,
-    },
-    KeyDown {
-        key: String,
-    },
-    KeyUp {
-        key: String,
-    },
-    Close,
-}
-
 async fn process_terminal_ws_session(
     mut socket: WebSocket,
     runtime: Arc<ProcessRuntime>,
@@ -2601,22 +2564,38 @@ async fn process_terminal_ws_session(
     }
 }
 
-async fn desktop_stream_ws_session(mut socket: WebSocket, desktop_runtime: Arc<DesktopRuntime>) {
-    let display_info = match desktop_runtime.display_info().await {
-        Ok(info) => info,
-        Err(err) => {
-            let _ = send_ws_error(&mut socket, &err.to_error_info().message).await;
-            let _ = socket.close().await;
-            return;
-        }
-    };
+/// WebRTC signaling and input session.
+///
+/// Handles WebRTC signaling (SDP offer/answer, ICE candidate exchange) and
+/// accepts mouse/keyboard input as a fallback transport when the WebRTC data
+/// channel is not established. When compiled with the `desktop-gstreamer`
+/// feature, creates a GStreamer pipeline for real video streaming.
+async fn desktop_stream_ws_session(mut ws: WebSocket, desktop_runtime: Arc<DesktopRuntime>) {
+    let streaming = desktop_runtime.streaming_manager();
 
+    // Get resolution for the ready message.
+    let resolution =
+        streaming
+            .resolution()
+            .await
+            .unwrap_or(crate::desktop_types::DesktopResolution {
+                width: 1440,
+                height: 900,
+                dpi: None,
+            });
+
+    let x_display = streaming
+        .display_name()
+        .await
+        .unwrap_or_else(|| ":99".to_string());
+
+    // Send stream metadata immediately.
     if send_ws_json(
-        &mut socket,
+        &mut ws,
         json!({
             "type": "ready",
-            "width": display_info.resolution.width,
-            "height": display_info.resolution.height,
+            "width": resolution.width,
+            "height": resolution.height,
         }),
     )
     .await
@@ -2625,106 +2604,267 @@ async fn desktop_stream_ws_session(mut socket: WebSocket, desktop_runtime: Arc<D
         return;
     }
 
-    let mut frame_tick = tokio::time::interval(Duration::from_millis(100));
+    // Try to create a GStreamer WebRTC pipeline for real video streaming.
+    #[cfg(feature = "desktop-gstreamer")]
+    {
+        use crate::desktop_gstreamer::pipeline::GStreamerPipeline;
+
+        match GStreamerPipeline::new(&x_display) {
+            Ok((pipeline, mut event_rx)) => {
+                tracing::info!(display = %x_display, "GStreamer WebRTC pipeline started");
+                // Run the session with the GStreamer pipeline active.
+                desktop_stream_ws_loop_gstreamer(
+                    &mut ws,
+                    &desktop_runtime,
+                    &pipeline,
+                    &mut event_rx,
+                )
+                .await;
+                // Pipeline is dropped here, stopping GStreamer.
+                let _ = ws.close().await;
+                return;
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "GStreamer pipeline creation failed");
+                let _ = send_ws_error(&mut ws, &e).await;
+            }
+        }
+    }
+
+    // Fallback: run without GStreamer (input-only, no video).
+    desktop_stream_ws_loop_simple(&mut ws, &desktop_runtime).await;
+    let _ = ws.close().await;
+}
+
+/// Inner WS message loop — input-only, no GStreamer pipeline.
+async fn desktop_stream_ws_loop_simple(ws: &mut WebSocket, desktop_runtime: &Arc<DesktopRuntime>) {
+    loop {
+        let ws_msg = ws.recv().await;
+        if !handle_ws_message_simple(ws_msg, ws, desktop_runtime).await {
+            break;
+        }
+    }
+}
+
+/// Inner WS message loop with GStreamer pipeline — polls both pipeline events
+/// and client WS messages.
+#[cfg(feature = "desktop-gstreamer")]
+async fn desktop_stream_ws_loop_gstreamer(
+    ws: &mut WebSocket,
+    desktop_runtime: &Arc<DesktopRuntime>,
+    pipeline: &crate::desktop_gstreamer::pipeline::GStreamerPipeline,
+    event_rx: &mut tokio::sync::mpsc::UnboundedReceiver<
+        crate::desktop_gstreamer::pipeline::PipelineEvent,
+    >,
+) {
+    use crate::desktop_gstreamer::pipeline::{PipelineEvent, SignalingCommand};
 
     loop {
         tokio::select! {
-            ws_in = socket.recv() => {
-                match ws_in {
-                    Some(Ok(Message::Text(text))) => {
-                        match serde_json::from_str::<DesktopStreamClientFrame>(&text) {
-                            Ok(DesktopStreamClientFrame::MoveMouse { x, y }) => {
-                                if let Err(err) = desktop_runtime
-                                    .move_mouse(DesktopMouseMoveRequest { x, y })
-                                    .await
-                                {
-                                    let _ = send_ws_error(&mut socket, &err.to_error_info().message).await;
-                                }
-                            }
-                            Ok(DesktopStreamClientFrame::MouseDown { x, y, button }) => {
-                                if let Err(err) = desktop_runtime
-                                    .mouse_down(DesktopMouseDownRequest { x, y, button })
-                                    .await
-                                {
-                                    let _ = send_ws_error(&mut socket, &err.to_error_info().message).await;
-                                }
-                            }
-                            Ok(DesktopStreamClientFrame::MouseUp { x, y, button }) => {
-                                if let Err(err) = desktop_runtime
-                                    .mouse_up(DesktopMouseUpRequest { x, y, button })
-                                    .await
-                                {
-                                    let _ = send_ws_error(&mut socket, &err.to_error_info().message).await;
-                                }
-                            }
-                            Ok(DesktopStreamClientFrame::Scroll { x, y, delta_x, delta_y }) => {
-                                if let Err(err) = desktop_runtime
-                                    .scroll_mouse(DesktopMouseScrollRequest {
-                                        x,
-                                        y,
-                                        delta_x,
-                                        delta_y,
-                                    })
-                                    .await
-                                {
-                                    let _ = send_ws_error(&mut socket, &err.to_error_info().message).await;
-                                }
-                            }
-                            Ok(DesktopStreamClientFrame::KeyDown { key }) => {
-                                if let Err(err) = desktop_runtime
-                                    .key_down(DesktopKeyboardDownRequest { key })
-                                    .await
-                                {
-                                    let _ = send_ws_error(&mut socket, &err.to_error_info().message).await;
-                                }
-                            }
-                            Ok(DesktopStreamClientFrame::KeyUp { key }) => {
-                                if let Err(err) = desktop_runtime
-                                    .key_up(DesktopKeyboardUpRequest { key })
-                                    .await
-                                {
-                                    let _ = send_ws_error(&mut socket, &err.to_error_info().message).await;
-                                }
-                            }
-                            Ok(DesktopStreamClientFrame::Close) => {
-                                let _ = socket.close().await;
-                                break;
-                            }
-                            Err(err) => {
-                                let _ = send_ws_error(&mut socket, &format!("invalid desktop stream frame: {err}")).await;
-                            }
-                        }
-                    }
-                    Some(Ok(Message::Ping(payload))) => {
-                        let _ = socket.send(Message::Pong(payload)).await;
-                    }
-                    Some(Ok(Message::Close(_))) | None => break,
-                    Some(Ok(Message::Binary(_))) | Some(Ok(Message::Pong(_))) => {}
-                    Some(Err(_)) => break,
-                }
-            }
-            _ = frame_tick.tick() => {
-                let frame = desktop_runtime
-                    .screenshot(DesktopScreenshotQuery {
-                        format: Some(DesktopScreenshotFormat::Jpeg),
-                        quality: Some(60),
-                        scale: Some(1.0),
-                    })
-                    .await;
-                match frame {
-                    Ok(frame) => {
-                        if socket.send(Message::Binary(frame.bytes.into())).await.is_err() {
+            pipeline_event = event_rx.recv() => {
+                match pipeline_event {
+                    Some(PipelineEvent::Offer(sdp)) => {
+                        if send_ws_json(ws, json!({"type": "offer", "sdp": sdp})).await.is_err() {
                             break;
                         }
                     }
-                    Err(err) => {
-                        let _ = send_ws_error(&mut socket, &err.to_error_info().message).await;
-                        let _ = socket.close().await;
-                        break;
+                    Some(PipelineEvent::IceCandidate { candidate, sdp_m_line_index }) => {
+                        if send_ws_json(ws, json!({
+                            "type": "candidate",
+                            "candidate": candidate,
+                            "sdpMLineIndex": sdp_m_line_index,
+                        })).await.is_err() {
+                            break;
+                        }
                     }
+                    None => break,
+                }
+            }
+            ws_msg = ws.recv() => {
+                match ws_msg {
+                    Some(Ok(Message::Text(text))) => {
+                        let parsed: Value = match serde_json::from_str(&text) {
+                            Ok(v) => v,
+                            Err(_) => continue,
+                        };
+                        match parsed.get("type").and_then(|v| v.as_str()) {
+                            Some("answer") => {
+                                if let Some(sdp) = parsed.get("sdp").and_then(|v| v.as_str()) {
+                                    pipeline.send_command(SignalingCommand::Answer(sdp.to_string()));
+                                }
+                            }
+                            Some("candidate") => {
+                                if let Some(candidate) = parsed.get("candidate").and_then(|v| v.as_str()) {
+                                    let sdp_m_line_index = parsed
+                                        .get("sdpMLineIndex")
+                                        .and_then(|v| v.as_u64())
+                                        .unwrap_or(0) as u32;
+                                    pipeline.send_command(SignalingCommand::IceCandidate {
+                                        candidate: candidate.to_string(),
+                                        sdp_m_line_index,
+                                    });
+                                }
+                            }
+                            // Input messages (fallback transport)
+                            Some("moveMouse") => {
+                                if let (Some(x), Some(y)) = (
+                                    parsed.get("x").and_then(|v| v.as_i64()),
+                                    parsed.get("y").and_then(|v| v.as_i64()),
+                                ) {
+                                    let _ = desktop_runtime
+                                        .move_mouse(DesktopMouseMoveRequest { x: x as i32, y: y as i32 })
+                                        .await;
+                                }
+                            }
+                            Some("mouseDown") => {
+                                let button = parsed.get("button").and_then(|v| serde_json::from_value(v.clone()).ok());
+                                let x = parsed.get("x").and_then(|v| v.as_i64()).map(|v| v as i32);
+                                let y = parsed.get("y").and_then(|v| v.as_i64()).map(|v| v as i32);
+                                let _ = desktop_runtime.mouse_down(DesktopMouseDownRequest { x, y, button }).await;
+                            }
+                            Some("mouseUp") => {
+                                let button = parsed.get("button").and_then(|v| serde_json::from_value(v.clone()).ok());
+                                let x = parsed.get("x").and_then(|v| v.as_i64()).map(|v| v as i32);
+                                let y = parsed.get("y").and_then(|v| v.as_i64()).map(|v| v as i32);
+                                let _ = desktop_runtime.mouse_up(DesktopMouseUpRequest { x, y, button }).await;
+                            }
+                            Some("scroll") => {
+                                if let (Some(x), Some(y)) = (
+                                    parsed.get("x").and_then(|v| v.as_i64()),
+                                    parsed.get("y").and_then(|v| v.as_i64()),
+                                ) {
+                                    let dx = parsed.get("deltaX").and_then(|v| v.as_i64()).map(|v| v as i32);
+                                    let dy = parsed.get("deltaY").and_then(|v| v.as_i64()).map(|v| v as i32);
+                                    let _ = desktop_runtime.scroll_mouse(DesktopMouseScrollRequest { x: x as i32, y: y as i32, delta_x: dx, delta_y: dy }).await;
+                                }
+                            }
+                            Some("keyDown") => {
+                                if let Some(key) = parsed.get("key").and_then(|v| v.as_str()) {
+                                    let _ = desktop_runtime.key_down(DesktopKeyboardDownRequest { key: key.to_string() }).await;
+                                }
+                            }
+                            Some("keyUp") => {
+                                if let Some(key) = parsed.get("key").and_then(|v| v.as_str()) {
+                                    let _ = desktop_runtime.key_up(DesktopKeyboardUpRequest { key: key.to_string() }).await;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    Some(Ok(Message::Ping(payload))) => {
+                        let _ = ws.send(Message::Pong(payload)).await;
+                    }
+                    Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
+                    _ => {}
                 }
             }
         }
+    }
+}
+
+/// Process a single WebSocket message (no pipeline). Returns false to close.
+async fn handle_ws_message_simple(
+    msg: Option<Result<Message, axum::Error>>,
+    ws: &mut WebSocket,
+    desktop_runtime: &Arc<DesktopRuntime>,
+) -> bool {
+    match msg {
+        Some(Ok(Message::Text(text))) => {
+            let parsed: Value = match serde_json::from_str(&text) {
+                Ok(v) => v,
+                Err(_) => return true,
+            };
+
+            match parsed.get("type").and_then(|v| v.as_str()) {
+                // --- Input messages (fallback transport) ---
+                Some("moveMouse") => {
+                    if let (Some(x), Some(y)) = (
+                        parsed.get("x").and_then(|v| v.as_i64()),
+                        parsed.get("y").and_then(|v| v.as_i64()),
+                    ) {
+                        let _ = desktop_runtime
+                            .move_mouse(DesktopMouseMoveRequest {
+                                x: x as i32,
+                                y: y as i32,
+                            })
+                            .await;
+                    }
+                }
+                Some("mouseDown") => {
+                    let button = parsed
+                        .get("button")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok());
+                    let x = parsed.get("x").and_then(|v| v.as_i64()).map(|v| v as i32);
+                    let y = parsed.get("y").and_then(|v| v.as_i64()).map(|v| v as i32);
+                    let _ = desktop_runtime
+                        .mouse_down(DesktopMouseDownRequest { x, y, button })
+                        .await;
+                }
+                Some("mouseUp") => {
+                    let button = parsed
+                        .get("button")
+                        .and_then(|v| serde_json::from_value(v.clone()).ok());
+                    let x = parsed.get("x").and_then(|v| v.as_i64()).map(|v| v as i32);
+                    let y = parsed.get("y").and_then(|v| v.as_i64()).map(|v| v as i32);
+                    let _ = desktop_runtime
+                        .mouse_up(DesktopMouseUpRequest { x, y, button })
+                        .await;
+                }
+                Some("scroll") => {
+                    if let (Some(x), Some(y)) = (
+                        parsed.get("x").and_then(|v| v.as_i64()),
+                        parsed.get("y").and_then(|v| v.as_i64()),
+                    ) {
+                        let delta_x = parsed
+                            .get("deltaX")
+                            .and_then(|v| v.as_i64())
+                            .map(|v| v as i32);
+                        let delta_y = parsed
+                            .get("deltaY")
+                            .and_then(|v| v.as_i64())
+                            .map(|v| v as i32);
+                        let _ = desktop_runtime
+                            .scroll_mouse(DesktopMouseScrollRequest {
+                                x: x as i32,
+                                y: y as i32,
+                                delta_x,
+                                delta_y,
+                            })
+                            .await;
+                    }
+                }
+                Some("keyDown") => {
+                    if let Some(key) = parsed.get("key").and_then(|v| v.as_str()) {
+                        let _ = desktop_runtime
+                            .key_down(DesktopKeyboardDownRequest {
+                                key: key.to_string(),
+                            })
+                            .await;
+                    }
+                }
+                Some("keyUp") => {
+                    if let Some(key) = parsed.get("key").and_then(|v| v.as_str()) {
+                        let _ = desktop_runtime
+                            .key_up(DesktopKeyboardUpRequest {
+                                key: key.to_string(),
+                            })
+                            .await;
+                    }
+                }
+
+                // --- WebRTC signaling messages (accepted without error) ---
+                Some("answer") | Some("candidate") | Some("offer") => {}
+
+                _ => {}
+            }
+            true
+        }
+        Some(Ok(Message::Ping(payload))) => {
+            let _ = ws.send(Message::Pong(payload)).await;
+            true
+        }
+        Some(Ok(Message::Close(_))) | None | Some(Err(_)) => false,
+        _ => true,
     }
 }
 

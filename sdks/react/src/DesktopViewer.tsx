@@ -2,26 +2,19 @@
 
 import type { CSSProperties, MouseEvent, WheelEvent } from "react";
 import { useEffect, useRef, useState } from "react";
-import type {
-  DesktopMouseButton,
-  DesktopStreamErrorStatus,
-  DesktopStreamReadyStatus,
-  SandboxAgent,
-} from "sandbox-agent";
+import type { DesktopMouseButton, DesktopStreamErrorStatus, DesktopStreamReadyStatus, DesktopStreamSession, SandboxAgent } from "sandbox-agent";
 
 type ConnectionState = "connecting" | "ready" | "closed" | "error";
 
-export type DesktopViewerClient = Pick<
-  SandboxAgent,
-  "startDesktopStream" | "stopDesktopStream" | "connectDesktopStream"
->;
+export type DesktopViewerClient = Pick<SandboxAgent, "startDesktopStream" | "stopDesktopStream" | "connectDesktopStream">;
 
 export interface DesktopViewerProps {
   client: DesktopViewerClient;
   className?: string;
   style?: CSSProperties;
-  imageStyle?: CSSProperties;
-  height?: number | string;
+  autoStart?: boolean;
+  showStatusBar?: boolean;
+  tabIndex?: number;
   onConnect?: (status: DesktopStreamReadyStatus) => void;
   onDisconnect?: () => void;
   onError?: (error: DesktopStreamErrorStatus | Error) => void;
@@ -31,11 +24,7 @@ const shellStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   overflow: "hidden",
-  border: "1px solid rgba(15, 23, 42, 0.14)",
-  borderRadius: 14,
-  background:
-    "linear-gradient(180deg, rgba(248, 250, 252, 0.96) 0%, rgba(226, 232, 240, 0.92) 100%)",
-  boxShadow: "0 20px 40px rgba(15, 23, 42, 0.08)",
+  width: "100%",
 };
 
 const statusBarStyle: CSSProperties = {
@@ -44,28 +33,22 @@ const statusBarStyle: CSSProperties = {
   justifyContent: "space-between",
   gap: 12,
   padding: "10px 14px",
-  borderBottom: "1px solid rgba(15, 23, 42, 0.08)",
-  background: "rgba(255, 255, 255, 0.78)",
-  color: "#0f172a",
   fontSize: 12,
   lineHeight: 1.4,
 };
 
 const viewportStyle: CSSProperties = {
   position: "relative",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
+  width: "100%",
   overflow: "hidden",
-  background:
-    "radial-gradient(circle at top, rgba(14, 165, 233, 0.18), transparent 45%), linear-gradient(180deg, #0f172a 0%, #111827 100%)",
+  background: "#000",
+  outline: "none",
 };
 
-const imageBaseStyle: CSSProperties = {
+const videoBaseStyle: CSSProperties = {
   display: "block",
   width: "100%",
-  height: "100%",
-  objectFit: "contain",
+  height: "auto",
   userSelect: "none",
 };
 
@@ -90,90 +73,96 @@ export const DesktopViewer = ({
   client,
   className,
   style,
-  imageStyle,
-  height = 480,
+  autoStart = true,
+  showStatusBar = true,
+  tabIndex = 0,
   onConnect,
   onDisconnect,
   onError,
 }: DesktopViewerProps) => {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const sessionRef = useRef<ReturnType<DesktopViewerClient["connectDesktopStream"]> | null>(null);
-  const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
-  const [statusMessage, setStatusMessage] = useState("Starting desktop stream...");
-  const [frameUrl, setFrameUrl] = useState<string | null>(null);
+  const sessionRef = useRef<DesktopStreamSession | null>(null);
+  const [connectionState, setConnectionState] = useState<ConnectionState>(autoStart ? "connecting" : "closed");
+  const [statusMessage, setStatusMessage] = useState(autoStart ? "Starting desktop stream..." : "Stream not started.");
   const [resolution, setResolution] = useState<{ width: number; height: number } | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    let lastObjectUrl: string | null = null;
-    let session: ReturnType<DesktopViewerClient["connectDesktopStream"]> | null = null;
+  // Store callbacks and client in refs to keep them out of the effect deps.
+  const onConnectRef = useRef(onConnect);
+  onConnectRef.current = onConnect;
+  const onDisconnectRef = useRef(onDisconnect);
+  onDisconnectRef.current = onDisconnect;
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
+  const clientRef = useRef(client);
+  clientRef.current = client;
 
+  useEffect(() => {
+    if (!autoStart) {
+      setConnectionState("closed");
+      setStatusMessage("Stream not started.");
+      return;
+    }
+
+    let cancelled = false;
     setConnectionState("connecting");
     setStatusMessage("Starting desktop stream...");
     setResolution(null);
 
+    const cl = clientRef.current;
+
     const connect = async () => {
       try {
-        await client.startDesktopStream();
-        if (cancelled) {
-          return;
-        }
+        await cl.startDesktopStream();
+        if (cancelled) return;
 
-        session = client.connectDesktopStream();
+        const session = cl.connectDesktopStream();
         sessionRef.current = session;
+
         session.onReady((status) => {
-          if (cancelled) {
-            return;
+          if (cancelled) return;
+          setResolution({ width: status.width, height: status.height });
+          setStatusMessage("Negotiating WebRTC...");
+          onConnectRef.current?.(status);
+        });
+
+        session.onTrack((stream) => {
+          if (cancelled) return;
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
           }
           setConnectionState("ready");
           setStatusMessage("Desktop stream connected.");
-          setResolution({ width: status.width, height: status.height });
-          onConnect?.(status);
+          // Grab keyboard focus when connected.
+          wrapperRef.current?.focus();
         });
-        session.onFrame((frame) => {
-          if (cancelled) {
-            return;
-          }
-          const nextUrl = URL.createObjectURL(
-            new Blob([frame.slice().buffer], { type: "image/jpeg" }),
-          );
-          setFrameUrl((current) => {
-            if (current) {
-              URL.revokeObjectURL(current);
-            }
-            return nextUrl;
-          });
-          if (lastObjectUrl) {
-            URL.revokeObjectURL(lastObjectUrl);
-          }
-          lastObjectUrl = nextUrl;
+
+        session.onConnect(() => {
+          if (cancelled) return;
+          setConnectionState("ready");
+          setStatusMessage("Desktop stream connected.");
+          wrapperRef.current?.focus();
         });
+
         session.onError((error) => {
-          if (cancelled) {
-            return;
-          }
+          if (cancelled) return;
           setConnectionState("error");
           setStatusMessage(error instanceof Error ? error.message : error.message);
-          onError?.(error);
+          onErrorRef.current?.(error);
         });
-        session.onClose(() => {
-          if (cancelled) {
-            return;
-          }
-          setConnectionState((current) => (current === "error" ? current : "closed"));
-          setStatusMessage((current) =>
-            current === "Desktop stream connected." ? "Desktop stream disconnected." : current,
-          );
-          onDisconnect?.();
+
+        session.onDisconnect(() => {
+          if (cancelled) return;
+          setConnectionState((cur) => (cur === "error" ? cur : "closed"));
+          setStatusMessage((cur) => (cur === "Desktop stream connected." ? "Desktop stream disconnected." : cur));
+          onDisconnectRef.current?.();
         });
       } catch (error) {
-        if (cancelled) {
-          return;
-        }
-        const nextError = error instanceof Error ? error : new Error("Failed to initialize desktop stream.");
+        if (cancelled) return;
+        const nextError = error instanceof Error ? error : new Error("Failed to start desktop stream.");
         setConnectionState("error");
         setStatusMessage(nextError.message);
-        onError?.(nextError);
+        onErrorRef.current?.(nextError);
       }
     };
 
@@ -181,36 +170,28 @@ export const DesktopViewer = ({
 
     return () => {
       cancelled = true;
-      session?.close();
-      sessionRef.current = null;
-      void client.stopDesktopStream().catch(() => undefined);
-      setFrameUrl((current) => {
-        if (current) {
-          URL.revokeObjectURL(current);
-        }
-        return null;
-      });
-      if (lastObjectUrl) {
-        URL.revokeObjectURL(lastObjectUrl);
+      const session = sessionRef.current;
+      if (session) {
+        session.close();
+        sessionRef.current = null;
       }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+      // Note: we do NOT call stopDesktopStream() here. The parent component
+      // manages the stream lifecycle. Calling stop on unmount would kill the
+      // streaming process and race with subsequent mounts.
     };
-  }, [client, onConnect, onDisconnect, onError]);
+  }, [autoStart]);
 
   const scalePoint = (clientX: number, clientY: number) => {
-    const wrapper = wrapperRef.current;
-    if (!wrapper || !resolution) {
-      return null;
-    }
-    const rect = wrapper.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) {
-      return null;
-    }
+    const video = videoRef.current;
+    if (!video || !resolution) return null;
+    const rect = video.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
     const x = Math.max(0, Math.min(resolution.width, ((clientX - rect.left) / rect.width) * resolution.width));
     const y = Math.max(0, Math.min(resolution.height, ((clientY - rect.top) / rect.height) * resolution.height));
-    return {
-      x: Math.round(x),
-      y: Math.round(y),
-    };
+    return { x: Math.round(x), y: Math.round(y) };
   };
 
   const buttonFromMouseEvent = (event: MouseEvent<HTMLDivElement>): DesktopMouseButton => {
@@ -224,64 +205,60 @@ export const DesktopViewer = ({
     }
   };
 
-  const withSession = (
-    callback: (session: NonNullable<ReturnType<DesktopViewerClient["connectDesktopStream"]>>) => void,
-  ) => {
-    const session = sessionRef.current;
-    if (session) {
-      callback(session);
-    }
+  const withSession = (fn: (s: DesktopStreamSession) => void) => {
+    const s = sessionRef.current;
+    if (s) fn(s);
   };
 
   return (
     <div className={className} style={{ ...shellStyle, ...style }}>
-      <div style={statusBarStyle}>
-        <span style={{ color: getStatusColor(connectionState) }}>{statusMessage}</span>
-        <span style={hintStyle}>
-          {resolution ? `${resolution.width}×${resolution.height}` : "Awaiting frames"}
-        </span>
-      </div>
+      {showStatusBar && (
+        <div style={statusBarStyle}>
+          <span style={{ color: getStatusColor(connectionState) }}>{statusMessage}</span>
+          <span style={hintStyle}>{resolution ? `${resolution.width}\u00d7${resolution.height}` : "Awaiting stream"}</span>
+        </div>
+      )}
       <div
         ref={wrapperRef}
-        role="button"
-        tabIndex={0}
-        style={{ ...viewportStyle, height }}
+        role="application"
+        tabIndex={tabIndex}
+        style={viewportStyle}
         onMouseMove={(event) => {
           const point = scalePoint(event.clientX, event.clientY);
-          if (!point) {
-            return;
-          }
-          withSession((session) => session.moveMouse(point.x, point.y));
+          if (!point) return;
+          withSession((s) => s.moveMouse(point.x, point.y));
         }}
         onMouseDown={(event) => {
           event.preventDefault();
+          // Ensure keyboard focus stays on the viewport when clicking.
+          wrapperRef.current?.focus();
           const point = scalePoint(event.clientX, event.clientY);
-          withSession((session) =>
-            session.mouseDown(buttonFromMouseEvent(event), point?.x, point?.y),
-          );
+          if (!point) return;
+          withSession((s) => s.mouseDown(buttonFromMouseEvent(event), point.x, point.y));
         }}
         onMouseUp={(event) => {
           const point = scalePoint(event.clientX, event.clientY);
-          withSession((session) => session.mouseUp(buttonFromMouseEvent(event), point?.x, point?.y));
+          if (!point) return;
+          withSession((s) => s.mouseUp(buttonFromMouseEvent(event), point.x, point.y));
         }}
         onWheel={(event: WheelEvent<HTMLDivElement>) => {
           event.preventDefault();
           const point = scalePoint(event.clientX, event.clientY);
-          if (!point) {
-            return;
-          }
-          withSession((session) => session.scroll(point.x, point.y, Math.round(event.deltaX), Math.round(event.deltaY)));
+          if (!point) return;
+          withSession((s) => s.scroll(point.x, point.y, Math.round(event.deltaX), Math.round(event.deltaY)));
         }}
         onKeyDown={(event) => {
-          withSession((session) => session.keyDown(event.key));
+          event.preventDefault();
+          event.stopPropagation();
+          withSession((s) => s.keyDown(event.key));
         }}
         onKeyUp={(event) => {
-          withSession((session) => session.keyUp(event.key));
+          event.stopPropagation();
+          withSession((s) => s.keyUp(event.key));
         }}
+        onContextMenu={(event) => event.preventDefault()}
       >
-        {frameUrl ? (
-          <img alt="Desktop stream" draggable={false} src={frameUrl} style={{ ...imageBaseStyle, ...imageStyle }} />
-        ) : null}
+        <video ref={videoRef} autoPlay playsInline muted style={videoBaseStyle} />
       </div>
     </div>
   );

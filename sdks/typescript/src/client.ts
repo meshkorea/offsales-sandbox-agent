@@ -23,10 +23,7 @@ import {
   type SetSessionModeRequest,
 } from "acp-http-client";
 import type { SandboxAgentSpawnHandle, SandboxAgentSpawnOptions } from "./spawn.ts";
-import {
-  DesktopStreamSession,
-  type DesktopStreamConnectOptions,
-} from "./desktop-stream.ts";
+import { DesktopStreamSession, type DesktopStreamConnectOptions } from "./desktop-stream.ts";
 import {
   type AcpServerListResponse,
   type AgentInfo,
@@ -1530,9 +1527,7 @@ export class SandboxAgent {
     return this.requestJson("GET", `${API_PREFIX}/desktop/windows`);
   }
 
-  async startDesktopRecording(
-    request: DesktopRecordingStartRequest = {},
-  ): Promise<DesktopRecordingInfo> {
+  async startDesktopRecording(request: DesktopRecordingStartRequest = {}): Promise<DesktopRecordingInfo> {
     return this.requestJson("POST", `${API_PREFIX}/desktop/recording/start`, {
       body: request,
     });
@@ -1551,13 +1546,9 @@ export class SandboxAgent {
   }
 
   async downloadDesktopRecording(id: string): Promise<Uint8Array> {
-    const response = await this.requestRaw(
-      "GET",
-      `${API_PREFIX}/desktop/recordings/${encodeURIComponent(id)}/download`,
-      {
-        accept: "video/mp4",
-      },
-    );
+    const response = await this.requestRaw("GET", `${API_PREFIX}/desktop/recordings/${encodeURIComponent(id)}/download`, {
+      accept: "video/mp4",
+    });
     const buffer = await response.arrayBuffer();
     return new Uint8Array(buffer);
   }
@@ -1799,7 +1790,7 @@ export class SandboxAgent {
 
   buildDesktopStreamWebSocketUrl(options: ProcessTerminalWebSocketUrlOptions = {}): string {
     return toWebSocketUrl(
-      this.buildUrl(`${API_PREFIX}/desktop/stream/ws`, {
+      this.buildUrl(`${API_PREFIX}/desktop/stream/signaling`, {
         access_token: options.accessToken ?? this.token,
       }),
     );
@@ -1820,7 +1811,7 @@ export class SandboxAgent {
   }
 
   connectDesktopStream(options: DesktopStreamSessionOptions = {}): DesktopStreamSession {
-    return new DesktopStreamSession(this.connectDesktopStreamWebSocket(options));
+    return new DesktopStreamSession(this.connectDesktopStreamWebSocket(options), options);
   }
 
   private async getLiveConnection(agent: string): Promise<LiveAcpConnection> {

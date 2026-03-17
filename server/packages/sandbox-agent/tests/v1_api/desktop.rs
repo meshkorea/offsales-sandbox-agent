@@ -432,7 +432,7 @@ async fn v1_desktop_lifecycle_and_actions_work_with_real_runtime() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(parse_json(&body)["active"], true);
 
-    let (mut ws, _) = connect_async(test_app.app.ws_url("/v1/desktop/stream/ws"))
+    let (mut ws, _) = connect_async(test_app.app.ws_url("/v1/desktop/stream/signaling"))
         .await
         .expect("connect desktop stream websocket");
 
@@ -447,12 +447,9 @@ async fn v1_desktop_lifecycle_and_actions_work_with_real_runtime() {
         other => panic!("expected text ready frame, got {other:?}"),
     }
 
-    let frame = recv_ws_message(&mut ws).await;
-    match frame {
-        Message::Binary(bytes) => assert!(bytes.starts_with(&[0xff, 0xd8, 0xff])),
-        other => panic!("expected binary jpeg frame, got {other:?}"),
-    }
-
+    // The signaling WebSocket now accepts input frames as fallback transport
+    // (when the WebRTC data channel is not established). Send a mouse move to
+    // verify input dispatch still works over the signaling channel.
     ws.send(Message::Text(
         json!({
             "type": "moveMouse",
@@ -464,6 +461,20 @@ async fn v1_desktop_lifecycle_and_actions_work_with_real_runtime() {
     ))
     .await
     .expect("send desktop stream mouse move");
+
+    // Send a WebRTC signaling message (offer) to verify the signaling path
+    // accepts it without error.
+    ws.send(Message::Text(
+        json!({
+            "type": "offer",
+            "sdp": "v=0\r\n"
+        })
+        .to_string()
+        .into(),
+    ))
+    .await
+    .expect("send desktop stream offer");
+
     let _ = ws.close(None).await;
 
     let (status, _, body) = send_request(

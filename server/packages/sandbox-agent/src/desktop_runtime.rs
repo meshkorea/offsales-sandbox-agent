@@ -10,20 +10,20 @@ use tokio::sync::Mutex;
 
 use sandbox_agent_error::SandboxError;
 
-use crate::desktop_recording::{DesktopRecordingContext, DesktopRecordingManager};
 use crate::desktop_errors::DesktopProblem;
 use crate::desktop_install::desktop_platform_support_message;
+use crate::desktop_recording::{DesktopRecordingContext, DesktopRecordingManager};
 use crate::desktop_streaming::DesktopStreamingManager;
 use crate::desktop_types::{
-    DesktopActionResponse, DesktopDisplayInfoResponse, DesktopErrorInfo,
-    DesktopKeyModifiers, DesktopKeyboardDownRequest, DesktopKeyboardPressRequest,
-    DesktopKeyboardTypeRequest, DesktopKeyboardUpRequest, DesktopMouseButton,
-    DesktopMouseClickRequest, DesktopMouseDownRequest, DesktopMouseDragRequest,
-    DesktopMouseMoveRequest, DesktopMousePositionResponse, DesktopMouseScrollRequest,
-    DesktopMouseUpRequest, DesktopProcessInfo, DesktopRecordingInfo,
-    DesktopRecordingListResponse, DesktopRecordingStartRequest, DesktopRegionScreenshotQuery,
-    DesktopResolution, DesktopScreenshotFormat, DesktopScreenshotQuery, DesktopStartRequest,
-    DesktopState, DesktopStatusResponse, DesktopStreamStatusResponse, DesktopWindowInfo,
+    DesktopActionResponse, DesktopDisplayInfoResponse, DesktopErrorInfo, DesktopKeyModifiers,
+    DesktopKeyboardDownRequest, DesktopKeyboardPressRequest, DesktopKeyboardTypeRequest,
+    DesktopKeyboardUpRequest, DesktopMouseButton, DesktopMouseClickRequest,
+    DesktopMouseDownRequest, DesktopMouseDragRequest, DesktopMouseMoveRequest,
+    DesktopMousePositionResponse, DesktopMouseScrollRequest, DesktopMouseUpRequest,
+    DesktopProcessInfo, DesktopRecordingInfo, DesktopRecordingListResponse,
+    DesktopRecordingStartRequest, DesktopRegionScreenshotQuery, DesktopResolution,
+    DesktopScreenshotFormat, DesktopScreenshotQuery, DesktopStartRequest, DesktopState,
+    DesktopStatusResponse, DesktopStreamStatusResponse, DesktopWindowInfo,
     DesktopWindowListResponse,
 };
 use crate::process_runtime::{
@@ -172,9 +172,9 @@ impl DesktopRuntime {
         let recording_manager =
             DesktopRecordingManager::new(process_runtime.clone(), config.state_dir.clone());
         Self {
+            streaming_manager: DesktopStreamingManager::new(),
             process_runtime,
             recording_manager,
-            streaming_manager: DesktopStreamingManager::new(),
             inner: Arc::new(Mutex::new(DesktopRuntimeStateData {
                 state: DesktopState::Inactive,
                 display_num: config.display_num,
@@ -197,7 +197,10 @@ impl DesktopRuntime {
     pub async fn status(&self) -> DesktopStatusResponse {
         let mut state = self.inner.lock().await;
         self.refresh_status_locked(&mut state).await;
-        self.snapshot_locked(&state)
+        let mut response = self.snapshot_locked(&state);
+        drop(state);
+
+        response
     }
 
     pub async fn start(
@@ -221,7 +224,10 @@ impl DesktopRuntime {
 
         self.refresh_status_locked(&mut state).await;
         if state.state == DesktopState::Active {
-            return Ok(self.snapshot_locked(&state));
+            let mut response = self.snapshot_locked(&state);
+            drop(state);
+
+            return Ok(response);
         }
 
         if !state.missing_dependencies.is_empty() {
@@ -307,7 +313,10 @@ impl DesktopRuntime {
             ),
         );
 
-        Ok(self.snapshot_locked(&state))
+        let mut response = self.snapshot_locked(&state);
+        drop(state);
+
+        Ok(response)
     }
 
     pub async fn stop(&self) -> Result<DesktopStatusResponse, DesktopProblem> {
@@ -336,7 +345,10 @@ impl DesktopRuntime {
         state.install_command = self.install_command_for(&state.missing_dependencies);
         state.environment.clear();
 
-        Ok(self.snapshot_locked(&state))
+        let mut response = self.snapshot_locked(&state);
+        drop(state);
+
+        Ok(response)
     }
 
     pub async fn shutdown(&self) {
@@ -630,8 +642,23 @@ impl DesktopRuntime {
         self.recording_manager.delete(id).await
     }
 
-    pub async fn start_streaming(&self) -> DesktopStreamStatusResponse {
-        self.streaming_manager.start().await
+    pub async fn start_streaming(&self) -> Result<DesktopStreamStatusResponse, SandboxError> {
+        let state = self.inner.lock().await;
+        let display = state
+            .display
+            .as_deref()
+            .ok_or_else(|| SandboxError::Conflict {
+                message: "desktop runtime is not active".to_string(),
+            })?;
+        let resolution = state
+            .resolution
+            .clone()
+            .ok_or_else(|| SandboxError::Conflict {
+                message: "desktop runtime is not active".to_string(),
+            })?;
+        let display = display.to_string();
+        drop(state);
+        Ok(self.streaming_manager.start(&display, resolution).await)
     }
 
     pub async fn stop_streaming(&self) -> DesktopStreamStatusResponse {
@@ -639,7 +666,17 @@ impl DesktopRuntime {
     }
 
     pub async fn ensure_streaming_active(&self) -> Result<(), SandboxError> {
-        self.streaming_manager.ensure_active().await
+        if self.streaming_manager.is_active().await {
+            Ok(())
+        } else {
+            Err(SandboxError::Conflict {
+                message: "desktop streaming is not active".to_string(),
+            })
+        }
+    }
+
+    pub fn streaming_manager(&self) -> &DesktopStreamingManager {
+        &self.streaming_manager
     }
 
     async fn recording_context(&self) -> Result<DesktopRecordingContext, SandboxError> {
@@ -831,8 +868,14 @@ impl DesktopRuntime {
         name: &str,
     ) -> Result<(), DesktopProblem> {
         let process_id = match name {
-            "Xvfb" => state.xvfb.as_ref().map(|process| process.process_id.clone()),
-            "openbox" => state.openbox.as_ref().map(|process| process.process_id.clone()),
+            "Xvfb" => state
+                .xvfb
+                .as_ref()
+                .map(|process| process.process_id.clone()),
+            "openbox" => state
+                .openbox
+                .as_ref()
+                .map(|process| process.process_id.clone()),
             _ => None,
         };
 

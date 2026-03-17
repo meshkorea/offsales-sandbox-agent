@@ -80,10 +80,6 @@ const DebugPanel = ({
           <Monitor className="button-icon" style={{ marginRight: 4, width: 12, height: 12 }} />
           Desktop
         </button>
-        <button className={`debug-tab ${debugTab === "mcp" ? "active" : ""}`} onClick={() => onDebugTabChange("mcp")}>
-          <Server className="button-icon" style={{ marginRight: 4, width: 12, height: 12 }} />
-          MCP
-        </button>
         <button className={`debug-tab ${debugTab === "processes" ? "active" : ""}`} onClick={() => onDebugTabChange("processes")}>
           <Terminal className="button-icon" style={{ marginRight: 4, width: 12, height: 12 }} />
           Processes
@@ -91,6 +87,10 @@ const DebugPanel = ({
         <button className={`debug-tab ${debugTab === "run-process" ? "active" : ""}`} onClick={() => onDebugTabChange("run-process")}>
           <Play className="button-icon" style={{ marginRight: 4, width: 12, height: 12 }} />
           Run Once
+        </button>
+        <button className={`debug-tab ${debugTab === "mcp" ? "active" : ""}`} onClick={() => onDebugTabChange("mcp")}>
+          <Server className="button-icon" style={{ marginRight: 4, width: 12, height: 12 }} />
+          MCP
         </button>
         <button className={`debug-tab ${debugTab === "skills" ? "active" : ""}`} onClick={() => onDebugTabChange("skills")}>
           <Wrench className="button-icon" style={{ marginRight: 4, width: 12, height: 12 }} />
@@ -117,13 +117,9 @@ const DebugPanel = ({
           />
         )}
 
-        {debugTab === "desktop" && (
-          <DesktopTab getClient={getClient} />
-        )}
+        {debugTab === "desktop" && <DesktopTab getClient={getClient} />}
 
-        {debugTab === "mcp" && (
-          <McpTab getClient={getClient} />
-        )}
+        {debugTab === "mcp" && <McpTab getClient={getClient} />}
 
         {debugTab === "processes" && <ProcessesTab getClient={getClient} />}
 
