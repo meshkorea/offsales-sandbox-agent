@@ -527,6 +527,15 @@ export function initBetterAuthService(actorClient: any, options: { apiUrl: strin
     secret: requireEnv("BETTER_AUTH_SECRET"),
     database: adapter,
     trustedOrigins: [stripTrailingSlash(options.appUrl), stripTrailingSlash(options.apiUrl)],
+    account: {
+      // Store OAuth state in an encrypted cookie instead of a DB verification record.
+      // The production proxy chain (Cloudflare -> Fastly -> Railway) retries the OAuth
+      // callback when it takes >10s, causing a duplicate request. With the "database"
+      // strategy the first request deletes the verification record, so the retry fails
+      // with "verification not found" -> ?error=please_restart_the_process.
+      // Cookie strategy avoids this because the state lives in the request itself.
+      storeStateStrategy: "cookie",
+    },
     session: {
       cookieCache: {
         enabled: true,
