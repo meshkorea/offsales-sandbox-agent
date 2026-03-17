@@ -2005,7 +2005,7 @@ export class SandboxAgent {
   }
 
   connectDesktopStream(options: DesktopStreamSessionOptions = {}): DesktopStreamSession {
-    return new DesktopStreamSession(this.connectDesktopStreamWebSocket(options));
+    return new DesktopStreamSession(this.connectDesktopStreamWebSocket(options), options);
   }
 
   private async getLiveConnection(agent: string): Promise<LiveAcpConnection> {
