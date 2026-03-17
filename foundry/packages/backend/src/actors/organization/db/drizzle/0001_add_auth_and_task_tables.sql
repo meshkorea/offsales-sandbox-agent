@@ -1,4 +1,4 @@
-CREATE TABLE `auth_session_index` (
+CREATE TABLE IF NOT EXISTS `auth_session_index` (
 	`session_id` text PRIMARY KEY NOT NULL,
 	`session_token` text NOT NULL,
 	`user_id` text NOT NULL,
@@ -6,13 +6,13 @@ CREATE TABLE `auth_session_index` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `auth_email_index` (
+CREATE TABLE IF NOT EXISTS `auth_email_index` (
 	`email` text PRIMARY KEY NOT NULL,
 	`user_id` text NOT NULL,
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `auth_account_index` (
+CREATE TABLE IF NOT EXISTS `auth_account_index` (
 	`id` text PRIMARY KEY NOT NULL,
 	`provider_id` text NOT NULL,
 	`account_id` text NOT NULL,
@@ -20,7 +20,7 @@ CREATE TABLE `auth_account_index` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `auth_verification` (
+CREATE TABLE IF NOT EXISTS `auth_verification` (
 	`id` text PRIMARY KEY NOT NULL,
 	`identifier` text NOT NULL,
 	`value` text NOT NULL,
@@ -29,7 +29,7 @@ CREATE TABLE `auth_verification` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `task_index` (
+CREATE TABLE IF NOT EXISTS `task_index` (
 	`task_id` text PRIMARY KEY NOT NULL,
 	`repo_id` text NOT NULL,
 	`branch_name` text,
@@ -37,7 +37,7 @@ CREATE TABLE `task_index` (
 	`updated_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `task_summaries` (
+CREATE TABLE IF NOT EXISTS `task_summaries` (
 	`task_id` text PRIMARY KEY NOT NULL,
 	`repo_id` text NOT NULL,
 	`title` text NOT NULL,
