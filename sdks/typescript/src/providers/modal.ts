@@ -1,11 +1,10 @@
 import { ModalClient, type Image, type SandboxCreateParams } from "modal";
 import type { SandboxProvider } from "./types.ts";
-import { DEFAULT_AGENTS, SANDBOX_AGENT_INSTALL_SCRIPT } from "./shared.ts";
+import { DEFAULT_SANDBOX_AGENT_IMAGE } from "./shared.ts";
 
 const DEFAULT_AGENT_PORT = 3000;
 const DEFAULT_APP_NAME = "sandbox-agent";
 const DEFAULT_MEMORY_MIB = 2048;
-const DEFAULT_BASE_IMAGE = "node:22-slim";
 
 type ModalCreateOverrides = Omit<Partial<SandboxCreateParams>, "secrets" | "encryptedPorts"> & {
   secrets?: Record<string, string>;
@@ -33,17 +32,12 @@ export function modal(options: ModalProviderOptions = {}): SandboxProvider {
     async create(): Promise<string> {
       const createOpts = await resolveCreateOptions(options.create);
       const appName = createOpts.appName ?? DEFAULT_APP_NAME;
-      const baseImage = options.image ?? DEFAULT_BASE_IMAGE;
+      const baseImage = options.image ?? DEFAULT_SANDBOX_AGENT_IMAGE;
       const app = await client.apps.fromName(appName, { createIfMissing: true });
 
-      // Pre-install sandbox-agent and agents in the image so they are cached
-      // across sandbox creates and don't need to be installed at runtime.
-      const installAgentCmds = DEFAULT_AGENTS.map((agent) => `RUN sandbox-agent install-agent ${agent}`);
-      const image = (typeof baseImage === "string" ? client.images.fromRegistry(baseImage) : baseImage).dockerfileCommands([
-        "RUN apt-get update && apt-get install -y curl ca-certificates && rm -rf /var/lib/apt/lists/*",
-        `RUN curl -fsSL ${SANDBOX_AGENT_INSTALL_SCRIPT} | sh`,
-        ...installAgentCmds,
-      ]);
+      // The default `-full` base image already includes sandbox-agent and all
+      // agents pre-installed, so no additional dockerfile commands are needed.
+      const image = typeof baseImage === "string" ? client.images.fromRegistry(baseImage) : baseImage;
 
       const envVars = createOpts.secrets ?? {};
       const secrets = Object.keys(envVars).length > 0 ? [await client.secrets.fromObject(envVars)] : [];
