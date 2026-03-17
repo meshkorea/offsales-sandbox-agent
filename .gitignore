@@ -59,3 +59,4 @@ sdks/cli/platforms/*/bin/
 # Foundry desktop app build artifacts
 foundry/packages/desktop/frontend-dist/
 foundry/packages/desktop/src-tauri/sidecars/
+.context/
