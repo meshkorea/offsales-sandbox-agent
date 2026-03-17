@@ -272,6 +272,16 @@ Each user has independent unread state. The existing `userTaskState` table track
 
 These two unread systems must stay in sync via the `user.mark_read` queue command.
 
+## Better Auth: Actions, Not Queues
+
+All Better Auth adapter operations (verification CRUD, session/email/account index mutations, and user-actor auth record mutations) are exposed as **actions**, not queue commands. This is an intentional exception to the normal pattern of using queues for mutations.
+
+**Why:** The org actor's workflow queue is shared with GitHub sync, webhook processing, task mutations, and billing — 20+ queue names processed sequentially. During the OAuth callback, Better Auth needs to read/write verification records and upsert session/account indexes. If any long-running queue handler (e.g., a GitHub sync step) is ahead in the queue, auth operations time out (10s), `expectQueueResponse` throws a regular `Error`, and Better Auth's `parseState` catches it as a non-`StateError` → redirects to `?error=please_restart_the_process`.
+
+**Why it's safe:** Auth operations are simple SQLite reads/writes scoped to a single actor instance with no cross-actor side effects. They don't need workflow replay semantics or sequential ordering guarantees relative to other queue commands.
+
+**Rule:** Never move Better Auth operations back to queue commands. If new auth-related mutations are added, expose them as actions on the relevant actor.
+
 ## Maintenance
 
 - Keep this file up to date whenever actor ownership, hierarchy, or lifecycle responsibilities change.

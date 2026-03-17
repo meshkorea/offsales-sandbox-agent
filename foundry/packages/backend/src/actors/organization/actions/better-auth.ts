@@ -1,21 +1,4 @@
-import {
-  and,
-  asc,
-  count as sqlCount,
-  desc,
-  eq,
-  gt,
-  gte,
-  inArray,
-  isNotNull,
-  isNull,
-  like,
-  lt,
-  lte,
-  ne,
-  notInArray,
-  or,
-} from "drizzle-orm";
+import { and, asc, count as sqlCount, desc, eq, gt, gte, inArray, isNotNull, isNull, like, lt, lte, ne, notInArray, or } from "drizzle-orm";
 import { authAccountIndex, authEmailIndex, authSessionIndex, authVerification } from "../db/schema.js";
 import { APP_SHELL_ORGANIZATION_ID } from "../constants.js";
 
@@ -151,10 +134,7 @@ export async function betterAuthDeleteEmailIndexMutation(c: any, input: { email:
   await c.db.delete(authEmailIndex).where(eq(authEmailIndex.email, input.email)).run();
 }
 
-export async function betterAuthUpsertAccountIndexMutation(
-  c: any,
-  input: { id: string; providerId: string; accountId: string; userId: string },
-) {
+export async function betterAuthUpsertAccountIndexMutation(c: any, input: { id: string; providerId: string; accountId: string; userId: string }) {
   assertAppOrganization(c);
 
   const now = Date.now();
@@ -198,8 +178,15 @@ export async function betterAuthDeleteAccountIndexMutation(c: any, input: { id?:
 export async function betterAuthCreateVerificationMutation(c: any, input: { data: Record<string, unknown> }) {
   assertAppOrganization(c);
 
-  await c.db.insert(authVerification).values(input.data as any).run();
-  return await c.db.select().from(authVerification).where(eq(authVerification.id, input.data.id as string)).get();
+  await c.db
+    .insert(authVerification)
+    .values(input.data as any)
+    .run();
+  return await c.db
+    .select()
+    .from(authVerification)
+    .where(eq(authVerification.id, input.data.id as string))
+    .get();
 }
 
 export async function betterAuthUpdateVerificationMutation(c: any, input: { where: any[]; update: Record<string, unknown> }) {
@@ -209,7 +196,11 @@ export async function betterAuthUpdateVerificationMutation(c: any, input: { wher
   if (!predicate) {
     return null;
   }
-  await c.db.update(authVerification).set(input.update as any).where(predicate).run();
+  await c.db
+    .update(authVerification)
+    .set(input.update as any)
+    .where(predicate)
+    .run();
   return await c.db.select().from(authVerification).where(predicate).get();
 }
 
@@ -220,7 +211,11 @@ export async function betterAuthUpdateManyVerificationMutation(c: any, input: { 
   if (!predicate) {
     return 0;
   }
-  await c.db.update(authVerification).set(input.update as any).where(predicate).run();
+  await c.db
+    .update(authVerification)
+    .set(input.update as any)
+    .where(predicate)
+    .run();
   const row = await c.db.select({ value: sqlCount() }).from(authVerification).where(predicate).get();
   return row?.value ?? 0;
 }
@@ -247,7 +242,71 @@ export async function betterAuthDeleteManyVerificationMutation(c: any, input: { 
   return rows.length;
 }
 
+/**
+ * Better Auth adapter actions — exposed as actions (not queue commands) so they
+ * execute immediately without competing in the organization workflow queue.
+ *
+ * The org actor's workflow queue is shared with GitHub sync, webhook processing,
+ * task mutations, and billing operations. When the queue is busy, auth operations
+ * would time out (10s), causing Better Auth's parseState to throw a non-StateError
+ * which redirects to ?error=please_restart_the_process.
+ *
+ * Auth operations are safe to run as actions because they are simple SQLite
+ * reads/writes scoped to this actor instance with no cross-actor side effects.
+ */
 export const organizationBetterAuthActions = {
+  // --- Mutation actions (formerly queue commands) ---
+
+  async betterAuthCreateVerification(c: any, input: { data: Record<string, unknown> }) {
+    return await betterAuthCreateVerificationMutation(c, input);
+  },
+
+  async betterAuthUpdateVerification(c: any, input: { where: any[]; update: Record<string, unknown> }) {
+    return await betterAuthUpdateVerificationMutation(c, input);
+  },
+
+  async betterAuthUpdateManyVerification(c: any, input: { where: any[]; update: Record<string, unknown> }) {
+    return await betterAuthUpdateManyVerificationMutation(c, input);
+  },
+
+  async betterAuthDeleteVerification(c: any, input: { where: any[] }) {
+    await betterAuthDeleteVerificationMutation(c, input);
+    return { ok: true };
+  },
+
+  async betterAuthDeleteManyVerification(c: any, input: { where: any[] }) {
+    return await betterAuthDeleteManyVerificationMutation(c, input);
+  },
+
+  async betterAuthUpsertSessionIndex(c: any, input: { sessionId: string; sessionToken: string; userId: string }) {
+    return await betterAuthUpsertSessionIndexMutation(c, input);
+  },
+
+  async betterAuthDeleteSessionIndex(c: any, input: { sessionId?: string; sessionToken?: string }) {
+    await betterAuthDeleteSessionIndexMutation(c, input);
+    return { ok: true };
+  },
+
+  async betterAuthUpsertEmailIndex(c: any, input: { email: string; userId: string }) {
+    return await betterAuthUpsertEmailIndexMutation(c, input);
+  },
+
+  async betterAuthDeleteEmailIndex(c: any, input: { email: string }) {
+    await betterAuthDeleteEmailIndexMutation(c, input);
+    return { ok: true };
+  },
+
+  async betterAuthUpsertAccountIndex(c: any, input: { id: string; providerId: string; accountId: string; userId: string }) {
+    return await betterAuthUpsertAccountIndexMutation(c, input);
+  },
+
+  async betterAuthDeleteAccountIndex(c: any, input: { id?: string; providerId?: string; accountId?: string }) {
+    await betterAuthDeleteAccountIndexMutation(c, input);
+    return { ok: true };
+  },
+
+  // --- Read actions ---
+
   async betterAuthFindSessionIndex(c: any, input: { sessionId?: string; sessionToken?: string }) {
     assertAppOrganization(c);
 

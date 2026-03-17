@@ -21,19 +21,6 @@ import {
   removeTaskSummaryMutation,
 } from "./actions/task-mutations.js";
 import {
-  betterAuthCreateVerificationMutation,
-  betterAuthDeleteAccountIndexMutation,
-  betterAuthDeleteEmailIndexMutation,
-  betterAuthDeleteManyVerificationMutation,
-  betterAuthDeleteSessionIndexMutation,
-  betterAuthDeleteVerificationMutation,
-  betterAuthUpdateManyVerificationMutation,
-  betterAuthUpdateVerificationMutation,
-  betterAuthUpsertAccountIndexMutation,
-  betterAuthUpsertEmailIndexMutation,
-  betterAuthUpsertSessionIndexMutation,
-} from "./actions/better-auth.js";
-import {
   applyOrganizationFreePlanMutation,
   applyOrganizationStripeCustomerMutation,
   applyOrganizationStripeSubscriptionMutation,
@@ -84,31 +71,6 @@ const COMMAND_HANDLERS: Record<OrganizationQueueName, WorkflowHandler> = {
     await syncGithubOrganizations(c, body);
     return { ok: true };
   },
-
-  // Better Auth index mutations
-  "organization.command.better_auth.session_index.upsert": async (c, body) => betterAuthUpsertSessionIndexMutation(c, body),
-  "organization.command.better_auth.session_index.delete": async (c, body) => {
-    await betterAuthDeleteSessionIndexMutation(c, body);
-    return { ok: true };
-  },
-  "organization.command.better_auth.email_index.upsert": async (c, body) => betterAuthUpsertEmailIndexMutation(c, body),
-  "organization.command.better_auth.email_index.delete": async (c, body) => {
-    await betterAuthDeleteEmailIndexMutation(c, body);
-    return { ok: true };
-  },
-  "organization.command.better_auth.account_index.upsert": async (c, body) => betterAuthUpsertAccountIndexMutation(c, body),
-  "organization.command.better_auth.account_index.delete": async (c, body) => {
-    await betterAuthDeleteAccountIndexMutation(c, body);
-    return { ok: true };
-  },
-  "organization.command.better_auth.verification.create": async (c, body) => betterAuthCreateVerificationMutation(c, body),
-  "organization.command.better_auth.verification.update": async (c, body) => betterAuthUpdateVerificationMutation(c, body),
-  "organization.command.better_auth.verification.update_many": async (c, body) => betterAuthUpdateManyVerificationMutation(c, body),
-  "organization.command.better_auth.verification.delete": async (c, body) => {
-    await betterAuthDeleteVerificationMutation(c, body);
-    return { ok: true };
-  },
-  "organization.command.better_auth.verification.delete_many": async (c, body) => betterAuthDeleteManyVerificationMutation(c, body),
 
   // GitHub sync mutations
   "organization.command.github.sync_progress.apply": async (c, body) => {

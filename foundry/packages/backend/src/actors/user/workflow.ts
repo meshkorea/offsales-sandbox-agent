@@ -19,11 +19,6 @@ import { buildWhere, columnFor, materializeRow, persistInput, persistPatch, tabl
 // ---------------------------------------------------------------------------
 
 export const USER_QUEUE_NAMES = [
-  "user.command.auth.create",
-  "user.command.auth.update",
-  "user.command.auth.update_many",
-  "user.command.auth.delete",
-  "user.command.auth.delete_many",
   "user.command.profile.upsert",
   "user.command.session_state.upsert",
   "user.command.task_state.upsert",
@@ -240,14 +235,6 @@ export async function deleteTaskStateMutation(c: any, input: { taskId: string; s
 type WorkflowHandler = (loopCtx: any, body: any) => Promise<any>;
 
 const COMMAND_HANDLERS: Record<UserQueueName, WorkflowHandler> = {
-  "user.command.auth.create": async (c, body) => createAuthRecordMutation(c, body),
-  "user.command.auth.update": async (c, body) => updateAuthRecordMutation(c, body),
-  "user.command.auth.update_many": async (c, body) => updateManyAuthRecordsMutation(c, body),
-  "user.command.auth.delete": async (c, body) => {
-    await deleteAuthRecordMutation(c, body);
-    return { ok: true };
-  },
-  "user.command.auth.delete_many": async (c, body) => deleteManyAuthRecordsMutation(c, body),
   "user.command.profile.upsert": async (c, body) => upsertUserProfileMutation(c, body),
   "user.command.session_state.upsert": async (c, body) => upsertSessionStateMutation(c, body),
   "user.command.task_state.upsert": async (c, body) => upsertTaskStateMutation(c, body),
