@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { randomUUID } from "node:crypto";
-import { basename, dirname } from "node:path";
+import { basename } from "node:path";
 import { asc, eq } from "drizzle-orm";
 import {
   DEFAULT_WORKSPACE_MODEL_GROUPS,
@@ -11,7 +11,6 @@ import {
 import { getActorRuntimeContext } from "../context.js";
 import { getOrCreateOrganization, getOrCreateTaskSandbox, getOrCreateUser, getTaskSandbox, selfTask } from "../handles.js";
 import { logActorInfo, logActorWarning, resolveErrorMessage } from "../logging.js";
-import { SANDBOX_REPO_CWD } from "../sandbox/index.js";
 import { resolveSandboxProviderId } from "../../sandbox-config.js";
 import { getBetterAuthService } from "../../services/better-auth.js";
 import { resolveOrganizationGithubAuth } from "../../services/github-auth.js";
@@ -183,9 +182,9 @@ async function injectGitCredentials(sandbox: any, login: string, email: string, 
     "set -euo pipefail",
     `git config --global user.name ${JSON.stringify(login)}`,
     `git config --global user.email ${JSON.stringify(email)}`,
-    `git config --global credential.helper 'store --file=/home/sandbox/.git-token'`,
-    `printf '%s\\n' ${JSON.stringify(`https://${login}:${token}@github.com`)} > /home/sandbox/.git-token`,
-    `chmod 600 /home/sandbox/.git-token`,
+    `git config --global credential.helper 'store --file=$HOME/.git-token'`,
+    `printf '%s\\n' ${JSON.stringify(`https://${login}:${token}@github.com`)} > $HOME/.git-token`,
+    `chmod 600 $HOME/.git-token`,
   ];
   const result = await sandbox.runProcess({
     command: "bash",
@@ -576,6 +575,10 @@ async function getTaskSandboxRuntime(
   const sandbox = await getOrCreateTaskSandbox(c, c.state.organizationId, sandboxId, {});
   const actorId = typeof sandbox.resolve === "function" ? await sandbox.resolve().catch(() => null) : null;
   const switchTarget = sandboxProviderId === "local" ? `sandbox://local/${sandboxId}` : `sandbox://e2b/${sandboxId}`;
+
+  // Resolve the actual repo CWD from the sandbox's $HOME (differs by provider).
+  const repoCwdResult = await sandbox.repoCwd();
+  const cwd = repoCwdResult?.cwd ?? "$HOME/repo";
   const now = Date.now();
 
   await c.db
@@ -585,7 +588,7 @@ async function getTaskSandboxRuntime(
       sandboxProviderId,
       sandboxActorId: typeof actorId === "string" ? actorId : null,
       switchTarget,
-      cwd: SANDBOX_REPO_CWD,
+      cwd,
       createdAt: now,
       updatedAt: now,
     })
@@ -595,7 +598,7 @@ async function getTaskSandboxRuntime(
         sandboxProviderId,
         sandboxActorId: typeof actorId === "string" ? actorId : null,
         switchTarget,
-        cwd: SANDBOX_REPO_CWD,
+        cwd,
         updatedAt: now,
       },
     })
@@ -606,7 +609,7 @@ async function getTaskSandboxRuntime(
     .set({
       activeSandboxId: sandboxId,
       activeSwitchTarget: switchTarget,
-      activeCwd: SANDBOX_REPO_CWD,
+      activeCwd: cwd,
       updatedAt: now,
     })
     .where(eq(taskRuntime.id, 1))
@@ -617,7 +620,7 @@ async function getTaskSandboxRuntime(
     sandboxId,
     sandboxProviderId,
     switchTarget,
-    cwd: SANDBOX_REPO_CWD,
+    cwd,
   };
 }
 
@@ -648,15 +651,15 @@ async function ensureSandboxRepo(c: any, sandbox: any, record: any, opts?: { ski
   logActorInfo("task.sandbox", "resolveAuth+metadata", { durationMs: Math.round(performance.now() - t0) });
 
   const baseRef = metadata.defaultBranch ?? "main";
-  const sandboxRepoRoot = dirname(SANDBOX_REPO_CWD);
+  // Use $HOME inside the shell script so the path resolves correctly regardless
+  // of which user the sandbox runs as (E2B: "user", local Docker: "sandbox").
   const script = [
     "set -euo pipefail",
-    `mkdir -p ${JSON.stringify(sandboxRepoRoot)}`,
+    'REPO_DIR="$HOME/repo"',
+    'mkdir -p "$HOME"',
     "git config --global credential.helper '!f() { echo username=x-access-token; echo password=${GH_TOKEN:-$GITHUB_TOKEN}; }; f'",
-    `if [ ! -d ${JSON.stringify(`${SANDBOX_REPO_CWD}/.git`)} ]; then rm -rf ${JSON.stringify(SANDBOX_REPO_CWD)} && git clone ${JSON.stringify(
-      metadata.remoteUrl,
-    )} ${JSON.stringify(SANDBOX_REPO_CWD)}; fi`,
-    `cd ${JSON.stringify(SANDBOX_REPO_CWD)}`,
+    `if [ ! -d "$REPO_DIR/.git" ]; then rm -rf "$REPO_DIR" && git clone ${JSON.stringify(metadata.remoteUrl)} "$REPO_DIR"; fi`,
+    'cd "$REPO_DIR"',
     "git fetch origin --prune",
     `if git show-ref --verify --quiet refs/remotes/origin/${JSON.stringify(record.branchName).slice(1, -1)}; then target_ref=${JSON.stringify(
       `origin/${record.branchName}`,
