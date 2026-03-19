@@ -1,0 +1,77 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 0.5.0-offsales.1)'
+        required: true
+        type: string
+
+env:
+  CARGO_INCREMENTAL: 0
+  SKIP_OPENAPI_GEN: 1
+
+jobs:
+  build:
+    name: Build Linux x86_64
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build binary (Linux x86_64 musl)
+        run: |
+          docker/release/build.sh x86_64-unknown-linux-musl ${{ steps.version.outputs.version }}
+          ls -la dist/
+
+      - name: Create install script
+        run: |
+          cat > dist/install.sh << 'SCRIPT'
+          #!/bin/sh
+          set -e
+          REPO="meshkorea/offsales-sandbox-agent"
+          if [ -z "$VERSION" ]; then
+            VERSION=$(curl -sL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed 's/.*"v\(.*\)".*/\1/')
+          fi
+          BINARY_URL="https://github.com/${REPO}/releases/download/v${VERSION}/sandbox-agent-x86_64-unknown-linux-musl"
+          echo "Installing sandbox-agent v${VERSION}..."
+          curl -fsSL "$BINARY_URL" -o /usr/local/bin/sandbox-agent
+          chmod +x /usr/local/bin/sandbox-agent
+          echo "sandbox-agent v${VERSION} installed to /usr/local/bin/sandbox-agent"
+          SCRIPT
+          chmod +x dist/install.sh
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          body: |
+            Custom build with SDK session visibility in Inspector UI.
+
+            ## Install
+            ```bash
+            curl -fsSL https://github.com/meshkorea/offsales-sandbox-agent/releases/download/v${{ steps.version.outputs.version }}/install.sh | sh
+            ```
+          files: |
+            dist/sandbox-agent-x86_64-unknown-linux-musl
+            dist/install.sh
+          draft: false
+          prerelease: false

@@ -627,8 +627,20 @@ export default function App() {
           const resumed = await client.resumeSession(sessionId);
           subscribeToSession(resumed);
         } catch (resumeError) {
-          console.warn("Failed to resume current session after reconnect:", resumeError);
-          setHistoryLoadingSessionId(null);
+          // Fallback: try resumeOrCreateSession for server-side sessions
+          const sessionInfo = sessions.find((s) => s.sessionId === sessionId);
+          if (sessionInfo) {
+            try {
+              const resumed = await client.resumeOrCreateSession({ id: sessionId, agent: sessionInfo.agent });
+              subscribeToSession(resumed);
+            } catch (fallbackError) {
+              console.warn("Failed to resume session after reconnect:", fallbackError);
+              setHistoryLoadingSessionId(null);
+            }
+          } else {
+            console.warn("Failed to resume current session after reconnect:", resumeError);
+            setHistoryLoadingSessionId(null);
+          }
         }
       }
       if (reportError) {
@@ -712,14 +724,15 @@ export default function App() {
     setSessionsError(null);
     try {
       const archivedSessionIds = getArchivedSessionIds();
-      // TODO: This eagerly paginates all sessions so we can reverse-sort to
-      // show newest first. Replace with a server-side descending sort or a
-      // dedicated "recent sessions" query once the API supports it.
       const all: SessionListItem[] = [];
+      const localSessionIds = new Set<string>();
+
+      // 1. Local sessions (from IndexedDB persist driver)
       let cursor: string | undefined;
       do {
         const page = await getClient().listSessions({ cursor, limit: 200 });
         for (const s of page.items) {
+          localSessionIds.add(s.id);
           all.push({
             sessionId: s.id,
             agent: s.agent,
@@ -729,6 +742,24 @@ export default function App() {
         }
         cursor = page.nextCursor;
       } while (cursor);
+
+      // 2. Server-side ACP servers (sessions created by SDK clients like orchestrator)
+      try {
+        const servers = await getClient().listAcpServers();
+        for (const server of servers.servers) {
+          if (!localSessionIds.has(server.serverId)) {
+            all.push({
+              sessionId: server.serverId,
+              agent: server.agent,
+              ended: false,
+              archived: false,
+            });
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to list ACP servers:", e);
+      }
+
       all.reverse();
       setSessions(all);
     } catch {
@@ -1422,10 +1453,22 @@ export default function App() {
         if (selectedSessionIdRef.current !== requestedSessionId) return;
         subscribeToSession(session);
       })
-      .catch((error) => {
+      .catch((resumeError) => {
         if (selectedSessionIdRef.current !== requestedSessionId) return;
-        setSessionError(getErrorMessage(error, "Unable to resume session"));
-        setHistoryLoadingSessionId((current) => (current === requestedSessionId ? null : current));
+        // Fallback: if resume fails (e.g. server-side session not in local persist),
+        // try resumeOrCreateSession to connect to the running agent
+        const sessionAgent = sessionInfo.agent;
+        getClient()
+          .resumeOrCreateSession({ id: requestedSessionId, agent: sessionAgent })
+          .then((session) => {
+            if (selectedSessionIdRef.current !== requestedSessionId) return;
+            subscribeToSession(session);
+          })
+          .catch((fallbackError) => {
+            if (selectedSessionIdRef.current !== requestedSessionId) return;
+            setSessionError(getErrorMessage(fallbackError, "Unable to resume session"));
+            setHistoryLoadingSessionId((current) => (current === requestedSessionId ? null : current));
+          });
       })
       .finally(() => {
         if (resumeInFlightSessionIdRef.current === requestedSessionId) {
