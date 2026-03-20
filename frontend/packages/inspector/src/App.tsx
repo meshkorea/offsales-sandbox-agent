@@ -51,6 +51,8 @@ type SessionListItem = {
   agent: string;
   ended: boolean;
   archived: boolean;
+  /** True if this session was discovered from server (not local persist) */
+  serverSide?: boolean;
 };
 
 const ERROR_TOAST_MS = 6000;
@@ -656,21 +658,13 @@ export default function App() {
       await refreshAgents();
       await fetchSessions();
       if (sessionId) {
-        try {
-          const resumed = await client.resumeSession(sessionId);
-          subscribeToSession(resumed);
-        } catch (resumeError) {
-          // Fallback: try resumeOrCreateSession for server-side sessions
-          const sessionInfo = sessions.find((s) => s.sessionId === sessionId);
-          if (sessionInfo) {
-            try {
-              const resumed = await client.resumeOrCreateSession({ id: sessionId, agent: sessionInfo.agent });
-              subscribeToSession(resumed);
-            } catch (fallbackError) {
-              console.warn("Failed to resume session after reconnect:", fallbackError);
-              setHistoryLoadingSessionId(null);
-            }
-          } else {
+        const sessionInfo = sessions.find((s) => s.sessionId === sessionId);
+        // Skip SDK resume for server-side sessions — auto-load useEffect handles them
+        if (!sessionInfo?.serverSide) {
+          try {
+            const resumed = await client.resumeSession(sessionId);
+            subscribeToSession(resumed);
+          } catch (resumeError) {
             console.warn("Failed to resume current session after reconnect:", resumeError);
             setHistoryLoadingSessionId(null);
           }
@@ -786,6 +780,7 @@ export default function App() {
               agent: server.agent,
               ended: false,
               archived: false,
+              serverSide: true,
             });
           }
         }
@@ -1480,6 +1475,88 @@ export default function App() {
     const requestedSessionId = sessionId;
     resumeInFlightSessionIdRef.current = requestedSessionId;
 
+    // Server-side sessions: fetch events directly from server API (no SDK session creation)
+    if (sessionInfo.serverSide) {
+      const loadServerEvents = async () => {
+        try {
+          const baseUrl = endpoint.replace(/\/+$/, "");
+          const headers: Record<string, string> = { Accept: "application/json" };
+          if (token) headers["Authorization"] = `Bearer ${token}`;
+          const res = await fetch(`${baseUrl}/v1/sessions/${encodeURIComponent(requestedSessionId)}/events`, { headers });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          const serverEvents = (data.events ?? []) as Array<{
+            index: number;
+            created_at: number;
+            sender: string;
+            payload: Record<string, unknown>;
+          }>;
+          const mapped: SessionEvent[] = serverEvents.map((se) => ({
+            id: `server-${se.index}`,
+            eventIndex: se.index,
+            sessionId: requestedSessionId,
+            createdAt: se.created_at,
+            connectionId: "server",
+            sender: se.sender as "client" | "agent",
+            payload: se.payload,
+          }));
+          if (selectedSessionIdRef.current !== requestedSessionId) return;
+          sessionEventsCacheRef.current.set(requestedSessionId, mapped);
+          setEvents(mapped);
+          setHistoryLoadingSessionId(null);
+
+          // Poll for new events every 2 seconds (server sessions don't have SSE subscription)
+          const pollInterval = setInterval(async () => {
+            if (selectedSessionIdRef.current !== requestedSessionId) {
+              clearInterval(pollInterval);
+              return;
+            }
+            try {
+              const pollRes = await fetch(`${baseUrl}/v1/sessions/${encodeURIComponent(requestedSessionId)}/events`, { headers });
+              if (!pollRes.ok) return;
+              const pollData = await pollRes.json();
+              const newEvents = (pollData.events ?? []) as Array<{
+                index: number;
+                created_at: number;
+                sender: string;
+                payload: Record<string, unknown>;
+              }>;
+              const newMapped: SessionEvent[] = newEvents.map((se) => ({
+                id: `server-${se.index}`,
+                eventIndex: se.index,
+                sessionId: requestedSessionId,
+                createdAt: se.created_at,
+                connectionId: "server",
+                sender: se.sender as "client" | "agent",
+                payload: se.payload,
+              }));
+              if (selectedSessionIdRef.current !== requestedSessionId) {
+                clearInterval(pollInterval);
+                return;
+              }
+              sessionEventsCacheRef.current.set(requestedSessionId, newMapped);
+              setEvents((prev) => areEventsEqualById(prev, newMapped) ? prev : newMapped);
+            } catch { /* ignore poll errors */ }
+          }, 2000);
+
+          // Cleanup interval when component unmounts or session changes
+          const cleanup = () => clearInterval(pollInterval);
+          return cleanup;
+        } catch (error) {
+          if (selectedSessionIdRef.current !== requestedSessionId) return;
+          setSessionError(getErrorMessage(error, "Unable to load server session events"));
+          setHistoryLoadingSessionId(null);
+        }
+      };
+      loadServerEvents().finally(() => {
+        if (resumeInFlightSessionIdRef.current === requestedSessionId) {
+          resumeInFlightSessionIdRef.current = null;
+        }
+      });
+      return;
+    }
+
+    // Local sessions: use SDK resume
     getClient()
       .resumeSession(requestedSessionId)
       .then((session) => {
@@ -1488,27 +1565,15 @@ export default function App() {
       })
       .catch((resumeError) => {
         if (selectedSessionIdRef.current !== requestedSessionId) return;
-        // Fallback: if resume fails (e.g. server-side session not in local persist),
-        // try resumeOrCreateSession to connect to the running agent
-        const sessionAgent = sessionInfo.agent;
-        getClient()
-          .resumeOrCreateSession({ id: requestedSessionId, agent: sessionAgent })
-          .then((session) => {
-            if (selectedSessionIdRef.current !== requestedSessionId) return;
-            subscribeToSession(session);
-          })
-          .catch((fallbackError) => {
-            if (selectedSessionIdRef.current !== requestedSessionId) return;
-            setSessionError(getErrorMessage(fallbackError, "Unable to resume session"));
-            setHistoryLoadingSessionId((current) => (current === requestedSessionId ? null : current));
-          });
+        setSessionError(getErrorMessage(resumeError, "Unable to resume session"));
+        setHistoryLoadingSessionId((current) => (current === requestedSessionId ? null : current));
       })
       .finally(() => {
         if (resumeInFlightSessionIdRef.current === requestedSessionId) {
           resumeInFlightSessionIdRef.current = null;
         }
       });
-  }, [connected, sessionId, sessions, getClient, subscribeToSession]);
+  }, [connected, sessionId, sessions, getClient, subscribeToSession, endpoint, token]);
 
   const currentAgent = agents.find((agent) => agent.id === agentId);
   const agentLabel = agentDisplayNames[agentId] ?? agentId;
