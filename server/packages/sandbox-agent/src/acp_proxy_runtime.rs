@@ -150,7 +150,28 @@ impl AcpProxyRuntime {
             "acp_proxy: instance resolved"
         );
 
-        let payload = normalize_payload_for_agent(instance.agent, payload);
+        let mut payload = normalize_payload_for_agent(instance.agent, payload);
+
+        // Auto-inject sessionId for session methods when missing (e.g. Inspector UI)
+        if matches!(method.as_str(), "session/prompt" | "session/cancel") {
+            let has_session_id = payload
+                .pointer("/params/sessionId")
+                .and_then(|v| v.as_str())
+                .is_some_and(|s| !s.is_empty());
+
+            if !has_session_id {
+                if let Some(agent_session_id) = self.find_agent_session_id(server_id).await {
+                    if let Some(params) = payload.get_mut("params").and_then(Value::as_object_mut) {
+                        params.insert("sessionId".to_string(), Value::String(agent_session_id.clone()));
+                        tracing::info!(
+                            server_id = server_id,
+                            session_id = %agent_session_id,
+                            "acp_proxy: auto-injected sessionId from stored session/new response"
+                        );
+                    }
+                }
+            }
+        }
 
         // Store client envelope for session sharing
         self.store_envelope(server_id, "client", payload.clone()).await;
@@ -234,6 +255,28 @@ impl AcpProxyRuntime {
             .get(server_id)
             .cloned()
             .unwrap_or_default()
+    }
+
+    /// Find the agent sessionId from stored session/new response envelopes.
+    /// Used to auto-inject sessionId when Inspector sends prompts without it.
+    async fn find_agent_session_id(&self, server_id: &str) -> Option<String> {
+        let store = self.inner.event_store.read().await;
+        let events = store.get(server_id)?;
+        // Look for the agent's response to session/new which contains the sessionId
+        for event in events.iter().rev() {
+            if event.sender != "agent" {
+                continue;
+            }
+            // session/new response: { "result": { "sessionId": "..." } }
+            if let Some(session_id) = event
+                .payload
+                .pointer("/result/sessionId")
+                .and_then(|v| v.as_str())
+            {
+                return Some(session_id.to_string());
+            }
+        }
+        None
     }
 
     /// Store an ACP envelope for later retrieval
