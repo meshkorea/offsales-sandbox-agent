@@ -1381,6 +1381,71 @@ export default function App() {
         continue;
       }
 
+      // ACP response envelopes (no method, has result) — e.g. tool results from agent
+      if (event.sender === "agent" && !method && payload.result != null) {
+        const result = payload.result as Record<string, unknown>;
+        // Tool result with output/metadata (e.g. Read, Grep, Glob tool results)
+        if (typeof result.output === "string" || result.metadata != null) {
+          const output = (result.output as string) ?? "";
+          const metadata = result.metadata as Record<string, unknown> | undefined;
+
+          // Extract file path from XML-style output: <path>...</path>
+          const pathMatch = output.match(/<path>([^<]+)<\/path>/);
+          const typeMatch = output.match(/<type>([^<]+)<\/type>/);
+          const filePath = pathMatch?.[1] ?? metadata?.loaded?.[0] ?? undefined;
+          const fileType = typeMatch?.[1] ?? "result";
+
+          // Build a readable tool label
+          let toolName = "Tool Result";
+          if (filePath) {
+            const shortPath = String(filePath).split("/").slice(-3).join("/");
+            toolName = `📄 ${shortPath}`;
+          }
+
+          // Show preview or truncated output
+          const preview = (metadata?.preview as string) ?? output.slice(0, 500);
+
+          flushAssistant(time);
+          flushThought(time);
+          entries.push({
+            id: event.id,
+            eventId: event.id,
+            kind: "tool",
+            time,
+            toolName,
+            toolOutput: preview,
+            toolStatus: "complete",
+          });
+          continue;
+        }
+      }
+
+      // ACP response envelopes with content array (session/prompt response)
+      if (event.sender === "agent" && !method && payload.result != null) {
+        const result = payload.result as Record<string, unknown>;
+        const content = result.content as Array<{ type?: string; text?: string }> | undefined;
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            if (block.type === "text" && block.text) {
+              flushAssistant(time);
+              if (!assistantAccumId) {
+                assistantAccumId = `assistant-resp-${event.id}`;
+                entries.push({
+                  id: assistantAccumId,
+                  eventId: event.id,
+                  kind: "message",
+                  time,
+                  role: "assistant",
+                  text: block.text,
+                });
+              }
+              assistantAccumText = block.text;
+            }
+          }
+          continue;
+        }
+      }
+
       // For any other ACP envelope, show as generic meta
       if (method) {
         entries.push({
