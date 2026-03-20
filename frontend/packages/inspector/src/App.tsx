@@ -755,11 +755,17 @@ export default function App() {
       const localSessionIds = new Set<string>();
 
       // 1. Local sessions (from IndexedDB persist driver)
+      // Track both session IDs and their ACP connection IDs to deduplicate
+      const knownAcpServerIds = new Set<string>();
       let cursor: string | undefined;
       do {
         const page = await getClient().listSessions({ cursor, limit: 200 });
         for (const s of page.items) {
           localSessionIds.add(s.id);
+          // lastConnectionId is the ACP serverId (sdk-{agent}-{uuid})
+          if (s.lastConnectionId) {
+            knownAcpServerIds.add(s.lastConnectionId);
+          }
           all.push({
             sessionId: s.id,
             agent: s.agent,
@@ -771,10 +777,11 @@ export default function App() {
       } while (cursor);
 
       // 2. Server-side ACP servers (sessions created by SDK clients like orchestrator)
+      // Skip servers that already have a local session (matched by lastConnectionId)
       try {
         const servers = await getClient().listAcpServers();
         for (const server of servers.servers) {
-          if (!localSessionIds.has(server.serverId)) {
+          if (!localSessionIds.has(server.serverId) && !knownAcpServerIds.has(server.serverId)) {
             all.push({
               sessionId: server.serverId,
               agent: server.agent,
