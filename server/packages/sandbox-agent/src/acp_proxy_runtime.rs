@@ -200,29 +200,7 @@ impl AcpProxyRuntime {
     ) -> Result<PinBoxSseStream, SandboxError> {
         let instance = self.get_instance(server_id).await?;
         let stream = instance.runtime.clone().sse_stream(last_event_id).await;
-
-        // Wrap stream to capture agent notification envelopes
-        let inner = self.inner.clone();
-        let sid = server_id.to_string();
-        let wrapped = futures::StreamExt::map(stream, move |item| {
-            if let Ok(ref event) = item {
-                // Try to parse the SSE data field as JSON to store as agent envelope
-                let data_str = format!("{:?}", event);
-                // Extract JSON from SSE event data
-                if let Some(json_start) = data_str.find('{') {
-                    if let Ok(value) = serde_json::from_str::<Value>(&data_str[json_start..]) {
-                        let inner = inner.clone();
-                        let sid = sid.clone();
-                        tokio::spawn(async move {
-                            inner.store_envelope_inner(&sid, "agent", value).await;
-                        });
-                    }
-                }
-            }
-            item
-        });
-
-        Ok(Box::pin(wrapped))
+        Ok(Box::pin(stream))
     }
 
     pub async fn delete(&self, server_id: &str) -> Result<(), SandboxError> {
@@ -329,6 +307,19 @@ impl AcpProxyRuntime {
             .write()
             .await
             .insert(server_id.to_string(), created.clone());
+
+        // Spawn background task to capture agent notifications for session sharing
+        let inner = self.inner.clone();
+        let sid = server_id.to_string();
+        let runtime = created.runtime.clone();
+        tokio::spawn(async move {
+            use futures::StreamExt;
+            let mut stream = runtime.value_stream(None).await;
+            while let Some(value) = stream.next().await {
+                inner.store_envelope_inner(&sid, "agent", value).await;
+            }
+            tracing::debug!(server_id = %sid, "event capture task ended");
+        });
 
         Ok(created)
     }
