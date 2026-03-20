@@ -785,19 +785,12 @@ export default function App() {
       // separate server-side entries.
       try {
         const servers = await getClient().listAcpServers();
-        console.log("[fetchSessions] dedup:", {
-          localIds: [...localSessionIds],
-          knownAcpIds: [...knownAcpServerIds],
-          ownAcpIds: [...ownAcpServerIdsRef.current],
-          serverIds: servers.servers.map((s) => s.serverId),
-        });
         for (const server of servers.servers) {
           if (
             localSessionIds.has(server.serverId) ||
             knownAcpServerIds.has(server.serverId) ||
             ownAcpServerIdsRef.current.has(server.serverId)
           ) {
-            console.log("[fetchSessions] filtering out server:", server.serverId);
             continue;
           }
           all.push({
@@ -943,6 +936,14 @@ export default function App() {
 
     try {
       console.log("[createNewSession] Calling createSession...");
+
+      // Snapshot ACP servers before creation to detect which one is ours
+      let acpServerIdsBefore = new Set<string>();
+      try {
+        const before = await getClient().listAcpServers();
+        acpServerIdsBefore = new Set(before.servers.map((s) => s.serverId));
+      } catch { /* ignore */ }
+
       const createSessionPromise = getClient().createSession({
         agent: nextAgentId,
         sessionInit: {
@@ -963,9 +964,17 @@ export default function App() {
         window.clearTimeout(slowWarningTimerId);
       }
       console.log("[createNewSession] Session created:", session.id, "connectionId:", session.lastConnectionId, "agentSessionId:", session.agentSessionId);
-      if (session.lastConnectionId) {
-        ownAcpServerIdsRef.current.add(session.lastConnectionId);
-      }
+
+      // Detect newly created ACP server by diffing before/after
+      try {
+        const after = await getClient().listAcpServers();
+        for (const server of after.servers) {
+          if (!acpServerIdsBefore.has(server.serverId)) {
+            ownAcpServerIdsRef.current.add(server.serverId);
+            console.log("[createNewSession] Detected own ACP server:", server.serverId);
+          }
+        }
+      } catch { /* ignore */ }
       if (slowWarningShown) {
         setSessionError(null);
       }
