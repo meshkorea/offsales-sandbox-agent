@@ -807,14 +807,33 @@ export default function App() {
       // separate server-side entries.
       try {
         const servers = await getClient().listAcpServers();
-        for (const server of servers.servers) {
-          if (
-            localSessionIds.has(server.serverId) ||
-            knownAcpServerIds.has(server.serverId) ||
-            ownAcpServerIdsRef.current.has(server.serverId)
-          ) {
-            continue;
-          }
+        // Fetch event counts in parallel to filter out empty ACP connections
+        const serverChecks = await Promise.all(
+          servers.servers.map(async (server) => {
+            if (
+              localSessionIds.has(server.serverId) ||
+              knownAcpServerIds.has(server.serverId) ||
+              ownAcpServerIdsRef.current.has(server.serverId)
+            ) {
+              return null; // already tracked locally
+            }
+            // Only show server-side sessions that have events (actual conversations)
+            try {
+              const baseUrl = endpoint.replace(/\/+$/, "");
+              const headers: Record<string, string> = { Accept: "application/json" };
+              if (token) headers["Authorization"] = `Bearer ${token}`;
+              const res = await fetch(`${baseUrl}/v1/sessions/${encodeURIComponent(server.serverId)}/events`, { headers });
+              if (res.ok) {
+                const data = await res.json();
+                const events = data.events ?? [];
+                if (events.length > 0) return server; // has events → real session
+              }
+            } catch { /* ignore */ }
+            return null; // no events → empty connection, skip
+          }),
+        );
+        for (const server of serverChecks) {
+          if (!server) continue;
           all.push({
             sessionId: server.serverId,
             agent: server.agent,
