@@ -3001,6 +3001,14 @@ async fn set_session_status(
     session_id: &str,
     status: &str,
 ) -> Result<(), String> {
+    // ACP(SDK)로 생성된 세션은 projection에 없을 수 있음 — 자동 생성
+    {
+        let projection = state.projection.lock().await;
+        if !projection.sessions.contains_key(session_id) {
+            drop(projection);
+            state.ensure_session(session_id, "/".to_string()).await?;
+        }
+    }
     let updated_meta = {
         let mut projection = state.projection.lock().await;
         let Some(session) = projection.sessions.get_mut(session_id) else {
