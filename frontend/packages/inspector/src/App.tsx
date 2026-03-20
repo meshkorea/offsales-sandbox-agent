@@ -271,6 +271,8 @@ export default function App() {
   const [sessionModelById, setSessionModelById] = useState<Record<string, string>>(() => getPersistedSessionModels());
 
   const [message, setMessage] = useState("");
+  // Track ACP connection IDs created by this Inspector client to exclude from server-side list
+  const ownAcpServerIdsRef = useRef(new Set<string>());
   const [events, setEvents] = useState<SessionEvent[]>([]);
   const [sendingSessionId, setSendingSessionId] = useState<string | null>(null);
   const [historyLoadingSessionId, setHistoryLoadingSessionId] = useState<string | null>(null);
@@ -783,12 +785,12 @@ export default function App() {
       // separate server-side entries.
       try {
         const servers = await getClient().listAcpServers();
-        if (servers.servers.length > 0 || knownAcpServerIds.size > 0) {
-          console.debug("[fetchSessions] dedup check",
-            { localIds: [...localSessionIds], acpConnIds: [...knownAcpServerIds], serverIds: servers.servers.map(s => s.serverId) });
-        }
         for (const server of servers.servers) {
-          if (localSessionIds.has(server.serverId) || knownAcpServerIds.has(server.serverId)) {
+          if (
+            localSessionIds.has(server.serverId) ||
+            knownAcpServerIds.has(server.serverId) ||
+            ownAcpServerIdsRef.current.has(server.serverId)
+          ) {
             continue;
           }
           all.push({
@@ -953,7 +955,10 @@ export default function App() {
       } finally {
         window.clearTimeout(slowWarningTimerId);
       }
-      console.log("[createNewSession] Session created:", session.id);
+      console.log("[createNewSession] Session created:", session.id, "connectionId:", session.lastConnectionId);
+      if (session.lastConnectionId) {
+        ownAcpServerIdsRef.current.add(session.lastConnectionId);
+      }
       if (slowWarningShown) {
         setSessionError(null);
       }
