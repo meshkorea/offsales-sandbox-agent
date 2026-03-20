@@ -838,17 +838,50 @@ export default function App() {
     const prompt = message.trim();
     if (!prompt || !sessionId || sendingSessionId) return;
     const targetSessionId = sessionId;
+    const sessionInfo = sessions.find((s) => s.sessionId === targetSessionId);
     setSessionError(null);
     setMessage("");
     setSendingSessionId(targetSessionId);
 
     try {
-      let session = activeSessionRef.current;
-      if (!session || session.id !== targetSessionId) {
-        session = await getClient().resumeSession(targetSessionId);
-        subscribeToSession(session);
+      if (sessionInfo?.serverSide) {
+        // Server-side sessions (created by external SDK clients like orchestrator):
+        // Send via ACP proxy endpoint to continue the existing conversation
+        const baseUrl = endpoint.replace(/\/+$/, "");
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        };
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+
+        // Send session/prompt JSON-RPC via the ACP proxy for this server
+        const res = await fetch(
+          `${baseUrl}/api/v1/acp/${encodeURIComponent(targetSessionId)}`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id: `inspector-${Date.now()}`,
+              method: "session/prompt",
+              params: {
+                prompt: [{ type: "text", text: prompt }],
+              },
+            }),
+          },
+        );
+        if (!res.ok) {
+          const body = await res.text().catch(() => "");
+          throw new Error(`Server returned ${res.status}: ${body}`);
+        }
+      } else {
+        let session = activeSessionRef.current;
+        if (!session || session.id !== targetSessionId) {
+          session = await getClient().resumeSession(targetSessionId);
+          subscribeToSession(session);
+        }
+        await session.prompt([{ type: "text", text: prompt }]);
       }
-      await session.prompt([{ type: "text", text: prompt }]);
     } catch (error) {
       setSessionError(getErrorMessage(error, "Unable to send message"));
     } finally {
