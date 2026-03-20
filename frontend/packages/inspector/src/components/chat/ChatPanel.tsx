@@ -1,5 +1,5 @@
 import type { TranscriptEntry } from "@sandbox-agent/react";
-import { AlertTriangle, Archive, CheckSquare, MessageSquare, Plus, Square, Terminal } from "lucide-react";
+import { AlertTriangle, Archive, CheckSquare, MessageSquare, Plus, Square, StopCircle, Terminal } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { AgentInfo } from "sandbox-agent";
 import { formatShortId } from "../../utils/format";
@@ -57,6 +57,8 @@ const ChatPanel = ({
   agentId,
   tokenUsage,
   onPermissionReply,
+  isSending,
+  onCancelPrompt,
 }: {
   sessionId: string;
   transcriptEntries: TranscriptEntry[];
@@ -88,6 +90,8 @@ const ChatPanel = ({
   agentId?: string;
   tokenUsage?: { used: number; size: number; cost?: number } | null;
   onPermissionReply?: (permissionId: string, reply: "once" | "always" | "reject") => void;
+  isSending?: boolean;
+  onCancelPrompt?: () => void;
 }) => {
   const [showAgentMenu, setShowAgentMenu] = useState(false);
   const [copiedSessionId, setCopiedSessionId] = useState(false);
@@ -250,10 +254,11 @@ const ChatPanel = ({
           }
           message={message}
           onMessageChange={onMessageChange}
-          onSendMessage={onSendMessage}
+          onSendMessage={isSending && onCancelPrompt ? onCancelPrompt : onSendMessage}
           onKeyDown={onKeyDown}
-          placeholder={sessionEnded ? "Session ended" : "Send a message..."}
+          placeholder={sessionEnded ? "Session ended" : isSending ? "Agent is working..." : "Send a message..."}
           disabled={sessionEnded}
+          isSending={isSending}
           onPermissionReply={onPermissionReply}
         />
       )}

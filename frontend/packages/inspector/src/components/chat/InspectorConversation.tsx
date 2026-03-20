@@ -6,7 +6,7 @@ import {
   type PermissionReply,
   type TranscriptEntry,
 } from "@sandbox-agent/react";
-import { AlertTriangle, Brain, Check, ChevronDown, ChevronRight, ExternalLink, Info, PlayCircle, Send, Shield, Wrench, X } from "lucide-react";
+import { AlertTriangle, Brain, Check, ChevronDown, ChevronRight, ExternalLink, Info, PlayCircle, Send, Shield, StopCircle, Wrench, X } from "lucide-react";
 import type { ReactNode, RefObject } from "react";
 import MarkdownText from "./MarkdownText";
 
@@ -95,6 +95,7 @@ export interface InspectorConversationProps {
   onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   placeholder: string;
   disabled: boolean;
+  isSending?: boolean;
   onPermissionReply?: (permissionId: string, reply: PermissionReply) => void;
 }
 
@@ -113,6 +114,7 @@ const InspectorConversation = ({
   onKeyDown,
   placeholder,
   disabled,
+  isSending,
   onPermissionReply,
 }: InspectorConversationProps) => {
   return (
@@ -175,8 +177,8 @@ const InspectorConversation = ({
         onKeyDown,
         placeholder,
         disabled,
-        submitLabel: "Send",
-        renderSubmitContent: () => <Send />,
+        submitLabel: isSending ? "Cancel" : "Send",
+        renderSubmitContent: () => isSending ? <StopCircle /> : <Send />,
       }}
     />
   );

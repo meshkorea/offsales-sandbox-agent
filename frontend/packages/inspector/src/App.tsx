@@ -947,6 +947,42 @@ export default function App() {
     }
   };
 
+  const cancelCurrentPrompt = async () => {
+    if (!sessionId || !sendingSessionId) return;
+    const targetSessionId = sessionId;
+    const sessionInfo = sessions.find((s) => s.sessionId === targetSessionId);
+
+    try {
+      if (sessionInfo?.serverSide) {
+        const baseUrl = endpoint.replace(/\/+$/, "");
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        };
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+        await fetch(`${baseUrl}/v1/acp/${encodeURIComponent(targetSessionId)}`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: `inspector-cancel-${Date.now()}`,
+            method: "session/cancel",
+            params: {},
+          }),
+        });
+      } else {
+        const session = activeSessionRef.current;
+        if (session) {
+          await session.rawSend("session/cancel", {});
+        }
+      }
+    } catch (error) {
+      console.warn("Cancel failed:", error);
+    } finally {
+      setSendingSessionId(null);
+    }
+  };
+
   const selectSession = (session: SessionListItem) => {
     setSessionId(session.sessionId);
     selectedSessionIdRef.current = session.sessionId;
@@ -2104,6 +2140,8 @@ export default function App() {
           agentId={agentId}
           tokenUsage={tokenUsage}
           onPermissionReply={handlePermissionReply}
+          isSending={!!sendingSessionId}
+          onCancelPrompt={cancelCurrentPrompt}
         />
 
         <DebugPanel
