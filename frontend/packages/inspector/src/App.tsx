@@ -171,6 +171,28 @@ const archiveSessionId = (id: string): void => {
   window.localStorage.setItem(ARCHIVED_SESSIONS_KEY, JSON.stringify([...archived]));
 };
 
+const OWN_ACP_SERVERS_KEY = "inspector_own_acp_servers";
+
+const getOwnAcpServerIds = (): Set<string> => {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = window.localStorage.getItem(OWN_ACP_SERVERS_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((v): v is string => typeof v === "string"));
+  } catch {
+    return new Set();
+  }
+};
+
+const addOwnAcpServerId = (id: string): void => {
+  if (typeof window === "undefined" || !id) return;
+  const ids = getOwnAcpServerIds();
+  ids.add(id);
+  window.localStorage.setItem(OWN_ACP_SERVERS_KEY, JSON.stringify([...ids]));
+};
+
 const unarchiveSessionId = (id: string): void => {
   if (typeof window === "undefined" || !id) return;
   const archived = getArchivedSessionIds();
@@ -272,7 +294,7 @@ export default function App() {
 
   const [message, setMessage] = useState("");
   // Track ACP connection IDs created by this Inspector client to exclude from server-side list
-  const ownAcpServerIdsRef = useRef(new Set<string>());
+  const ownAcpServerIdsRef = useRef(getOwnAcpServerIds());
   const [events, setEvents] = useState<SessionEvent[]>([]);
   const [sendingSessionId, setSendingSessionId] = useState<string | null>(null);
   const [historyLoadingSessionId, setHistoryLoadingSessionId] = useState<string | null>(null);
@@ -971,7 +993,7 @@ export default function App() {
         for (const server of after.servers) {
           if (!acpServerIdsBefore.has(server.serverId)) {
             ownAcpServerIdsRef.current.add(server.serverId);
-            console.log("[createNewSession] Detected own ACP server:", server.serverId);
+            addOwnAcpServerId(server.serverId);
           }
         }
       } catch { /* ignore */ }
