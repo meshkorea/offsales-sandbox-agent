@@ -777,19 +777,27 @@ export default function App() {
       } while (cursor);
 
       // 2. Server-side ACP servers (sessions created by SDK clients like orchestrator)
-      // Skip servers that already have a local session (matched by lastConnectionId)
+      // A local session's lastConnectionId matches the ACP serverId.
+      // Additionally, the SDK reuses one connection per agent, so all local sessions
+      // for the same agent share the same ACP serverId. We must not show those as
+      // separate server-side entries.
       try {
         const servers = await getClient().listAcpServers();
+        if (servers.servers.length > 0 || knownAcpServerIds.size > 0) {
+          console.debug("[fetchSessions] dedup check",
+            { localIds: [...localSessionIds], acpConnIds: [...knownAcpServerIds], serverIds: servers.servers.map(s => s.serverId) });
+        }
         for (const server of servers.servers) {
-          if (!localSessionIds.has(server.serverId) && !knownAcpServerIds.has(server.serverId)) {
-            all.push({
-              sessionId: server.serverId,
-              agent: server.agent,
-              ended: false,
-              archived: false,
-              serverSide: true,
-            });
+          if (localSessionIds.has(server.serverId) || knownAcpServerIds.has(server.serverId)) {
+            continue;
           }
+          all.push({
+            sessionId: server.serverId,
+            agent: server.agent,
+            ended: false,
+            archived: false,
+            serverSide: true,
+          });
         }
       } catch (e) {
         console.warn("Failed to list ACP servers:", e);
