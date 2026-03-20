@@ -314,7 +314,8 @@ impl AcpProxyRuntime {
         let runtime = created.runtime.clone();
         tokio::spawn(async move {
             use futures::StreamExt;
-            let mut stream = runtime.value_stream(None).await;
+            let stream = runtime.value_stream(None).await;
+            tokio::pin!(stream);
             while let Some(value) = stream.next().await {
                 inner.store_envelope_inner(&sid, "agent", value).await;
             }
