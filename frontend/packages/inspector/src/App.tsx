@@ -506,9 +506,11 @@ export default function App() {
         setHistoryLoadingSessionId(session.id);
       }
 
-      // Hydrate existing events from persistence
+      // Hydrate existing events from persistence, with server-side fallback
       const hydrateEvents = async () => {
-        const allEvents: SessionEvent[] = [];
+        let allEvents: SessionEvent[] = [];
+
+        // 1. Try local persist (SDK-created sessions)
         let cursor: string | undefined;
         while (true) {
           const page = await getClient().getEvents({
@@ -520,6 +522,37 @@ export default function App() {
           if (!page.nextCursor) break;
           cursor = page.nextCursor;
         }
+
+        // 2. If no local events, try server-side event store (session sharing)
+        if (allEvents.length === 0) {
+          try {
+            const baseUrl = endpoint.replace(/\/+$/, "");
+            const headers: Record<string, string> = { Accept: "application/json" };
+            if (token) headers["Authorization"] = `Bearer ${token}`;
+            const res = await fetch(`${baseUrl}/v1/sessions/${encodeURIComponent(session.id)}/events`, { headers });
+            if (res.ok) {
+              const data = await res.json();
+              const serverEvents = (data.events ?? []) as Array<{
+                index: number;
+                created_at: number;
+                sender: string;
+                payload: Record<string, unknown>;
+              }>;
+              allEvents = serverEvents.map((se) => ({
+                id: `server-${se.index}`,
+                eventIndex: se.index,
+                sessionId: session.id,
+                createdAt: se.created_at,
+                connectionId: "server",
+                sender: se.sender as "client" | "agent",
+                payload: se.payload,
+              }));
+            }
+          } catch (e) {
+            console.warn("Failed to fetch server-side events:", e);
+          }
+        }
+
         sessionEventsCacheRef.current.set(session.id, allEvents);
         if (!isCurrentSubscription()) return;
         setEvents((prev) => (areEventsEqualById(prev, allEvents) ? prev : allEvents));

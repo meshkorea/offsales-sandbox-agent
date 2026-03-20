@@ -29,6 +29,21 @@ struct AcpProxyRuntimeInner {
     instances: RwLock<HashMap<String, Arc<ProxyInstance>>>,
     instance_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     install_locks: Mutex<HashMap<AgentId, Arc<Mutex<()>>>>,
+    /// Stored envelopes per server_id for session sharing (client + agent events)
+    event_store: RwLock<HashMap<String, Vec<StoredEnvelope>>>,
+}
+
+/// A stored ACP envelope with metadata for session replay
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StoredEnvelope {
+    /// Monotonic index within the session
+    pub index: u64,
+    /// Unix timestamp in milliseconds
+    pub created_at: i64,
+    /// "client" or "agent"
+    pub sender: String,
+    /// The raw JSON-RPC envelope
+    pub payload: Value,
 }
 
 #[derive(Debug)]
@@ -79,6 +94,7 @@ impl AcpProxyRuntime {
                 instances: RwLock::new(HashMap::new()),
                 instance_locks: Mutex::new(HashMap::new()),
                 install_locks: Mutex::new(HashMap::new()),
+                event_store: RwLock::new(HashMap::new()),
             }),
         }
     }
@@ -136,6 +152,9 @@ impl AcpProxyRuntime {
 
         let payload = normalize_payload_for_agent(instance.agent, payload);
 
+        // Store client envelope for session sharing
+        self.store_envelope(server_id, "client", payload.clone()).await;
+
         match instance.runtime.post(payload).await {
             Ok(PostOutcome::Response(value)) => {
                 let total_ms = start.elapsed().as_millis() as u64;
@@ -147,6 +166,8 @@ impl AcpProxyRuntime {
                     "acp_proxy: POST → response"
                 );
                 let value = annotate_agent_error(instance.agent, value);
+                // Store agent response envelope
+                self.store_envelope(server_id, "agent", value.clone()).await;
                 Ok(ProxyPostOutcome::Response(value))
             }
             Ok(PostOutcome::Accepted) => {
@@ -179,7 +200,29 @@ impl AcpProxyRuntime {
     ) -> Result<PinBoxSseStream, SandboxError> {
         let instance = self.get_instance(server_id).await?;
         let stream = instance.runtime.clone().sse_stream(last_event_id).await;
-        Ok(Box::pin(stream))
+
+        // Wrap stream to capture agent notification envelopes
+        let inner = self.inner.clone();
+        let sid = server_id.to_string();
+        let wrapped = futures::StreamExt::map(stream, move |item| {
+            if let Ok(ref event) = item {
+                // Try to parse the SSE data field as JSON to store as agent envelope
+                let data_str = format!("{:?}", event);
+                // Extract JSON from SSE event data
+                if let Some(json_start) = data_str.find('{') {
+                    if let Ok(value) = serde_json::from_str::<Value>(&data_str[json_start..]) {
+                        let inner = inner.clone();
+                        let sid = sid.clone();
+                        tokio::spawn(async move {
+                            inner.store_envelope_inner(&sid, "agent", value).await;
+                        });
+                    }
+                }
+            }
+            item
+        });
+
+        Ok(Box::pin(wrapped))
     }
 
     pub async fn delete(&self, server_id: &str) -> Result<(), SandboxError> {
@@ -202,6 +245,22 @@ impl AcpProxyRuntime {
         for instance in instances {
             instance.runtime.shutdown().await;
         }
+    }
+
+    /// Get all stored envelopes for a session (for session sharing / Inspector)
+    pub async fn get_session_events(&self, server_id: &str) -> Vec<StoredEnvelope> {
+        self.inner
+            .event_store
+            .read()
+            .await
+            .get(server_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Store an ACP envelope for later retrieval
+    async fn store_envelope(&self, server_id: &str, sender: &str, payload: Value) {
+        self.inner.store_envelope_inner(server_id, sender, payload).await;
     }
 
     async fn get_instance(&self, server_id: &str) -> Result<Arc<ProxyInstance>, SandboxError> {
@@ -461,6 +520,20 @@ impl AcpDispatch for AcpProxyRuntime {
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + '_>> {
         let server_id = server_id.to_string();
         Box::pin(async move { self.delete(&server_id).await.map_err(|err| err.to_string()) })
+    }
+}
+
+impl AcpProxyRuntimeInner {
+    async fn store_envelope_inner(&self, server_id: &str, sender: &str, payload: Value) {
+        let mut store = self.event_store.write().await;
+        let events = store.entry(server_id.to_string()).or_default();
+        let index = events.len() as u64;
+        events.push(StoredEnvelope {
+            index,
+            created_at: now_ms(),
+            sender: sender.to_string(),
+            payload,
+        });
     }
 }
 

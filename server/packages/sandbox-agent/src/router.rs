@@ -308,6 +308,8 @@ pub fn build_router_with_state(shared: Arc<AppState>) -> (Router, Arc<AppState>)
             "/acp/:server_id",
             post(post_v1_acp).get(get_v1_acp).delete(delete_v1_acp),
         )
+        .route("/sessions", get(get_v1_sessions))
+        .route("/sessions/:server_id/events", get(get_v1_session_events))
         .with_state(shared.clone());
 
     if shared.auth.token.is_some() {
@@ -3128,6 +3130,36 @@ async fn get_v1_acp_servers(
         .collect::<Vec<_>>();
 
     Ok(Json(AcpServerListResponse { servers }))
+}
+
+// ── Session Sharing Endpoints ──────────────────────────────────────────
+
+/// List all sessions with their metadata (for Inspector session discovery)
+async fn get_v1_sessions(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Value>, ApiError> {
+    let instances = state.acp_proxy().list_instances().await;
+    let sessions: Vec<Value> = instances
+        .into_iter()
+        .map(|inst| {
+            serde_json::json!({
+                "id": inst.server_id,
+                "agent": inst.agent.as_str(),
+                "createdAt": inst.created_at_ms,
+            })
+        })
+        .collect();
+
+    Ok(Json(serde_json::json!({ "sessions": sessions })))
+}
+
+/// Get stored events for a session (for Inspector conversation replay)
+async fn get_v1_session_events(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(server_id): axum::extract::Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let events = state.acp_proxy().get_session_events(&server_id).await;
+    Ok(Json(serde_json::json!({ "events": events })))
 }
 
 #[utoipa::path(
