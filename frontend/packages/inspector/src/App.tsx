@@ -1013,7 +1013,28 @@ export default function App() {
   const endSession = async () => {
     if (!sessionId) return;
     try {
-      await getClient().destroySession(sessionId);
+      const sessionInfo = sessions.find((s) => s.sessionId === sessionId);
+      if (sessionInfo?.serverSide) {
+        // Server-side session: send session/cancel via ACP proxy
+        const baseUrl = endpoint.replace(/\/+$/, "");
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        };
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+        await fetch(`${baseUrl}/v1/acp/${encodeURIComponent(sessionId)}`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: `inspector-end-${Date.now()}`,
+            method: "session/cancel",
+            params: {},
+          }),
+        });
+      } else {
+        await getClient().destroySession(sessionId);
+      }
       if (eventUnsubRef.current) {
         eventUnsubRef.current();
         eventUnsubRef.current = null;
