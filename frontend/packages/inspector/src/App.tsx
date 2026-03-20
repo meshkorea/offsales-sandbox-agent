@@ -856,7 +856,7 @@ export default function App() {
 
         // Send session/prompt JSON-RPC via the ACP proxy for this server
         const res = await fetch(
-          `${baseUrl}/api/v1/acp/${encodeURIComponent(targetSessionId)}`,
+          `${baseUrl}/v1/acp/${encodeURIComponent(targetSessionId)}`,
           {
             method: "POST",
             headers,
