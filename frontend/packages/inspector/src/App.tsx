@@ -785,12 +785,19 @@ export default function App() {
       // separate server-side entries.
       try {
         const servers = await getClient().listAcpServers();
+        console.log("[fetchSessions] dedup:", {
+          localIds: [...localSessionIds],
+          knownAcpIds: [...knownAcpServerIds],
+          ownAcpIds: [...ownAcpServerIdsRef.current],
+          serverIds: servers.servers.map((s) => s.serverId),
+        });
         for (const server of servers.servers) {
           if (
             localSessionIds.has(server.serverId) ||
             knownAcpServerIds.has(server.serverId) ||
             ownAcpServerIdsRef.current.has(server.serverId)
           ) {
+            console.log("[fetchSessions] filtering out server:", server.serverId);
             continue;
           }
           all.push({
@@ -955,7 +962,7 @@ export default function App() {
       } finally {
         window.clearTimeout(slowWarningTimerId);
       }
-      console.log("[createNewSession] Session created:", session.id, "connectionId:", session.lastConnectionId);
+      console.log("[createNewSession] Session created:", session.id, "connectionId:", session.lastConnectionId, "agentSessionId:", session.agentSessionId);
       if (session.lastConnectionId) {
         ownAcpServerIdsRef.current.add(session.lastConnectionId);
       }
