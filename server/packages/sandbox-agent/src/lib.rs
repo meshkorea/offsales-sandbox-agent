@@ -1,6 +1,7 @@
 //! Sandbox agent core utilities.
 
 mod acp_proxy_runtime;
+pub mod linear_notify;
 pub mod cli;
 pub mod daemon;
 mod desktop_errors;

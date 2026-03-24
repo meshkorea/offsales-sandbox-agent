@@ -14,6 +14,8 @@ use sandbox_agent_opencode_adapter::{AcpDispatch, AcpDispatchResult, AcpPayloadS
 use serde_json::{Number, Value};
 use tokio::sync::{Mutex, RwLock};
 
+use crate::linear_notify::LinearNotifier;
+
 const DEFAULT_REQUEST_TIMEOUT_MS: u64 = 120_000;
 
 #[derive(Debug, Clone)]
@@ -31,6 +33,8 @@ struct AcpProxyRuntimeInner {
     install_locks: Mutex<HashMap<AgentId, Arc<Mutex<()>>>>,
     /// Stored envelopes per server_id for session sharing (client + agent events)
     event_store: RwLock<HashMap<String, Vec<StoredEnvelope>>>,
+    /// Linear reasoning notifier (None if LINEAR_API_KEY/LINEAR_ISSUE_ID not set)
+    linear_notifier: Option<LinearNotifier>,
 }
 
 /// A stored ACP envelope with metadata for session replay
@@ -95,6 +99,7 @@ impl AcpProxyRuntime {
                 instance_locks: Mutex::new(HashMap::new()),
                 install_locks: Mutex::new(HashMap::new()),
                 event_store: RwLock::new(HashMap::new()),
+                linear_notifier: LinearNotifier::from_env(),
             }),
         }
     }
@@ -560,6 +565,13 @@ impl AcpDispatch for AcpProxyRuntime {
 
 impl AcpProxyRuntimeInner {
     async fn store_envelope_inner(&self, server_id: &str, sender: &str, payload: Value) {
+        // Linear reasoning notifier: agent_thought_chunk → Linear 댓글
+        if sender == "agent" {
+            if let Some(ref notifier) = self.linear_notifier {
+                notifier.on_envelope(&payload).await;
+            }
+        }
+
         let mut store = self.event_store.write().await;
         let events = store.entry(server_id.to_string()).or_default();
         let index = events.len() as u64;
