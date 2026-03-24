@@ -810,11 +810,7 @@ export default function App() {
         // Fetch event counts in parallel to filter out empty ACP connections
         const serverChecks = await Promise.all(
           servers.servers.map(async (server) => {
-            if (
-              localSessionIds.has(server.serverId) ||
-              knownAcpServerIds.has(server.serverId) ||
-              ownAcpServerIdsRef.current.has(server.serverId)
-            ) {
+            if (localSessionIds.has(server.serverId) || knownAcpServerIds.has(server.serverId) || ownAcpServerIdsRef.current.has(server.serverId)) {
               return null; // already tracked locally
             }
             // Only show server-side sessions that have events (actual conversations)
@@ -828,7 +824,9 @@ export default function App() {
                 const events = data.events ?? [];
                 if (events.length > 0) return server; // has events → real session
               }
-            } catch { /* ignore */ }
+            } catch {
+              /* ignore */
+            }
             return null; // no events → empty connection, skip
           }),
         );
@@ -913,21 +911,18 @@ export default function App() {
         if (token) headers["Authorization"] = `Bearer ${token}`;
 
         // Send session/prompt JSON-RPC via the ACP proxy for this server
-        const res = await fetch(
-          `${baseUrl}/v1/acp/${encodeURIComponent(targetSessionId)}`,
-          {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              jsonrpc: "2.0",
-              id: `inspector-${Date.now()}`,
-              method: "session/prompt",
-              params: {
-                prompt: [{ type: "text", text: prompt }],
-              },
-            }),
-          },
-        );
+        const res = await fetch(`${baseUrl}/v1/acp/${encodeURIComponent(targetSessionId)}`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: `inspector-${Date.now()}`,
+            method: "session/prompt",
+            params: {
+              prompt: [{ type: "text", text: prompt }],
+            },
+          }),
+        });
         if (!res.ok) {
           const body = await res.text().catch(() => "");
           throw new Error(`Server returned ${res.status}: ${body}`);
@@ -1019,7 +1014,9 @@ export default function App() {
       try {
         const before = await getClient().listAcpServers();
         acpServerIdsBefore = new Set(before.servers.map((s) => s.serverId));
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
 
       const createSessionPromise = getClient().createSession({
         agent: nextAgentId,
@@ -1051,7 +1048,9 @@ export default function App() {
             addOwnAcpServerId(server.serverId);
           }
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       if (slowWarningShown) {
         setSessionError(null);
       }
@@ -1128,14 +1127,16 @@ export default function App() {
     try {
       const sessionInfo = sessions.find((s) => s.sessionId === sessionId);
       if (sessionInfo?.serverSide) {
-        // Server-side session: send session/cancel via ACP proxy
+        // Server-side session: try session/cancel first, fallback to DELETE (shutdown)
         const baseUrl = endpoint.replace(/\/+$/, "");
         const headers: Record<string, string> = {
           "Content-Type": "application/json",
           Accept: "application/json",
         };
         if (token) headers["Authorization"] = `Bearer ${token}`;
-        await fetch(`${baseUrl}/v1/acp/${encodeURIComponent(sessionId)}`, {
+
+        // 1) session/cancel 시도
+        const cancelRes = await fetch(`${baseUrl}/v1/acp/${encodeURIComponent(sessionId)}`, {
           method: "POST",
           headers,
           body: JSON.stringify({
@@ -1145,6 +1146,25 @@ export default function App() {
             params: {},
           }),
         });
+
+        // 2) session/cancel이 실패하면 (Method not found 등) DELETE로 프로세스 종료
+        let cancelFailed = false;
+        try {
+          const cancelBody = await cancelRes.json();
+          if (cancelBody?.error) cancelFailed = true;
+        } catch {
+          // JSON 파싱 실패 — 비정상 응답
+          cancelFailed = true;
+        }
+
+        if (cancelFailed) {
+          const deleteHeaders: Record<string, string> = {};
+          if (token) deleteHeaders["Authorization"] = `Bearer ${token}`;
+          await fetch(`${baseUrl}/v1/acp/${encodeURIComponent(sessionId)}`, {
+            method: "DELETE",
+            headers: deleteHeaders,
+          });
+        }
       } else {
         await getClient().destroySession(sessionId);
       }
@@ -1767,8 +1787,10 @@ export default function App() {
                 return;
               }
               sessionEventsCacheRef.current.set(requestedSessionId, newMapped);
-              setEvents((prev) => areEventsEqualById(prev, newMapped) ? prev : newMapped);
-            } catch { /* ignore poll errors */ }
+              setEvents((prev) => (areEventsEqualById(prev, newMapped) ? prev : newMapped));
+            } catch {
+              /* ignore poll errors */
+            }
           }, 2000);
 
           // Cleanup interval when component unmounts or session changes
