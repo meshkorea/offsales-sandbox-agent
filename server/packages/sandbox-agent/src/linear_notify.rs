@@ -61,8 +61,10 @@ impl LinearNotifier {
             return;
         }
 
+        // ACP envelope 구조: params.update.sessionUpdate (params 직접이 아님)
         let session_update = payload
-            .pointer("/params/sessionUpdate")
+            .pointer("/params/update/sessionUpdate")
+            .or_else(|| payload.pointer("/params/sessionUpdate"))
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
@@ -71,7 +73,8 @@ impl LinearNotifier {
         }
 
         let text = payload
-            .pointer("/params/content/text")
+            .pointer("/params/update/content/text")
+            .or_else(|| payload.pointer("/params/content/text"))
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
