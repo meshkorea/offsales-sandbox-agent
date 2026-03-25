@@ -42,6 +42,7 @@ export function e2b(options: E2BProviderOptions = {}): SandboxProvider {
 
   return {
     name: "e2b",
+    defaultCwd: "/home/user",
     async create(): Promise<string> {
       const createOpts = await resolveOptions(options.create);
       const rawTemplate = typeof createOpts.template === "string" ? createOpts.template : undefined;

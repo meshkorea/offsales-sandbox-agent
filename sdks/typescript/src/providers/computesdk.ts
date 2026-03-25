@@ -21,6 +21,7 @@ export function computesdk(options: ComputeSdkProviderOptions = {}): SandboxProv
 
   return {
     name: "computesdk",
+    defaultCwd: "/root",
     async create(): Promise<string> {
       const createOpts = await resolveCreateOptions(options.create);
       const sandbox = await compute.sandbox.create({
