@@ -212,7 +212,7 @@ const baseTaskSandbox = sandboxActor({
     if (sandboxProviderId === "e2b") {
       return e2b({
         create: () => ({
-          template: config.sandboxProviders.e2b.template ?? "sandbox-agent-full-0.3.x",
+          template: config.sandboxProviders.e2b.template ?? "sandbox-agent-full-0.5.x",
           envs: sandboxEnvObject(),
           // TEMPORARY: Default E2B timeout is 5 minutes which is too short.
           // Set to 1 hour as a stopgap. Remove this once the E2B provider in
@@ -269,7 +269,7 @@ async function providerForConnection(c: any): Promise<any | null> {
     sandboxProviderId === "e2b"
       ? e2b({
           create: () => ({
-            template: config.sandboxProviders.e2b.template ?? "sandbox-agent-full-0.3.x",
+            template: config.sandboxProviders.e2b.template ?? "sandbox-agent-full-0.5.x",
             envs: sandboxEnvObject(),
           }),
           installAgents: ["claude", "codex"],
