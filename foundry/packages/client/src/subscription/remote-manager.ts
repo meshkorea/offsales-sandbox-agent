@@ -4,6 +4,11 @@ import { topicDefinitions, type TopicData, type TopicDefinition, type TopicKey, 
 
 const GRACE_PERIOD_MS = 30_000;
 
+/** Initial retry delay in ms. */
+const RETRY_BASE_MS = 1_000;
+/** Maximum retry delay in ms. */
+const RETRY_MAX_MS = 30_000;
+
 /**
  * Remote implementation of SubscriptionManager.
  * Each cache entry owns one actor connection plus one materialized snapshot.
@@ -80,9 +85,12 @@ class TopicEntry<TData, TParams, TEvent> {
   private unsubscribeEvent: (() => void) | null = null;
   private unsubscribeError: (() => void) | null = null;
   private teardownTimer: ReturnType<typeof setTimeout> | null = null;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private retryAttempt = 0;
   private startPromise: Promise<void> | null = null;
   private eventPromise: Promise<void> = Promise.resolve();
   private started = false;
+  private disposed = false;
 
   constructor(
     private readonly topicKey: TopicKey,
@@ -136,7 +144,9 @@ class TopicEntry<TData, TParams, TEvent> {
   }
 
   dispose(): void {
+    this.disposed = true;
     this.cancelTeardown();
+    this.cancelRetry();
     this.unsubscribeEvent?.();
     this.unsubscribeError?.();
     if (this.conn) {
@@ -148,6 +158,55 @@ class TopicEntry<TData, TParams, TEvent> {
     this.error = null;
     this.lastRefreshAt = null;
     this.started = false;
+    this.retryAttempt = 0;
+  }
+
+  private cancelRetry(): void {
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+  }
+
+  /**
+   * Schedules a retry with exponential backoff. Cleans up any existing
+   * connection state before reconnecting.
+   */
+  private scheduleRetry(): void {
+    if (this.disposed || this.listenerCount === 0) {
+      return;
+    }
+
+    const delay = Math.min(RETRY_BASE_MS * 2 ** this.retryAttempt, RETRY_MAX_MS);
+    this.retryAttempt++;
+
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      if (this.disposed || this.listenerCount === 0) {
+        return;
+      }
+
+      // Tear down the old connection before retrying
+      this.cleanupConnection();
+      this.started = false;
+      this.startPromise = this.start().finally(() => {
+        this.startPromise = null;
+      });
+    }, delay);
+  }
+
+  /**
+   * Cleans up connection resources without resetting data/status/retry state.
+   */
+  private cleanupConnection(): void {
+    this.unsubscribeEvent?.();
+    this.unsubscribeError?.();
+    this.unsubscribeEvent = null;
+    this.unsubscribeError = null;
+    if (this.conn) {
+      void this.conn.dispose();
+    }
+    this.conn = null;
   }
 
   private async start(): Promise<void> {
@@ -164,17 +223,20 @@ class TopicEntry<TData, TParams, TEvent> {
         this.status = "error";
         this.error = error instanceof Error ? error : new Error(String(error));
         this.notify();
+        this.scheduleRetry();
       });
       this.data = await this.definition.fetchInitial(this.backend, this.params);
       this.status = "connected";
       this.lastRefreshAt = Date.now();
       this.started = true;
+      this.retryAttempt = 0;
       this.notify();
     } catch (error) {
       this.status = "error";
       this.error = error instanceof Error ? error : new Error(String(error));
       this.started = false;
       this.notify();
+      this.scheduleRetry();
     }
   }
 

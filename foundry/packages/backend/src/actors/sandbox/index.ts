@@ -13,7 +13,12 @@ import { logActorWarning, resolveErrorMessage } from "../logging.js";
 import { expectQueueResponse } from "../../services/queue.js";
 import { resolveSandboxProviderId } from "../../sandbox-config.js";
 
-const SANDBOX_REPO_CWD = "/home/sandbox/repo";
+/**
+ * Default repo CWD inside the sandbox. The actual path is resolved dynamically
+ * via `$HOME/repo` because different sandbox providers run as different users
+ * (e.g. E2B uses `/home/user`, local Docker uses `/home/sandbox`).
+ */
+const DEFAULT_SANDBOX_REPO_CWD = "/home/user/repo";
 const DEFAULT_LOCAL_SANDBOX_IMAGE = "rivetdev/sandbox-agent:foundry-base-latest";
 const DEFAULT_LOCAL_SANDBOX_PORT = 2468;
 const dockerClient = new Dockerode({ socketPath: "/var/run/docker.sock" });
@@ -298,6 +303,43 @@ async function listWorkspaceModelGroupsForSandbox(c: any): Promise<WorkspaceMode
 const baseActions = baseTaskSandbox.config.actions as Record<string, (c: any, ...args: any[]) => Promise<any>>;
 
 // ---------------------------------------------------------------------------
+// Dynamic repo CWD resolution
+// ---------------------------------------------------------------------------
+
+let cachedRepoCwd: string | null = null;
+
+/**
+ * Resolve the repo CWD inside the sandbox by querying `$HOME`.
+ * Different providers run as different users (E2B: `/home/user`, local Docker:
+ * `/home/sandbox`), so the path must be resolved dynamically. The result is
+ * cached for the lifetime of this sandbox actor instance.
+ */
+async function resolveRepoCwd(c: any): Promise<string> {
+  if (cachedRepoCwd) return cachedRepoCwd;
+
+  try {
+    const result = await baseActions.runProcess(c, {
+      command: "bash",
+      args: ["-lc", "echo $HOME"],
+      cwd: "/",
+      timeoutMs: 10_000,
+    });
+    const home = (result.stdout ?? result.result ?? "").trim();
+    if (home && home.startsWith("/")) {
+      cachedRepoCwd = `${home}/repo`;
+      return cachedRepoCwd;
+    }
+  } catch (error) {
+    logActorWarning("taskSandbox", "failed to resolve $HOME, using default", {
+      error: resolveErrorMessage(error),
+    });
+  }
+
+  cachedRepoCwd = DEFAULT_SANDBOX_REPO_CWD;
+  return cachedRepoCwd;
+}
+
+// ---------------------------------------------------------------------------
 // Queue names for sandbox actor
 // ---------------------------------------------------------------------------
 
@@ -528,8 +570,9 @@ export const taskSandbox = actor({
       }
     },
 
-    async repoCwd(): Promise<{ cwd: string }> {
-      return { cwd: SANDBOX_REPO_CWD };
+    async repoCwd(c: any): Promise<{ cwd: string }> {
+      const resolved = await resolveRepoCwd(c);
+      return { cwd: resolved };
     },
 
     // Long-running action — kept as direct action to avoid blocking the
@@ -600,4 +643,4 @@ export const taskSandbox = actor({
   run: workflow(runSandboxWorkflow),
 });
 
-export { SANDBOX_REPO_CWD };
+export { DEFAULT_SANDBOX_REPO_CWD, resolveRepoCwd };
