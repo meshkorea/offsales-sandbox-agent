@@ -148,13 +148,20 @@ async function updateVersionReferences(opts: ReleaseOpts, oldVersion: string, ol
 
     const original = content;
 
-    // Replace minor channel references (e.g. sandbox-agent@0.3.x -> sandbox-agent@0.4.x)
+    // Replace minor channel references (e.g. sandbox-agent@0.5.x -> sandbox-agent@0.5.x)
     content = content.replaceAll(`sandbox-agent@${oldMinorChannel}`, `sandbox-agent@${newMinorChannel}`);
     content = content.replaceAll(`@sandbox-agent/cli@${oldMinorChannel}`, `@sandbox-agent/cli@${newMinorChannel}`);
     content = content.replaceAll(`@sandbox-agent/react@${oldMinorChannel}`, `@sandbox-agent/react@${newMinorChannel}`);
 
     // Replace install script URL channel
     content = content.replaceAll(`releases.rivet.dev/sandbox-agent/${oldMinorChannel}/`, `releases.rivet.dev/sandbox-agent/${newMinorChannel}/`);
+
+    // If references drifted (for example Cargo.toml version was bumped without updating docs),
+    // normalize any other pinned minor-channel references to the release's channel.
+    content = content.replaceAll(/sandbox-agent@0\.\d+\.x/g, `sandbox-agent@${newMinorChannel}`);
+    content = content.replaceAll(/@sandbox-agent\/cli@0\.\d+\.x/g, `@sandbox-agent/cli@${newMinorChannel}`);
+    content = content.replaceAll(/@sandbox-agent\/react@0\.\d+\.x/g, `@sandbox-agent/react@${newMinorChannel}`);
+    content = content.replaceAll(/releases\.rivet\.dev\/sandbox-agent\/0\.\d+\.x\//g, `releases.rivet.dev/sandbox-agent/${newMinorChannel}/`);
 
     // Replace Docker image tags (rivetdev/sandbox-agent:<anything>-full -> rivetdev/sandbox-agent:<version>-full)
     content = content.replaceAll(

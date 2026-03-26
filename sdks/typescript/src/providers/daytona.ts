@@ -11,7 +11,7 @@ type DaytonaCreateOverrides = Partial<DaytonaCreateParams>;
 
 export interface DaytonaProviderOptions {
   create?: DaytonaCreateOverrides | (() => DaytonaCreateOverrides | Promise<DaytonaCreateOverrides>);
-  image?: string;
+  image?: DaytonaCreateParams["image"];
   agentPort?: number;
   previewTtlSeconds?: number;
   deleteTimeoutSeconds?: number;
@@ -31,6 +31,7 @@ export function daytona(options: DaytonaProviderOptions = {}): SandboxProvider {
 
   return {
     name: "daytona",
+    defaultCwd: "/home/daytona",
     async create(): Promise<string> {
       const createOpts = await resolveCreateOptions(options.create);
       const sandbox = await client.create({
